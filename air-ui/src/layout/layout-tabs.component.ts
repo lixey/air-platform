@@ -155,7 +155,9 @@ export class LayoutTabsComponent {
   protected readonly tabs = computed(() => visibleTabs(this.pins.pins(), this.current(), this.isNavHidden()));
 
   protected isActive(tab: MenuItemDto): boolean {
-    return tab.path === this.app.currentPath();
+    const current = this.app.currentPath().toLowerCase();
+    const tabPath = (tab.path ?? '').toLowerCase();
+    return current === tabPath || current.startsWith(`${tabPath}/`);
   }
 
   /**

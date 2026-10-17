@@ -76,7 +76,11 @@ export class LayoutMenuEntryComponent {
 
   protected readonly path = computed(() => menuItemPath(this.modulePath(), this.leaf()));
   protected readonly isPinned = computed(() => this.pins.isPinned(this.path()));
-  protected readonly isCurrent = computed(() => this.app.currentPath() === this.path());
+  protected readonly isCurrent = computed(() => {
+    const current = this.app.currentPath().toLowerCase();
+    const entryPath = this.path().toLowerCase();
+    return current === entryPath || current.startsWith(`${entryPath}/`);
+  });
 
   /** The rule of a grouped entry, and the ground of the current one over the hover. */
   protected readonly rowClasses = computed(() =>

@@ -157,7 +157,7 @@ export class LayoutMenuComponent {
   protected readonly pathOf = modulePathOf;
 
   protected isModuleOpen(module: MenuItemDto): boolean {
-    return this.activeModule().handle === module.handle;
+    return (this.activeModule().handle ?? '').toLowerCase() === (module.handle ?? '').toLowerCase();
   }
 
   /** A module header is a destination as well as a disclosure: it opens the accordion and the module's first leaf. */

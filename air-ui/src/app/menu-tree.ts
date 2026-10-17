@@ -38,13 +38,13 @@ export function joinMenuPath(parentPath: string, path?: string | null): string {
  * nothing to it and its children answer to the address their module gives them.
  */
 export function findMenuItemIn(menu: readonly MenuItemDto[], url: string): MenuItemDto | null {
-  const clean = trimSlash(url.split('?')[0]);
+  const clean = trimSlash(url.split('?')[0]).toLowerCase();
 
   const search = (items: readonly MenuItemDto[], parentPath = ''): MenuItemDto | null => {
     for (const item of items) {
       const fullPath = joinMenuPath(parentPath, item.path);
 
-      if (fullPath && (fullPath === clean || item.path === clean)) {
+      if (fullPath && (fullPath.toLowerCase() === clean || (item.path ?? '').toLowerCase() === clean)) {
         return item;
       }
 
@@ -69,8 +69,8 @@ export function findMenuItemIn(menu: readonly MenuItemDto[], url: string): MenuI
  * menu lists it.
  */
 export function findRouteIn(routes: readonly MenuItemDto[], url: string): MenuItemDto | null {
-  const clean = trimSlash(url.split('?')[0]);
-  return routes.find(route => trimSlash(route.path) === clean) ?? null;
+  const clean = trimSlash(url.split('?')[0]).toLowerCase();
+  return routes.find(route => trimSlash(route.path).toLowerCase() === clean) ?? null;
 }
 
 /** The first entry that can actually be opened, looking through groups that have no path. */
@@ -136,5 +136,12 @@ export function menuItemPath(modulePath: string, item: MenuItemDto | undefined):
 
 /** Whether a group holds the entry the given address resolves to. */
 export function groupHoldsPath(modulePath: string, group: MenuItemDto, path: string): boolean {
-  return (group.items ?? []).some(leaf => !!leaf.path && menuItemPath(modulePath, leaf) === path);
+  const target = path.toLowerCase();
+  return (group.items ?? []).some(leaf => {
+    if (!leaf.path) {
+      return false;
+    }
+    const leafPath = menuItemPath(modulePath, leaf).toLowerCase();
+    return leafPath === target || target.startsWith(`${leafPath}/`);
+  });
 }

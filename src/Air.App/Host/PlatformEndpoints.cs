@@ -63,7 +63,7 @@ public static class PlatformEndpoints
           {
             Handle = module.Handle,
             Name = Localizer.Instance[module.Name],
-            Path = module.Handle,
+            Path = module.Handle.ToLowerInvariant(),
             Items = module.Menu.Nodes.Select(n => ToMenuItem(module.Handle, n)).ToList()
           };
           metadata.Menu.Add(rootItem);
@@ -537,10 +537,11 @@ public static class PlatformEndpoints
 
   private static MenuItemDto ToMenuItem(string moduleHandle, ModuleMenuNode node)
   {
+    var modLower = moduleHandle.ToLowerInvariant();
     var fullPath = node.Feature?.Path;
-    if (fullPath is not null && !fullPath.StartsWith(moduleHandle + "/", StringComparison.OrdinalIgnoreCase))
+    if (fullPath is not null && !fullPath.StartsWith(modLower + "/", StringComparison.OrdinalIgnoreCase))
     {
-      fullPath = $"{moduleHandle}/{fullPath}";
+      fullPath = $"{modLower}/{fullPath.TrimStart('/')}";
     }
 
     return new MenuItemDto

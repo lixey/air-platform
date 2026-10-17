@@ -107,7 +107,8 @@ export class AppService {
 
   currentModule(): MenuItemDto {
     const segments = this.currentPath().split('/');
-    const currentModule = this.menu().find(m => m.path === segments[0]);
+    const firstSegment = (segments[0] ?? '').toLowerCase();
+    const currentModule = this.menu().find(m => (m.path ?? m.handle ?? '').toLowerCase() === firstSegment);
     return currentModule ?? this.menu()[0] ?? { isSeparator: false, items: [] };
   }
 
