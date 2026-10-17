@@ -233,18 +233,31 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       });
     }
 
-    navElements.Add(new NavTabModel
-    {
-      Key = "record",
-      Group = "tabs",
-      Value = "record",
-      Label = caption,
-      Color = UiColor.Sky,
-      IsSelected = true
-    });
+    var hasPages = elements.Children.Count > 0 && id.HasValue && id.Value > 0;
 
-    if (elements.Tabs.Count > 0)
+    if (elements.Tabs.Count == 0)
     {
+      navElements.Add(new NavLabelModel
+      {
+        Key = "record",
+        Label = caption,
+        Color = UiColor.Sky,
+        Path = "form"
+      });
+    }
+    else
+    {
+      navElements.Add(new NavTabModel
+      {
+        Key = "record",
+        Group = "tabs",
+        Value = "record",
+        Label = caption,
+        Color = UiColor.Sky,
+        IsSelected = true,
+        Path = "form"
+      });
+
       foreach (var tab in elements.Tabs)
       {
         navElements.Add(new NavTabModel
@@ -253,24 +266,20 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
           Group = "tabs",
           Value = tab.Key,
           Label = tab.Label,
-          Variant = ButtonVariant.Soft
+          Variant = ButtonVariant.Soft,
+          Path = "form"
         });
       }
     }
 
-    if (elements.Children.Count > 0 && id.HasValue && id.Value > 0)
+    if (hasPages)
     {
-      foreach (var child in elements.Children)
+      navElements.Add(new NavTabsModel
       {
-        navElements.Add(new NavTabModel
-        {
-          Key = child.DeclaredKey,
-          Group = "tabs",
-          Value = child.DeclaredKey,
-          Label = child.DeclaredLabel,
-          Variant = ButtonVariant.Soft
-        });
-      }
+        Key = "children",
+        Color = UiColor.Indigo,
+        IsPagedOnly = true
+      });
     }
 
     var navEnd = new List<NavElementModel>
@@ -295,11 +304,28 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
 
     var layout = PanelLayout.Column(servicePath)
       .Panel("bar", p => p.Model(nav).Auto().Pinned().Rigid())
-      .Panel("form", p => p.Model(formModel).Fill());
+      .Panel("form", p =>
+      {
+        p.Model(formModel);
+        if (hasPages)
+        {
+          p.Auto().Pinned().PageUnder(768).PageUnderHeight(640).Resizable();
+        }
+        else
+        {
+          p.Fill();
+        }
+      });
 
-    if (elements.Children.Count > 0 && id.HasValue && id.Value > 0)
+    if (hasPages)
     {
-      var strip = new NavModel { Key = $"{servicePath}.tabs" };
+      layout.Exclusive();
+      var strip = new NavModel
+      {
+        Key = $"{servicePath}.tabs",
+        Start = [new NavTabsModel { Key = "tabs", Color = UiColor.Indigo }]
+      };
+
       foreach (var child in elements.Children)
       {
         layout.Panel(child.DeclaredKey, p => p
@@ -307,11 +333,12 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
           {
             Service = child.ServicePath,
             ParentService = servicePath,
-            ParentId = id.Value,
+            ParentId = id!.Value,
             Tabs = strip
           })
           .Label(child.DeclaredLabel)
           .Fill()
+          .Min(240)
         );
       }
     }

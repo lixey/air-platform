@@ -133,6 +133,18 @@ public sealed class PanelBuilder
     return this;
   }
 
+  public PanelBuilder PageUnder(int? pixels)
+  {
+    Node.PageUnder = pixels;
+    return this;
+  }
+
+  public PanelBuilder PageUnderHeight(int? pixels)
+  {
+    Node.PageUnderHeight = pixels;
+    return this;
+  }
+
   public PanelBuilder Row(string key, Action<PanelBuilder> configure)
   {
     var child = new PanelBuilder(key) { Node = { Direction = PanelDirection.Row } };
