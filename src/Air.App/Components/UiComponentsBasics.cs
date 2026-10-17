@@ -67,6 +67,7 @@ public static class UiIcon
   public const string ArrowLeft = "arrow-left";
   public const string ArrowRight = "arrow-right";
   public const string ArrowTop = "arrow-top";
+  public const string Ban = "ban";
   public const string Checkmark = "checkmark";
   public const string Close = "close";
   public const string Dots = "dots";

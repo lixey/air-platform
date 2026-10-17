@@ -1,0 +1,21 @@
+using Air.App.Grid;
+using Air.App.Modules;
+using DemoApp.Color;
+using DemoApp.Data;
+using DemoApp.Data.Models;
+
+namespace DemoApp.UserGroup;
+
+public sealed class AppUserGroupGridService(AppDbContext db, AppService? app = null)
+  : AppGridService<AppUserGroup>(db, app)
+{
+  public override Feature Feature => App.UserGroup;
+
+  protected override void SetColumns(Columns<AppUserGroup> columns)
+  {
+    columns.Add(r => r.Id).AsOpenForm<AppUserGroupFormService>();
+    columns.Add(r => r.Name);
+    columns.Add(r => r.Color).AsReference<AppColorGridService>();
+    columns.Add(r => r.IsActive).AsCheckbox();
+  }
+}

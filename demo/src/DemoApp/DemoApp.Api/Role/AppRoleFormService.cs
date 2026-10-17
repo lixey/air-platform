@@ -1,0 +1,76 @@
+using Air.App.Components;
+using Air.App.Form;
+using Air.App.Modules;
+using Air.App.Overlay;
+using DemoApp.Data;
+using DemoApp.Data.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace DemoApp.Role;
+
+public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
+  : AppFormService<AppAuthRole, AppRoleEdit>(db, app)
+{
+  private IReadOnlySet<string> _shown = new HashSet<string>();
+
+  public override Feature Feature => App.Role;
+
+  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
+
+  protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
+  {
+    elements.Add(e => e.Name).Span(4);
+    elements.Add(e => e.TenantId).InputOnly().Span(4);
+    elements.Add(e => e.SortOrder).Span(2);
+    elements.Add(e => e.IsActive).AsCheckbox().Span(2);
+    elements.Add(e => e.Description).AsTextarea();
+
+    elements.AddTab("Rights");
+    _shown = elements.Add(e => e.Permissions).InputOnly().AsRightsTree().TreeKeys;
+
+    elements.AddChild<AppRoleUserGridService>().Key("users").Label("Users");
+  }
+
+  protected override void SetRules(Rules rules)
+  {
+    var taken = L["A role of this name already exists in its tenant."];
+    rules.For(e => e.Name).CustomAsync(async (name, c, cancellationToken) =>
+    {
+      var mutation = SaveContextOf(c);
+      var id = mutation.Entity.Id;
+      var tenant = mutation.Input.TenantId;
+      if (!string.IsNullOrWhiteSpace(name) &&
+          await db.AppAuthRole.AnyAsync(r => r.Id != id && r.TenantId == tenant && r.Name == name, cancellationToken))
+      {
+        c.AddFailure(taken);
+      }
+    });
+  }
+
+  protected override void SetHooks(Hooks hooks)
+  {
+    hooks.AfterLoad(async (c, cancellationToken) =>
+    {
+      if (c.IsNew)
+      {
+        return;
+      }
+
+      c.Input.TenantId = c.Entity.TenantId;
+      var granted = await Grants(c.Entity.Id).Select(g => g.Permission).ToListAsync(cancellationToken);
+      c.Input.Permissions = [.. granted.Where(_shown.Contains).Order(StringComparer.Ordinal)];
+    });
+
+    hooks.BeforeValidate(c => c.Entity.TenantId = c.Input.TenantId);
+
+    hooks.AfterSave(async (c, cancellationToken) =>
+    {
+      var wanted = (c.Input.Permissions ?? []).ToHashSet(StringComparer.Ordinal);
+      var grants = await Grants(c.Entity.Id).ToListAsync(cancellationToken);
+      db.RemoveRange(grants.Where(g => _shown.Contains(g.Permission) && !wanted.Contains(g.Permission)));
+      db.AddRange(wanted.Except(grants.Select(g => g.Permission)).Select(p => new AppAuthGrant { AuthRoleId = c.Entity.Id, Permission = p }));
+    });
+  }
+
+  private IQueryable<AppAuthGrant> Grants(long role) => db.AppAuthGrant.Where(g => g.AuthRoleId == role);
+}
