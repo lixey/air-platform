@@ -7,11 +7,15 @@
   </Folder>
   <Folder Name="/demo/">
     <Project Path="demo/src/DemoApp/DemoApp.Data/DemoApp.Data.csproj" />
+    <Project Path="demo/src/DemoApp/DemoApp.Migrations/DemoApp.Migrations.csproj" />
     <Project Path="demo/src/DemoApp/DemoApp.Api/DemoApp.Api.csproj" />
     <Project Path="demo/src/DemoOrg/DemoOrg.Data/DemoOrg.Data.csproj" />
+    <Project Path="demo/src/DemoOrg/DemoOrg.Migrations/DemoOrg.Migrations.csproj" />
     <Project Path="demo/src/DemoOrg/DemoOrg.Api/DemoOrg.Api.csproj" />
     <Project Path="demo/src/DemoEcom/DemoEcom.Data/DemoEcom.Data.csproj" />
+    <Project Path="demo/src/DemoEcom/DemoEcom.Migrations/DemoEcom.Migrations.csproj" />
     <Project Path="demo/src/DemoEcom/DemoEcom.Api/DemoEcom.Api.csproj" />
     <Project Path="demo/src/Demo.Api/Demo.Api.csproj" />
+    <Project Path="demo/src/Demo.DevMigrations/Demo.DevMigrations.csproj" />
   </Folder>
 </Solution>

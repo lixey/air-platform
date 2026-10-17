@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DemoOrg.Migrations</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Bogus" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../DemoApp/DemoApp.Migrations/DemoApp.Migrations.csproj" />
+    <ProjectReference Include="../DemoOrg.Data/DemoOrg.Data.csproj" />
+    <ProjectReference Include="../../../../src/Air.App/Air.App.csproj" />
+  </ItemGroup>
+</Project>
