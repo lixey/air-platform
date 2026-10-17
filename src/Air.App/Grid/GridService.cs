@@ -157,12 +157,34 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public NavPickerBuilder ReadsParent() { model.ReadsParent = true; return this; }
   }
 
+  public sealed class NavActionBuilder
+  {
+    private readonly (GridNavActionModel Model, bool IsInMenu) _item;
+    private readonly Nav _nav;
+
+    internal NavActionBuilder((GridNavActionModel Model, bool IsInMenu) item, Nav nav)
+    {
+      _item = item;
+      _nav = nav;
+    }
+
+    public Nav InMenu()
+    {
+      var idx = _nav.Actions.IndexOf(_item);
+      if (idx >= 0)
+      {
+        _nav.Actions[idx] = (_item.Model, true);
+      }
+      return _nav;
+    }
+  }
+
   public sealed class Nav(string servicePath = "")
   {
-    internal List<GridNavActionModel> Actions { get; } = [];
+    internal List<(GridNavActionModel Model, bool IsInMenu)> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
 
-    public Nav AddAction(
+    public NavActionBuilder AddAction(
       Delegate method,
       Action<ButtonBuilder>? look = null,
       string? confirm = null,
@@ -182,8 +204,9 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
         NeedsSelection = needsSelection,
         Confirm = confirm != null ? new OverlayConfirmModel { Message = confirm, Color = UiColor.Red } : null
       };
-      Actions.Add(action);
-      return this;
+      var item = (action, b.IsInMenu);
+      Actions.Add(item);
+      return new NavActionBuilder(item, this);
     }
 
     public NavPickerBuilder AddPicker<TSource>(
@@ -379,9 +402,17 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     };
 
     var actionEnd = new List<NavElementModel>();
-    foreach (var act in nav.Actions)
+    var actionMore = new List<NavElementModel>();
+    foreach (var (act, inMenu) in nav.Actions)
     {
-      actionEnd.Add(act);
+      if (inMenu)
+      {
+        actionMore.Add(act);
+      }
+      else
+      {
+        actionEnd.Add(act);
+      }
     }
 
     if (!Feature.IsReadOnly)
@@ -471,7 +502,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
         Key = $"{servicePath}.actions",
         Start = [],
         Elements = actionElements,
-        End = actionEnd
+        End = actionEnd,
+        More = actionMore
       }
     };
 

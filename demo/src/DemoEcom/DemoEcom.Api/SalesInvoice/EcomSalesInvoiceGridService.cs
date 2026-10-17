@@ -35,8 +35,8 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateSalesReturn, b => b.Label(L["Create sales return"]).Icon("plus"));
-    nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon("plus"));
+    nav.AddAction(CreateSalesReturn, b => b.Label(L["Create sales return"]).Icon("plus")).InMenu();
+    nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon("plus")).InMenu();
   }
 
   public async Task<GridActionDto> CreateSalesReturn(GridRequest request, CancellationToken cancellationToken)
