@@ -8,7 +8,7 @@ public interface IPlatformModule
   string Handle { get; }
   string Name { get; }
   ModuleMenu Menu { get; }
-  IReadOnlyList<Feature> Features => [];
+  IReadOnlyList<Feature> Features { get; }
   void ConfigureServices(IServiceCollection services);
 }
 
@@ -17,6 +17,7 @@ public abstract class PlatformModule : IPlatformModule
   public virtual string Handle => GetType().Name.Replace("Module", "");
   public virtual string Name => Handle;
   public virtual ModuleMenu Menu => ModuleMenu.Empty;
+  public virtual IReadOnlyList<Feature> Features => [];
 
   public virtual void ConfigureServices(IServiceCollection services)
   {
@@ -30,7 +31,7 @@ public abstract class PlatformModule<TDefinition> : PlatformModule
 
   public override string Handle => _definition.GetHandle();
   public override string Name => _definition.GetName();
-  public IReadOnlyList<Feature> Features => _definition.GetFeatures();
+  public override IReadOnlyList<Feature> Features => _definition.GetFeatures();
 }
 
 public sealed class ModuleCatalog
@@ -38,6 +39,7 @@ public sealed class ModuleCatalog
   public static ModuleCatalog Instance { get; set; } = new();
 
   private readonly Dictionary<string, Feature> _featuresByPath = new(StringComparer.OrdinalIgnoreCase);
+  private readonly Dictionary<string, Type> _servicesByPath = new(StringComparer.OrdinalIgnoreCase);
   private readonly List<IPlatformModule> _modules = [];
 
   public ModuleCatalog()
@@ -59,6 +61,11 @@ public sealed class ModuleCatalog
       {
         _featuresByPath[feat.Path] = feat;
         _featuresByPath[feat.Name] = feat;
+        if (feat.ServiceType != null)
+        {
+          _servicesByPath[feat.Path] = feat.ServiceType;
+          _servicesByPath[feat.Name] = feat.ServiceType;
+        }
       }
     }
 
@@ -68,12 +75,30 @@ public sealed class ModuleCatalog
       {
         _featuresByPath[node.Feature.Path] = node.Feature;
         _featuresByPath[node.Feature.Name] = node.Feature;
+        if (node.Feature.ServiceType != null)
+        {
+          _servicesByPath[node.Feature.Path] = node.Feature.ServiceType;
+          _servicesByPath[node.Feature.Name] = node.Feature.ServiceType;
+        }
       }
+    }
+
+    var serviceTypes = module.GetType().Assembly.GetTypes()
+      .Where(t => t is { IsClass: true, IsAbstract: false } &&
+                  (t.Name.EndsWith("GridService") || t.Name.EndsWith("FormService") || t.Name.EndsWith("Service")));
+    foreach (var st in serviceTypes)
+    {
+      var path = ServicePathResolver.Resolve(st);
+      _servicesByPath[path] = st;
+      _servicesByPath[st.Name] = st;
     }
   }
 
   public Feature? FindFeature(string path) =>
     _featuresByPath.GetValueOrDefault(path);
+
+  public Type? FindServiceType(string path) =>
+    _servicesByPath.GetValueOrDefault(path);
 
   public static IEnumerable<ModuleMenuNode> Flatten(IEnumerable<ModuleMenuNode> nodes)
   {

@@ -56,8 +56,7 @@ using (var scope = app.Services.CreateScope())
   var orgDb = scope.ServiceProvider.GetRequiredService<OrgDbContext>();
   var ecomDb = scope.ServiceProvider.GetRequiredService<EcomDbContext>();
 
-  await appDb.Database.EnsureCreatedAsync();
-  await orgDb.Database.EnsureCreatedAsync();
+  await ecomDb.Database.EnsureDeletedAsync();
   await ecomDb.Database.EnsureCreatedAsync();
 
   using (AsyncLocalTenantContext.Use(1))
@@ -146,8 +145,8 @@ using (var scope = app.Services.CreateScope())
     if (!await orgDb.OrgOrganization.AnyAsync())
     {
       orgDb.OrgOrganization.AddRange(
-        new OrgOrganization { Id = 1, TenantId = 1, Name = "Acme Trading Ukraine", ColorId = 1, CurrencyId = 1, IsActive = true },
-        new OrgOrganization { Id = 2, TenantId = 1, Name = "Acme Logistics Europe", ColorId = 2, CurrencyId = 3, IsActive = true }
+        new OrgOrganization { Id = 1, TenantId = 1, Code = "ACME-UA", Name = "Acme Trading Ukraine", ColorId = 1, CurrencyId = 1, IsActive = true },
+        new OrgOrganization { Id = 2, TenantId = 1, Code = "ACME-EU", Name = "Acme Logistics Europe", ColorId = 2, CurrencyId = 3, IsActive = true }
       );
       await orgDb.SaveChangesAsync();
     }

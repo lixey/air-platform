@@ -72,20 +72,26 @@ public static class PlatformHost
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
 
     builder.Services.AddSingleton<IPlatformModule>(module);
-    builder.Services.AddSingleton(sp =>
+    builder.Services.TryAddSingleton(sp =>
     {
       var catalog = new ModuleCatalog();
       foreach (var m in sp.GetServices<IPlatformModule>())
       {
         catalog.Register(m);
       }
+      ModuleCatalog.Instance = catalog;
       return catalog;
     });
     builder.Services.AddScoped<ScreenCatalog>();
     return builder;
   }
 
-  public static void MapPlatform(this WebApplication app) => app.MapPlatformEndpoints();
+  public static void MapPlatform(this WebApplication app)
+  {
+    var catalog = app.Services.GetRequiredService<ModuleCatalog>();
+    ModuleCatalog.Instance = catalog;
+    app.MapPlatformEndpoints();
+  }
 
   public static async Task RunAsync(
     string[] args,

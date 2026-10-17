@@ -140,14 +140,20 @@ public static class PlatformEndpoints
         ?? catalog.FindFeature($"demo/{serviceName}")
         ?? catalog.FindFeature(parts[0] + "/" + parts[1]);
 
-      if (feat?.ServiceType is null)
+      var serviceType = feat?.ServiceType
+        ?? catalog.FindServiceType(serviceName)
+        ?? catalog.FindServiceType(serviceName.Replace("demo/", ""))
+        ?? catalog.FindServiceType($"demo/{serviceName}")
+        ?? catalog.FindServiceType(parts[0] + "/" + parts[1]);
+
+      if (serviceType is null)
       {
         return Results.NotFound($"Service '{serviceName}' not found.");
       }
 
-      if (typeof(IGridService).IsAssignableFrom(feat.ServiceType))
+      if (typeof(IGridService).IsAssignableFrom(serviceType))
       {
-        var grid = (IGridService)services.GetRequiredService(feat.ServiceType);
+        var grid = (IGridService)services.GetRequiredService(serviceType);
 
         if (method == "get-data")
         {
@@ -194,7 +200,7 @@ public static class PlatformEndpoints
         }
 
         // Custom action dispatching on grid
-        var actionMethod = feat.ServiceType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+        var actionMethod = serviceType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
           .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
                                string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
         if (actionMethod != null)
@@ -231,9 +237,9 @@ public static class PlatformEndpoints
           return Results.Ok(resultTask ?? new GridActionDto { Outcome = MutationOutcome.Committed });
         }
       }
-      else if (typeof(IFormService).IsAssignableFrom(feat.ServiceType))
+      else if (typeof(IFormService).IsAssignableFrom(serviceType))
       {
-        var form = (IFormService)services.GetRequiredService(feat.ServiceType);
+        var form = (IFormService)services.GetRequiredService(serviceType);
 
         if (method == "get-data")
         {
@@ -257,7 +263,7 @@ public static class PlatformEndpoints
 
           var screen = await form.BuildScreenAsync(serviceName, id, ct);
           var entity = await form.GetModelAsync(id, ct);
-          var entityId = (entity as Air.Data.Entities.IEntity)?.Id;
+          var entityId = (entity as Air.Data.Entities.IEntity)?.Id ?? id;
           var ver = (entity as Air.Data.Entities.IHasVersion)?.Ver ?? 1;
 
           var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
