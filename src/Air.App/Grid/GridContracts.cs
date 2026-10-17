@@ -355,3 +355,28 @@ public class GridPickRequest : GridRequest
   public long PickedId { get; set; }
 }
 
+[UiContract]
+[ClientOptional]
+public class GridCellRequest : GridRequest
+{
+  public string Path { get; set; } = string.Empty;
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public int? Ver { get; set; }
+
+  public JsonElement Value { get; set; }
+}
+
+[UiContract]
+public class GridCellDto
+{
+  public object? Row { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(MutationOutcome))]
+  public string? Outcome { get; set; } = MutationOutcome.Committed;
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<MessageDto>? Warnings { get; set; }
+}
+

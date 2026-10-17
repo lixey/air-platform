@@ -322,6 +322,22 @@ public static class PlatformEndpoints
           return Results.Ok(result);
         }
 
+        if (method == "save-cell")
+        {
+          GridCellRequest? req = null;
+          if (httpRequest.ContentLength > 0)
+          {
+            try { req = await httpRequest.ReadFromJsonAsync<GridCellRequest>(cancellationToken: ct); } catch { }
+          }
+          req ??= new GridCellRequest();
+          if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal)) req.Id = idVal;
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
+
+          var result = await grid.SaveCellAsync(req, services, ct);
+          return Results.Ok(result);
+        }
+
         if (method == "move-status")
         {
           GridRequest? req = null;

@@ -168,14 +168,14 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   public GridColumn<TProp> AsMoney(string? currency = null)
   {
     dto.Type = UiFieldType.Number;
-    dto.Cell = new GridCellNumberModel();
+    dto.Cell = new GridCellMoneyModel { Currency = currency, Decimals = 2 };
     return this;
   }
 
   public GridColumn<TProp> AsPercent()
   {
     dto.Type = UiFieldType.Number;
-    dto.Cell = new GridCellNumberModel();
+    dto.Cell = new GridCellPercentModel { Decimals = 2 };
     return this;
   }
 
@@ -184,9 +184,41 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> Stepper(bool hasStepper = true)
+  {
+    dto.NumberEdit ??= new GridNumberEditDto();
+    dto.NumberEdit.HasStepper = hasStepper;
+    return this;
+  }
+
+  public GridColumn<TProp> Step(double step)
+  {
+    dto.NumberEdit ??= new GridNumberEditDto();
+    dto.NumberEdit.Step = step;
+    return this;
+  }
+
+  public GridColumn<TProp> Min(double min)
+  {
+    dto.NumberEdit ??= new GridNumberEditDto();
+    dto.NumberEdit.Min = min;
+    return this;
+  }
+
+  public GridColumn<TProp> Max(double max)
+  {
+    dto.NumberEdit ??= new GridNumberEditDto();
+    dto.NumberEdit.Max = max;
+    return this;
+  }
+
   public GridColumn<TProp> Editable(bool isEditable = true)
   {
     dto.IsEditable = isEditable;
+    if (isEditable && dto.NumberEdit == null && dto.Cell is GridCellNumberModel or GridCellMoneyModel or GridCellPercentModel)
+    {
+      dto.NumberEdit = new GridNumberEditDto { Step = 1, HasStepper = false };
+    }
     return this;
   }
 

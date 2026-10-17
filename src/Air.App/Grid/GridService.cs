@@ -24,6 +24,7 @@ public interface IGridService
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
+  Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridService
@@ -728,6 +729,111 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     {
       Outcome = MutationOutcome.Committed,
       Deleted = entities.Count
+    };
+  }
+
+  public virtual async Task<object?> ReadRowAsync(long id, CancellationToken ct = default)
+  {
+    var parent = new Parent();
+    SetParent(parent);
+
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+
+    var cols = new Columns<TRow>();
+    SetColumns(cols);
+
+    var query = BaseQuery(db).Where(e => e.Id == id);
+    if (ParentId.HasValue && parent.FilterFunc != null)
+    {
+      query = parent.FilterFunc(query, ParentId.Value);
+    }
+
+    var entityType = typeof(TEntity);
+    foreach (var col in cols.List)
+    {
+      if (col.ReferenceService != null && !string.IsNullOrEmpty(col.Path))
+      {
+        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
+        {
+          try
+          {
+            query = query.Include(prop.Name);
+          }
+          catch { }
+        }
+      }
+    }
+
+    if (queryDeclaration.Selector != null)
+    {
+      var row = await query.Select(queryDeclaration.Selector).FirstOrDefaultAsync(ct);
+      return row is null ? null : ShapeRow(row, cols.List);
+    }
+
+    var entity = await query.FirstOrDefaultAsync(ct);
+    return entity is null ? null : ShapeRow((entity as TRow)!, cols.List);
+  }
+
+  public virtual async Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default)
+  {
+    ParentId = request.ParentId;
+    if (request.Id is not > 0)
+    {
+      throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
+    }
+
+    var cols = new Columns<TRow>();
+    SetColumns(cols);
+
+    var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase));
+    if (col == null || !col.IsEditable)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
+      };
+    }
+
+    Type? formType = cols.FormServiceType;
+    if (formType == null && FormServicePath != null)
+    {
+      formType = ModuleCatalog.Instance.FindServiceType(FormServicePath);
+    }
+    if (formType == null)
+    {
+      var candidateFormName = GetType().Name.Replace("GridService", "FormService");
+      formType = GetType().Assembly.GetType(GetType().Namespace + "." + candidateFormName)
+        ?? GetType().Assembly.GetTypes().FirstOrDefault(t => t.Name == candidateFormName);
+    }
+
+    if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
+    {
+      var form = (IFormService)services.GetRequiredService(formType);
+      var formReq = new FormRequest
+      {
+        Id = request.Id,
+        Ver = request.Ver,
+        ParentId = request.ParentId,
+        ParentService = request.ParentService
+      };
+      return await form.SaveCellAsync(request.Id.Value, request.Path, request.Value, formReq, token => ReadRowAsync(request.Id.Value, token), ct);
+    }
+
+    var entity = await db.Set<TEntity>().FindAsync([request.Id.Value], ct)
+      ?? throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
+
+    FormService<TEntity, TEntity>.SetPropertyValue(entity, request.Path, request.Value);
+    db.Set<TEntity>().Update(entity);
+    await db.SaveChangesAsync(ct);
+
+    var updatedRow = await ReadRowAsync(request.Id.Value, ct);
+    return new GridCellDto
+    {
+      Row = updatedRow,
+      Outcome = MutationOutcome.Committed
     };
   }
 }

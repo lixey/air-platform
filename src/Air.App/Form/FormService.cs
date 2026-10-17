@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using Air.App.Components;
+using Air.App.Grid;
 using Air.App.Localization;
 using Air.App.Modules;
 using Air.App.Nav;
@@ -9,6 +11,7 @@ using Air.App.Overlay;
 using Air.App.Panels;
 using Air.App.Screens;
 using Air.Data;
+using Air.Data.Contracts;
 using Air.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +30,7 @@ public interface IFormService
   Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);
   Task DeleteAsync(long id, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, CancellationToken ct = default);
+  Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
 }
 
 public class FormLoadContext<TEntity, TInput>
@@ -792,6 +796,206 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     await db.SaveChangesAsync(ct);
     CopyMatchingProperties(entity, input);
     return input;
+  }
+
+  public virtual async Task<GridCellDto> SaveCellAsync(
+    long id,
+    string path,
+    JsonElement value,
+    FormRequest request,
+    Func<CancellationToken, Task<object?>> readRow,
+    CancellationToken ct = default)
+  {
+    Request = request;
+    IsNew = false;
+
+    var parent = new Parent();
+    SetParent(parent);
+
+    var entity = await db.Set<TEntity>().FindAsync([id], ct)
+      ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
+    if (parent.BoundProperty != null)
+    {
+      var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
+      if (storedParentId.HasValue && !Request.ParentId.HasValue)
+      {
+        Request.ParentId = storedParentId.Value;
+      }
+    }
+
+    var input = new TInput();
+    CopyMatchingProperties(entity, input);
+
+    var hooks = new Hooks();
+    SetHooks(hooks);
+
+    var loadCtx = new FormLoadContext<TEntity, TInput>
+    {
+      Entity = entity,
+      Input = input,
+      IsNew = false
+    };
+
+    foreach (var h in hooks.AfterLoadActions)
+    {
+      await h(loadCtx, ct);
+    }
+
+    SetPropertyValue(input, path, value);
+    SetPropertyValue(entity, path, value);
+
+    var saveCtx = new FormSaveContext<TEntity, TInput>
+    {
+      Entity = entity,
+      Input = input,
+      IsNew = false
+    };
+
+    foreach (var h in hooks.BeforeValidateActions)
+    {
+      h(saveCtx);
+    }
+
+    var rules = new Rules();
+    SetRules(rules);
+
+    var ruleCtx = new RuleContext<TInput>
+    {
+      Target = input,
+      SaveContext = new FormSaveContext<object, TInput> { Entity = entity, Input = input, IsNew = false }
+    };
+
+    foreach (var r in rules.Validators)
+    {
+      await r(ruleCtx.SaveContext, ruleCtx, ct);
+    }
+
+    if (ruleCtx.Failures.Count > 0)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = ruleCtx.Failures.Select(f => new MessageDto { Detail = f, Path = path, Type = MessageType.Error }).ToList()
+      };
+    }
+
+    foreach (var h in hooks.BeforeSaveActions)
+    {
+      await h(saveCtx, ct);
+    }
+
+    db.Set<TEntity>().Update(entity);
+    await db.SaveChangesAsync(ct);
+
+    foreach (var h in hooks.AfterSaveActions)
+    {
+      await h(saveCtx, ct);
+    }
+    await db.SaveChangesAsync(ct);
+
+    var row = await readRow(ct);
+    return new GridCellDto
+    {
+      Row = row,
+      Outcome = MutationOutcome.Committed
+    };
+  }
+
+  internal static void SetPropertyValue(object target, string path, JsonElement val)
+  {
+    if (target == null || string.IsNullOrEmpty(path)) return;
+    var current = target;
+    var parts = path.Split('.');
+    for (int i = 0; i < parts.Length - 1; i++)
+    {
+      var p = current.GetType().GetProperty(parts[i], BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+      if (p == null) return;
+      var next = p.GetValue(current);
+      if (next == null) return;
+      current = next;
+    }
+
+    var prop = current.GetType().GetProperty(parts[^1], BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+    if (prop == null || !prop.CanWrite) return;
+
+    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+    object? converted = null;
+
+    if (val.ValueKind == JsonValueKind.Object && (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)))
+    {
+      if (val.TryGetProperty("id", out var idElem))
+      {
+        val = idElem;
+      }
+    }
+
+    if (val.ValueKind == JsonValueKind.Null || val.ValueKind == JsonValueKind.Undefined)
+    {
+      converted = null;
+    }
+    else if (targetType == typeof(string))
+    {
+      converted = val.ValueKind == JsonValueKind.String ? val.GetString() : val.GetRawText();
+    }
+    else if (targetType == typeof(decimal))
+    {
+      converted = val.ValueKind == JsonValueKind.Number ? val.GetDecimal() : decimal.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var d) ? d : 0m;
+    }
+    else if (targetType == typeof(double))
+    {
+      converted = val.ValueKind == JsonValueKind.Number ? val.GetDouble() : double.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var d) ? d : 0d;
+    }
+    else if (targetType == typeof(float))
+    {
+      converted = val.ValueKind == JsonValueKind.Number ? val.GetSingle() : float.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var f) ? f : 0f;
+    }
+    else if (targetType == typeof(int))
+    {
+      converted = val.ValueKind == JsonValueKind.Number ? val.GetInt32() : int.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var i) ? i : 0;
+    }
+    else if (targetType == typeof(long))
+    {
+      converted = val.ValueKind == JsonValueKind.Number ? val.GetInt64() : long.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var l) ? l : 0L;
+    }
+    else if (targetType == typeof(short))
+    {
+      converted = val.ValueKind == JsonValueKind.Number ? val.GetInt16() : short.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var s) ? s : (short)0;
+    }
+    else if (targetType == typeof(bool))
+    {
+      converted = val.ValueKind switch
+      {
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.String => bool.TryParse(val.GetString(), out var b) && b,
+        _ => false
+      };
+    }
+    else if (targetType == typeof(DateTime))
+    {
+      converted = val.GetDateTime();
+    }
+    else if (targetType == typeof(DateOnly))
+    {
+      converted = DateOnly.Parse(val.GetString()!);
+    }
+    else if (targetType == typeof(TimeOnly))
+    {
+      converted = TimeOnly.Parse(val.GetString()!);
+    }
+    else if (targetType.IsEnum)
+    {
+      converted = val.ValueKind == JsonValueKind.Number
+        ? Enum.ToObject(targetType, val.GetInt64())
+        : Enum.Parse(targetType, val.GetString()!, true);
+    }
+    else
+    {
+      converted = JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType);
+    }
+
+    prop.SetValue(current, converted);
   }
 
   public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
