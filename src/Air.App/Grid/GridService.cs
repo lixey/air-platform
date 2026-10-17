@@ -126,6 +126,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public Query SortBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
     public Query SortByDescending<TProp>(Expression<Func<TRow, TProp>> expr) => this;
     public Query ThenBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
+    public Query ThenByDescending<TProp>(Expression<Func<TRow, TProp>> expr) => this;
     public Query SearchBy(params Expression<Func<TRow, object?>>[] exprs) => this;
     public InitialFilterBuilder<TProp> InitialFilter<TProp>(Expression<Func<TRow, TProp>> expr) => new(this);
 
