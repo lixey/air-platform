@@ -87,6 +87,17 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       Filters.Add(predicate);
       return this;
     }
+
+    public Query SortBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
+    public Query SortByDescending<TProp>(Expression<Func<TRow, TProp>> expr) => this;
+    public Query ThenBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
+    public Query SearchBy(params Expression<Func<TRow, object?>>[] exprs) => this;
+    public InitialFilterBuilder<TProp> InitialFilter<TProp>(Expression<Func<TRow, TProp>> expr) => new(this);
+
+    public sealed class InitialFilterBuilder<TProp>(Query query)
+    {
+      public Query In(params TProp[] values) => query;
+    }
   }
 
   protected virtual void SetQuery(Query query) { }

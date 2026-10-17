@@ -123,6 +123,26 @@ public sealed class FormElement<TProp>(FormElementDto dto)
   public FormElement<TProp> Placeholder(string placeholder) { dto.Placeholder = placeholder; return this; }
   public FormElement<TProp> Tab(string tab) { dto.Tab = tab; return this; }
 
+  public FormElement<TProp> Range(double min, double max)
+  {
+    dto.Constraints.Min = System.Text.Json.JsonSerializer.SerializeToElement(min);
+    dto.Constraints.Max = System.Text.Json.JsonSerializer.SerializeToElement(max);
+    return this;
+  }
+
+  public FormElement<TProp> AsPercent()
+  {
+    dto.Model = new FormPercentModel();
+    return this;
+  }
+
+  public FormElement<TProp> AsMoney(string? currency = null)
+  {
+    dto.Type = UiFieldType.Number;
+    dto.Model = new FormNumberModel();
+    return this;
+  }
+
   public FormElement<TProp> AsTextarea()
   {
     dto.Model = new FormTextareaModel();

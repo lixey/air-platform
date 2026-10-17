@@ -87,6 +87,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
   protected bool IsNew { get; set; }
   protected virtual bool IsReadOnly => Feature.IsReadOnly;
   protected FormRequest Request { get; set; } = new();
+  public sealed class Parent
+  {
+    public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false) { }
+    public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false) { }
+  }
+
+  protected virtual void SetParent(Parent parent) { }
 
   public sealed class Hooks
   {

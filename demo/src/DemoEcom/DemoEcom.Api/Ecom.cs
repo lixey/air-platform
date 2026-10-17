@@ -1,11 +1,3 @@
-using Air.App.Modules;
-using DemoEcom.CustomerOrder;
-using DemoEcom.Data;
-using DemoEcom.Doc;
-using DemoEcom.Money;
-using DemoEcom.Sales;
-using DemoEcom.WarehouseDoc;
-
 namespace DemoEcom;
 
 [Module(EcomData.ModuleHandle, Name = "E-Commerce")]
@@ -27,12 +19,7 @@ public sealed class Ecom : ModuleDefinition<Ecom>
   public static readonly Feature OutgoingPayment = Feature<EcomOutgoingPaymentGridService>();
   public static readonly Feature MoneyBalance = Feature<EcomMoneyBalanceGridService>().ReadOnly();
   public static readonly Feature MoneyMove = Feature<EcomMoneyMoveGridService>().ReadOnly();
-  public static readonly Feature Doc = Feature<EcomDocGridService>().ReadOnly();
+  public static readonly Feature Doc = Feature<Doc.EcomDocGridService>().ReadOnly();
   public static readonly Feature DocType = Feature<EcomDocTypeGridService>().ReadOnly();
   public static readonly Feature DocStatus = Feature<EcomDocStatusGridService>().ReadOnly();
-
-  public static readonly Feature CustomerOrderForm = Feature<EcomCustomerOrderFormService>();
-  public static readonly Feature CustomerOrderLineForm = Feature<EcomCustomerOrderLineFormService>();
-  public static readonly Feature SalesInvoiceForm = Feature<EcomSalesInvoiceFormService>();
-  public static readonly Feature StockReceiptForm = Feature<EcomStockReceiptFormService>();
 }
