@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\DemoEcom.Data\DemoEcom.Data.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Air.App\Air.App.csproj" />
+    <ProjectReference Include="..\..\DemoOrg\DemoOrg.Api\DemoOrg.Api.csproj" />
+    <ProjectReference Include="..\..\DemoApp\DemoApp.Api\DemoApp.Api.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,85 @@
+{
+  "name": "demo",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "app",
+  "sourceRoot": "apps/demo/src",
+  "tags": [],
+  "implicitDependencies": ["air-ui"],
+  "targets": {
+    "lint": {
+      "options": {
+        "args": ["--max-warnings", "0"]
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "commands": ["tsc --noEmit -p apps/demo/tsconfig.app.json", "tsc --noEmit -p apps/demo/tsconfig.spec.json"],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "@angular/build:unit-test",
+      "cache": false,
+      "options": {
+        "runner": "vitest",
+        "tsConfig": "apps/demo/tsconfig.spec.json",
+        "watch": false
+      }
+    },
+    "build": {
+      "executor": "@angular/build:application",
+      "cache": false,
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/demo",
+        "browser": "apps/demo/src/main.ts",
+        "tsConfig": "apps/demo/tsconfig.app.json",
+        "preserveSymlinks": true,
+        "styles": ["apps/demo/src/styles.css"]
+      },
+      "configurations": {
+        "production": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "1mb",
+              "maximumError": "2mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "10kb",
+              "maximumError": "20kb"
+            }
+          ],
+          "outputHashing": "all"
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "port": 4300,
+        "proxyConfig": "apps/demo/proxy.conf.cjs"
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "demo:build:production"
+        },
+        "development": {
+          "buildTarget": "demo:build:development"
+        }
+      }
+    }
+  }
+}

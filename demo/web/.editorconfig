@@ -1,0 +1,29 @@
+# The web workspace's editor settings. WebStorm opens this folder as a project, and a file opened through the
+# .air-ui link takes these settings too, so this file is a root. Prettier formats the code (.prettierrc); these
+# settings keep what the editor types and generates in step with it.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+tab_width = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 140
+
+[*.{js,mjs,cjs,ts,mts,cts}]
+quote_type = single
+ij_javascript_use_double_quotes = false
+ij_javascript_force_quote_style = true
+ij_javascript_spaces_within_imports = true
+ij_typescript_use_double_quotes = false
+ij_typescript_force_quote_style = true
+ij_typescript_spaces_within_imports = true
+
+[*.css]
+quote_type = single
+
+[*.html]
+ij_html_quote_style = double

@@ -1,0 +1,7 @@
+# Prettier also skips what .gitignore names; the Nx and Angular lines stay verbatim because their generators look for them.
+/dist
+/coverage
+/.nx/cache
+/.nx/workspace-data
+.angular
+package-lock.json

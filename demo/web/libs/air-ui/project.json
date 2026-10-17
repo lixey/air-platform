@@ -1,0 +1,33 @@
+{
+  "name": "air-ui",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "libs/air-ui",
+  "sourceRoot": ".air-ui/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "eslint .air-ui/src .air-ui/tests --config libs/air-ui/eslint.config.mjs --max-warnings 0"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "commands": ["tsc -p .air-ui/tsconfig.spec.json --noEmit", "ngc -p .air-ui/tsconfig.lib.json --noEmit"],
+        "parallel": false
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "vitest run --config libs/air-ui/vite.config.mts"
+      }
+    }
+  }
+}

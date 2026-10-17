@@ -1,0 +1,11 @@
+global using System.Collections;
+global using System.Linq.Expressions;
+global using System.Reflection;
+global using System.Text.Json;
+global using Microsoft.EntityFrameworkCore;
+global using Microsoft.EntityFrameworkCore.Query;
+global using Microsoft.Extensions.DependencyInjection;
+global using Air.Data.Contracts;
+global using Air.Data.Entities;
+global using Air.Data.Querying;
+global using Air.Data.Tenancy;

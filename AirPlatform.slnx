@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Air.Data/Air.Data.csproj" />
+    <Project Path="src/Air.Data.Postgres/Air.Data.Postgres.csproj" />
+    <Project Path="src/Air.App/Air.App.csproj" />
+    <Project Path="src/Air.UiContracts/Air.UiContracts.csproj" />
+  </Folder>
+  <Folder Name="/demo/">
+    <Project Path="demo/src/DemoApp/DemoApp.Data/DemoApp.Data.csproj" />
+    <Project Path="demo/src/DemoApp/DemoApp.Api/DemoApp.Api.csproj" />
+    <Project Path="demo/src/DemoOrg/DemoOrg.Data/DemoOrg.Data.csproj" />
+    <Project Path="demo/src/DemoOrg/DemoOrg.Api/DemoOrg.Api.csproj" />
+    <Project Path="demo/src/DemoEcom/DemoEcom.Data/DemoEcom.Data.csproj" />
+    <Project Path="demo/src/DemoEcom/DemoEcom.Api/DemoEcom.Api.csproj" />
+    <Project Path="demo/src/Demo.Api/Demo.Api.csproj" />
+  </Folder>
+</Solution>

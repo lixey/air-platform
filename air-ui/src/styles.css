@@ -1,0 +1,813 @@
+@import './_theme.css';
+@import './_base.css';
+@source './';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* The size of every icon, and the bleed that lets it sit on the line it belongs to. */
+@theme {
+  --spacing-icon: 1.3rem;
+  --spacing-icon-bleed: 0.15rem;
+}
+
+@layer components {
+  i > svg {
+    stroke-width: 1.5;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+    @apply stroke-current fill-none w-auto h-icon max-w-icon -m-icon-bleed;
+    @apply text-(--spacing-icon) leading-(--spacing-icon);
+  }
+}
+
+@layer base {
+  :root {
+    --alpha-constant: 90%;
+  }
+}
+
+/*
+ * The look of the product, in one place.
+ *
+ * Colour is named by role, never by a palette step. Panels are solid cards floating on a
+ * tinted ground: their own edge matches their surface, so what separates them is the page
+ * showing through the gaps, not a drawn line.
+ *
+ * Every role is defined twice — once here for the light theme and once under `.dark` —
+ * which is why the templates carry no `dark:` classes at all: the `.dark` class
+ * ThemeService puts on the document is what swaps them.
+ *
+ * The chrome roles read the brand ramp, so an application retints the whole product, both
+ * themes, by declaring its own ramp. Only the steps the library's own ramp declares may be
+ * used here (50, 100, 200 … 950). An application is free to add intermediate steps, but a
+ * role must never depend on one, or the library breaks for an application without it.
+ *
+ * `accent`, `field-hover`, `field-focus` and `warning` are deliberately not brand: a focus ring,
+ * a hovered or focused field and a warning carry meaning rather than identity, and keep their own
+ * hues in both themes.
+ */
+
+:root {
+  /* What `light-dark()` reads, and what native controls and scrollbars follow. */
+  color-scheme: light;
+  /* The ground behind the cards. The value most likely to want retuning per brand. */
+  --panel-page: var(--color-brand-400);
+  /*
+   * The surface ladder. `surface` is a panel's own card and the ground under the leaves of a
+   * tree; the rest step away from it in order, `surface-4` being the ground a whole layered
+   * block sits on. In this theme they darken, so a container reads as further back than what
+   * it holds.
+   */
+  --panel-surface: var(--color-brand-50);
+  --panel-surface-1: var(--color-brand-50);
+  --panel-surface-2: var(--color-brand-100);
+  --panel-surface-3: var(--color-brand-150);
+  --panel-surface-4: var(--color-brand-200);
+  /* A panel's own border: its surface, so the card reads as one shape. */
+  --panel-edge: var(--color-brand-50);
+  /* Hairlines *inside* a panel's content. */
+  --panel-line: var(--color-brand-200);
+  --panel-ink: var(--color-brand-900);
+  --panel-muted: var(--color-brand-550);
+  --panel-hover: var(--color-brand-200);
+  /* The selected row, and the text that has to stay readable on it. */
+  --panel-active: var(--color-brand-500);
+  --panel-on-active: var(--color-brand-50);
+  /* What dims the page under a blocking overlay. Black in both themes, darker in dark. */
+  --panel-scrim: rgb(0 0 0 / 0.25);
+  /*
+   * A window that floats over the page — a dialog, a drawer, a menu — is framed and shaded in
+   * the brand: a step apart from both the card's surface and the scrimmed page, and a shadow
+   * that is the brand's own tint rather than a grey. A card on the page gets neither.
+   */
+  --panel-frame: var(--color-brand-400);
+  --panel-shade: color-mix(in oklch, var(--color-brand-500) 20%, transparent);
+  --panel-accent: var(--color-sky-600);
+  --panel-warning: var(--color-amber-700);
+  /*
+   * A field and a checkbox: their ground; a field's border at rest, pale by the owner's choice and a declared exception of
+   * the contrast gate; its border under the pointer, blue in both scales; the border of a focused field, fuchsia in
+   * both scales so the field with the caret is found at once; the border of an unchecked box, which alone must bound
+   * it at 3:1 on the ground; the fill of a checked box: `checked`, blue, for a form's and any control's outside a grid,
+   * `row-checked`, green, for a grid's selection column, its header and its checkbox cells; and `checked-mixed`, slate,
+   * for a half-checked box wherever it is drawn. The three read the same steps in the frame and in the work area.
+   * `mark` is what the eye must find: the pager's total, the selection count, an active sort or filter.
+   */
+  --panel-field: white;
+  --panel-field-edge: var(--color-brand-200);
+  --panel-field-hover: var(--color-blue-500);
+  --panel-field-focus: var(--color-fuchsia-500);
+  --panel-checkbox-edge: var(--color-brand-400);
+  --panel-checked: var(--color-blue-500);
+  --panel-row-checked: var(--color-green-600);
+  --panel-checked-mixed: var(--color-slate-500);
+  --panel-mark: var(--color-red-700);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --panel-page: var(--color-brand-800);
+  /* Here the ladder lightens away from the card and then darkens past it, so that the ground
+     a block sits on is still the one furthest back. */
+  --panel-surface: var(--color-brand-700);
+  --panel-surface-1: var(--color-brand-700);
+  --panel-surface-2: var(--color-brand-650);
+  --panel-surface-3: var(--color-brand-600);
+  --panel-surface-4: var(--color-brand-750);
+  /* Lighter than the lightest ground a panel's content may hold (the third rung), so the
+     ring stays a ring. When it matched a rung it vanished wherever that rung touched the
+     edge, which is the whole failure it exists to avoid. */
+  --panel-edge: var(--color-brand-550);
+  /* Lighter than the surface it is drawn on; a hairline that matches the surface is none. */
+  --panel-line: var(--color-brand-600);
+  --panel-ink: var(--color-brand-200);
+  --panel-muted: var(--color-brand-250);
+  --panel-hover: var(--color-brand-600);
+  --panel-active: var(--color-brand-500);
+  --panel-on-active: var(--color-brand-50);
+  --panel-scrim: rgb(0 0 0 / 0.5);
+  --panel-frame: var(--color-brand-500);
+  --panel-shade: color-mix(in oklch, var(--color-brand-950) 35%, transparent);
+  --panel-accent: var(--color-sky-400);
+  --panel-warning: var(--color-amber-400);
+  --panel-field: var(--color-brand-700);
+  --panel-field-edge: var(--color-brand-600);
+  --panel-field-hover: var(--color-blue-400);
+  --panel-field-focus: var(--color-fuchsia-400);
+  --panel-checkbox-edge: var(--color-brand-450);
+  --panel-checked: var(--color-blue-400);
+  --panel-row-checked: var(--color-green-500);
+  --panel-checked-mixed: var(--color-slate-350);
+  --panel-mark: var(--color-red-300);
+  /* The frame's links take the dark steps the work area's do. */
+  --grid-link: var(--color-blue-300);
+  --grid-link-hover: var(--color-red-300);
+}
+
+/*
+ * The work area is slate, whatever the brand.
+ *
+ * The frame — navigation, tabs, mega menu, the login page — reads the brand ramp above. What the
+ * routed outlet draws, and every overlay with the panels inside it, reads a slate scale instead,
+ * so no brand hue stands between the user and the data: `ui-work` on the outlet's host and on the
+ * overlay's card is what says so, and every role beneath it resolves to slate. A template names the
+ * same role in both places. The flush seams and the compact borders follow, being `line` and `edge`.
+ * The dark steps are a first guess on the half-step ramp.
+ *
+ * Every text reads WCAG AA: the blue link that turns red under the pointer and the date picker's days included. The
+ * declared exceptions of criterion 6.11 of the platform review are the owner's pale tones: the field's edge, the white
+ * text of the cell that opens a form on its light blue, today's orange outline in the date picker and a light grid cell
+ * painted in its hue. They read below WCAG AA by the owner's choice, and the contrast gate holds each to its own
+ * declared floor, so a retint that falls under the floor still fails.
+ */
+.ui-work {
+  --panel-page: var(--color-slate-100);
+  --panel-surface: white;
+  --panel-surface-1: var(--color-slate-50);
+  --panel-surface-2: var(--color-slate-200);
+  --panel-surface-3: var(--color-slate-250);
+  --panel-surface-4: var(--color-slate-300);
+  --panel-edge: var(--color-slate-400);
+  --panel-line: var(--color-slate-300);
+  --panel-ink: var(--color-slate-600);
+  /*
+   * Half a step darker than slate 550, the one role outside the ramp (ui/theme): the checkbox tree's note reads AA on
+   * surface-3.
+   */
+  --panel-muted: oklch(0.49 0.045 257.3);
+  --panel-hover: var(--color-slate-200);
+  --panel-active: var(--color-slate-500);
+  --panel-on-active: white;
+  --panel-frame: var(--color-slate-400);
+  --panel-shade: color-mix(in oklch, var(--color-slate-500) 25%, transparent);
+  --panel-field: white;
+  --panel-field-edge: var(--color-slate-300);
+  --panel-field-focus: var(--color-fuchsia-500);
+  --panel-checkbox-edge: var(--color-slate-450);
+  /* The grid's rows: a stripe, a hovered row, a selected row and its second step, the active row, a hovered cell's ring. */
+  --grid-row-stripe: var(--color-slate-100);
+  --grid-row-hover: var(--color-blue-100);
+  --grid-row-selected: var(--color-green-100);
+  --grid-row-selected-2: var(--color-green-50);
+  --grid-row-active: var(--color-orange-100);
+  --grid-cell-ring: var(--color-blue-500);
+  --grid-action-nav: var(--color-amber-100);
+  /* A link of a cell and its hovered colour; the cell that opens a form under the pointer, and its text there. */
+  --grid-link: var(--color-blue-700);
+  --grid-link-hover: var(--color-red-700);
+  --grid-cell-hover: var(--color-blue-400);
+  --grid-on-cell-hover: white;
+  /*
+   * The date picker's cells, each state with a hover of its own: a plain day and its blue hover, a day of another month
+   * lighter, a weekend day red with a pale red hover, today's thin orange outline and bold orange text on a faint orange
+   * ground that turns a stronger orange under the pointer,
+   * the value blue with white text turning a darker blue. The months, the years, the hours and the minutes take them too.
+   */
+  --picker-day: var(--color-slate-700);
+  --picker-day-hover: var(--color-blue-100);
+  --picker-day-outside: var(--color-slate-550);
+  --picker-day-weekend: var(--color-red-700);
+  --picker-day-weekend-hover: var(--color-red-50);
+  --picker-day-today: var(--color-orange-700);
+  --picker-day-today-edge: var(--color-orange-400);
+  --picker-day-today-ground: var(--color-orange-50);
+  --picker-day-today-hover: var(--color-orange-100);
+  --picker-day-value: var(--color-blue-600);
+  --picker-day-value-hover: var(--color-blue-700);
+  --picker-on-day-value: white;
+}
+
+.dark .ui-work {
+  --panel-page: var(--color-slate-900);
+  --panel-surface: var(--color-slate-800);
+  --panel-surface-1: var(--color-slate-750);
+  --panel-surface-2: var(--color-slate-700);
+  --panel-surface-3: var(--color-slate-650);
+  --panel-surface-4: var(--color-slate-850);
+  --panel-edge: var(--color-slate-600);
+  --panel-line: var(--color-slate-650);
+  --panel-ink: var(--color-slate-100);
+  --panel-muted: var(--color-slate-350);
+  --panel-hover: var(--color-slate-700);
+  --panel-active: var(--color-slate-500);
+  --panel-on-active: var(--color-slate-50);
+  --panel-frame: var(--color-slate-600);
+  --panel-shade: color-mix(in oklch, var(--color-slate-950) 40%, transparent);
+  --panel-field: var(--color-slate-800);
+  --panel-field-edge: var(--color-slate-600);
+  --panel-field-focus: var(--color-fuchsia-400);
+  --panel-checkbox-edge: var(--color-slate-500);
+  --grid-row-stripe: var(--color-slate-750);
+  --grid-row-hover: color-mix(in oklch, var(--color-blue-900) 40%, transparent);
+  --grid-row-selected: color-mix(in oklch, var(--color-green-900) 40%, transparent);
+  --grid-row-selected-2: color-mix(in oklch, var(--color-green-900) 25%, transparent);
+  --grid-row-active: color-mix(in oklch, var(--color-orange-900) 40%, transparent);
+  --grid-cell-ring: var(--color-blue-400);
+  --grid-action-nav: color-mix(in oklch, var(--color-amber-900) 40%, transparent);
+  --grid-link: var(--color-blue-300);
+  --grid-link-hover: var(--color-red-300);
+  --grid-cell-hover: var(--color-blue-500);
+  --grid-on-cell-hover: white;
+  --picker-day: var(--color-slate-100);
+  --picker-day-hover: color-mix(in oklch, var(--color-blue-900) 40%, transparent);
+  --picker-day-outside: var(--color-slate-400);
+  --picker-day-weekend: var(--color-red-400);
+  --picker-day-weekend-hover: color-mix(in oklch, var(--color-red-900) 40%, transparent);
+  --picker-day-today: var(--color-orange-400);
+  --picker-day-today-edge: var(--color-orange-400);
+  --picker-day-today-ground: color-mix(in oklch, var(--color-orange-900) 25%, transparent);
+  --picker-day-today-hover: color-mix(in oklch, var(--color-orange-900) 50%, transparent);
+  --picker-day-value: var(--color-blue-600);
+  --picker-day-value-hover: var(--color-blue-700);
+  --picker-on-day-value: white;
+}
+
+:root {
+  /* Outside the work area the grid and the picker roles still resolve, to the same light steps, but for the light
+     link's hover: a step darker, to read on the frame's `hover`. The dark theme's links take their dark steps
+     (`:root.dark`). */
+  --grid-row-stripe: var(--color-slate-100);
+  --grid-row-hover: var(--color-blue-100);
+  --grid-row-selected: var(--color-green-100);
+  --grid-row-selected-2: var(--color-green-50);
+  --grid-row-active: var(--color-orange-100);
+  --grid-cell-ring: var(--color-blue-500);
+  --grid-action-nav: var(--color-amber-100);
+  --grid-link: var(--color-blue-700);
+  --grid-link-hover: var(--color-red-800);
+  --grid-cell-hover: var(--color-blue-400);
+  --grid-on-cell-hover: white;
+  --picker-day: var(--color-slate-700);
+  --picker-day-hover: var(--color-blue-100);
+  --picker-day-outside: var(--color-slate-550);
+  --picker-day-weekend: var(--color-red-700);
+  --picker-day-weekend-hover: var(--color-red-50);
+  --picker-day-today: var(--color-orange-700);
+  --picker-day-today-edge: var(--color-orange-400);
+  --picker-day-today-ground: var(--color-orange-50);
+  --picker-day-today-hover: var(--color-orange-100);
+  --picker-day-value: var(--color-blue-600);
+  --picker-day-value-hover: var(--color-blue-700);
+  --picker-on-day-value: white;
+}
+
+/*
+ * `inline` makes Tailwind emit the variable itself rather than a copy of its value, so
+ * `bg-surface` follows the theme instead of freezing whichever one compiled first.
+ */
+@theme inline {
+  --color-page: var(--panel-page);
+  --color-surface: var(--panel-surface);
+  --color-surface-1: var(--panel-surface-1);
+  --color-surface-2: var(--panel-surface-2);
+  --color-surface-3: var(--panel-surface-3);
+  --color-surface-4: var(--panel-surface-4);
+  --color-edge: var(--panel-edge);
+  --color-line: var(--panel-line);
+  --color-ink: var(--panel-ink);
+  --color-muted: var(--panel-muted);
+  --color-hover: var(--panel-hover);
+  --color-active: var(--panel-active);
+  --color-on-active: var(--panel-on-active);
+  --color-scrim: var(--panel-scrim);
+  --color-frame: var(--panel-frame);
+  --color-shade: var(--panel-shade);
+  --color-accent: var(--panel-accent);
+  --color-warning: var(--panel-warning);
+  --color-field: var(--panel-field);
+  --color-field-edge: var(--panel-field-edge);
+  --color-field-hover: var(--panel-field-hover);
+  --color-field-focus: var(--panel-field-focus);
+  --color-checkbox-edge: var(--panel-checkbox-edge);
+  --color-checked: var(--panel-checked);
+  --color-row-checked: var(--panel-row-checked);
+  --color-checked-mixed: var(--panel-checked-mixed);
+  --color-mark: var(--panel-mark);
+  --color-row-stripe: var(--grid-row-stripe);
+  --color-row-hover: var(--grid-row-hover);
+  --color-row-selected: var(--grid-row-selected);
+  --color-row-selected-2: var(--grid-row-selected-2);
+  --color-row-active: var(--grid-row-active);
+  --color-cell-ring: var(--grid-cell-ring);
+  --color-action-nav: var(--grid-action-nav);
+  --color-link: var(--grid-link);
+  --color-link-hover: var(--grid-link-hover);
+  --color-cell-hover: var(--grid-cell-hover);
+  --color-on-cell-hover: var(--grid-on-cell-hover);
+  --color-day: var(--picker-day);
+  --color-day-hover: var(--picker-day-hover);
+  --color-day-outside: var(--picker-day-outside);
+  --color-day-weekend: var(--picker-day-weekend);
+  --color-day-weekend-hover: var(--picker-day-weekend-hover);
+  --color-day-today: var(--picker-day-today);
+  --color-day-today-edge: var(--picker-day-today-edge);
+  --color-day-today-ground: var(--picker-day-today-ground);
+  --color-day-today-hover: var(--picker-day-today-hover);
+  --color-day-value: var(--picker-day-value);
+  --color-day-value-hover: var(--picker-day-value-hover);
+  --color-on-day-value: var(--picker-on-day-value);
+}
+
+/*
+ * The checkbox: 24 by 24, rounded, the `checkbox-edge` on the `field` ground; its border under the pointer and its fill
+ * when checked, with a white check, `checked`; `checked-mixed` when half-checked. One class for the form and the grid:
+ * the grid's variant `ui-checkbox-row` (its selection column, its header, its checkbox cells) differs only in reading
+ * `row-checked` where the form's reads `checked`. `--checkbox-checked` names the one of the two a box reads; it reads the
+ * `--panel-*` variables themselves, so a scope that redefines a role reaches the box drawn inside it. A checked box that
+ * takes no toggle is pale: its own tone at 45% with the white check, told apart from a box the user checked and still seen.
+ */
+@layer components {
+  .ui-checkbox-input {
+    --checkbox-checked: var(--panel-checked);
+    @apply h-6 w-6 shrink-0 cursor-pointer appearance-none rounded-md border border-checkbox-edge bg-field bg-center bg-no-repeat;
+    @apply hover:border-(--checkbox-checked) checked:border-(--checkbox-checked) checked:bg-(--checkbox-checked);
+    @apply indeterminate:border-checked-mixed indeterminate:bg-checked-mixed;
+    @apply disabled:cursor-default disabled:border-line disabled:bg-surface-2;
+    @apply disabled:checked:border-(--checkbox-checked)/45 disabled:checked:bg-(--checkbox-checked)/45;
+  }
+
+  .ui-checkbox-input.ui-checkbox-row {
+    --checkbox-checked: var(--panel-row-checked);
+  }
+
+  .ui-checkbox-input:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+    background-size: 1rem;
+  }
+
+  .ui-checkbox-input:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E");
+    background-size: 1rem;
+  }
+}
+
+/*
+ * The request progress bar of `ui-progress`, drawn by the stylesheet alone. While a request
+ * runs it creeps from nothing towards 85% and slows as it goes; when the last one ends it
+ * fills and fades. Its idle state is the end of the completion, full and transparent, so it
+ * never shows on its own. A request that starts while it completes starts the creep again:
+ * the class brings the animation back from its first frame.
+ */
+@layer components {
+  .ui-progress-bar {
+    @apply h-full w-full origin-left bg-accent;
+    opacity: 0;
+    transition:
+      transform 250ms ease-out,
+      opacity 150ms ease-in 250ms;
+  }
+
+  .ui-progress-bar.is-loading {
+    opacity: 1;
+    transition: none;
+    animation: ui-progress-creep 10s cubic-bezier(0.1, 0.6, 0.2, 1) forwards;
+  }
+}
+
+@keyframes ui-progress-creep {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.85);
+  }
+}
+
+/*
+ * A caller-chosen hue.
+ *
+ * A button is not chrome: its caller named a colour on purpose, and the roles have no hue to
+ * give it. So the hue arrives as one class naming it, listing the palette steps a button
+ * needs — the steps the palette's author tuned, never tones mixed from one of them — and one
+ * rule below picks the light or the dark step for each role through `light-dark()`, which
+ * reads the `color-scheme` the theme sets on the root. Both themes come from one table, and
+ * the palette's wide-gamut steps stay what they are.
+ *
+ * Each rule is also what keeps its steps alive: Tailwind emits a theme variable only when a
+ * utility uses it or the stylesheet references it, and no utility names these hues any more.
+ * `primary` is the application's own ramp when it declares one, and the brand ramp otherwise.
+ */
+.hue-primary {
+  --hue-100: var(--color-primary-100, var(--color-brand-100));
+  --hue-200: var(--color-primary-200, var(--color-brand-200));
+  --hue-300: var(--color-primary-300, var(--color-brand-300));
+  --hue-400: var(--color-primary-400, var(--color-brand-400));
+  --hue-500: var(--color-primary-500, var(--color-brand-500));
+  --hue-600: var(--color-primary-600, var(--color-brand-600));
+  --hue-700: var(--color-primary-700, var(--color-brand-700));
+  --hue-800: var(--color-primary-800, var(--color-brand-800));
+  --hue-900: var(--color-primary-900, var(--color-brand-900));
+  --hue-950: var(--color-primary-950, var(--color-brand-950));
+}
+
+/* Nothing of the brand in the work area: a button that names no colour reads the slate scale there. */
+.ui-work .hue-primary {
+  --hue-100: var(--color-slate-100);
+  --hue-200: var(--color-slate-200);
+  --hue-300: var(--color-slate-300);
+  --hue-400: var(--color-slate-400);
+  --hue-500: var(--color-slate-500);
+  --hue-600: var(--color-slate-600);
+  --hue-700: var(--color-slate-700);
+  --hue-800: var(--color-slate-800);
+  --hue-900: var(--color-slate-900);
+  --hue-950: var(--color-slate-950);
+}
+
+.hue-brand {
+  --hue-100: var(--color-brand-100);
+  --hue-200: var(--color-brand-200);
+  --hue-300: var(--color-brand-300);
+  --hue-400: var(--color-brand-400);
+  --hue-500: var(--color-brand-500);
+  --hue-600: var(--color-brand-600);
+  --hue-700: var(--color-brand-700);
+  --hue-800: var(--color-brand-800);
+  --hue-900: var(--color-brand-900);
+  --hue-950: var(--color-brand-950);
+}
+
+.hue-slate {
+  --hue-100: var(--color-slate-100);
+  --hue-200: var(--color-slate-200);
+  --hue-300: var(--color-slate-300);
+  --hue-400: var(--color-slate-400);
+  --hue-500: var(--color-slate-500);
+  --hue-600: var(--color-slate-600);
+  --hue-700: var(--color-slate-700);
+  --hue-800: var(--color-slate-800);
+  --hue-900: var(--color-slate-900);
+  --hue-950: var(--color-slate-950);
+}
+
+.hue-gray {
+  --hue-100: var(--color-gray-100);
+  --hue-200: var(--color-gray-200);
+  --hue-300: var(--color-gray-300);
+  --hue-400: var(--color-gray-400);
+  --hue-500: var(--color-gray-500);
+  --hue-600: var(--color-gray-600);
+  --hue-700: var(--color-gray-700);
+  --hue-800: var(--color-gray-800);
+  --hue-900: var(--color-gray-900);
+  --hue-950: var(--color-gray-950);
+}
+
+.hue-zinc {
+  --hue-100: var(--color-zinc-100);
+  --hue-200: var(--color-zinc-200);
+  --hue-300: var(--color-zinc-300);
+  --hue-400: var(--color-zinc-400);
+  --hue-500: var(--color-zinc-500);
+  --hue-600: var(--color-zinc-600);
+  --hue-700: var(--color-zinc-700);
+  --hue-800: var(--color-zinc-800);
+  --hue-900: var(--color-zinc-900);
+  --hue-950: var(--color-zinc-950);
+}
+
+.hue-neutral {
+  --hue-100: var(--color-neutral-100);
+  --hue-200: var(--color-neutral-200);
+  --hue-300: var(--color-neutral-300);
+  --hue-400: var(--color-neutral-400);
+  --hue-500: var(--color-neutral-500);
+  --hue-600: var(--color-neutral-600);
+  --hue-700: var(--color-neutral-700);
+  --hue-800: var(--color-neutral-800);
+  --hue-900: var(--color-neutral-900);
+  --hue-950: var(--color-neutral-950);
+}
+
+.hue-stone {
+  --hue-100: var(--color-stone-100);
+  --hue-200: var(--color-stone-200);
+  --hue-300: var(--color-stone-300);
+  --hue-400: var(--color-stone-400);
+  --hue-500: var(--color-stone-500);
+  --hue-600: var(--color-stone-600);
+  --hue-700: var(--color-stone-700);
+  --hue-800: var(--color-stone-800);
+  --hue-900: var(--color-stone-900);
+  --hue-950: var(--color-stone-950);
+}
+
+.hue-red {
+  --hue-100: var(--color-red-100);
+  --hue-200: var(--color-red-200);
+  --hue-300: var(--color-red-300);
+  --hue-400: var(--color-red-400);
+  --hue-500: var(--color-red-500);
+  --hue-600: var(--color-red-600);
+  --hue-700: var(--color-red-700);
+  --hue-800: var(--color-red-800);
+  --hue-900: var(--color-red-900);
+  --hue-950: var(--color-red-950);
+}
+
+.hue-orange {
+  --hue-100: var(--color-orange-100);
+  --hue-200: var(--color-orange-200);
+  --hue-300: var(--color-orange-300);
+  --hue-400: var(--color-orange-400);
+  --hue-500: var(--color-orange-500);
+  --hue-600: var(--color-orange-600);
+  --hue-700: var(--color-orange-700);
+  --hue-800: var(--color-orange-800);
+  --hue-900: var(--color-orange-900);
+  --hue-950: var(--color-orange-950);
+}
+
+.hue-amber {
+  --hue-100: var(--color-amber-100);
+  --hue-200: var(--color-amber-200);
+  --hue-300: var(--color-amber-300);
+  --hue-400: var(--color-amber-400);
+  --hue-500: var(--color-amber-500);
+  --hue-600: var(--color-amber-600);
+  --hue-700: var(--color-amber-700);
+  --hue-800: var(--color-amber-800);
+  --hue-900: var(--color-amber-900);
+  --hue-950: var(--color-amber-950);
+}
+
+.hue-yellow {
+  --hue-100: var(--color-yellow-100);
+  --hue-200: var(--color-yellow-200);
+  --hue-300: var(--color-yellow-300);
+  --hue-400: var(--color-yellow-400);
+  --hue-500: var(--color-yellow-500);
+  --hue-600: var(--color-yellow-600);
+  --hue-700: var(--color-yellow-700);
+  --hue-800: var(--color-yellow-800);
+  --hue-900: var(--color-yellow-900);
+  --hue-950: var(--color-yellow-950);
+}
+
+.hue-lime {
+  --hue-100: var(--color-lime-100);
+  --hue-200: var(--color-lime-200);
+  --hue-300: var(--color-lime-300);
+  --hue-400: var(--color-lime-400);
+  --hue-500: var(--color-lime-500);
+  --hue-600: var(--color-lime-600);
+  --hue-700: var(--color-lime-700);
+  --hue-800: var(--color-lime-800);
+  --hue-900: var(--color-lime-900);
+  --hue-950: var(--color-lime-950);
+}
+
+.hue-green {
+  --hue-100: var(--color-green-100);
+  --hue-200: var(--color-green-200);
+  --hue-300: var(--color-green-300);
+  --hue-400: var(--color-green-400);
+  --hue-500: var(--color-green-500);
+  --hue-600: var(--color-green-600);
+  --hue-700: var(--color-green-700);
+  --hue-800: var(--color-green-800);
+  --hue-900: var(--color-green-900);
+  --hue-950: var(--color-green-950);
+}
+
+.hue-emerald {
+  --hue-100: var(--color-emerald-100);
+  --hue-200: var(--color-emerald-200);
+  --hue-300: var(--color-emerald-300);
+  --hue-400: var(--color-emerald-400);
+  --hue-500: var(--color-emerald-500);
+  --hue-600: var(--color-emerald-600);
+  --hue-700: var(--color-emerald-700);
+  --hue-800: var(--color-emerald-800);
+  --hue-900: var(--color-emerald-900);
+  --hue-950: var(--color-emerald-950);
+}
+
+.hue-teal {
+  --hue-100: var(--color-teal-100);
+  --hue-200: var(--color-teal-200);
+  --hue-300: var(--color-teal-300);
+  --hue-400: var(--color-teal-400);
+  --hue-500: var(--color-teal-500);
+  --hue-600: var(--color-teal-600);
+  --hue-700: var(--color-teal-700);
+  --hue-800: var(--color-teal-800);
+  --hue-900: var(--color-teal-900);
+  --hue-950: var(--color-teal-950);
+}
+
+.hue-cyan {
+  --hue-100: var(--color-cyan-100);
+  --hue-200: var(--color-cyan-200);
+  --hue-300: var(--color-cyan-300);
+  --hue-400: var(--color-cyan-400);
+  --hue-500: var(--color-cyan-500);
+  --hue-600: var(--color-cyan-600);
+  --hue-700: var(--color-cyan-700);
+  --hue-800: var(--color-cyan-800);
+  --hue-900: var(--color-cyan-900);
+  --hue-950: var(--color-cyan-950);
+}
+
+.hue-sky {
+  --hue-100: var(--color-sky-100);
+  --hue-200: var(--color-sky-200);
+  --hue-300: var(--color-sky-300);
+  --hue-400: var(--color-sky-400);
+  --hue-500: var(--color-sky-500);
+  --hue-600: var(--color-sky-600);
+  --hue-700: var(--color-sky-700);
+  --hue-800: var(--color-sky-800);
+  --hue-900: var(--color-sky-900);
+  --hue-950: var(--color-sky-950);
+}
+
+.hue-blue {
+  --hue-100: var(--color-blue-100);
+  --hue-200: var(--color-blue-200);
+  --hue-300: var(--color-blue-300);
+  --hue-400: var(--color-blue-400);
+  --hue-500: var(--color-blue-500);
+  --hue-600: var(--color-blue-600);
+  --hue-700: var(--color-blue-700);
+  --hue-800: var(--color-blue-800);
+  --hue-900: var(--color-blue-900);
+  --hue-950: var(--color-blue-950);
+}
+
+.hue-indigo {
+  --hue-100: var(--color-indigo-100);
+  --hue-200: var(--color-indigo-200);
+  --hue-300: var(--color-indigo-300);
+  --hue-400: var(--color-indigo-400);
+  --hue-500: var(--color-indigo-500);
+  --hue-600: var(--color-indigo-600);
+  --hue-700: var(--color-indigo-700);
+  --hue-800: var(--color-indigo-800);
+  --hue-900: var(--color-indigo-900);
+  --hue-950: var(--color-indigo-950);
+}
+
+.hue-violet {
+  --hue-100: var(--color-violet-100);
+  --hue-200: var(--color-violet-200);
+  --hue-300: var(--color-violet-300);
+  --hue-400: var(--color-violet-400);
+  --hue-500: var(--color-violet-500);
+  --hue-600: var(--color-violet-600);
+  --hue-700: var(--color-violet-700);
+  --hue-800: var(--color-violet-800);
+  --hue-900: var(--color-violet-900);
+  --hue-950: var(--color-violet-950);
+}
+
+.hue-purple {
+  --hue-100: var(--color-purple-100);
+  --hue-200: var(--color-purple-200);
+  --hue-300: var(--color-purple-300);
+  --hue-400: var(--color-purple-400);
+  --hue-500: var(--color-purple-500);
+  --hue-600: var(--color-purple-600);
+  --hue-700: var(--color-purple-700);
+  --hue-800: var(--color-purple-800);
+  --hue-900: var(--color-purple-900);
+  --hue-950: var(--color-purple-950);
+}
+
+.hue-fuchsia {
+  --hue-100: var(--color-fuchsia-100);
+  --hue-200: var(--color-fuchsia-200);
+  --hue-300: var(--color-fuchsia-300);
+  --hue-400: var(--color-fuchsia-400);
+  --hue-500: var(--color-fuchsia-500);
+  --hue-600: var(--color-fuchsia-600);
+  --hue-700: var(--color-fuchsia-700);
+  --hue-800: var(--color-fuchsia-800);
+  --hue-900: var(--color-fuchsia-900);
+  --hue-950: var(--color-fuchsia-950);
+}
+
+.hue-pink {
+  --hue-100: var(--color-pink-100);
+  --hue-200: var(--color-pink-200);
+  --hue-300: var(--color-pink-300);
+  --hue-400: var(--color-pink-400);
+  --hue-500: var(--color-pink-500);
+  --hue-600: var(--color-pink-600);
+  --hue-700: var(--color-pink-700);
+  --hue-800: var(--color-pink-800);
+  --hue-900: var(--color-pink-900);
+  --hue-950: var(--color-pink-950);
+}
+
+.hue-rose {
+  --hue-100: var(--color-rose-100);
+  --hue-200: var(--color-rose-200);
+  --hue-300: var(--color-rose-300);
+  --hue-400: var(--color-rose-400);
+  --hue-500: var(--color-rose-500);
+  --hue-600: var(--color-rose-600);
+  --hue-700: var(--color-rose-700);
+  --hue-800: var(--color-rose-800);
+  --hue-900: var(--color-rose-900);
+  --hue-950: var(--color-rose-950);
+}
+
+/*
+ * The roles every button draws, from the steps above. `--hue-` and a number names a palette step,
+ * `--hue-ink` the one role of a status's text and border; `--btn-*` names are roles, and every
+ * role is chosen per theme here. The ink is the 700 step rather than 900: on a 100 ground, 900 read as black. The hovered edge stays one step
+ * apart from the hovered ground in both themes, so the edge never vanishes on hover. A solid
+ * button hovers to a neighbouring step rather than through a filter, and in the dark theme
+ * it moves toward the light, as the theme's own surfaces do. `yellow`, `lime` and `amber`
+ * are too light at 500 for light text, so their solid text is their own darkest step.
+ */
+[class*='hue-'] {
+  --hue: var(--hue-500);
+  /* The text and the border of a status in its hue — a field's error, the required mark — readable on a field or a card. */
+  --hue-ink: light-dark(var(--hue-700), var(--hue-300));
+  --btn-ground: light-dark(var(--hue-100), var(--hue-950));
+  --btn-hover: light-dark(var(--hue-200), var(--hue-900));
+  --btn-active: light-dark(var(--hue-300), var(--hue-800));
+  --btn-edge: light-dark(var(--hue-300), var(--hue-800));
+  --btn-edge-hover: light-dark(var(--hue-500), var(--hue-700));
+  --btn-ink: light-dark(var(--hue-600), var(--hue-200));
+  --btn-solid-edge: light-dark(var(--hue-600), var(--hue-400));
+  --btn-solid-hover: light-dark(var(--hue-600), var(--hue-400));
+  --btn-solid-edge-hover: light-dark(var(--hue-700), var(--hue-300));
+  --btn-on-hue: white;
+  /*
+   * A grid cell painted in its hue: the ground and the semibold text, stepping to the hovered pair while the pointer is
+   * on the cell's row. Light: 500 on 100, 600 on 200, below WCAG AA by the owner's choice (the contrast gate's declared
+   * exceptions). Dark: 300 on 950, 200 on 900, so the ground reads on the slate-800 surface and the text stays light.
+   */
+  --hue-cell: light-dark(var(--hue-100), var(--hue-950));
+  --hue-cell-ink: light-dark(var(--hue-500), var(--hue-300));
+  --hue-cell-hover: light-dark(var(--hue-200), var(--hue-900));
+  --hue-cell-hover-ink: light-dark(var(--hue-600), var(--hue-200));
+  /*
+   * A badge, the name of a status or of an option: the text on the hue's pale ground. Light: 800 on 100, since 700 on
+   * 100 reads just under WCAG AA in green. Dark: 300 on 950. Both read AA in every hue (the contrast gate).
+   */
+  --badge-ground: light-dark(var(--hue-100), var(--hue-950));
+  --badge-ink: light-dark(var(--hue-800), var(--hue-300));
+}
+
+.hue-yellow,
+.hue-lime,
+.hue-amber {
+  --btn-on-hue: var(--hue-950);
+}
+
+/* Set on <body> only while a divider is being dragged. */
+body.ui-panels-dragging {
+  user-select: none;
+}
+
+body.ui-panels-dragging.is-row {
+  cursor: col-resize;
+}
+
+body.ui-panels-dragging.is-column {
+  cursor: row-resize;
+}

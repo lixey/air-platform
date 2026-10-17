@@ -1,0 +1,29 @@
+# The web workspace's ignore rules; git applies the repository's root .gitignore as well.
+# The Nx and Angular lines stay verbatim because their generators look for them.
+
+# Dependencies and build output
+node_modules
+dist
+tmp
+out-tsc
+/coverage
+
+# Nx, Angular and Vite
+.nx/cache
+.nx/workspace-data
+.nx/migrate-runs
+.angular
+vite.config.*.timestamp*
+vitest.config.*.timestamp*
+
+# WebStorm opens this folder as its project; other editors keep their settings local
+/.idea
+/.vscode
+
+# Agents
+.claude/worktrees
+.claude/settings.local.json
+
+# System files
+.DS_Store
+Thumbs.db
