@@ -310,6 +310,10 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
         {
           col.Label = Localizer.Instance[col.Label];
         }
+        if (col.IsFilterable && col.Operators == null)
+        {
+          col.Operators = GridFilterOperators.ForField(col.Type, col.ReferenceService != null, col.TemporalType != null);
+        }
       }
 
       var selectGridModel = new GridModel
@@ -375,6 +379,10 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       if (!string.IsNullOrEmpty(col.Label))
       {
         col.Label = Localizer.Instance[col.Label];
+      }
+      if (col.IsFilterable && col.Operators == null)
+      {
+        col.Operators = GridFilterOperators.ForField(col.Type, col.ReferenceService != null, col.TemporalType != null);
       }
     }
 
