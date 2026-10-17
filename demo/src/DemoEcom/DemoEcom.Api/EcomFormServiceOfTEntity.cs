@@ -6,6 +6,4 @@ public abstract class EcomFormService<TEntity>(EcomDbContext db, EcomService? ec
 {
   protected EcomDbContext Db => db;
   protected EcomService? EcomApp => ecom;
-
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 }

@@ -64,7 +64,7 @@ public static class PlatformHost
     }
 
     // 3. User custom module configuration
-    module.ConfigureServices(builder.Services);
+    module.Configure(builder);
 
     // 4. Common platform services: JSON, Tenant context, Screen catalog
     builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
@@ -130,7 +130,7 @@ public static class PlatformHost
     var catalog = new ModuleCatalog();
     foreach (var module in options.Modules)
     {
-      module.ConfigureServices(builder.Services);
+      module.Configure(builder);
       catalog.Register(module);
     }
 

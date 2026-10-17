@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\src\Air.Data\Air.Data.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Air.Data.Postgres\Air.Data.Postgres.csproj" />
   </ItemGroup>
 
 </Project>

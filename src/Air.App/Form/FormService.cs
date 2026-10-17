@@ -16,6 +16,7 @@ namespace Air.App.Form;
 
 public interface IFormService
 {
+  OverlayModelDto Overlay(string service);
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, null, ct);
   Task<object?> GetModelAsync(long? id, CancellationToken ct = default);
@@ -149,7 +150,30 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
   protected virtual void SetRules(Rules rules) { }
   protected virtual void SetHooks(Hooks hooks) { }
 
-  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle).Screen(handle).Width(720);
+  public string Service => ServicePathResolver.Resolve(GetType());
+
+  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Dialog(handle);
+
+  public virtual OverlayModelDto Overlay(string service) => Presentation($"{service}.modal").Screen(service).Build();
+
+  protected virtual (string? Width, string? Height) OverlayAsk(Elements elements)
+  {
+    var declared = Overlay(Service);
+    if (declared.Presentation != OverlayPresentation.Dialog || declared.Width is not null || declared.Height is not null)
+    {
+      return (null, null);
+    }
+
+    return elements.Children.Count > 0 ? (PanelSize.Fill, PanelSize.Fill) : (PanelSize.Px(720), null);
+  }
+
+  protected virtual bool FillsOverlay(Elements elements)
+  {
+    var declared = Overlay(Service);
+    return declared.Presentation == OverlayPresentation.Drawer
+           || declared.Height == PanelSize.Fill
+           || OverlayAsk(elements).Height == PanelSize.Fill;
+  }
 
   protected virtual string RecordCaption(TEntity? entity, long? id)
   {
@@ -249,9 +273,9 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     {
       navElements.Add(new NavTabModel
       {
-        Key = "record",
-        Group = "tabs",
-        Value = "record",
+        Key = FormTab.Record,
+        Group = FormTab.Group,
+        Value = FormTab.Record,
         Label = caption,
         Color = UiColor.Sky,
         IsSelected = true,
@@ -263,7 +287,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
         navElements.Add(new NavTabModel
         {
           Key = tab.Key,
-          Group = "tabs",
+          Group = FormTab.Group,
           Value = tab.Key,
           Label = tab.Label,
           Variant = ButtonVariant.Soft,
@@ -311,9 +335,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
         {
           p.Auto().Pinned().PageUnder(768).PageUnderHeight(640).Resizable();
         }
-        else
+        else if (FillsOverlay(elements))
         {
           p.Fill();
+        }
+        else
+        {
+          p.Auto();
         }
       });
 
@@ -343,7 +371,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       }
     }
 
-    return new ScreenDto { Layout = layout.Build() };
+    var (overlayWidth, overlayHeight) = OverlayAsk(elements);
+    return new ScreenDto
+    {
+      Layout = layout.Build(),
+      OverlayWidth = overlayWidth,
+      OverlayHeight = overlayHeight
+    };
   }
 
   public virtual async Task<object?> GetModelAsync(long? id, CancellationToken ct = default)

@@ -1,3 +1,5 @@
+using DemoEcom.Documents;
+
 namespace DemoEcom.SalesReturn;
 
 public sealed class EcomSalesReturnLineGridService(EcomDbContext db, EcomService? ecom = null)
@@ -5,7 +7,7 @@ public sealed class EcomSalesReturnLineGridService(EcomDbContext db, EcomService
 {
   public override Feature Feature => Ecom.SalesReturn;
 
-  protected override void SetColumns(Columns<EcomDocLine> columns)
+  protected override void SetColumns(Columns<EcomDocLineRow> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomSalesReturnLineFormService>();
     columns.Add(r => r.SortOrder);

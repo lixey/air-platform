@@ -1,3 +1,5 @@
+using DemoEcom.Documents;
+
 namespace DemoEcom.SupplierInvoice;
 
 public sealed class EcomSupplierInvoiceLineGridService(EcomDbContext db, EcomService? ecom = null)
@@ -5,7 +7,7 @@ public sealed class EcomSupplierInvoiceLineGridService(EcomDbContext db, EcomSer
 {
   public override Feature Feature => Ecom.SupplierInvoice;
 
-  protected override void SetColumns(Columns<EcomDocLine> columns)
+  protected override void SetColumns(Columns<EcomDocLineRow> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomSupplierInvoiceLineFormService>();
     columns.Add(r => r.SortOrder);

@@ -1,3 +1,5 @@
+using DemoEcom.Documents;
+
 namespace DemoEcom.PurchaseOrder;
 
 public sealed class EcomPurchaseOrderLineGridService(EcomDbContext db, EcomService? ecom = null)
@@ -5,7 +7,7 @@ public sealed class EcomPurchaseOrderLineGridService(EcomDbContext db, EcomServi
 {
   public override Feature Feature => Ecom.PurchaseOrder;
 
-  protected override void SetColumns(Columns<EcomDocLine> columns)
+  protected override void SetColumns(Columns<EcomDocLineRow> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomPurchaseOrderLineFormService>();
     columns.Add(r => r.SortOrder);

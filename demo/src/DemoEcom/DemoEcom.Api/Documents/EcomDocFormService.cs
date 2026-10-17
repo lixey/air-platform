@@ -5,6 +5,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 {
   protected abstract long Type { get; }
 
+  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 
   protected override void SetHooks(Hooks hooks)
   {

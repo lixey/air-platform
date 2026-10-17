@@ -1,4 +1,5 @@
 using Air.App.Metadata;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Air.App.Modules;
@@ -9,7 +10,8 @@ public interface IPlatformModule
   string Name { get; }
   ModuleMenu Menu { get; }
   IReadOnlyList<Feature> Features { get; }
-  void ConfigureServices(IServiceCollection services);
+  void Configure(WebApplicationBuilder builder);
+  void ConfigureServices(IServiceCollection services) { }
 }
 
 public abstract class PlatformModule : IPlatformModule
@@ -18,6 +20,16 @@ public abstract class PlatformModule : IPlatformModule
   public virtual string Name => Handle;
   public virtual ModuleMenu Menu => ModuleMenu.Empty;
   public virtual IReadOnlyList<Feature> Features => [];
+
+  public virtual void Configure(WebApplicationBuilder builder)
+  {
+    ConfigureServices(builder);
+    ConfigureServices(builder.Services);
+  }
+
+  protected virtual void ConfigureServices(WebApplicationBuilder builder)
+  {
+  }
 
   public virtual void ConfigureServices(IServiceCollection services)
   {

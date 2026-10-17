@@ -53,8 +53,7 @@ public sealed class OverlayModelDto
 public static class OverlayModel
 {
   public static OverlayBuilder Dialog(string key, PanelLayoutDto? layout = null) => new(key, OverlayPresentation.Dialog, layout);
-  public static OverlayBuilder Drawer(string key, string? service = null) =>
-    new OverlayBuilder(key, OverlayPresentation.Drawer).Screen(service ?? key);
+  public static OverlayBuilder Drawer(string key, PanelLayoutDto? layout = null) => new(key, OverlayPresentation.Drawer, layout);
   public static OverlayBuilder Popover(string key, PanelLayoutDto? layout = null) => new(key, OverlayPresentation.Popover, layout);
   public static OverlayBuilder Menu(string key, PanelLayoutDto? layout = null) => new(key, OverlayPresentation.Menu, layout);
 }
@@ -62,6 +61,10 @@ public static class OverlayModel
 public sealed class OverlayBuilder(string key, string presentation, PanelLayoutDto? layout = null)
 {
   private readonly OverlayModelDto _dto = new() { Key = key, Presentation = presentation, Layout = layout };
+
+  public string Presentation => _dto.Presentation;
+  public string? WidthValue => _dto.Width;
+  public string? HeightValue => _dto.Height;
 
   public OverlayBuilder Screen(string servicePath, object? paramsObj = null)
   {
@@ -74,6 +77,12 @@ public sealed class OverlayBuilder(string key, string presentation, PanelLayoutD
   public OverlayBuilder Height(string height) { _dto.Height = height; return this; }
   public OverlayBuilder Height(int px) => Height(PanelSize.Px(px));
   public OverlayBuilder MaxWidth(int px) { _dto.MaxWidth = PanelSize.Px(px); return this; }
+  public OverlayBuilder Fill()
+  {
+    _dto.Width = PanelSize.Fill;
+    _dto.Height = PanelSize.Fill;
+    return this;
+  }
 
   public OverlayModelDto Build() => _dto;
 }

@@ -1,3 +1,5 @@
+using DemoEcom.Documents;
+
 namespace DemoEcom.StockTransfer;
 
 public sealed class EcomStockTransferLineGridService(EcomDbContext db, EcomService? ecom = null)
@@ -5,7 +7,7 @@ public sealed class EcomStockTransferLineGridService(EcomDbContext db, EcomServi
 {
   public override Feature Feature => Ecom.StockTransfer;
 
-  protected override void SetColumns(Columns<EcomDocLine> columns)
+  protected override void SetColumns(Columns<EcomDocLineRow> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomStockTransferLineFormService>();
     columns.Add(r => r.SortOrder);

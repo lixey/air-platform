@@ -1,3 +1,5 @@
+using DemoEcom.Documents;
+
 namespace DemoEcom.StockReceipt;
 
 public sealed class EcomStockReceiptLineGridService(EcomDbContext db, EcomService? ecom = null)
@@ -5,7 +7,7 @@ public sealed class EcomStockReceiptLineGridService(EcomDbContext db, EcomServic
 {
   public override Feature Feature => Ecom.StockReceipt;
 
-  protected override void SetColumns(Columns<EcomDocLine> columns)
+  protected override void SetColumns(Columns<EcomDocLineRow> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomStockReceiptLineFormService>();
     columns.Add(r => r.SortOrder);

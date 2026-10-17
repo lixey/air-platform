@@ -4,7 +4,7 @@ public static class ServicePathResolver
 {
   public static string Resolve(Type serviceType)
   {
-    if (Feature.FeaturesByServiceType.TryGetValue(serviceType, out var feat))
+    if (Feature.FeaturesByServiceType.TryGetValue(serviceType, out var feat) && feat.ServiceType == serviceType)
     {
       return feat.Path;
     }

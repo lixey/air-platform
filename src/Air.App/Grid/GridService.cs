@@ -88,6 +88,14 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       return this;
     }
 
+    public Expression<Func<TEntity, TRow>>? Selector { get; private set; }
+
+    public Query Select(Expression<Func<TEntity, TRow>> selector)
+    {
+      Selector = selector;
+      return this;
+    }
+
     public Query SortBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
     public Query SortByDescending<TProp>(Expression<Func<TRow, TProp>> expr) => this;
     public Query ThenBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
@@ -230,9 +238,27 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       }
     }
 
-    var formOverlay = detectedFormService is not null
-      ? OverlayModel.Drawer(detectedFormService).Screen(detectedFormService).Width(720).Build()
-      : null;
+    OverlayModelDto? formOverlay = null;
+    if (detectedFormService is not null)
+    {
+      var formType = ModuleCatalog.Instance.FindServiceType(detectedFormService);
+      if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
+      {
+        try
+        {
+          var formInstance = (IFormService)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(formType);
+          formOverlay = formInstance.Overlay(detectedFormService);
+        }
+        catch
+        {
+          formOverlay = OverlayModel.Dialog($"{detectedFormService}.modal").Screen(detectedFormService).Build();
+        }
+      }
+      else
+      {
+        formOverlay = OverlayModel.Dialog($"{detectedFormService}.modal").Screen(detectedFormService).Build();
+      }
+    }
 
     var nav = new Nav();
     SetNav(nav);
@@ -333,17 +359,33 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       query = parent.FilterFunc(query, ParentId.Value);
     }
 
-    var queryMap = QueryMap.FromEntity<TEntity>().Build();
-    var dataProvider = DataProvider.Create(query, queryMap);
-    var page = await dataProvider.GetPageAsync(request, ct);
+    if (queryDeclaration.Selector != null)
+    {
+      var projected = query.Select(queryDeclaration.Selector);
+      var queryMap = QueryMap.FromEntity<TRow>().Build();
+      var dataProvider = DataProvider.Create(projected, queryMap);
+      var page = await dataProvider.GetPageAsync(request, ct);
+      return new Page<object>
+      {
+        Rows = page.Rows.Cast<object>().ToList(),
+        Total = page.Total,
+        Number = page.Number,
+        Size = page.Size,
+        HasMore = page.HasMore
+      };
+    }
+
+    var defaultQueryMap = QueryMap.FromEntity<TEntity>().Build();
+    var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+    var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
 
     return new Page<object>
     {
-      Rows = page.Rows.Cast<object>().ToList(),
-      Total = page.Total,
-      Number = page.Number,
-      Size = page.Size,
-      HasMore = page.HasMore
+      Rows = defaultPage.Rows.Cast<object>().ToList(),
+      Total = defaultPage.Total,
+      Number = defaultPage.Number,
+      Size = defaultPage.Size,
+      HasMore = defaultPage.HasMore
     };
   }
 

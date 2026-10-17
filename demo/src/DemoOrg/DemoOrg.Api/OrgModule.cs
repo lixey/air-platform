@@ -1,10 +1,18 @@
 using Air.App.Metadata;
 using Air.App.Modules;
+using Air.Data.Postgres;
+using DemoOrg.Data;
+using Microsoft.AspNetCore.Builder;
 
 namespace DemoOrg;
 
 public sealed class OrgModule : PlatformModule<Org>
 {
+  protected override void ConfigureServices(WebApplicationBuilder builder)
+  {
+    builder.AddPlatformPostgres<OrgDbContext>();
+  }
+
   public override ModuleMenu Menu => ModuleMenu
     .Route(Org.Organization)
     .Route(Org.Warehouse)
