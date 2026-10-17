@@ -137,12 +137,14 @@ public static class PlatformEndpoints
       // Find feature by path or service name
       var feat = catalog.FindFeature(serviceName)
         ?? catalog.FindFeature(serviceName.Replace("demo/", ""))
+        ?? catalog.FindFeature(serviceName.Replace("-", ""))
         ?? catalog.FindFeature($"demo/{serviceName}")
         ?? catalog.FindFeature(parts[0] + "/" + parts[1]);
 
       var serviceType = feat?.ServiceType
         ?? catalog.FindServiceType(serviceName)
         ?? catalog.FindServiceType(serviceName.Replace("demo/", ""))
+        ?? catalog.FindServiceType(serviceName.Replace("-", ""))
         ?? catalog.FindServiceType($"demo/{serviceName}")
         ?? catalog.FindServiceType(parts[0] + "/" + parts[1]);
 

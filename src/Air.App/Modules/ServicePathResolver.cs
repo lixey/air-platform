@@ -10,13 +10,17 @@ public static class ServicePathResolver
     }
 
     var name = serviceType.Name;
-    foreach (var suffix in new[] { "GridService", "FormService", "Service" })
+    if (name.EndsWith("GridService", StringComparison.OrdinalIgnoreCase))
     {
-      if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-      {
-        name = name[..^suffix.Length];
-        break;
-      }
+      name = name[..^"GridService".Length];
+    }
+    else if (name.EndsWith("FormService", StringComparison.OrdinalIgnoreCase))
+    {
+      name = name[..^"Service".Length];
+    }
+    else if (name.EndsWith("Service", StringComparison.OrdinalIgnoreCase))
+    {
+      name = name[..^"Service".Length];
     }
 
     foreach (var prefix in new[] { "App", "Org", "Ecom", "Doc" })

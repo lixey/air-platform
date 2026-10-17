@@ -10,6 +10,13 @@ public class Columns
   private readonly List<GridColumnDto> _columns = [];
   public IReadOnlyList<GridColumnDto> List => _columns;
 
+  public Type? FormServiceType { get; set; }
+
+  public void UseForm<TFormService>() where TFormService : class
+  {
+    FormServiceType = typeof(TFormService);
+  }
+
   public GridColumn<TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
   {
     var path = ToCamelPath(MemberPath.Of(expression));
@@ -22,7 +29,7 @@ public class Columns
       Cell = ResolveDefaultCell(typeof(TProp))
     };
     _columns.Add(col);
-    return new GridColumn<TProp>(col);
+    return new GridColumn<TProp>(col, this);
   }
 
   public GridColumn<TProp> Add<TProp>(string path)
@@ -36,7 +43,7 @@ public class Columns
       Cell = ResolveDefaultCell(typeof(TProp))
     };
     _columns.Add(col);
-    return new GridColumn<TProp>(col);
+    return new GridColumn<TProp>(col, this);
   }
 
   private static string ToCamelPath(string path)
@@ -83,7 +90,7 @@ public sealed class Columns<TRow> : Columns
     Add<TRow, TProp>(expression);
 }
 
-public sealed class GridColumn<TProp>(GridColumnDto dto)
+public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 {
   public GridColumnDto Dto => dto;
 
@@ -98,9 +105,10 @@ public sealed class GridColumn<TProp>(GridColumnDto dto)
   public GridColumn<TProp> Filterable(bool filterable = true) { dto.IsFilterable = filterable; return this; }
   public GridColumn<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
 
-  public GridColumn<TProp> AsOpenForm<TFormService>()
+  public GridColumn<TProp> AsOpenForm<TFormService>() where TFormService : class
   {
     dto.Cell = new GridCellOpenFormModel();
+    owner.FormServiceType = typeof(TFormService);
     return this;
   }
 

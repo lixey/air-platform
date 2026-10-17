@@ -215,12 +215,18 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     SetColumns(columns);
 
     string? detectedFormService = FormServicePath;
-    if (detectedFormService == null)
+    if (detectedFormService == null && columns.FormServiceType != null)
     {
-      var openCol = columns.List.FirstOrDefault(c => c.Cell is GridCellOpenFormModel);
-      if (openCol != null && openCol.Cell is GridCellOpenFormModel)
+      detectedFormService = ServicePathResolver.Resolve(columns.FormServiceType);
+    }
+    else if (detectedFormService == null)
+    {
+      var candidateFormName = GetType().Name.Replace("GridService", "FormService");
+      var candidateType = GetType().Assembly.GetType(GetType().Namespace + "." + candidateFormName)
+        ?? GetType().Assembly.GetTypes().FirstOrDefault(t => t.Name == candidateFormName);
+      if (candidateType != null)
       {
-        detectedFormService = servicePath.Replace("-grid", "-form");
+        detectedFormService = ServicePathResolver.Resolve(candidateType);
       }
     }
 
