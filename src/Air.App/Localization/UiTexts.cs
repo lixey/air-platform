@@ -215,6 +215,121 @@ public static class UiTexts
 public sealed class Localizer
 {
   public static readonly Localizer Instance = new();
-  public string this[string key] => UiTexts.English.TryGetValue(key, out var val) ? val : key;
+
+  private readonly List<System.Resources.ResourceManager> _managers = [];
+  private readonly HashSet<string> _loadedNames = [];
+
+  public Localizer()
+  {
+    Register(typeof(Air.App.Resources.PlatformResource));
+    EnsureManagersLoaded();
+  }
+
+  public void Register(Type resourceType)
+  {
+    if (resourceType != null && _loadedNames.Add(resourceType.FullName ?? resourceType.Name))
+    {
+      _managers.Add(new System.Resources.ResourceManager(resourceType));
+    }
+  }
+
+  public void EnsureManagersLoaded()
+  {
+    TryAddManager("DemoApp.Resources.AppResource, DemoApp.Api");
+    TryAddManager("DemoOrg.Resources.OrgResource, DemoOrg.Api");
+    TryAddManager("DemoEcom.Resources.EcomResource, DemoEcom.Api");
+
+    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+    {
+      try
+      {
+        foreach (var type in asm.GetTypes())
+        {
+          if (type.Name.EndsWith("Resource", StringComparison.OrdinalIgnoreCase) && !type.IsAbstract && !type.IsGenericType)
+          {
+            Register(type);
+          }
+        }
+      }
+      catch { }
+    }
+  }
+
+  private void TryAddManager(string typeName)
+  {
+    try
+    {
+      var type = Type.GetType(typeName);
+      if (type == null)
+      {
+        var shortName = typeName.Split(',')[0].Trim();
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+          type = asm.GetType(shortName);
+          if (type != null) break;
+        }
+      }
+      if (type != null)
+      {
+        Register(type);
+      }
+    }
+    catch { }
+  }
+
+  public bool TryGetString(string key, out string result)
+  {
+    var culture = System.Globalization.CultureInfo.CurrentUICulture;
+    foreach (var mgr in _managers)
+    {
+      try
+      {
+        var text = mgr.GetString(key, culture);
+        if (!string.IsNullOrEmpty(text))
+        {
+          result = text;
+          return true;
+        }
+      }
+      catch { }
+    }
+    if (UiTexts.English.TryGetValue(key, out var val))
+    {
+      result = val;
+      return true;
+    }
+    result = key;
+    return false;
+  }
+
+  public string TextOr(string key, string fallback)
+  {
+    if (TryGetString(key, out var result) && result != key)
+    {
+      return result;
+    }
+    return fallback;
+  }
+
+  public Localizer For(string? moduleHandle) => this;
+
+  public string this[string key]
+  {
+    get
+    {
+      if (TryGetString(key, out var res)) return res;
+      return key;
+    }
+  }
+
   public string of(string key) => this[key];
+
+  public string this[string key, params object[] args]
+  {
+    get
+    {
+      var template = this[key];
+      return args.Length > 0 ? string.Format(System.Globalization.CultureInfo.CurrentUICulture, template, args) : template;
+    }
+  }
 }

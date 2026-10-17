@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="Org" xml:space="preserve">
+    <value>Організація</value>
+  </data>
+  <data name="Organizations" xml:space="preserve">
+    <value>Організації</value>
+  </data>
+  <data name="Organization" xml:space="preserve">
+    <value>Організація</value>
+  </data>
+  <data name="Organisation" xml:space="preserve">
+    <value>Організація</value>
+  </data>
+  <data name="New Organization" xml:space="preserve">
+    <value>Нова організація</value>
+  </data>
+  <data name="Warehouses" xml:space="preserve">
+    <value>Склади</value>
+  </data>
+  <data name="Warehouse" xml:space="preserve">
+    <value>Склад</value>
+  </data>
+  <data name="New Warehouse" xml:space="preserve">
+    <value>Новий склад</value>
+  </data>
+  <data name="Money Accounts" xml:space="preserve">
+    <value>Грошові рахунки</value>
+  </data>
+  <data name="Money Account" xml:space="preserve">
+    <value>Грошовий рахунок</value>
+  </data>
+  <data name="New Money Account" xml:space="preserve">
+    <value>Новий грошовий рахунок</value>
+  </data>
+  <data name="Customers" xml:space="preserve">
+    <value>Клієнти</value>
+  </data>
+  <data name="Customer" xml:space="preserve">
+    <value>Клієнт</value>
+  </data>
+  <data name="New Customer" xml:space="preserve">
+    <value>Новий клієнт</value>
+  </data>
+  <data name="Contacts" xml:space="preserve">
+    <value>Контакти</value>
+  </data>
+  <data name="Contact" xml:space="preserve">
+    <value>Контакт</value>
+  </data>
+  <data name="New Contact" xml:space="preserve">
+    <value>Новий контакт</value>
+  </data>
+  <data name="Counterparties" xml:space="preserve">
+    <value>Контрагенти</value>
+  </data>
+  <data name="Counterparty" xml:space="preserve">
+    <value>Контрагент</value>
+  </data>
+  <data name="New Counterparty" xml:space="preserve">
+    <value>Новий контрагент</value>
+  </data>
+  <data name="Products" xml:space="preserve">
+    <value>Товари</value>
+  </data>
+  <data name="Product" xml:space="preserve">
+    <value>Товар</value>
+  </data>
+  <data name="New Product" xml:space="preserve">
+    <value>Новий товар</value>
+  </data>
+  <data name="Brands" xml:space="preserve">
+    <value>Бренди</value>
+  </data>
+  <data name="Brand" xml:space="preserve">
+    <value>Бренд</value>
+  </data>
+  <data name="New Brand" xml:space="preserve">
+    <value>Новий бренд</value>
+  </data>
+  <data name="Product Categories" xml:space="preserve">
+    <value>Категорії товарів</value>
+  </data>
+  <data name="Product Category" xml:space="preserve">
+    <value>Категорія товару</value>
+  </data>
+  <data name="New Product Category" xml:space="preserve">
+    <value>Нова категорія товару</value>
+  </data>
+  <data name="Delivery Types" xml:space="preserve">
+    <value>Способи доставки</value>
+  </data>
+  <data name="Delivery Type" xml:space="preserve">
+    <value>Спосіб доставки</value>
+  </data>
+  <data name="New Delivery Type" xml:space="preserve">
+    <value>Новий спосіб доставки</value>
+  </data>
+  <data name="Payment Methods" xml:space="preserve">
+    <value>Способи оплати</value>
+  </data>
+  <data name="Payment Method" xml:space="preserve">
+    <value>Спосіб оплати</value>
+  </data>
+  <data name="New Payment Method" xml:space="preserve">
+    <value>Новий спосіб оплати</value>
+  </data>
+  <data name="Payment Terms" xml:space="preserve">
+    <value>Умови оплати</value>
+  </data>
+  <data name="Payment Term" xml:space="preserve">
+    <value>Умова оплати</value>
+  </data>
+  <data name="Currencies" xml:space="preserve">
+    <value>Валюти</value>
+  </data>
+  <data name="Currency" xml:space="preserve">
+    <value>Валюта</value>
+  </data>
+  <data name="Org: Units" xml:space="preserve">
+    <value>Одиниці виміру</value>
+  </data>
+  <data name="Org: Unit" xml:space="preserve">
+    <value>Одиниця виміру</value>
+  </data>
+  <data name="Reference books" xml:space="preserve">
+    <value>Довідники</value>
+  </data>
+  <data name="Full Name" xml:space="preserve">
+    <value>Повна назва</value>
+  </data>
+  <data name="Code" xml:space="preserve">
+    <value>Код</value>
+  </data>
+  <data name="Tax Id" xml:space="preserve">
+    <value>Податковий номер</value>
+  </data>
+  <data name="Vat Number" xml:space="preserve">
+    <value>Номер платника ПДВ</value>
+  </data>
+  <data name="Is Vat Payer" xml:space="preserve">
+    <value>Платник ПДВ</value>
+  </data>
+  <data name="Phone" xml:space="preserve">
+    <value>Телефон</value>
+  </data>
+  <data name="Note" xml:space="preserve">
+    <value>Примітка</value>
+  </data>
+  <data name="Symbol" xml:space="preserve">
+    <value>Символ</value>
+  </data>
+  <data name="Is Cash" xml:space="preserve">
+    <value>Готівка</value>
+  </data>
+  <data name="Iban" xml:space="preserve">
+    <value>IBAN</value>
+  </data>
+  <data name="Bank Name" xml:space="preserve">
+    <value>Назва банку</value>
+  </data>
+  <data name="Details" xml:space="preserve">
+    <value>Деталі</value>
+  </data>
+  <data name="Customer.name" xml:space="preserve">
+    <value>Ім'я</value>
+  </data>
+  <data name="City" xml:space="preserve">
+    <value>Місто</value>
+  </data>
+  <data name="Discount Percent" xml:space="preserve">
+    <value>Знижка</value>
+  </data>
+  <data name="Manager" xml:space="preserve">
+    <value>Менеджер</value>
+  </data>
+  <data name="Position" xml:space="preserve">
+    <value>Посада</value>
+  </data>
+  <data name="Is Primary" xml:space="preserve">
+    <value>Основний</value>
+  </data>
+  <data name="Is Supplier" xml:space="preserve">
+    <value>Постачальник</value>
+  </data>
+  <data name="Is Buyer" xml:space="preserve">
+    <value>Покупець</value>
+  </data>
+  <data name="Payment Delay Days" xml:space="preserve">
+    <value>Відстрочка оплати, днів</value>
+  </data>
+  <data name="Delivery Days" xml:space="preserve">
+    <value>Термін доставки, днів</value>
+  </data>
+  <data name="Is Pickup" xml:space="preserve">
+    <value>Самовивіз</value>
+  </data>
+  <data name="Is Cash On Delivery" xml:space="preserve">
+    <value>Накладений платіж</value>
+  </data>
+  <data name="Delivery and payment" xml:space="preserve">
+    <value>Доставка та оплата</value>
+  </data>
+  <data name="Requisites" xml:space="preserve">
+    <value>Реквізити</value>
+  </data>
+  <data name="Terms" xml:space="preserve">
+    <value>Умови</value>
+  </data>
+  <data name="Supplier" xml:space="preserve">
+    <value>Постачальник</value>
+  </data>
+  <data name="Category" xml:space="preserve">
+    <value>Категорія</value>
+  </data>
+  <data name="Article" xml:space="preserve">
+    <value>Артикул</value>
+  </data>
+  <data name="Barcode" xml:space="preserve">
+    <value>Штрихкод</value>
+  </data>
+  <data name="Customs Code" xml:space="preserve">
+    <value>Код УКТ ЗЕД</value>
+  </data>
+  <data name="Price" xml:space="preserve">
+    <value>Ціна</value>
+  </data>
+  <data name="Purchase Price" xml:space="preserve">
+    <value>Закупівельна ціна</value>
+  </data>
+  <data name="Weight, kg" xml:space="preserve">
+    <value>Вага, кг</value>
+  </data>
+  <data name="Country" xml:space="preserve">
+    <value>Країна</value>
+  </data>
+  <data name="Website" xml:space="preserve">
+    <value>Вебсайт</value>
+  </data>
+  <data name="Photos" xml:space="preserve">
+    <value>Фото</value>
+  </data>
+  <data name="This name is already in use." xml:space="preserve">
+    <value>Ця назва вже використовується.</value>
+  </data>
+  <data name="This code is already in use." xml:space="preserve">
+    <value>Цей код уже використовується.</value>
+  </data>
+  <data name="The organization already has a warehouse of this name." xml:space="preserve">
+    <value>В організації вже є склад з такою назвою.</value>
+  </data>
+  <data name="The organization already has a money account of this name." xml:space="preserve">
+    <value>В організації вже є грошовий рахунок з такою назвою.</value>
+  </data>
+  <data name="The organization has warehouses or money accounts and cannot be deleted." xml:space="preserve">
+    <value>Організація має склади або грошові рахунки, тому її не можна видалити.</value>
+  </data>
+  <data name="This tax id is already in use." xml:space="preserve">
+    <value>Цей податковий номер уже використовується.</value>
+  </data>
+  <data name="A counterparty is a supplier, a buyer or both." xml:space="preserve">
+    <value>Контрагент є постачальником, покупцем або і тим, і іншим.</value>
+  </data>
+  <data name="The customer has a counterparty and cannot be deleted." xml:space="preserve">
+    <value>Клієнт має контрагента, тому його не можна видалити.</value>
+  </data>
+  <data name="The delivery type is used by customers and cannot be deleted." xml:space="preserve">
+    <value>Спосіб доставки використовується в клієнтах, тому його не можна видалити.</value>
+  </data>
+  <data name="The payment method is used by customers and cannot be deleted." xml:space="preserve">
+    <value>Спосіб оплати використовується в клієнтах, тому його не можна видалити.</value>
+  </data>
+  <data name="The supplier already has a product of this brand and article." xml:space="preserve">
+    <value>У постачальника вже є товар цього бренду з таким артикулом.</value>
+  </data>
+  <data name="A customs code is 4, 6, 8 or 10 digits." xml:space="preserve">
+    <value>Код УКТ ЗЕД складається з 4, 6, 8 або 10 цифр.</value>
+  </data>
+  <data name="A barcode is 8 to 14 digits." xml:space="preserve">
+    <value>Штрихкод складається з 8–14 цифр.</value>
+  </data>
+  <data name="The brand is used by products and cannot be deleted." xml:space="preserve">
+    <value>Бренд використовується в товарах, тому його не можна видалити.</value>
+  </data>
+  <data name="The product category is used by products and cannot be deleted." xml:space="preserve">
+    <value>Категорія товару використовується в товарах, тому її не можна видалити.</value>
+  </data>
+  <data name="The counterparty supplies products and cannot be deleted." xml:space="preserve">
+    <value>Контрагент є постачальником товарів, тому його не можна видалити.</value>
+  </data>
+</root>

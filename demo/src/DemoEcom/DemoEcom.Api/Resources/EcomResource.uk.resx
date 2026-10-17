@@ -1,0 +1,565 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="Ecom" xml:space="preserve">
+    <value>Торгівля</value>
+  </data>
+  <data name="E-Commerce" xml:space="preserve">
+    <value>Е-комерція</value>
+  </data>
+  <data name="Sales" xml:space="preserve">
+    <value>Продажі</value>
+  </data>
+  <data name="Purchasing" xml:space="preserve">
+    <value>Закупівлі</value>
+  </data>
+  <data name="Money" xml:space="preserve">
+    <value>Гроші</value>
+  </data>
+  <data name="Customer Orders" xml:space="preserve">
+    <value>Замовлення клієнтів</value>
+  </data>
+  <data name="Customer Order" xml:space="preserve">
+    <value>Замовлення клієнта</value>
+  </data>
+  <data name="New Customer Order" xml:space="preserve">
+    <value>Нове замовлення клієнта</value>
+  </data>
+  <data name="Customer Order Fulfillment" xml:space="preserve">
+    <value>Забезпечення замовлень</value>
+  </data>
+  <data name="Sales Invoices" xml:space="preserve">
+    <value>Видаткові накладні</value>
+  </data>
+  <data name="Sales Invoice" xml:space="preserve">
+    <value>Видаткова накладна</value>
+  </data>
+  <data name="New Sales Invoice" xml:space="preserve">
+    <value>Нова видаткова накладна</value>
+  </data>
+  <data name="Sales Returns" xml:space="preserve">
+    <value>Повернення від клієнтів</value>
+  </data>
+  <data name="Sales Return" xml:space="preserve">
+    <value>Повернення від клієнта</value>
+  </data>
+  <data name="New Sales Return" xml:space="preserve">
+    <value>Нове повернення від клієнта</value>
+  </data>
+  <data name="Purchase Orders" xml:space="preserve">
+    <value>Замовлення постачальникам</value>
+  </data>
+  <data name="Purchase Order" xml:space="preserve">
+    <value>Замовлення постачальнику</value>
+  </data>
+  <data name="New Purchase Order" xml:space="preserve">
+    <value>Нове замовлення постачальнику</value>
+  </data>
+  <data name="Supplier Invoices" xml:space="preserve">
+    <value>Накладні постачальників</value>
+  </data>
+  <data name="Supplier Invoice" xml:space="preserve">
+    <value>Накладна постачальника</value>
+  </data>
+  <data name="New Supplier Invoice" xml:space="preserve">
+    <value>Нова накладна постачальника</value>
+  </data>
+  <data name="Supplier Returns" xml:space="preserve">
+    <value>Повернення постачальникам</value>
+  </data>
+  <data name="Supplier Return" xml:space="preserve">
+    <value>Повернення постачальнику</value>
+  </data>
+  <data name="New Supplier Return" xml:space="preserve">
+    <value>Нове повернення постачальнику</value>
+  </data>
+  <data name="Stock Receipts" xml:space="preserve">
+    <value>Надходження на склад</value>
+  </data>
+  <data name="Stock Receipt" xml:space="preserve">
+    <value>Надходження на склад</value>
+  </data>
+  <data name="New Stock Receipt" xml:space="preserve">
+    <value>Нове надходження на склад</value>
+  </data>
+  <data name="Stock Issues" xml:space="preserve">
+    <value>Списання зі складу</value>
+  </data>
+  <data name="Stock Issue" xml:space="preserve">
+    <value>Списання зі складу</value>
+  </data>
+  <data name="New Stock Issue" xml:space="preserve">
+    <value>Нове списання зі складу</value>
+  </data>
+  <data name="Stock Transfers" xml:space="preserve">
+    <value>Переміщення між складами</value>
+  </data>
+  <data name="Stock Transfer" xml:space="preserve">
+    <value>Переміщення між складами</value>
+  </data>
+  <data name="New Stock Transfer" xml:space="preserve">
+    <value>Нове переміщення між складами</value>
+  </data>
+  <data name="Stock Balances" xml:space="preserve">
+    <value>Залишки на складах</value>
+  </data>
+  <data name="Stock Balance" xml:space="preserve">
+    <value>Залишок на складі</value>
+  </data>
+  <data name="Stock Moves" xml:space="preserve">
+    <value>Рухи товарів</value>
+  </data>
+  <data name="Stock Move" xml:space="preserve">
+    <value>Рух товару</value>
+  </data>
+  <data name="Incoming Payments" xml:space="preserve">
+    <value>Вхідні платежі</value>
+  </data>
+  <data name="Incoming Payment" xml:space="preserve">
+    <value>Вхідний платіж</value>
+  </data>
+  <data name="New Incoming Payment" xml:space="preserve">
+    <value>Новий вхідний платіж</value>
+  </data>
+  <data name="Outgoing Payments" xml:space="preserve">
+    <value>Вихідні платежі</value>
+  </data>
+  <data name="Outgoing Payment" xml:space="preserve">
+    <value>Вихідний платіж</value>
+  </data>
+  <data name="New Outgoing Payment" xml:space="preserve">
+    <value>Новий вихідний платіж</value>
+  </data>
+  <data name="Money Balances" xml:space="preserve">
+    <value>Залишки коштів</value>
+  </data>
+  <data name="Money Balance" xml:space="preserve">
+    <value>Залишок коштів</value>
+  </data>
+  <data name="Money Moves" xml:space="preserve">
+    <value>Рухи коштів</value>
+  </data>
+  <data name="Money Move" xml:space="preserve">
+    <value>Рух коштів</value>
+  </data>
+  <data name="Number" xml:space="preserve">
+    <value>Номер</value>
+  </data>
+  <data name="Date" xml:space="preserve">
+    <value>Дата</value>
+  </data>
+  <data name="Organization" xml:space="preserve">
+    <value>Організація</value>
+  </data>
+  <data name="Customer" xml:space="preserve">
+    <value>Клієнт</value>
+  </data>
+  <data name="Supplier" xml:space="preserve">
+    <value>Постачальник</value>
+  </data>
+  <data name="Contact" xml:space="preserve">
+    <value>Контакт</value>
+  </data>
+  <data name="Warehouse" xml:space="preserve">
+    <value>Склад</value>
+  </data>
+  <data name="From warehouse" xml:space="preserve">
+    <value>Зі складу</value>
+  </data>
+  <data name="To warehouse" xml:space="preserve">
+    <value>На склад</value>
+  </data>
+  <data name="Money Account" xml:space="preserve">
+    <value>Грошовий рахунок</value>
+  </data>
+  <data name="Is Cash" xml:space="preserve">
+    <value>Готівка</value>
+  </data>
+  <data name="Manager" xml:space="preserve">
+    <value>Менеджер</value>
+  </data>
+  <data name="Quantity" xml:space="preserve">
+    <value>Кількість</value>
+  </data>
+  <data name="Amount" xml:space="preserve">
+    <value>Сума</value>
+  </data>
+  <data name="Delivery and payment" xml:space="preserve">
+    <value>Доставка та оплата</value>
+  </data>
+  <data name="Delivery Type" xml:space="preserve">
+    <value>Спосіб доставки</value>
+  </data>
+  <data name="Payment Method" xml:space="preserve">
+    <value>Спосіб оплати</value>
+  </data>
+  <data name="Payment Term" xml:space="preserve">
+    <value>Умова оплати</value>
+  </data>
+  <data name="Due Date" xml:space="preserve">
+    <value>Термін оплати</value>
+  </data>
+  <data name="External Number" xml:space="preserve">
+    <value>Зовнішній номер</value>
+  </data>
+  <data name="Recipient Name" xml:space="preserve">
+    <value>Отримувач</value>
+  </data>
+  <data name="Recipient Phone" xml:space="preserve">
+    <value>Телефон отримувача</value>
+  </data>
+  <data name="Delivery Address" xml:space="preserve">
+    <value>Адреса доставки</value>
+  </data>
+  <data name="Tracking Number" xml:space="preserve">
+    <value>Номер відстеження</value>
+  </data>
+  <data name="Counterparty" xml:space="preserve">
+    <value>Контрагент</value>
+  </data>
+  <data name="Note" xml:space="preserve">
+    <value>Примітка</value>
+  </data>
+  <data name="The warehouse belongs to another organization." xml:space="preserve">
+    <value>Склад належить іншій організації.</value>
+  </data>
+  <data name="The money account belongs to another organization." xml:space="preserve">
+    <value>Грошовий рахунок належить іншій організації.</value>
+  </data>
+  <data name="A transfer goes to another warehouse than the one it leaves." xml:space="preserve">
+    <value>Переміщення має йти на інший склад, ніж той, з якого воно виходить.</value>
+  </data>
+  <data name="The contact belongs to another customer." xml:space="preserve">
+    <value>Контакт належить іншому клієнту.</value>
+  </data>
+  <data name="The product belongs to another supplier." xml:space="preserve">
+    <value>Товар належить іншому постачальнику.</value>
+  </data>
+  <data name="The document's lines name products of another supplier." xml:space="preserve">
+    <value>Рядки документа містять товари іншого постачальника.</value>
+  </data>
+  <data name="Lines" xml:space="preserve">
+    <value>Рядки</value>
+  </data>
+  <data name="Followed by" xml:space="preserve">
+    <value>Подальші документи</value>
+  </data>
+  <data name="Entered on" xml:space="preserve">
+    <value>Введено на підставі</value>
+  </data>
+  <data name="Line" xml:space="preserve">
+    <value>Рядок</value>
+  </data>
+  <data name="New Line" xml:space="preserve">
+    <value>Новий рядок</value>
+  </data>
+  <data name="Product" xml:space="preserve">
+    <value>Товар</value>
+  </data>
+  <data name="Article" xml:space="preserve">
+    <value>Артикул</value>
+  </data>
+  <data name="Reserved" xml:space="preserve">
+    <value>У резерві</value>
+  </data>
+  <data name="Shipped" xml:space="preserve">
+    <value>Відвантажено</value>
+  </data>
+  <data name="Returned" xml:space="preserve">
+    <value>Повернено</value>
+  </data>
+  <data name="Received" xml:space="preserve">
+    <value>Отримано</value>
+  </data>
+  <data name="Paid" xml:space="preserve">
+    <value>Оплачено</value>
+  </data>
+  <data name="Refunded" xml:space="preserve">
+    <value>Повернено коштів</value>
+  </data>
+  <data name="Purchased" xml:space="preserve">
+    <value>Замовлено постачальнику</value>
+  </data>
+  <data name="Short" xml:space="preserve">
+    <value>Бракує</value>
+  </data>
+  <data name="To purchase" xml:space="preserve">
+    <value>До закупівлі</value>
+  </data>
+  <data name="Needs a purchase" xml:space="preserve">
+    <value>Потребують закупівлі</value>
+  </data>
+  <data name="Expected" xml:space="preserve">
+    <value>Очікується</value>
+  </data>
+  <data name="Free" xml:space="preserve">
+    <value>Вільно</value>
+  </data>
+  <data name="In Order" xml:space="preserve">
+    <value>У замовленні</value>
+  </data>
+  <data name="Price" xml:space="preserve">
+    <value>Ціна</value>
+  </data>
+  <data name="Discount" xml:space="preserve">
+    <value>Знижка</value>
+  </data>
+  <data name="Add by article" xml:space="preserve">
+    <value>Додати за артикулом</value>
+  </data>
+  <data name="The product's price" xml:space="preserve">
+    <value>Ціна товару</value>
+  </data>
+  <data name="The customer's discount" xml:space="preserve">
+    <value>Знижка клієнта</value>
+  </data>
+  <data name="The product's purchase price" xml:space="preserve">
+    <value>Закупівельна ціна товару</value>
+  </data>
+  <data name="Type" xml:space="preserve">
+    <value>Тип</value>
+  </data>
+  <data name="Documents" xml:space="preserve">
+    <value>Документи</value>
+  </data>
+  <data name="Document" xml:space="preserve">
+    <value>Документ</value>
+  </data>
+  <data name="Reference books" xml:space="preserve">
+    <value>Довідники</value>
+  </data>
+  <data name="Document Types" xml:space="preserve">
+    <value>Типи документів</value>
+  </data>
+  <data name="Document Type" xml:space="preserve">
+    <value>Тип документа</value>
+  </data>
+  <data name="Document Statuses" xml:space="preserve">
+    <value>Статуси документів</value>
+  </data>
+  <data name="Document Status" xml:space="preserve">
+    <value>Статус документа</value>
+  </data>
+  <data name="Prefix" xml:space="preserve">
+    <value>Префікс</value>
+  </data>
+  <data name="Editable" xml:space="preserve">
+    <value>Редагується</value>
+  </data>
+  <data name="Posted" xml:space="preserve">
+    <value>Проведено</value>
+  </data>
+  <data name="Final" xml:space="preserve">
+    <value>Кінцевий</value>
+  </data>
+  <data name="Canceled" xml:space="preserve">
+    <value>Скасовано</value>
+  </data>
+  <data name="Ecom: Confirm" xml:space="preserve">
+    <value>Підтвердити</value>
+  </data>
+  <data name="Complete" xml:space="preserve">
+    <value>Завершити</value>
+  </data>
+  <data name="Send" xml:space="preserve">
+    <value>Надіслати</value>
+  </data>
+  <data name="Post" xml:space="preserve">
+    <value>Провести</value>
+  </data>
+  <data name="Ready" xml:space="preserve">
+    <value>Готово до відвантаження</value>
+  </data>
+  <data name="Ship" xml:space="preserve">
+    <value>Відвантажити</value>
+  </data>
+  <data name="Deliver" xml:space="preserve">
+    <value>Доставити</value>
+  </data>
+  <data name="Create sales invoice" xml:space="preserve">
+    <value>Створити видаткову накладну</value>
+  </data>
+  <data name="Create sales return" xml:space="preserve">
+    <value>Створити повернення</value>
+  </data>
+  <data name="Create purchase order" xml:space="preserve">
+    <value>Створити замовлення постачальнику</value>
+  </data>
+  <data name="Create supplier invoice" xml:space="preserve">
+    <value>Створити накладну постачальника</value>
+  </data>
+  <data name="Create supplier return" xml:space="preserve">
+    <value>Створити повернення постачальнику</value>
+  </data>
+  <data name="Create incoming payment" xml:space="preserve">
+    <value>Створити вхідний платіж</value>
+  </data>
+  <data name="Create outgoing payment" xml:space="preserve">
+    <value>Створити вихідний платіж</value>
+  </data>
+  <data name="Ecom: Cancel" xml:space="preserve">
+    <value>Скасувати</value>
+  </data>
+  <data name="Change the status to Canceled?" xml:space="preserve">
+    <value>Змінити статус на «Скасовано»?</value>
+  </data>
+  <data name="Reopen" xml:space="preserve">
+    <value>Повернути</value>
+  </data>
+  <data name="Start" xml:space="preserve">
+    <value>Взяти в роботу</value>
+  </data>
+  <data name="Pause" xml:space="preserve">
+    <value>Призупинити</value>
+  </data>
+  <data name="Reason" xml:space="preserve">
+    <value>Причина</value>
+  </data>
+  <data name="The note has no room for the reason." xml:space="preserve">
+    <value>У примітці немає місця для причини.</value>
+  </data>
+  <data name="The document cannot change its status to {0}." xml:space="preserve">
+    <value>Документ не може перейти до статусу «{0}».</value>
+  </data>
+  <data name="The document has no lines and cannot take the status {0}." xml:space="preserve">
+    <value>Документ не має рядків і не може отримати статус «{0}».</value>
+  </data>
+  <data name="The document names no warehouse and cannot take the status {0}." xml:space="preserve">
+    <value>Документ не має складу і не може отримати статус «{0}».</value>
+  </data>
+  <data name="The document cannot take the status {0}: {1} is short by {2:0.###}." xml:space="preserve">
+    <value>Документ не може отримати статус «{0}»: не вистачає {2:0.###} товару «{1}».</value>
+  </data>
+  <data name="The document names no money account and cannot take the status {0}." xml:space="preserve">
+    <value>Документ не має грошового рахунку і не може отримати статус «{0}».</value>
+  </data>
+  <data name="The document cannot take the status {0}: the account {1} is short by {2:0.00}." xml:space="preserve">
+    <value>Документ не може отримати статус «{0}»: на рахунку «{1}» не вистачає {2:0.00}.</value>
+  </data>
+  <data name="The document has documents entered on it and cannot take the status {0}." xml:space="preserve">
+    <value>На підставі документа введено інші документи, тому він не може отримати статус «{0}».</value>
+  </data>
+  <data name="The document cannot take the status {0}: {1} is over what its source has open by {2:0.###}." xml:space="preserve">
+    <value>Документ не може отримати статус «{0}»: товару «{1}» на {2:0.###} більше, ніж відкрито в документі-підставі.</value>
+  </data>
+  <data name="The document is not posted and nothing can be entered on it." xml:space="preserve">
+    <value>Документ не проведено, тому на його підставі не можна ввести інший документ.</value>
+  </data>
+  <data name="The document has nothing open to enter." xml:space="preserve">
+    <value>У документі немає нічого відкритого для введення на підставі.</value>
+  </data>
+  <data name="An entered line keeps the product of its source." xml:space="preserve">
+    <value>Рядок, введений на підставі, зберігає товар рядка-підстави.</value>
+  </data>
+  <data name="An entered line takes no more than its source has open." xml:space="preserve">
+    <value>Рядок, введений на підставі, не може перевищувати відкриту кількість рядка-підстави.</value>
+  </data>
+  <data name="The document names no warehouse and nothing can be purchased for it." xml:space="preserve">
+    <value>Документ не має складу, тому для нього не можна створити замовлення постачальнику.</value>
+  </data>
+  <data name="The selected lines need no purchase." xml:space="preserve">
+    <value>Вибрані рядки не потребують закупівлі.</value>
+  </data>
+  <data name="The document is not in an editable status and cannot be deleted." xml:space="preserve">
+    <value>Документ не в статусі, що дозволяє редагування, тому його не можна видалити.</value>
+  </data>
+  <data name="New" xml:space="preserve">
+    <value>Новий</value>
+  </data>
+  <data name="In progress" xml:space="preserve">
+    <value>В роботі</value>
+  </data>
+  <data name="Confirmed" xml:space="preserve">
+    <value>Підтверджено</value>
+  </data>
+  <data name="Paused" xml:space="preserve">
+    <value>Призупинено</value>
+  </data>
+  <data name="Completed" xml:space="preserve">
+    <value>Завершено</value>
+  </data>
+  <data name="Sent" xml:space="preserve">
+    <value>Надіслано</value>
+  </data>
+  <data name="Draft" xml:space="preserve">
+    <value>Чернетка</value>
+  </data>
+  <data name="Ready to ship" xml:space="preserve">
+    <value>Готово до відвантаження</value>
+  </data>
+  <data name="In transit" xml:space="preserve">
+    <value>В дорозі</value>
+  </data>
+  <data name="Delivered" xml:space="preserve">
+    <value>Доставлено</value>
+  </data>
+  <data name="An order without lines takes no status." xml:space="preserve">
+    <value>Замовлення без рядків не набуває статусу.</value>
+  </data>
+  <data name="In work" xml:space="preserve">
+    <value>У роботі</value>
+  </data>
+  <data name="Finished" xml:space="preserve">
+    <value>Завершені</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>Усі</value>
+  </data>
+  <data name="Mine" xml:space="preserve">
+    <value>Мої</value>
+  </data>
+  <data name="History" xml:space="preserve">
+    <value>Історія</value>
+  </data>
+  <data name="Time" xml:space="preserve">
+    <value>Час</value>
+  </data>
+  <data name="From status" xml:space="preserve">
+    <value>Зі статусу</value>
+  </data>
+  <data name="To status" xml:space="preserve">
+    <value>У статус</value>
+  </data>
+</root>

@@ -273,13 +273,21 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     var nav = new Nav(servicePath);
     SetNav(nav);
 
+    foreach (var col in columns.List)
+    {
+      if (!string.IsNullOrEmpty(col.Label))
+      {
+        col.Label = Localizer.Instance[col.Label];
+      }
+    }
+
     var navStart = new List<NavElementModel>();
     if (formOverlay is not null && !Feature.IsReadOnly)
     {
       navStart.Add(new GridNavAddModel
       {
         Key = "add",
-        Label = "Add",
+        Label = Localizer.Instance["Add"],
         Variant = ButtonVariant.Soft,
         Color = UiColor.Orange,
         Icon = UiIcon.Plus
@@ -293,7 +301,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
     var navElements = new List<NavElementModel>
     {
-      new GridNavSearchModel { Key = "search", Label = "Search" }
+      new GridNavSearchModel { Key = "search", Label = Localizer.Instance["Search"] }
     };
 
     var actionEnd = new List<NavElementModel>();
@@ -313,8 +321,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
         Color = UiColor.Red,
         Variant = ButtonVariant.Soft,
         Icon = UiIcon.Trash,
-        Label = "Delete",
-        Confirm = new OverlayConfirmModel { Message = "Delete selected record(s)?", Color = UiColor.Red }
+        Label = Localizer.Instance["Delete"],
+        Confirm = new OverlayConfirmModel { Message = Localizer.Instance["DeleteConfirm"], Color = UiColor.Red }
       });
     }
 
@@ -354,7 +362,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       var statusButton = new GridNavStatusModel
       {
         Key = "status",
-        Label = "Status",
+        Label = Localizer.Instance["Status"],
         Path = "docStatusId",
         Moves = statusMoves
       };
@@ -367,6 +375,16 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       Columns = columns.List.ToList(),
       IsReadOnly = Feature.IsReadOnly,
       Form = formOverlay,
+      MutationTexts = new MutationTextsDto
+      {
+        ConflictTitle = Localizer.Instance["MutationConflict"],
+        ReloadLabel = Localizer.Instance["MutationReload"],
+        UnknownTitle = Localizer.Instance["MutationUnknown"],
+        UnknownDescription = Localizer.Instance["MutationUnknownDescription"],
+        VerifyLabel = Localizer.Instance["MutationVerify"],
+        CommittedWarningTitle = Localizer.Instance["MutationCommittedWarning"],
+        SelectionCorrectionLabel = Localizer.Instance["MutationSelectionCorrection"]
+      },
       Nav = new NavModel
       {
         Key = $"{servicePath}.nav",

@@ -84,7 +84,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
 
   public virtual Feature Feature => new("", GetType().Name.Replace("FormService", "").ToLowerInvariant(), GetType());
 
-  protected virtual string Title => typeof(TEntity).Name;
+  protected virtual string Title => !string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name;
 
   protected bool IsNew { get; set; }
   protected virtual bool IsReadOnly => Feature.IsReadOnly;
@@ -178,17 +178,22 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
 
   protected virtual string RecordCaption(TEntity? entity, long? id)
   {
+    var title = L[Title];
     if (id is null or 0)
     {
-      return $"New {Title}";
+      var newTitleKey = $"New {Title}";
+      var localizedNew = L[newTitleKey];
+      return localizedNew != newTitleKey ? localizedNew : $"{L["New"]} {title}";
     }
 
-    var nameProp = entity?.GetType().GetProperty("Name") ?? entity?.GetType().GetProperty("Title");
-    var label = nameProp?.GetValue(entity)?.ToString();
+    var labelProp = entity?.GetType().GetProperty("Number")
+      ?? entity?.GetType().GetProperty("Name")
+      ?? entity?.GetType().GetProperty("Title");
+    var label = labelProp?.GetValue(entity)?.ToString();
 
     return string.IsNullOrWhiteSpace(label)
-      ? $"{Title} #{id}"
-      : $"{Title} #{id} {label}";
+      ? $"{title} #{id}"
+      : $"{title} {label}";
   }
 
   public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default)
@@ -199,12 +204,42 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
 
+    foreach (var el in elements.List)
+    {
+      if (!string.IsNullOrEmpty(el.SeparatorLabel))
+      {
+        el.SeparatorLabel = L[el.SeparatorLabel];
+      }
+      if (!string.IsNullOrEmpty(el.Label))
+      {
+        el.Label = L[el.Label];
+      }
+    }
+
     var formModel = new FormModel
     {
       Service = servicePath,
       Elements = elements.List.ToList(),
       Tabs = elements.Tabs.Count > 0 ? elements.Tabs.ToList() : null,
-      IsReadOnly = IsReadOnly
+      IsReadOnly = IsReadOnly,
+      DirtyDialog = new OverlayDirtyModel
+      {
+        Title = L["FormDirtyTitle"],
+        Description = L["FormDirtyDescription"],
+        SaveLabel = L["Save"],
+        DiscardLabel = L["FormDirtyDiscard"],
+        ContinueLabel = L["FormDirtyContinue"]
+      },
+      MutationTexts = new MutationTextsDto
+      {
+        ConflictTitle = L["MutationConflict"],
+        ReloadLabel = L["MutationReload"],
+        UnknownTitle = L["MutationUnknown"],
+        UnknownDescription = L["MutationUnknownDescription"],
+        VerifyLabel = L["MutationVerify"],
+        CommittedWarningTitle = L["MutationCommittedWarning"],
+        SelectionCorrectionLabel = L["MutationSelectionCorrection"]
+      }
     };
 
     TEntity? entity = null;
@@ -223,7 +258,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       navStart.Add(new FormNavSaveCloseModel
       {
         Key = "save-close",
-        Label = "Save & Close",
+        Label = L["SaveAndClose"],
         Icon = UiIcon.Save,
         Color = UiColor.Green,
         Variant = ButtonVariant.Soft
@@ -232,7 +267,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       navElements.Add(new FormNavSaveModel
       {
         Key = "save",
-        Label = "Save",
+        Label = L["Save"],
         Color = UiColor.Green,
         Variant = ButtonVariant.Soft
       });
@@ -240,7 +275,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       navElements.Add(new NavCloseModel
       {
         Key = "form-close",
-        Label = "Close",
+        Label = L["Close"],
         Icon = UiIcon.Close,
         Color = UiColor.Slate,
         Variant = ButtonVariant.Soft
@@ -251,7 +286,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       navStart.Add(new NavCloseModel
       {
         Key = "form-close",
-        Label = "Close",
+        Label = L["Close"],
         Icon = UiIcon.Close,
         Color = UiColor.Slate,
         Variant = ButtonVariant.Soft
@@ -290,7 +325,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
           Key = tab.Key,
           Group = FormTab.Group,
           Value = tab.Key,
-          Label = tab.Label,
+          Label = L[tab.Label],
           Variant = ButtonVariant.Soft,
           Path = "form"
         });
@@ -315,7 +350,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
         Icon = UiIcon.Close,
         Color = UiColor.Slate,
         Variant = ButtonVariant.Ghost,
-        Title = "Close"
+        Title = L["Close"]
       }
     };
 
@@ -420,7 +455,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
             ParentId = id!.Value,
             Tabs = strip
           })
-          .Label(child.DeclaredLabel)
+          .Label(L[child.DeclaredLabel])
           .Fill()
           .Min(240)
         );

@@ -1,0 +1,1177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="Login" xml:space="preserve">
+    <value>Логін</value>
+  </data>
+  <data name="Password" xml:space="preserve">
+    <value>Пароль</value>
+  </data>
+  <data name="SignIn" xml:space="preserve">
+    <value>Увійти</value>
+  </data>
+  <data name="InvalidCredentials" xml:space="preserve">
+    <value>Невірний логін або пароль</value>
+  </data>
+  <data name="TooManyAttempts" xml:space="preserve">
+    <value>Забагато спроб. Спробуйте пізніше</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>Сервер недоступний</value>
+  </data>
+  <data name="ChangePasswordTitle" xml:space="preserve">
+    <value>Зміна пароля</value>
+  </data>
+  <data name="PasswordCurrent" xml:space="preserve">
+    <value>Поточний пароль</value>
+  </data>
+  <data name="PasswordNew" xml:space="preserve">
+    <value>Новий пароль</value>
+  </data>
+  <data name="PasswordRepeat" xml:space="preserve">
+    <value>Повторіть новий пароль</value>
+  </data>
+  <data name="ChangePasswordSubmit" xml:space="preserve">
+    <value>Змінити пароль</value>
+  </data>
+  <data name="PasswordsDiffer" xml:space="preserve">
+    <value>Паролі не збігаються</value>
+  </data>
+  <data name="Logout" xml:space="preserve">
+    <value>Вийти</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Мова</value>
+  </data>
+  <data name="Administration" xml:space="preserve">
+    <value>Адміністрування</value>
+  </data>
+  <data name="User" xml:space="preserve">
+    <value>Користувач</value>
+  </data>
+  <data name="Users" xml:space="preserve">
+    <value>Користувачі</value>
+  </data>
+  <data name="Unit" xml:space="preserve">
+    <value>Підрозділ</value>
+  </data>
+  <data name="Units" xml:space="preserve">
+    <value>Підрозділи</value>
+  </data>
+  <data name="AuthRole" xml:space="preserve">
+    <value>Роль</value>
+  </data>
+  <data name="AuthRoles" xml:space="preserve">
+    <value>Ролі</value>
+  </data>
+  <data name="AuthPermission" xml:space="preserve">
+    <value>Дозвіл</value>
+  </data>
+  <data name="AuthPermissions" xml:space="preserve">
+    <value>Дозволи</value>
+  </data>
+  <data name="Actions" xml:space="preserve">
+    <value>Дії</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Статус</value>
+  </data>
+  <data name="StatusNoMove" xml:space="preserve">
+    <value>Немає доступної зміни статусу.</value>
+  </data>
+  <data name="StatusRefusesMove" xml:space="preserve">
+    <value>Статус «{0}» не дозволяє перехід до статусу «{1}».</value>
+  </data>
+  <data name="Add" xml:space="preserve">
+    <value>Додати</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Видалити</value>
+  </data>
+  <data name="Filters" xml:space="preserve">
+    <value>Фільтри</value>
+  </data>
+  <data name="Export" xml:space="preserve">
+    <value>Експорт</value>
+  </data>
+  <data name="ExportTruncated" xml:space="preserve">
+    <value>Експортовано лише перші {0} рядків; умовам відповідає більше.</value>
+  </data>
+  <data name="Search" xml:space="preserve">
+    <value>Пошук</value>
+  </data>
+  <data name="DeleteConfirm" xml:space="preserve">
+    <value>Видалити вибрані рядки?</value>
+  </data>
+  <data name="DeleteRefused" xml:space="preserve">
+    <value>Вибрані рядки не можна видалити.</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Зберегти</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Скасувати</value>
+  </data>
+  <data name="SaveAndClose" xml:space="preserve">
+    <value>Зберегти й закрити</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Закрити</value>
+  </data>
+  <data name="FormInvalid" xml:space="preserve">
+    <value>У формі є помилки.</value>
+  </data>
+  <data name="FormReadOnly" xml:space="preserve">
+    <value>Ця форма лише для читання.</value>
+  </data>
+  <data name="FormNotFound" xml:space="preserve">
+    <value>Запис не знайдено.</value>
+  </data>
+  <data name="Required" xml:space="preserve">
+    <value>Це поле обов’язкове.</value>
+  </data>
+  <data name="RequestInvalid" xml:space="preserve">
+    <value>Запит некоректний.</value>
+  </data>
+  <data name="FormBindingShape" xml:space="preserve">
+    <value>Значення форми має бути об’єктом.</value>
+  </data>
+  <data name="FormBindingClosed" xml:space="preserve">
+    <value>Це поле тут змінити не можна.</value>
+  </data>
+  <data name="FormBindingNull" xml:space="preserve">
+    <value>Це поле не може мати значення null.</value>
+  </data>
+  <data name="FormBindingText" xml:space="preserve">
+    <value>Це поле містить непідтримуваний текст.</value>
+  </data>
+  <data name="FormBindingValue" xml:space="preserve">
+    <value>Це поле містить некоректне значення.</value>
+  </data>
+  <data name="FormSensitiveInvalid" xml:space="preserve">
+    <value>Це поле містить некоректне значення.</value>
+  </data>
+  <data name="FormValidationNull" xml:space="preserve">
+    <value>Це поле не може мати значення null.</value>
+  </data>
+  <data name="FormValidationRequired" xml:space="preserve">
+    <value>Це поле обов’язкове.</value>
+  </data>
+  <data name="FormValidationEmail" xml:space="preserve">
+    <value>Введіть коректну адресу електронної пошти.</value>
+  </data>
+  <data name="FormValidationPhone" xml:space="preserve">
+    <value>Введіть номер телефону від 7 до 15 цифр.</value>
+  </data>
+  <data name="FormValidationUrl" xml:space="preserve">
+    <value>Введіть коректну адресу сайту.</value>
+  </data>
+  <data name="FormValidationLength" xml:space="preserve">
+    <value>Довжина значення цього поля некоректна.</value>
+  </data>
+  <data name="FormValidationMaxLength" xml:space="preserve">
+    <value>Значення цього поля перевищує максимальну довжину.</value>
+  </data>
+  <data name="FormValidationMinLength" xml:space="preserve">
+    <value>Значення цього поля коротше за мінімальну довжину.</value>
+  </data>
+  <data name="FormValidationRange" xml:space="preserve">
+    <value>Значення цього поля виходить за допустимі межі.</value>
+  </data>
+  <data name="FormValidationUnique" xml:space="preserve">
+    <value>Це значення вже використовується.</value>
+  </data>
+  <data name="FormValidationPattern" xml:space="preserve">
+    <value>Формат значення цього поля некоректний.</value>
+  </data>
+  <data name="FormValidationCompare" xml:space="preserve">
+    <value>Значення полів не збігаються.</value>
+  </data>
+  <data name="FormValidationDecimal" xml:space="preserve">
+    <value>Число перевищує допустиму точність або кількість десяткових знаків.</value>
+  </data>
+  <data name="FormValidationReference" xml:space="preserve">
+    <value>Виберіть доступне значення.</value>
+  </data>
+  <data name="FormValidationOption" xml:space="preserve">
+    <value>Виберіть із доступних варіантів.</value>
+  </data>
+  <data name="MutationVersionRequired" xml:space="preserve">
+    <value>Завантажте запис повторно, щоб отримати його версію перед збереженням.</value>
+  </data>
+  <data name="MutationConflict" xml:space="preserve">
+    <value>Запис змінено іншим користувачем. Оновіть його перед повторним збереженням.</value>
+  </data>
+  <data name="MutationReload" xml:space="preserve">
+    <value>Оновити запис</value>
+  </data>
+  <data name="MutationRefused" xml:space="preserve">
+    <value>Операцію відхилено.</value>
+  </data>
+  <data name="MutationUnknown" xml:space="preserve">
+    <value>Не вдалося підтвердити результат операції.</value>
+  </data>
+  <data name="MutationUnknownDescription" xml:space="preserve">
+    <value>Зміни могли бути збережені. Перевірте поточні дані перед повторенням операції.</value>
+  </data>
+  <data name="MutationVerify" xml:space="preserve">
+    <value>Перевірити поточні дані</value>
+  </data>
+  <data name="MutationCommittedWarning" xml:space="preserve">
+    <value>Зміни збережено, але не вдалося завершити подальшу дію.</value>
+  </data>
+  <data name="MutationSelectionCorrection" xml:space="preserve">
+    <value>Прибрати заблоковані або недоступні записи з вибраного</value>
+  </data>
+  <data name="FormDirtyTitle" xml:space="preserve">
+    <value>Зберегти зміни?</value>
+  </data>
+  <data name="FormDirtyDescription" xml:space="preserve">
+    <value>У вас є незбережені зміни. Виберіть дію перед виходом.</value>
+  </data>
+  <data name="FormDirtyDiscard" xml:space="preserve">
+    <value>Відкинути зміни</value>
+  </data>
+  <data name="FormDirtyContinue" xml:space="preserve">
+    <value>Продовжити редагування</value>
+  </data>
+  <data name="MutationConstraint" xml:space="preserve">
+    <value>Зміни суперечать наявним даним. Перевірте поточні дані перед повторною спробою.</value>
+  </data>
+  <data name="MutationRolledBack" xml:space="preserve">
+    <value>Зміни не збережено. Операцію скасовано з відкатом.</value>
+  </data>
+  <data name="GridDeleteUnavailable" xml:space="preserve">
+    <value>Вибраний запис недоступний.</value>
+  </data>
+  <data name="GridDeleteForbidden" xml:space="preserve">
+    <value>Ви не можете видаляти записи з цієї таблиці.</value>
+  </data>
+  <data name="FormRecord" xml:space="preserve">
+    <value>{0} #{1}</value>
+  </data>
+  <data name="FormRecordNamed" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="FormNewRecord" xml:space="preserve">
+    <value>Новий {0}</value>
+  </data>
+  <data name="FormRecordChanged" xml:space="preserve">
+    <value>Запис змінився після того, як його було прочитано.</value>
+  </data>
+  <data name="CellSaveQuestion" xml:space="preserve">
+    <value>Зберегти зміну?</value>
+  </data>
+  <data name="NumberIncrease" xml:space="preserve">
+    <value>Збільшити</value>
+  </data>
+  <data name="NumberDecrease" xml:space="preserve">
+    <value>Зменшити</value>
+  </data>
+  <data name="Loading" xml:space="preserve">
+    <value>Завантаження…</value>
+  </data>
+  <data name="ScreenLoadFailed" xml:space="preserve">
+    <value>Не вдалося завантажити цей екран.</value>
+  </data>
+  <data name="Processing" xml:space="preserve">
+    <value>Обробка запиту…</value>
+  </data>
+  <data name="CloseNotification" xml:space="preserve">
+    <value>Закрити сповіщення</value>
+  </data>
+  <data name="CloseTab" xml:space="preserve">
+    <value>Закрити {0}</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>Застосувати</value>
+  </data>
+  <data name="Clear" xml:space="preserve">
+    <value>Очистити</value>
+  </data>
+  <data name="ClearAll" xml:space="preserve">
+    <value>Очистити все</value>
+  </data>
+  <data name="SearchMenu" xml:space="preserve">
+    <value>Пошук у меню</value>
+  </data>
+  <data name="Pick" xml:space="preserve">
+    <value>Вибрати {0}</value>
+  </data>
+  <data name="NothingToPick" xml:space="preserve">
+    <value>Немає що вибрати.</value>
+  </data>
+  <data name="TypeAtLeast" xml:space="preserve">
+    <value>Введіть щонайменше символів: {0}</value>
+  </data>
+  <data name="OptionsLoadFailed" xml:space="preserve">
+    <value>Не вдалося завантажити варіанти.</value>
+  </data>
+  <data name="NoFilterYet" xml:space="preserve">
+    <value>Фільтри ще не додані.</value>
+  </data>
+  <data name="AddCondition" xml:space="preserve">
+    <value>Додати умову</value>
+  </data>
+  <data name="AddConditionGroup" xml:space="preserve">
+    <value>Додати групу умов</value>
+  </data>
+  <data name="RemoveCondition" xml:space="preserve">
+    <value>Видалити цю умову</value>
+  </data>
+  <data name="RemoveGroup" xml:space="preserve">
+    <value>Видалити цю групу</value>
+  </data>
+  <data name="RemoveAllFilters" xml:space="preserve">
+    <value>Прибрати всі фільтри</value>
+  </data>
+  <data name="FilterAnd" xml:space="preserve">
+    <value>І</value>
+  </data>
+  <data name="FilterOr" xml:space="preserve">
+    <value>АБО</value>
+  </data>
+  <data name="Where" xml:space="preserve">
+    <value>Де</value>
+  </data>
+  <data name="AllAreTrue" xml:space="preserve">
+    <value>Усі умови виконуються…</value>
+  </data>
+  <data name="AnyIsTrue" xml:space="preserve">
+    <value>Будь-яка з умов виконується…</value>
+  </data>
+  <data name="ConditionsJoin" xml:space="preserve">
+    <value>Як поєднуються умови</value>
+  </data>
+  <data name="FilterBy" xml:space="preserve">
+    <value>Фільтрувати за {0}</value>
+  </data>
+  <data name="Retry" xml:space="preserve">
+    <value>Спробувати ще</value>
+  </data>
+  <data name="NoRows" xml:space="preserve">
+    <value>Нічого не знайдено.</value>
+  </data>
+  <data name="Any" xml:space="preserve">
+    <value>Будь-який</value>
+  </data>
+  <data name="Yes" xml:space="preserve">
+    <value>Так</value>
+  </data>
+  <data name="No" xml:space="preserve">
+    <value>Ні</value>
+  </data>
+  <data name="Pin" xml:space="preserve">
+    <value>Закріпити</value>
+  </data>
+  <data name="Unpin" xml:space="preserve">
+    <value>Відкріпити</value>
+  </data>
+  <data name="SignOut" xml:space="preserve">
+    <value>Вийти</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Світла тема</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Темна тема</value>
+  </data>
+  <data name="NavigationShow" xml:space="preserve">
+    <value>Показати навігацію</value>
+  </data>
+  <data name="NavigationHide" xml:space="preserve">
+    <value>Приховати навігацію</value>
+  </data>
+  <data name="MenuOpen" xml:space="preserve">
+    <value>Відкрити меню</value>
+  </data>
+  <data name="More" xml:space="preserve">
+    <value>Інші дії</value>
+  </data>
+  <data name="OperatorEquals" xml:space="preserve">
+    <value>Дорівнює</value>
+  </data>
+  <data name="OperatorNotEquals" xml:space="preserve">
+    <value>Не дорівнює</value>
+  </data>
+  <data name="OperatorGreaterThan" xml:space="preserve">
+    <value>Більше</value>
+  </data>
+  <data name="OperatorGreaterThanOrEqual" xml:space="preserve">
+    <value>Більше або дорівнює</value>
+  </data>
+  <data name="OperatorLessThan" xml:space="preserve">
+    <value>Менше</value>
+  </data>
+  <data name="OperatorLessThanOrEqual" xml:space="preserve">
+    <value>Менше або дорівнює</value>
+  </data>
+  <data name="OperatorContains" xml:space="preserve">
+    <value>Містить</value>
+  </data>
+  <data name="OperatorNotContains" xml:space="preserve">
+    <value>Не містить</value>
+  </data>
+  <data name="OperatorStartsWith" xml:space="preserve">
+    <value>Починається з</value>
+  </data>
+  <data name="OperatorNotStartsWith" xml:space="preserve">
+    <value>Не починається з</value>
+  </data>
+  <data name="OperatorEndsWith" xml:space="preserve">
+    <value>Закінчується на</value>
+  </data>
+  <data name="OperatorNotEndsWith" xml:space="preserve">
+    <value>Не закінчується на</value>
+  </data>
+  <data name="OperatorIn" xml:space="preserve">
+    <value>Серед</value>
+  </data>
+  <data name="OperatorNotIn" xml:space="preserve">
+    <value>Не серед</value>
+  </data>
+  <data name="OperatorIsNull" xml:space="preserve">
+    <value>Порожнє</value>
+  </data>
+  <data name="OperatorIsNotNull" xml:space="preserve">
+    <value>Не порожнє</value>
+  </data>
+  <data name="OperatorMatches" xml:space="preserve">
+    <value>Відповідає</value>
+  </data>
+  <data name="OperatorNotMatches" xml:space="preserve">
+    <value>Не відповідає</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>Помилка</value>
+  </data>
+  <data name="RequestFailed" xml:space="preserve">
+    <value>Сталася помилка при зверненні до сервера</value>
+  </data>
+  <data name="RightsNoPrincipal" xml:space="preserve">
+    <value>Ролі, призначення, гранти й користувачі з ролями змінюються лише від імені користувача, який увійшов.</value>
+  </data>
+  <data name="RightsNotCovered" xml:space="preserve">
+    <value>Зміна потребує права '{0}', якого ваші права не покривають.</value>
+  </data>
+  <data name="RightsUserNotCovered" xml:space="preserve">
+    <value>Користувач має право '{0}', якого ваші права не покривають, тож змінити чи видалити його ви не можете.</value>
+  </data>
+  <data name="RightsRoleOutOfReach" xml:space="preserve">
+    <value>Роль не видно в активному тенанті, тож її не можна призначити.</value>
+  </data>
+  <data name="RightsRootFlag" xml:space="preserve">
+    <value>Кореневого користувача задає інсталяція, і жодне збереження його не змінює.</value>
+  </data>
+  <data name="RightsRootDeactivated" xml:space="preserve">
+    <value>Кореневого користувача не можна деактивувати.</value>
+  </data>
+  <data name="RightsRootDeleted" xml:space="preserve">
+    <value>Кореневого користувача не можна видалити.</value>
+  </data>
+  <data name="RightsRootLosesAll" xml:space="preserve">
+    <value>Кореневий користувач має зберегти '*' через активне призначення активної ролі.</value>
+  </data>
+  <data name="RightsTreeAll" xml:space="preserve">
+    <value>Усі права</value>
+  </data>
+  <data name="Upload" xml:space="preserve">
+    <value>Завантажити</value>
+  </data>
+  <data name="Confirm" xml:space="preserve">
+    <value>Підтвердити</value>
+  </data>
+  <data name="Navigation" xml:space="preserve">
+    <value>Навігація</value>
+  </data>
+  <data name="ClearSearch" xml:space="preserve">
+    <value>Очистити пошук</value>
+  </data>
+  <data name="ClearSearchIn" xml:space="preserve">
+    <value>Очистити пошук у колонці {0}</value>
+  </data>
+  <data name="PinEntry" xml:space="preserve">
+    <value>Закріпити {0}</value>
+  </data>
+  <data name="UnpinEntry" xml:space="preserve">
+    <value>Відкріпити {0}</value>
+  </data>
+  <data name="RemoveItem" xml:space="preserve">
+    <value>Прибрати {0}</value>
+  </data>
+  <data name="RemoveFilterNamed" xml:space="preserve">
+    <value>Прибрати фільтр {0}</value>
+  </data>
+  <data name="SearchOptions" xml:space="preserve">
+    <value>Пошук серед варіантів</value>
+  </data>
+  <data name="PickedCount" xml:space="preserve">
+    <value>Вибрано: {0}</value>
+  </data>
+  <data name="Pages" xml:space="preserve">
+    <value>Сторінки</value>
+  </data>
+  <data name="PreviousPage" xml:space="preserve">
+    <value>Попередня сторінка</value>
+  </data>
+  <data name="NextPage" xml:space="preserve">
+    <value>Наступна сторінка</value>
+  </data>
+  <data name="RowCount" xml:space="preserve">
+    <value>Рядків: {0}</value>
+  </data>
+  <data name="SelectedOf" xml:space="preserve">
+    <value>Вибрано {0} з {1}</value>
+  </data>
+  <data name="Changed" xml:space="preserve">
+    <value>Змінено</value>
+  </data>
+  <data name="SelectRow" xml:space="preserve">
+    <value>Вибрати рядок {0}</value>
+  </data>
+  <data name="SelectPage" xml:space="preserve">
+    <value>Вибрати всі рядки сторінки</value>
+  </data>
+  <data name="Pinned" xml:space="preserve">
+    <value>Закріплено</value>
+  </data>
+  <data name="PinnedRow" xml:space="preserve">
+    <value>Закріплений рядок</value>
+  </data>
+  <data name="SortBy" xml:space="preserve">
+    <value>Сортувати за {0}</value>
+  </data>
+  <data name="ColumnMenu" xml:space="preserve">
+    <value>Меню колонки {0}</value>
+  </data>
+  <data name="ClearFilterOf" xml:space="preserve">
+    <value>Очистити фільтр колонки {0}</value>
+  </data>
+  <data name="Column" xml:space="preserve">
+    <value>Колонка</value>
+  </data>
+  <data name="OperatorFor" xml:space="preserve">
+    <value>Оператор для {0}</value>
+  </data>
+  <data name="ValueFor" xml:space="preserve">
+    <value>Значення для {0}</value>
+  </data>
+  <data name="ResizePanel" xml:space="preserve">
+    <value>Змінити розмір {0}</value>
+  </data>
+  <data name="OpensInNewTab" xml:space="preserve">
+    <value>відкривається в новій вкладці</value>
+  </data>
+  <data name="FileRefused" xml:space="preserve">
+    <value>Файл відхилено.</value>
+  </data>
+  <data name="FileCountRefused" xml:space="preserve">
+    <value>Завантажте рівно один файл.</value>
+  </data>
+  <data name="FileNameRefused" xml:space="preserve">
+    <value>Файлу потрібна назва до 255 символів.</value>
+  </data>
+  <data name="FileUnavailable" xml:space="preserve">
+    <value>Вибраний файл недоступний.</value>
+  </data>
+  <data name="FileNameInvalid" xml:space="preserve">
+    <value>Назва файлу порожня або містить теку чи керівний символ.</value>
+  </data>
+  <data name="FileTooLarge" xml:space="preserve">
+    <value>Файл більший за {0} МБ.</value>
+  </data>
+  <data name="FileTypeRefused" xml:space="preserve">
+    <value>Файли цього типу тут не приймаються; приймаються: {0}.</value>
+  </data>
+  <data name="ChooseDate" xml:space="preserve">
+    <value>Вибрати дату</value>
+  </data>
+  <data name="ChooseDatetime" xml:space="preserve">
+    <value>Вибрати дату й час</value>
+  </data>
+  <data name="ChooseTime" xml:space="preserve">
+    <value>Вибрати час</value>
+  </data>
+  <data name="PreviousMonth" xml:space="preserve">
+    <value>Попередній місяць</value>
+  </data>
+  <data name="NextMonth" xml:space="preserve">
+    <value>Наступний місяць</value>
+  </data>
+  <data name="PreviousYear" xml:space="preserve">
+    <value>Попередній рік</value>
+  </data>
+  <data name="NextYear" xml:space="preserve">
+    <value>Наступний рік</value>
+  </data>
+  <data name="PreviousYears" xml:space="preserve">
+    <value>Попередні роки</value>
+  </data>
+  <data name="NextYears" xml:space="preserve">
+    <value>Наступні роки</value>
+  </data>
+  <data name="ChooseMonth" xml:space="preserve">
+    <value>Вибрати місяць</value>
+  </data>
+  <data name="ChooseYear" xml:space="preserve">
+    <value>Вибрати рік</value>
+  </data>
+  <data name="ChooseHour" xml:space="preserve">
+    <value>Вибрати годину</value>
+  </data>
+  <data name="ChooseMinute" xml:space="preserve">
+    <value>Вибрати хвилину</value>
+  </data>
+  <data name="Week" xml:space="preserve">
+    <value>Тиждень</value>
+  </data>
+  <data name="Hours" xml:space="preserve">
+    <value>Години</value>
+  </data>
+  <data name="Minutes" xml:space="preserve">
+    <value>Хвилини</value>
+  </data>
+  <data name="Today" xml:space="preserve">
+    <value>Сьогодні</value>
+  </data>
+  <data name="Now" xml:space="preserve">
+    <value>Зараз</value>
+  </data>
+  <data name="Periods" xml:space="preserve">
+    <value>Періоди</value>
+  </data>
+  <data name="ChoosePeriodOf" xml:space="preserve">
+    <value>Вибрати період: {0}</value>
+  </data>
+  <data name="PeriodFrom" xml:space="preserve">
+    <value>З</value>
+  </data>
+  <data name="PeriodTo" xml:space="preserve">
+    <value>По</value>
+  </data>
+  <data name="PeriodThisWeek" xml:space="preserve">
+    <value>Цей тиждень</value>
+  </data>
+  <data name="PeriodThisMonth" xml:space="preserve">
+    <value>Цей місяць</value>
+  </data>
+  <data name="PeriodPreviousMonth" xml:space="preserve">
+    <value>Попередній місяць</value>
+  </data>
+  <data name="PeriodNextMonth" xml:space="preserve">
+    <value>Наступний місяць</value>
+  </data>
+  <data name="PeriodQuarter" xml:space="preserve">
+    <value>{0} квартал</value>
+  </data>
+  <data name="PeriodPreviousYear" xml:space="preserve">
+    <value>Попередній рік</value>
+  </data>
+  <data name="PeriodThisYear" xml:space="preserve">
+    <value>Цей рік</value>
+  </data>
+  <data name="PeriodNextYear" xml:space="preserve">
+    <value>Наступний рік</value>
+  </data>
+  <data name="UploadFiles" xml:space="preserve">
+    <value>Завантаження файлів</value>
+  </data>
+  <data name="DropFilesHere" xml:space="preserve">
+    <value>Перетягніть файли сюди або виберіть їх.</value>
+  </data>
+  <data name="ChooseFiles" xml:space="preserve">
+    <value>Вибрати файли</value>
+  </data>
+  <data name="FileAccepts" xml:space="preserve">
+    <value>Приймаються: {0}; до {1} МБ.</value>
+  </data>
+  <data name="FileWaiting" xml:space="preserve">
+    <value>Очікує</value>
+  </data>
+  <data name="FileUploading" xml:space="preserve">
+    <value>Завантажується…</value>
+  </data>
+  <data name="FileUploaded" xml:space="preserve">
+    <value>Завантажено</value>
+  </data>
+  <data name="FileUploadFailed" xml:space="preserve">
+    <value>Не завантажено</value>
+  </data>
+  <data name="NoFiles" xml:space="preserve">
+    <value>Файлів ще немає.</value>
+  </data>
+  <data name="FilesSaveFirst" xml:space="preserve">
+    <value>Збережіть запис, щоб додати файли.</value>
+  </data>
+  <data name="DeleteFile" xml:space="preserve">
+    <value>Видалити {0}</value>
+  </data>
+  <data name="DeleteFileConfirm" xml:space="preserve">
+    <value>Видалити файл {0}?</value>
+  </data>
+  <data name="FilesZoneHint" xml:space="preserve">
+    <value>Перетягніть, вставте або виберіть файли.</value>
+  </data>
+  <data name="FileLimits" xml:space="preserve">
+    <value>{0} - до {1}</value>
+  </data>
+  <data name="TakePhoto" xml:space="preserve">
+    <value>Зробити фото</value>
+  </data>
+  <data name="FileRemove" xml:space="preserve">
+    <value>Прибрати</value>
+  </data>
+  <data name="OpenFile" xml:space="preserve">
+    <value>Відкрити {0}</value>
+  </data>
+  <data name="OpenRecord" xml:space="preserve">
+    <value>Відкрити {0}</value>
+  </data>
+  <data name="Open" xml:space="preserve">
+    <value>Відкрити</value>
+  </data>
+  <data name="Download" xml:space="preserve">
+    <value>Скачати</value>
+  </data>
+  <data name="DeleteAllFiles" xml:space="preserve">
+    <value>Видалити всі</value>
+  </data>
+  <data name="DeleteAllFilesConfirm" xml:space="preserve">
+    <value>Видалити всі файли ({0})?</value>
+  </data>
+  <data name="FileViewer" xml:space="preserve">
+    <value>Файли</value>
+  </data>
+  <data name="FileCounter" xml:space="preserve">
+    <value>{0} / {1}</value>
+  </data>
+  <data name="PreviousFile" xml:space="preserve">
+    <value>Попередній файл</value>
+  </data>
+  <data name="NextFile" xml:space="preserve">
+    <value>Наступний файл</value>
+  </data>
+  <data name="FitToScreen" xml:space="preserve">
+    <value>Умістити в екран</value>
+  </data>
+  <data name="ActualSize" xml:space="preserve">
+    <value>Справжній розмір</value>
+  </data>
+  <data name="FileLoadFailed" xml:space="preserve">
+    <value>Файл не вдалося показати.</value>
+  </data>
+  <data name="Cover" xml:space="preserve">
+    <value>Обкладинка</value>
+  </data>
+  <data name="SetCover" xml:space="preserve">
+    <value>Зробити обкладинкою</value>
+  </data>
+  <data name="FileThumbnailCount" xml:space="preserve">
+    <value>Завантажте не більше однієї мініатюри.</value>
+  </data>
+  <data name="FileThumbnailBeside" xml:space="preserve">
+    <value>Мініатюру має лише зображення або відео.</value>
+  </data>
+  <data name="FileThumbnailTooLarge" xml:space="preserve">
+    <value>Мініатюра порожня або більша за 64 КБ.</value>
+  </data>
+  <data name="FileThumbnailType" xml:space="preserve">
+    <value>Мініатюра не є зображенням WebP або JPEG.</value>
+  </data>
+  <data name="FileCoverRefused" xml:space="preserve">
+    <value>Ці файли не мають обкладинки.</value>
+  </data>
+  <data name="FileExtensionRefused" xml:space="preserve">
+    <value>Назва файлу не закінчується розширенням типу {0}.</value>
+  </data>
+  <data name="FileContentRefused" xml:space="preserve">
+    <value>Вміст файлу не є {0}.</value>
+  </data>
+  <data name="FileLimitCount" xml:space="preserve">
+    <value>Запис містить не більше {0} файлів.</value>
+  </data>
+  <data name="FileLimitTotal" xml:space="preserve">
+    <value>Файли запису разом займають не більше {0} МБ.</value>
+  </data>
+  <data name="FileDuplicate" xml:space="preserve">
+    <value>Запис уже містить цей файл як {0}.</value>
+  </data>
+  <data name="FilePixelsRefused" xml:space="preserve">
+    <value>Зображення більше за {0} мегапікселів.</value>
+  </data>
+  <data name="FileMetadataRefused" xml:space="preserve">
+    <value>Метадані файлу відхилено.</value>
+  </data>
+  <data name="PermissionRequired" xml:space="preserve">
+    <value>Потрібне право '{0}'.</value>
+  </data>
+  <data name="RequestBodyTooLarge" xml:space="preserve">
+    <value>Тіло запиту перевищує {0} байт.</value>
+  </data>
+  <data name="ClientHeaderRequired" xml:space="preserve">
+    <value>Запит, автентифікований cookie, має містити заголовок {0}.</value>
+  </data>
+  <data name="PasswordChangeRequired" xml:space="preserve">
+    <value>Потрібно змінити пароль.</value>
+  </data>
+  <data name="HttpsRequired" xml:space="preserve">
+    <value>Потрібен HTTPS.</value>
+  </data>
+  <data name="SessionHttpsRequired" xml:space="preserve">
+    <value>Сесія браузера потребує HTTPS.</value>
+  </data>
+  <data name="TooManyRequests" xml:space="preserve">
+    <value>Забагато запитів. Спробуйте пізніше.</value>
+  </data>
+  <data name="IdempotencyKeyInvalid" xml:space="preserve">
+    <value>Ключ ідемпотентності має містити від 1 до 64 літер, цифр, дефісів або підкреслень.</value>
+  </data>
+  <data name="IdempotencyKeyReused" xml:space="preserve">
+    <value>Ключ ідемпотентності вже використано для іншого запиту.</value>
+  </data>
+  <data name="RouteUnknown" xml:space="preserve">
+    <value>Невідомий маршрут API.</value>
+  </data>
+  <data name="ServerError" xml:space="preserve">
+    <value>Сталася неочікувана помилка.</value>
+  </data>
+  <data name="TenancyViolation" xml:space="preserve">
+    <value>Запит виходить за межі активного тенанта.</value>
+  </data>
+  <data name="SessionUnknown" xml:space="preserve">
+    <value>Такої сесії немає.</value>
+  </data>
+  <data name="LanguageInactive" xml:space="preserve">
+    <value>Оберіть активну мову.</value>
+  </data>
+  <data name="Tenant" xml:space="preserve">
+    <value>Тенант</value>
+  </data>
+  <data name="TenantOutOfScope" xml:space="preserve">
+    <value>Оберіть тенант у межах вашої області.</value>
+  </data>
+  <data name="TenantInactive" xml:space="preserve">
+    <value>Оберіть активний тенант.</value>
+  </data>
+  <data name="PasswordTooShort" xml:space="preserve">
+    <value>Пароль має містити щонайменше {0} символів.</value>
+  </data>
+  <data name="PasswordTooLong" xml:space="preserve">
+    <value>Пароль має містити не більше ніж {0} символів.</value>
+  </data>
+  <data name="PasswordCommon" xml:space="preserve">
+    <value>Пароль є в переліку поширених паролів.</value>
+  </data>
+  <data name="PasswordIsLogin" xml:space="preserve">
+    <value>Пароль не може збігатися з логіном.</value>
+  </data>
+  <data name="GridSelectionVersions" xml:space="preserve">
+    <value>Надіслані версії не відповідають вибраним рядкам. Оновіть сторінку й виберіть їх знову.</value>
+  </data>
+  <data name="GridNamedFiltersInvalid" xml:space="preserve">
+    <value>Список запитано з фільтром, якого він не пропонує. Оновіть сторінку.</value>
+  </data>
+  <data name="Platform" xml:space="preserve">
+    <value>Платформа</value>
+  </data>
+  <data name="Tenants" xml:space="preserve">
+    <value>Тенанти</value>
+  </data>
+  <data name="Languages" xml:space="preserve">
+    <value>Мови</value>
+  </data>
+  <data name="Open Apis" xml:space="preserve">
+    <value>Документи OpenAPI</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>Перегляд</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Редагування</value>
+  </data>
+  <data name="Menu view" xml:space="preserve">
+    <value>Показ у меню</value>
+  </data>
+  <data name="Switch" xml:space="preserve">
+    <value>Перемикання</value>
+  </data>
+  <data name="Id" xml:space="preserve">
+    <value>Ід</value>
+  </data>
+  <data name="Name" xml:space="preserve">
+    <value>Назва</value>
+  </data>
+  <data name="Handle" xml:space="preserve">
+    <value>Код</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Опис</value>
+  </data>
+  <data name="Is Active" xml:space="preserve">
+    <value>Активний</value>
+  </data>
+  <data name="Sort Order" xml:space="preserve">
+    <value>Порядок</value>
+  </data>
+  <data name="Email" xml:space="preserve">
+    <value>Електронна пошта</value>
+  </data>
+  <data name="Must Change Password" xml:space="preserve">
+    <value>Змінити пароль при вході</value>
+  </data>
+  <data name="Parent" xml:space="preserve">
+    <value>Батьківський</value>
+  </data>
+  <data name="Time Zone" xml:space="preserve">
+    <value>Часовий пояс</value>
+  </data>
+  <data name="Created At" xml:space="preserve">
+    <value>Створено</value>
+  </data>
+  <data name="Client" xml:space="preserve">
+    <value>Клієнт</value>
+  </data>
+  <data name="Address" xml:space="preserve">
+    <value>Адреса</value>
+  </data>
+  <data name="Expires At" xml:space="preserve">
+    <value>Діє до</value>
+  </data>
+  <data name="Last Used At" xml:space="preserve">
+    <value>Останнє використання</value>
+  </data>
+  <data name="Revoked At" xml:space="preserve">
+    <value>Відкликано</value>
+  </data>
+  <data name="Revoked Reason" xml:space="preserve">
+    <value>Причина відкликання</value>
+  </data>
+  <data name="Content Type" xml:space="preserve">
+    <value>Тип вмісту</value>
+  </data>
+  <data name="Size" xml:space="preserve">
+    <value>Розмір</value>
+  </data>
+  <data name="Restore" xml:space="preserve">
+    <value>Відновити</value>
+  </data>
+  <data name="RestoreConfirm" xml:space="preserve">
+    <value>Відновити вибрані рядки журналу?</value>
+  </data>
+  <data name="ChangeRestoreOperation" xml:space="preserve">
+    <value>Рядок {1} таблиці {0} має операцію {2}: відновлюється лише видалений або змінений рядок.</value>
+  </data>
+  <data name="ChangeRestoreTable" xml:space="preserve">
+    <value>Таблиця {0} не відповідає жодній одній сутності застосунку, тож рядок {1} не відновлюється.</value>
+  </data>
+  <data name="ChangeRestoreFile" xml:space="preserve">
+    <value>Рядок {1} таблиці {0} належить файлу: його вміст міг зникнути, тож він не відновлюється.</value>
+  </data>
+  <data name="ChangeRestoreProvider" xml:space="preserve">
+    <value>Ключ таблиці {0} не приймає явного ідентифікатора, тож видалений рядок {1} не відновлюється.</value>
+  </data>
+  <data name="ChangeRestoreKeepsVersion" xml:space="preserve">
+    <value>У рядку {1} таблиці {0} змінено поле, яке записує лише сервер; таку зміну тут не скасовують.</value>
+  </data>
+  <data name="ChangeRestorePresent" xml:space="preserve">
+    <value>Рядок {1} таблиці {0} знову існує.</value>
+  </data>
+  <data name="ChangeRestoreParent" xml:space="preserve">
+    <value>Рядок {1} таблиці {0} посилається на батьківський рядок, якого вже немає.</value>
+  </data>
+  <data name="ChangeRestoreStale" xml:space="preserve">
+    <value>Рядок {1} таблиці {0} відтоді видалено або знову змінено.</value>
+  </data>
+  <data name="At" xml:space="preserve">
+    <value>Час</value>
+  </data>
+  <data name="User Id" xml:space="preserve">
+    <value>Ід користувача</value>
+  </data>
+  <data name="Operation" xml:space="preserve">
+    <value>Операція</value>
+  </data>
+  <data name="Table" xml:space="preserve">
+    <value>Таблиця</value>
+  </data>
+  <data name="Row Id" xml:space="preserve">
+    <value>Ід рядка</value>
+  </data>
+  <data name="Before" xml:space="preserve">
+    <value>До</value>
+  </data>
+  <data name="After" xml:space="preserve">
+    <value>Після</value>
+  </data>
+  <data name="Correlation Id" xml:space="preserve">
+    <value>Ід кореляції</value>
+  </data>
+  <data name="ConfirmTyped" xml:space="preserve">
+    <value>Введіть {0}, щоб підтвердити</value>
+  </data>
+  <data name="TakeVideo" xml:space="preserve">
+    <value>Зняти відео</value>
+  </data>
+  <data name="FilesCount" xml:space="preserve">
+    <value>{0} з {1}</value>
+  </data>
+  <data name="FilesFull" xml:space="preserve">
+    <value>{0} з {1}: більше файлів не вміститься</value>
+  </data>
+  <data name="FilesNoRoom" xml:space="preserve">
+    <value>У записі немає місця для цього файлу.</value>
+  </data>
+  <data name="CancelUpload" xml:space="preserve">
+    <value>Скасувати завантаження {0}</value>
+  </data>
+  <data name="FilePreparing" xml:space="preserve">
+    <value>Підготовка…</value>
+  </data>
+  <data name="FilesUploadingLeave" xml:space="preserve">
+    <value>Файли ще завантажуються. Піти й скасувати їх?</value>
+  </data>
+  <data name="Leave" xml:space="preserve">
+    <value>Піти</value>
+  </data>
+  <data name="DownloadAllFiles" xml:space="preserve">
+    <value>Завантажити всі</value>
+  </data>
+  <data name="FileInfo" xml:space="preserve">
+    <value>Відомості</value>
+  </data>
+  <data name="FileName" xml:space="preserve">
+    <value>Назва</value>
+  </data>
+  <data name="FileDescription" xml:space="preserve">
+    <value>Опис</value>
+  </data>
+  <data name="FileType" xml:space="preserve">
+    <value>Тип</value>
+  </data>
+  <data name="FileSize" xml:space="preserve">
+    <value>Розмір</value>
+  </data>
+  <data name="FileDimensions" xml:space="preserve">
+    <value>Розмір у пікселях</value>
+  </data>
+  <data name="FileAdded" xml:space="preserve">
+    <value>Додано</value>
+  </data>
+  <data name="FileUploadedBy" xml:space="preserve">
+    <value>Завантажив</value>
+  </data>
+  <data name="FileInfoSave" xml:space="preserve">
+    <value>Зберегти</value>
+  </data>
+  <data name="FileMetadata" xml:space="preserve">
+    <value>Метадані</value>
+  </data>
+  <data name="FileMetadataNone" xml:space="preserve">
+    <value>Метаданих немає.</value>
+  </data>
+  <data name="MetadataCamera" xml:space="preserve">
+    <value>Камера</value>
+  </data>
+  <data name="MetadataLens" xml:space="preserve">
+    <value>Об'єктив</value>
+  </data>
+  <data name="MetadataTakenAt" xml:space="preserve">
+    <value>Знято</value>
+  </data>
+  <data name="MetadataExposure" xml:space="preserve">
+    <value>Витримка</value>
+  </data>
+  <data name="MetadataAperture" xml:space="preserve">
+    <value>Діафрагма</value>
+  </data>
+  <data name="MetadataIso" xml:space="preserve">
+    <value>ISO</value>
+  </data>
+  <data name="MetadataFocalLength" xml:space="preserve">
+    <value>Фокусна відстань</value>
+  </data>
+  <data name="MetadataOrientation" xml:space="preserve">
+    <value>Орієнтація</value>
+  </data>
+  <data name="MetadataSoftware" xml:space="preserve">
+    <value>Програма</value>
+  </data>
+  <data name="MetadataPlace" xml:space="preserve">
+    <value>Місце</value>
+  </data>
+  <data name="MetadataAltitude" xml:space="preserve">
+    <value>Висота</value>
+  </data>
+  <data name="MoveFile" xml:space="preserve">
+    <value>Перемістити {0}</value>
+  </data>
+  <data name="MoveFileHint" xml:space="preserve">
+    <value>Пробіл бере файл, стрілки переміщують його, пробіл відпускає, Escape повертає на місце.</value>
+  </data>
+  <data name="FilePosition" xml:space="preserve">
+    <value>{0}, позиція {1} з {2}</value>
+  </data>
+  <data name="FileMoveCancelled" xml:space="preserve">
+    <value>{0} повернуто на місце</value>
+  </data>
+  <data name="FileArchiveTooLarge" xml:space="preserve">
+    <value>Файли запису разом більші за {0} МБ, найбільше, що вміщує один архів.</value>
+  </data>
+  <data name="FileDescriptionTooLong" xml:space="preserve">
+    <value>Опис містить щонайбільше 2000 символів.</value>
+  </data>
+  <data name="File metadata" xml:space="preserve">
+    <value>Метадані файлів</value>
+  </data>
+  <data name="TimeZoneAsOrganisation" xml:space="preserve">
+    <value>Як в організації ({0})</value>
+  </data>
+  <data name="TimeZoneAsParentOrganisation" xml:space="preserve">
+    <value>Як у батьківській організації ({0})</value>
+  </data>
+  <data name="TimeZoneByBrowser" xml:space="preserve">
+    <value>За браузером</value>
+  </data>
+</root>

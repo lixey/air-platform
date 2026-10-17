@@ -41,14 +41,14 @@ public abstract class FeatureAccess
 public class Feature
 {
   public static readonly ConcurrentDictionary<Type, Feature> FeaturesByServiceType = new();
-
-  private readonly ConcurrentDictionary<string, Right> _rights = new(StringComparer.Ordinal);
+  private readonly ConcurrentDictionary<string, Right> _rights = new(StringComparer.OrdinalIgnoreCase);
 
   public Feature(string module, string name, Type? serviceType = null)
   {
     Module = module;
-    Name = name;
     CleanName = name;
+    Label = PascalToSpaced(name);
+    Name = PascalToSpaced(name);
     ServiceType = serviceType;
     Path = $"{module.ToLowerInvariant()}/{name.ToLowerInvariant()}";
     if (serviceType != null)
@@ -56,6 +56,11 @@ public class Feature
       FeaturesByServiceType[serviceType] = this;
     }
   }
+
+  public string Label { get; set; } = string.Empty;
+
+  private static string PascalToSpaced(string s) =>
+    System.Text.RegularExpressions.Regex.Replace(s, "([a-z])([A-Z])", "$1 $2");
 
   protected Feature(Feature source)
   {

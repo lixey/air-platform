@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="App" xml:space="preserve">
+    <value>Застосунок</value>
+  </data>
+  <data name="Core Application" xml:space="preserve">
+    <value>Основний застосунок</value>
+  </data>
+  <data name="Colors" xml:space="preserve">
+    <value>Кольори</value>
+  </data>
+  <data name="Color" xml:space="preserve">
+    <value>Колір</value>
+  </data>
+  <data name="Roles" xml:space="preserve">
+    <value>Ролі</value>
+  </data>
+  <data name="Role" xml:space="preserve">
+    <value>Роль</value>
+  </data>
+  <data name="New Role" xml:space="preserve">
+    <value>Нова роль</value>
+  </data>
+  <data name="User Groups" xml:space="preserve">
+    <value>Групи користувачів</value>
+  </data>
+  <data name="User Group" xml:space="preserve">
+    <value>Група користувачів</value>
+  </data>
+  <data name="New User Group" xml:space="preserve">
+    <value>Нова група користувачів</value>
+  </data>
+  <data name="Changes" xml:space="preserve">
+    <value>Журнал змін</value>
+  </data>
+  <data name="New Language" xml:space="preserve">
+    <value>Нова мова</value>
+  </data>
+  <data name="Sessions" xml:space="preserve">
+    <value>Сесії</value>
+  </data>
+  <data name="User.name" xml:space="preserve">
+    <value>Ім'я</value>
+  </data>
+  <data name="Security" xml:space="preserve">
+    <value>Безпека</value>
+  </data>
+  <data name="Rights" xml:space="preserve">
+    <value>Права</value>
+  </data>
+  <data name="Permissions" xml:space="preserve">
+    <value>Права</value>
+  </data>
+  <data name="Role Ids" xml:space="preserve">
+    <value>Ролі</value>
+  </data>
+  <data name="Deactivate" xml:space="preserve">
+    <value>Деактивувати</value>
+  </data>
+  <data name="Deactivate the selected users and end their sessions?" xml:space="preserve">
+    <value>Деактивувати вибраних користувачів і завершити їхні сесії?</value>
+  </data>
+  <data name="This login is already in use." xml:space="preserve">
+    <value>Цей логін уже використовується.</value>
+  </data>
+  <data name="This email is already in use." xml:space="preserve">
+    <value>Ця електронна пошта вже використовується.</value>
+  </data>
+  <data name="This name is already in use." xml:space="preserve">
+    <value>Ця назва вже використовується.</value>
+  </data>
+  <data name="A role of this name already exists in its tenant." xml:space="preserve">
+    <value>Роль з такою назвою вже є в цьому тенанті.</value>
+  </data>
+</root>

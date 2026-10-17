@@ -21,64 +21,103 @@ public static class PlatformEndpoints
     var api = app.MapGroup("/api");
 
     // 1. Metadata (both GET and POST for convenience)
-    var getMetadataHandler = (ModuleCatalog catalog) =>
+    var getMetadataHandler = (ModuleCatalog catalog, HttpContext httpContext) =>
     {
-      var metadata = new AppMetadataDto
-      {
-        Texts = UiTexts.English.ToDictionary()
-      };
+      var culture = ResolveRequestCulture(httpContext.Request);
+      var prevCulture = System.Globalization.CultureInfo.CurrentCulture;
+      var prevUiCulture = System.Globalization.CultureInfo.CurrentUICulture;
+      System.Globalization.CultureInfo.CurrentCulture = culture;
+      System.Globalization.CultureInfo.CurrentUICulture = culture;
 
-      foreach (var module in catalog.Modules)
+      try
       {
-        var rootItem = new MenuItemDto
-        {
-          Handle = module.Handle,
-          Name = module.Name,
-          Path = module.Handle,
-          Items = module.Menu.Nodes.Select(n => ToMenuItem(module.Handle, n)).ToList()
-        };
-        metadata.Menu.Add(rootItem);
-        metadata.Routes.AddRange(Flatten(rootItem));
-      }
+        Localizer.Instance.EnsureManagersLoaded();
+        var texts = UiTexts.English.Keys.ToDictionary(k => k, k => Localizer.Instance[k]);
+        var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
 
-      foreach (var feat in catalog.AllFeatures)
-      {
-        if (metadata.Routes.All(r => r.Screen != feat.Path))
+        var metadata = new AppMetadataDto
         {
-          metadata.Routes.Add(new MenuItemDto
+          Texts = texts,
+          Language = new SwitcherDto
           {
-            Path = feat.Path,
-            Handle = feat.Name.ToLowerInvariant(),
-            Name = feat.Name,
-            Screen = feat.Path
-          });
-        }
-      }
+            Label = Localizer.Instance["Language"],
+            Current = isUk ? new Reference { Id = 1, Name = "Українська" } : new Reference { Id = 2, Name = "English" },
+            Options = [
+              new Reference { Id = 1, Name = "Українська" },
+              new Reference { Id = 2, Name = "English" }
+            ],
+            Service = "platform-language",
+            Method = "switch"
+          },
+          Tenant = new SwitcherDto
+          {
+            Label = Localizer.Instance["Tenant"],
+            Current = new Reference { Id = 1, Name = "Demo Tenant" }
+          },
+          DefaultCurrency = "UAH"
+        };
 
-      return Results.Ok(metadata);
+        foreach (var module in catalog.Modules)
+        {
+          var rootItem = new MenuItemDto
+          {
+            Handle = module.Handle,
+            Name = Localizer.Instance[module.Name],
+            Path = module.Handle,
+            Items = module.Menu.Nodes.Select(n => ToMenuItem(module.Handle, n)).ToList()
+          };
+          metadata.Menu.Add(rootItem);
+          metadata.Routes.AddRange(Flatten(rootItem));
+        }
+
+        foreach (var feat in catalog.AllFeatures)
+        {
+          if (metadata.Routes.All(r => r.Screen != feat.Path))
+          {
+            metadata.Routes.Add(new MenuItemDto
+            {
+              Path = feat.Path,
+              Handle = feat.Name.ToLowerInvariant(),
+              Name = Localizer.Instance[feat.Name],
+              Screen = feat.Path
+            });
+          }
+        }
+
+        return Results.Ok(metadata);
+      }
+      finally
+      {
+        System.Globalization.CultureInfo.CurrentCulture = prevCulture;
+        System.Globalization.CultureInfo.CurrentUICulture = prevUiCulture;
+      }
     };
 
     api.MapGet("/metadata", getMetadataHandler);
     api.MapPost("/metadata/get-data", getMetadataHandler);
 
     // 2. Auth Endpoints
-    api.MapPost("/auth/get-profile", () =>
+    api.MapPost("/auth/get-profile", (HttpRequest req) =>
     {
+      var culture = ResolveRequestCulture(req);
+      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
       var user = new UserProfileDto
       {
         Id = 1,
         Login = "admin",
         Name = "Demo Administrator",
         Email = "admin@air.platform",
-        Language = "en",
+        Language = isUk ? "uk" : "en",
         TimeZone = "UTC",
         Permissions = ["*"]
       };
       return Results.Ok(user);
     });
 
-    api.MapPost("/auth/login", (LoginRequest? req) =>
+    api.MapPost("/auth/login", (LoginRequest? req, HttpRequest httpReq) =>
     {
+      var culture = ResolveRequestCulture(httpReq);
+      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
       var login = req?.Login ?? "admin";
       var session = new SessionDto
       {
@@ -88,7 +127,7 @@ public static class PlatformEndpoints
           Login = login,
           Name = "Demo Administrator",
           Email = $"{login}@air.platform",
-          Language = "en",
+          Language = isUk ? "uk" : "en",
           TimeZone = "UTC",
           Permissions = ["*"]
         },
@@ -97,8 +136,10 @@ public static class PlatformEndpoints
       return Results.Ok(session);
     });
 
-    api.MapPost("/auth/refresh", () =>
+    api.MapPost("/auth/refresh", (HttpRequest httpReq) =>
     {
+      var culture = ResolveRequestCulture(httpReq);
+      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
       var session = new SessionDto
       {
         User = new UserProfileDto
@@ -106,7 +147,7 @@ public static class PlatformEndpoints
           Id = 1,
           Login = "admin",
           Name = "Demo Administrator",
-          Language = "en",
+          Language = isUk ? "uk" : "en",
           TimeZone = "UTC",
           Permissions = ["*"]
         },
@@ -117,6 +158,32 @@ public static class PlatformEndpoints
 
     api.MapPost("/auth/logout", () => Results.Ok(new { }));
 
+    var switchLanguageHandler = (SwitchRequest req, HttpContext ctx) =>
+    {
+      var lang = req.Id == 1 ? "uk" : "en";
+      ctx.Response.Cookies.Append("culture", lang, new CookieOptions
+      {
+        Path = "/",
+        Expires = DateTimeOffset.UtcNow.AddYears(1),
+        SameSite = SameSiteMode.Lax
+      });
+
+      var user = new UserProfileDto
+      {
+        Id = 1,
+        Login = "admin",
+        Name = "Demo Administrator",
+        Email = "admin@air.platform",
+        Language = lang,
+        TimeZone = "UTC",
+        Permissions = ["*"]
+      };
+      return Results.Ok(user);
+    };
+
+    api.MapPost("/platform-language/switch", switchLanguageHandler);
+    api.MapPost("/PlatformLanguageService/Switch", switchLanguageHandler);
+
     // 3. Dynamic service endpoints
     api.MapPost("/{**servicePath}", async (
       string servicePath,
@@ -125,11 +192,20 @@ public static class PlatformEndpoints
       IServiceProvider services,
       CancellationToken ct) =>
     {
-      var parts = servicePath.Trim('/').Split('/');
-      if (parts.Length < 2)
+      var culture = ResolveRequestCulture(httpRequest);
+      var prevCulture = System.Globalization.CultureInfo.CurrentCulture;
+      var prevUiCulture = System.Globalization.CultureInfo.CurrentUICulture;
+      System.Globalization.CultureInfo.CurrentCulture = culture;
+      System.Globalization.CultureInfo.CurrentUICulture = culture;
+
+      try
       {
-        return Results.NotFound();
-      }
+        Localizer.Instance.EnsureManagersLoaded();
+        var parts = servicePath.Trim('/').Split('/');
+        if (parts.Length < 2)
+        {
+          return Results.NotFound();
+        }
 
       string serviceName;
       string method;
@@ -391,7 +467,38 @@ public static class PlatformEndpoints
       }
 
       return Results.NotFound();
+      }
+      finally
+      {
+        System.Globalization.CultureInfo.CurrentCulture = prevCulture;
+        System.Globalization.CultureInfo.CurrentUICulture = prevUiCulture;
+      }
     });
+  }
+
+  private static System.Globalization.CultureInfo ResolveRequestCulture(HttpRequest req)
+  {
+    if (req.Query.TryGetValue("lang", out var langVal) && !string.IsNullOrWhiteSpace(langVal))
+    {
+      var s = langVal.ToString();
+      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("uk-UA");
+      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return System.Globalization.CultureInfo.InvariantCulture;
+    }
+
+    if (req.Cookies.TryGetValue("culture", out var cookieVal) && !string.IsNullOrWhiteSpace(cookieVal))
+    {
+      if (cookieVal.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("uk-UA");
+      if (cookieVal.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return System.Globalization.CultureInfo.InvariantCulture;
+    }
+
+    if (req.Headers.TryGetValue("Accept-Language", out var acceptVal) && !string.IsNullOrWhiteSpace(acceptVal))
+    {
+      var s = acceptVal.ToString();
+      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("uk-UA");
+      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return System.Globalization.CultureInfo.InvariantCulture;
+    }
+
+    return new System.Globalization.CultureInfo("uk-UA");
   }
 
   private static async Task<List<long>> ExtractIdsAsync(HttpRequest request, CancellationToken ct)
@@ -440,7 +547,7 @@ public static class PlatformEndpoints
     {
       Path = fullPath,
       Handle = node.Handle,
-      Name = node.Title,
+      Name = node.Title != null ? Localizer.Instance[node.Title] : null,
       Icon = node.Icon,
       Screen = node.Feature?.Path,
       IsSeparator = node.IsSeparator,

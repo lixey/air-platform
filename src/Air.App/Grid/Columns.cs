@@ -68,7 +68,15 @@ public class Columns
   private static string PathToLabel(string path)
   {
     var last = path.Split('.').Last();
-    return last.Length > 0 ? char.ToUpperInvariant(last[0]) + last[1..] : path;
+    if (last.EndsWith("Id", StringComparison.Ordinal) && last.Length > 2)
+    {
+      last = last[..^2];
+    }
+    if (last.Length > 0)
+    {
+      last = char.ToUpperInvariant(last[0]) + last[1..];
+    }
+    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z])([A-Z])", "$1 $2");
   }
 
   private static string ResolveFieldType(Type type)

@@ -1,0 +1,1177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="Login" xml:space="preserve">
+    <value>Login</value>
+  </data>
+  <data name="Password" xml:space="preserve">
+    <value>Password</value>
+  </data>
+  <data name="SignIn" xml:space="preserve">
+    <value>Sign In</value>
+  </data>
+  <data name="InvalidCredentials" xml:space="preserve">
+    <value>Invalid login or password</value>
+  </data>
+  <data name="TooManyAttempts" xml:space="preserve">
+    <value>Too many attempts. Try again later</value>
+  </data>
+  <data name="Unavailable" xml:space="preserve">
+    <value>The server is unavailable</value>
+  </data>
+  <data name="ChangePasswordTitle" xml:space="preserve">
+    <value>Change password</value>
+  </data>
+  <data name="PasswordCurrent" xml:space="preserve">
+    <value>Current password</value>
+  </data>
+  <data name="PasswordNew" xml:space="preserve">
+    <value>New password</value>
+  </data>
+  <data name="PasswordRepeat" xml:space="preserve">
+    <value>Repeat the new password</value>
+  </data>
+  <data name="ChangePasswordSubmit" xml:space="preserve">
+    <value>Change password</value>
+  </data>
+  <data name="PasswordsDiffer" xml:space="preserve">
+    <value>The passwords do not match</value>
+  </data>
+  <data name="Logout" xml:space="preserve">
+    <value>Logout</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Administration" xml:space="preserve">
+    <value>Administration</value>
+  </data>
+  <data name="User" xml:space="preserve">
+    <value>User</value>
+  </data>
+  <data name="Users" xml:space="preserve">
+    <value>Users</value>
+  </data>
+  <data name="Unit" xml:space="preserve">
+    <value>Unit</value>
+  </data>
+  <data name="Units" xml:space="preserve">
+    <value>Units</value>
+  </data>
+  <data name="AuthRole" xml:space="preserve">
+    <value>Role</value>
+  </data>
+  <data name="AuthRoles" xml:space="preserve">
+    <value>Roles</value>
+  </data>
+  <data name="AuthPermission" xml:space="preserve">
+    <value>Permission</value>
+  </data>
+  <data name="AuthPermissions" xml:space="preserve">
+    <value>Permissions</value>
+  </data>
+  <data name="Actions" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="StatusNoMove" xml:space="preserve">
+    <value>No status change is available.</value>
+  </data>
+  <data name="StatusRefusesMove" xml:space="preserve">
+    <value>The status "{0}" does not allow the move to "{1}".</value>
+  </data>
+  <data name="Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Filters" xml:space="preserve">
+    <value>Filters</value>
+  </data>
+  <data name="Export" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="ExportTruncated" xml:space="preserve">
+    <value>Only the first {0} rows were exported; more rows match.</value>
+  </data>
+  <data name="Search" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="DeleteConfirm" xml:space="preserve">
+    <value>Delete the selected rows?</value>
+  </data>
+  <data name="DeleteRefused" xml:space="preserve">
+    <value>The selected rows cannot be deleted.</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SaveAndClose" xml:space="preserve">
+    <value>Save &amp; Close</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="FormInvalid" xml:space="preserve">
+    <value>The form has errors.</value>
+  </data>
+  <data name="FormReadOnly" xml:space="preserve">
+    <value>This form is read only.</value>
+  </data>
+  <data name="FormNotFound" xml:space="preserve">
+    <value>The record was not found.</value>
+  </data>
+  <data name="Required" xml:space="preserve">
+    <value>This field is required.</value>
+  </data>
+  <data name="RequestInvalid" xml:space="preserve">
+    <value>The request is invalid.</value>
+  </data>
+  <data name="FormBindingShape" xml:space="preserve">
+    <value>The form value must be an object.</value>
+  </data>
+  <data name="FormBindingClosed" xml:space="preserve">
+    <value>This field cannot be changed here.</value>
+  </data>
+  <data name="FormBindingNull" xml:space="preserve">
+    <value>This field cannot be null.</value>
+  </data>
+  <data name="FormBindingText" xml:space="preserve">
+    <value>This field contains unsupported text.</value>
+  </data>
+  <data name="FormBindingValue" xml:space="preserve">
+    <value>This field has an invalid value.</value>
+  </data>
+  <data name="FormSensitiveInvalid" xml:space="preserve">
+    <value>This field has an invalid value.</value>
+  </data>
+  <data name="FormValidationNull" xml:space="preserve">
+    <value>This field cannot be null.</value>
+  </data>
+  <data name="FormValidationRequired" xml:space="preserve">
+    <value>This field is required.</value>
+  </data>
+  <data name="FormValidationEmail" xml:space="preserve">
+    <value>Enter a valid email address.</value>
+  </data>
+  <data name="FormValidationPhone" xml:space="preserve">
+    <value>Enter a phone number of 7 to 15 digits.</value>
+  </data>
+  <data name="FormValidationUrl" xml:space="preserve">
+    <value>Enter a valid site address.</value>
+  </data>
+  <data name="FormValidationLength" xml:space="preserve">
+    <value>This field has an invalid length.</value>
+  </data>
+  <data name="FormValidationMaxLength" xml:space="preserve">
+    <value>This field exceeds the maximum length.</value>
+  </data>
+  <data name="FormValidationMinLength" xml:space="preserve">
+    <value>This field is shorter than the minimum length.</value>
+  </data>
+  <data name="FormValidationRange" xml:space="preserve">
+    <value>This field is outside the allowed range.</value>
+  </data>
+  <data name="FormValidationUnique" xml:space="preserve">
+    <value>This value is already in use.</value>
+  </data>
+  <data name="FormValidationPattern" xml:space="preserve">
+    <value>This field has an invalid format.</value>
+  </data>
+  <data name="FormValidationCompare" xml:space="preserve">
+    <value>The field values do not match.</value>
+  </data>
+  <data name="FormValidationDecimal" xml:space="preserve">
+    <value>This number exceeds the supported precision or scale.</value>
+  </data>
+  <data name="FormValidationReference" xml:space="preserve">
+    <value>Select an available value.</value>
+  </data>
+  <data name="FormValidationOption" xml:space="preserve">
+    <value>Select from the available options.</value>
+  </data>
+  <data name="MutationVersionRequired" xml:space="preserve">
+    <value>Reload the record to obtain its version before saving.</value>
+  </data>
+  <data name="MutationConflict" xml:space="preserve">
+    <value>The record was changed by someone else. Reload it before saving again.</value>
+  </data>
+  <data name="MutationReload" xml:space="preserve">
+    <value>Reload record</value>
+  </data>
+  <data name="MutationRefused" xml:space="preserve">
+    <value>The operation was refused.</value>
+  </data>
+  <data name="MutationUnknown" xml:space="preserve">
+    <value>The operation outcome could not be confirmed.</value>
+  </data>
+  <data name="MutationUnknownDescription" xml:space="preserve">
+    <value>The changes may have been saved. Check the current data before repeating the operation.</value>
+  </data>
+  <data name="MutationVerify" xml:space="preserve">
+    <value>Check current data</value>
+  </data>
+  <data name="MutationCommittedWarning" xml:space="preserve">
+    <value>The changes were saved, but a follow-up action could not be completed.</value>
+  </data>
+  <data name="MutationSelectionCorrection" xml:space="preserve">
+    <value>Remove blocked or unavailable records from selection</value>
+  </data>
+  <data name="FormDirtyTitle" xml:space="preserve">
+    <value>Save changes?</value>
+  </data>
+  <data name="FormDirtyDescription" xml:space="preserve">
+    <value>You have unsaved changes. Choose what to do before leaving.</value>
+  </data>
+  <data name="FormDirtyDiscard" xml:space="preserve">
+    <value>Discard changes</value>
+  </data>
+  <data name="FormDirtyContinue" xml:space="preserve">
+    <value>Continue editing</value>
+  </data>
+  <data name="MutationConstraint" xml:space="preserve">
+    <value>The changes conflict with existing data. Check the current data before trying again.</value>
+  </data>
+  <data name="MutationRolledBack" xml:space="preserve">
+    <value>The changes were not saved. The operation was rolled back.</value>
+  </data>
+  <data name="GridDeleteUnavailable" xml:space="preserve">
+    <value>The selected record is unavailable.</value>
+  </data>
+  <data name="GridDeleteForbidden" xml:space="preserve">
+    <value>You cannot delete records from this grid.</value>
+  </data>
+  <data name="FormRecord" xml:space="preserve">
+    <value>{0} #{1}</value>
+  </data>
+  <data name="FormRecordNamed" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="FormNewRecord" xml:space="preserve">
+    <value>New {0}</value>
+  </data>
+  <data name="FormRecordChanged" xml:space="preserve">
+    <value>This record has changed since it was read.</value>
+  </data>
+  <data name="CellSaveQuestion" xml:space="preserve">
+    <value>Save the change?</value>
+  </data>
+  <data name="NumberIncrease" xml:space="preserve">
+    <value>Increase</value>
+  </data>
+  <data name="NumberDecrease" xml:space="preserve">
+    <value>Decrease</value>
+  </data>
+  <data name="Loading" xml:space="preserve">
+    <value>Loading…</value>
+  </data>
+  <data name="ScreenLoadFailed" xml:space="preserve">
+    <value>This screen could not be loaded.</value>
+  </data>
+  <data name="Processing" xml:space="preserve">
+    <value>Processing request…</value>
+  </data>
+  <data name="CloseNotification" xml:space="preserve">
+    <value>Close notification</value>
+  </data>
+  <data name="CloseTab" xml:space="preserve">
+    <value>Close {0}</value>
+  </data>
+  <data name="Apply" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="ClearAll" xml:space="preserve">
+    <value>Clear all</value>
+  </data>
+  <data name="SearchMenu" xml:space="preserve">
+    <value>Search the menu</value>
+  </data>
+  <data name="Pick" xml:space="preserve">
+    <value>Pick {0}</value>
+  </data>
+  <data name="NothingToPick" xml:space="preserve">
+    <value>Nothing to pick.</value>
+  </data>
+  <data name="TypeAtLeast" xml:space="preserve">
+    <value>Type at least {0} characters</value>
+  </data>
+  <data name="OptionsLoadFailed" xml:space="preserve">
+    <value>The options could not be loaded.</value>
+  </data>
+  <data name="NoFilterYet" xml:space="preserve">
+    <value>No filter yet.</value>
+  </data>
+  <data name="AddCondition" xml:space="preserve">
+    <value>Add a condition</value>
+  </data>
+  <data name="AddConditionGroup" xml:space="preserve">
+    <value>Add a condition group</value>
+  </data>
+  <data name="RemoveCondition" xml:space="preserve">
+    <value>Remove this condition</value>
+  </data>
+  <data name="RemoveGroup" xml:space="preserve">
+    <value>Remove this group</value>
+  </data>
+  <data name="RemoveAllFilters" xml:space="preserve">
+    <value>Remove every filter</value>
+  </data>
+  <data name="FilterAnd" xml:space="preserve">
+    <value>AND</value>
+  </data>
+  <data name="FilterOr" xml:space="preserve">
+    <value>OR</value>
+  </data>
+  <data name="Where" xml:space="preserve">
+    <value>Where</value>
+  </data>
+  <data name="AllAreTrue" xml:space="preserve">
+    <value>All of the following are true…</value>
+  </data>
+  <data name="AnyIsTrue" xml:space="preserve">
+    <value>Any of the following is true…</value>
+  </data>
+  <data name="ConditionsJoin" xml:space="preserve">
+    <value>How the conditions join</value>
+  </data>
+  <data name="FilterBy" xml:space="preserve">
+    <value>Filter by {0}</value>
+  </data>
+  <data name="Retry" xml:space="preserve">
+    <value>Try again</value>
+  </data>
+  <data name="NoRows" xml:space="preserve">
+    <value>Nothing found.</value>
+  </data>
+  <data name="Any" xml:space="preserve">
+    <value>Any</value>
+  </data>
+  <data name="Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="No" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="Pin" xml:space="preserve">
+    <value>Pin</value>
+  </data>
+  <data name="Unpin" xml:space="preserve">
+    <value>Unpin</value>
+  </data>
+  <data name="SignOut" xml:space="preserve">
+    <value>Sign out</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Light theme</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dark theme</value>
+  </data>
+  <data name="NavigationShow" xml:space="preserve">
+    <value>Show navigation</value>
+  </data>
+  <data name="NavigationHide" xml:space="preserve">
+    <value>Hide navigation</value>
+  </data>
+  <data name="MenuOpen" xml:space="preserve">
+    <value>Open the menu</value>
+  </data>
+  <data name="More" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="OperatorEquals" xml:space="preserve">
+    <value>Equals</value>
+  </data>
+  <data name="OperatorNotEquals" xml:space="preserve">
+    <value>Not equals</value>
+  </data>
+  <data name="OperatorGreaterThan" xml:space="preserve">
+    <value>Greater than</value>
+  </data>
+  <data name="OperatorGreaterThanOrEqual" xml:space="preserve">
+    <value>Greater than or equal</value>
+  </data>
+  <data name="OperatorLessThan" xml:space="preserve">
+    <value>Less than</value>
+  </data>
+  <data name="OperatorLessThanOrEqual" xml:space="preserve">
+    <value>Less than or equal</value>
+  </data>
+  <data name="OperatorContains" xml:space="preserve">
+    <value>Contains</value>
+  </data>
+  <data name="OperatorNotContains" xml:space="preserve">
+    <value>Not contains</value>
+  </data>
+  <data name="OperatorStartsWith" xml:space="preserve">
+    <value>Starts with</value>
+  </data>
+  <data name="OperatorNotStartsWith" xml:space="preserve">
+    <value>Not starts with</value>
+  </data>
+  <data name="OperatorEndsWith" xml:space="preserve">
+    <value>Ends with</value>
+  </data>
+  <data name="OperatorNotEndsWith" xml:space="preserve">
+    <value>Not ends with</value>
+  </data>
+  <data name="OperatorIn" xml:space="preserve">
+    <value>In</value>
+  </data>
+  <data name="OperatorNotIn" xml:space="preserve">
+    <value>Not in</value>
+  </data>
+  <data name="OperatorIsNull" xml:space="preserve">
+    <value>Is empty</value>
+  </data>
+  <data name="OperatorIsNotNull" xml:space="preserve">
+    <value>Is not empty</value>
+  </data>
+  <data name="OperatorMatches" xml:space="preserve">
+    <value>Matches</value>
+  </data>
+  <data name="OperatorNotMatches" xml:space="preserve">
+    <value>Not matches</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="RequestFailed" xml:space="preserve">
+    <value>The request failed.</value>
+  </data>
+  <data name="RightsNoPrincipal" xml:space="preserve">
+    <value>Roles, assignments, grants and users holding roles are changed only on behalf of a signed-in user.</value>
+  </data>
+  <data name="RightsNotCovered" xml:space="preserve">
+    <value>The change needs the right '{0}', which your rights do not cover.</value>
+  </data>
+  <data name="RightsUserNotCovered" xml:space="preserve">
+    <value>The user holds the right '{0}', which your rights do not cover, so you cannot change or delete the user.</value>
+  </data>
+  <data name="RightsRoleOutOfReach" xml:space="preserve">
+    <value>The role is not visible in the active tenant, so it cannot be assigned.</value>
+  </data>
+  <data name="RightsRootFlag" xml:space="preserve">
+    <value>The root user is set once at installation; no save changes it.</value>
+  </data>
+  <data name="RightsRootDeactivated" xml:space="preserve">
+    <value>The root user cannot be deactivated.</value>
+  </data>
+  <data name="RightsRootDeleted" xml:space="preserve">
+    <value>The root user cannot be deleted.</value>
+  </data>
+  <data name="RightsRootLosesAll" xml:space="preserve">
+    <value>The root user must keep '*' through an active assignment of an active role.</value>
+  </data>
+  <data name="RightsTreeAll" xml:space="preserve">
+    <value>All rights</value>
+  </data>
+  <data name="Upload" xml:space="preserve">
+    <value>Upload</value>
+  </data>
+  <data name="Confirm" xml:space="preserve">
+    <value>Confirm</value>
+  </data>
+  <data name="Navigation" xml:space="preserve">
+    <value>Navigation</value>
+  </data>
+  <data name="ClearSearch" xml:space="preserve">
+    <value>Clear the search</value>
+  </data>
+  <data name="ClearSearchIn" xml:space="preserve">
+    <value>Clear the search in {0}</value>
+  </data>
+  <data name="PinEntry" xml:space="preserve">
+    <value>Pin {0}</value>
+  </data>
+  <data name="UnpinEntry" xml:space="preserve">
+    <value>Unpin {0}</value>
+  </data>
+  <data name="RemoveItem" xml:space="preserve">
+    <value>Remove {0}</value>
+  </data>
+  <data name="RemoveFilterNamed" xml:space="preserve">
+    <value>Remove the filter {0}</value>
+  </data>
+  <data name="SearchOptions" xml:space="preserve">
+    <value>Search the options</value>
+  </data>
+  <data name="PickedCount" xml:space="preserve">
+    <value>{0} picked</value>
+  </data>
+  <data name="Pages" xml:space="preserve">
+    <value>Pages</value>
+  </data>
+  <data name="PreviousPage" xml:space="preserve">
+    <value>Previous page</value>
+  </data>
+  <data name="NextPage" xml:space="preserve">
+    <value>Next page</value>
+  </data>
+  <data name="RowCount" xml:space="preserve">
+    <value>{0} rows</value>
+  </data>
+  <data name="SelectedOf" xml:space="preserve">
+    <value>{0} of {1} selected</value>
+  </data>
+  <data name="Changed" xml:space="preserve">
+    <value>Changed</value>
+  </data>
+  <data name="SelectRow" xml:space="preserve">
+    <value>Select row {0}</value>
+  </data>
+  <data name="SelectPage" xml:space="preserve">
+    <value>Select every row of the page</value>
+  </data>
+  <data name="Pinned" xml:space="preserve">
+    <value>Pinned</value>
+  </data>
+  <data name="PinnedRow" xml:space="preserve">
+    <value>Pinned row</value>
+  </data>
+  <data name="SortBy" xml:space="preserve">
+    <value>Sort by {0}</value>
+  </data>
+  <data name="ColumnMenu" xml:space="preserve">
+    <value>Menu of {0}</value>
+  </data>
+  <data name="ClearFilterOf" xml:space="preserve">
+    <value>Clear the filter of {0}</value>
+  </data>
+  <data name="Column" xml:space="preserve">
+    <value>Column</value>
+  </data>
+  <data name="OperatorFor" xml:space="preserve">
+    <value>Operator for {0}</value>
+  </data>
+  <data name="ValueFor" xml:space="preserve">
+    <value>Value for {0}</value>
+  </data>
+  <data name="ResizePanel" xml:space="preserve">
+    <value>Resize {0}</value>
+  </data>
+  <data name="OpensInNewTab" xml:space="preserve">
+    <value>opens in a new tab</value>
+  </data>
+  <data name="FileRefused" xml:space="preserve">
+    <value>The file is refused.</value>
+  </data>
+  <data name="FileCountRefused" xml:space="preserve">
+    <value>Upload exactly one file.</value>
+  </data>
+  <data name="FileNameRefused" xml:space="preserve">
+    <value>The file needs a name of at most 255 characters.</value>
+  </data>
+  <data name="FileUnavailable" xml:space="preserve">
+    <value>The selected file is unavailable.</value>
+  </data>
+  <data name="FileNameInvalid" xml:space="preserve">
+    <value>The file's name is empty or holds a folder or a control character.</value>
+  </data>
+  <data name="FileTooLarge" xml:space="preserve">
+    <value>The file is larger than {0} MB.</value>
+  </data>
+  <data name="FileTypeRefused" xml:space="preserve">
+    <value>Files of this type are not accepted here; accepted: {0}.</value>
+  </data>
+  <data name="ChooseDate" xml:space="preserve">
+    <value>Choose a date</value>
+  </data>
+  <data name="ChooseDatetime" xml:space="preserve">
+    <value>Choose a date and time</value>
+  </data>
+  <data name="ChooseTime" xml:space="preserve">
+    <value>Choose a time</value>
+  </data>
+  <data name="PreviousMonth" xml:space="preserve">
+    <value>Previous month</value>
+  </data>
+  <data name="NextMonth" xml:space="preserve">
+    <value>Next month</value>
+  </data>
+  <data name="PreviousYear" xml:space="preserve">
+    <value>Previous year</value>
+  </data>
+  <data name="NextYear" xml:space="preserve">
+    <value>Next year</value>
+  </data>
+  <data name="PreviousYears" xml:space="preserve">
+    <value>Previous years</value>
+  </data>
+  <data name="NextYears" xml:space="preserve">
+    <value>Next years</value>
+  </data>
+  <data name="ChooseMonth" xml:space="preserve">
+    <value>Choose a month</value>
+  </data>
+  <data name="ChooseYear" xml:space="preserve">
+    <value>Choose a year</value>
+  </data>
+  <data name="ChooseHour" xml:space="preserve">
+    <value>Choose an hour</value>
+  </data>
+  <data name="ChooseMinute" xml:space="preserve">
+    <value>Choose a minute</value>
+  </data>
+  <data name="Week" xml:space="preserve">
+    <value>Week</value>
+  </data>
+  <data name="Hours" xml:space="preserve">
+    <value>Hours</value>
+  </data>
+  <data name="Minutes" xml:space="preserve">
+    <value>Minutes</value>
+  </data>
+  <data name="Today" xml:space="preserve">
+    <value>Today</value>
+  </data>
+  <data name="Now" xml:space="preserve">
+    <value>Now</value>
+  </data>
+  <data name="Periods" xml:space="preserve">
+    <value>Periods</value>
+  </data>
+  <data name="ChoosePeriodOf" xml:space="preserve">
+    <value>Choose the period of {0}</value>
+  </data>
+  <data name="PeriodFrom" xml:space="preserve">
+    <value>From</value>
+  </data>
+  <data name="PeriodTo" xml:space="preserve">
+    <value>To</value>
+  </data>
+  <data name="PeriodThisWeek" xml:space="preserve">
+    <value>This week</value>
+  </data>
+  <data name="PeriodThisMonth" xml:space="preserve">
+    <value>This month</value>
+  </data>
+  <data name="PeriodPreviousMonth" xml:space="preserve">
+    <value>Previous month</value>
+  </data>
+  <data name="PeriodNextMonth" xml:space="preserve">
+    <value>Next month</value>
+  </data>
+  <data name="PeriodQuarter" xml:space="preserve">
+    <value>Quarter {0}</value>
+  </data>
+  <data name="PeriodPreviousYear" xml:space="preserve">
+    <value>Previous year</value>
+  </data>
+  <data name="PeriodThisYear" xml:space="preserve">
+    <value>This year</value>
+  </data>
+  <data name="PeriodNextYear" xml:space="preserve">
+    <value>Next year</value>
+  </data>
+  <data name="UploadFiles" xml:space="preserve">
+    <value>Upload files</value>
+  </data>
+  <data name="DropFilesHere" xml:space="preserve">
+    <value>Drop files here or choose them.</value>
+  </data>
+  <data name="ChooseFiles" xml:space="preserve">
+    <value>Choose files</value>
+  </data>
+  <data name="FileAccepts" xml:space="preserve">
+    <value>Accepted: {0}; up to {1} MB.</value>
+  </data>
+  <data name="FileWaiting" xml:space="preserve">
+    <value>Waiting</value>
+  </data>
+  <data name="FileUploading" xml:space="preserve">
+    <value>Uploading…</value>
+  </data>
+  <data name="FileUploaded" xml:space="preserve">
+    <value>Uploaded</value>
+  </data>
+  <data name="FileUploadFailed" xml:space="preserve">
+    <value>Not uploaded</value>
+  </data>
+  <data name="NoFiles" xml:space="preserve">
+    <value>No files yet.</value>
+  </data>
+  <data name="FilesSaveFirst" xml:space="preserve">
+    <value>Save the record to add its files.</value>
+  </data>
+  <data name="DeleteFile" xml:space="preserve">
+    <value>Delete {0}</value>
+  </data>
+  <data name="DeleteFileConfirm" xml:space="preserve">
+    <value>Delete the file {0}?</value>
+  </data>
+  <data name="FilesZoneHint" xml:space="preserve">
+    <value>Drop, paste or choose files.</value>
+  </data>
+  <data name="FileLimits" xml:space="preserve">
+    <value>{0} - up to {1}</value>
+  </data>
+  <data name="TakePhoto" xml:space="preserve">
+    <value>Take photo</value>
+  </data>
+  <data name="FileRemove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="OpenFile" xml:space="preserve">
+    <value>Open {0}</value>
+  </data>
+  <data name="OpenRecord" xml:space="preserve">
+    <value>Open {0}</value>
+  </data>
+  <data name="Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="Download" xml:space="preserve">
+    <value>Download</value>
+  </data>
+  <data name="DeleteAllFiles" xml:space="preserve">
+    <value>Delete all</value>
+  </data>
+  <data name="DeleteAllFilesConfirm" xml:space="preserve">
+    <value>Delete all {0} files?</value>
+  </data>
+  <data name="FileViewer" xml:space="preserve">
+    <value>Files</value>
+  </data>
+  <data name="FileCounter" xml:space="preserve">
+    <value>{0} / {1}</value>
+  </data>
+  <data name="PreviousFile" xml:space="preserve">
+    <value>Previous file</value>
+  </data>
+  <data name="NextFile" xml:space="preserve">
+    <value>Next file</value>
+  </data>
+  <data name="FitToScreen" xml:space="preserve">
+    <value>Fit to screen</value>
+  </data>
+  <data name="ActualSize" xml:space="preserve">
+    <value>Actual size</value>
+  </data>
+  <data name="FileLoadFailed" xml:space="preserve">
+    <value>The file could not be shown.</value>
+  </data>
+  <data name="Cover" xml:space="preserve">
+    <value>Cover</value>
+  </data>
+  <data name="SetCover" xml:space="preserve">
+    <value>Make cover</value>
+  </data>
+  <data name="FileThumbnailCount" xml:space="preserve">
+    <value>Upload at most one thumbnail.</value>
+  </data>
+  <data name="FileThumbnailBeside" xml:space="preserve">
+    <value>Only an image or a video takes a thumbnail.</value>
+  </data>
+  <data name="FileThumbnailTooLarge" xml:space="preserve">
+    <value>The thumbnail is empty or larger than 64 KB.</value>
+  </data>
+  <data name="FileThumbnailType" xml:space="preserve">
+    <value>The thumbnail is not a WebP or JPEG image.</value>
+  </data>
+  <data name="FileCoverRefused" xml:space="preserve">
+    <value>These files have no cover.</value>
+  </data>
+  <data name="FileExtensionRefused" xml:space="preserve">
+    <value>The file's name does not end in an extension of {0}.</value>
+  </data>
+  <data name="FileContentRefused" xml:space="preserve">
+    <value>The file's content is not {0}.</value>
+  </data>
+  <data name="FileLimitCount" xml:space="preserve">
+    <value>A record holds at most {0} files.</value>
+  </data>
+  <data name="FileLimitTotal" xml:space="preserve">
+    <value>A record's files hold at most {0} MB together.</value>
+  </data>
+  <data name="FileDuplicate" xml:space="preserve">
+    <value>The record already holds this file as {0}.</value>
+  </data>
+  <data name="FilePixelsRefused" xml:space="preserve">
+    <value>The image is larger than {0} megapixels.</value>
+  </data>
+  <data name="FileMetadataRefused" xml:space="preserve">
+    <value>The file's metadata is refused.</value>
+  </data>
+  <data name="PermissionRequired" xml:space="preserve">
+    <value>Permission '{0}' is required.</value>
+  </data>
+  <data name="RequestBodyTooLarge" xml:space="preserve">
+    <value>The request body exceeds {0} bytes.</value>
+  </data>
+  <data name="ClientHeaderRequired" xml:space="preserve">
+    <value>A cookie-authenticated request must carry the {0} header.</value>
+  </data>
+  <data name="PasswordChangeRequired" xml:space="preserve">
+    <value>Password change required.</value>
+  </data>
+  <data name="HttpsRequired" xml:space="preserve">
+    <value>HTTPS is required.</value>
+  </data>
+  <data name="SessionHttpsRequired" xml:space="preserve">
+    <value>A browser session requires HTTPS.</value>
+  </data>
+  <data name="TooManyRequests" xml:space="preserve">
+    <value>Too many requests.</value>
+  </data>
+  <data name="IdempotencyKeyInvalid" xml:space="preserve">
+    <value>The idempotency key must be 1 to 64 letters, digits, hyphens or underscores.</value>
+  </data>
+  <data name="IdempotencyKeyReused" xml:space="preserve">
+    <value>The idempotency key was already used for another request.</value>
+  </data>
+  <data name="RouteUnknown" xml:space="preserve">
+    <value>Unknown API route.</value>
+  </data>
+  <data name="ServerError" xml:space="preserve">
+    <value>An unexpected error occurred.</value>
+  </data>
+  <data name="TenancyViolation" xml:space="preserve">
+    <value>The request reaches outside the active tenant.</value>
+  </data>
+  <data name="SessionUnknown" xml:space="preserve">
+    <value>No such session.</value>
+  </data>
+  <data name="LanguageInactive" xml:space="preserve">
+    <value>Select an active language.</value>
+  </data>
+  <data name="Tenant" xml:space="preserve">
+    <value>Tenant</value>
+  </data>
+  <data name="TenantOutOfScope" xml:space="preserve">
+    <value>Select a tenant of your scope.</value>
+  </data>
+  <data name="TenantInactive" xml:space="preserve">
+    <value>Select an active tenant.</value>
+  </data>
+  <data name="PasswordTooShort" xml:space="preserve">
+    <value>The password must be at least {0} characters.</value>
+  </data>
+  <data name="PasswordTooLong" xml:space="preserve">
+    <value>The password must be at most {0} characters.</value>
+  </data>
+  <data name="PasswordCommon" xml:space="preserve">
+    <value>The password is on the deny-list of common passwords.</value>
+  </data>
+  <data name="PasswordIsLogin" xml:space="preserve">
+    <value>The password must not equal the login name.</value>
+  </data>
+  <data name="GridSelectionVersions" xml:space="preserve">
+    <value>The versions sent do not match the selected rows. Reload the page and select them again.</value>
+  </data>
+  <data name="GridNamedFiltersInvalid" xml:space="preserve">
+    <value>The list was asked with a filter it does not offer. Reload the page.</value>
+  </data>
+  <data name="Platform" xml:space="preserve">
+    <value>Platform</value>
+  </data>
+  <data name="Tenants" xml:space="preserve">
+    <value>Tenants</value>
+  </data>
+  <data name="Languages" xml:space="preserve">
+    <value>Languages</value>
+  </data>
+  <data name="Open Apis" xml:space="preserve">
+    <value>Open Apis</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Menu view" xml:space="preserve">
+    <value>Menu view</value>
+  </data>
+  <data name="Switch" xml:space="preserve">
+    <value>Switch</value>
+  </data>
+  <data name="Id" xml:space="preserve">
+    <value>Id</value>
+  </data>
+  <data name="Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Handle" xml:space="preserve">
+    <value>Handle</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="Is Active" xml:space="preserve">
+    <value>Is Active</value>
+  </data>
+  <data name="Sort Order" xml:space="preserve">
+    <value>Sort Order</value>
+  </data>
+  <data name="Email" xml:space="preserve">
+    <value>Email</value>
+  </data>
+  <data name="Must Change Password" xml:space="preserve">
+    <value>Must Change Password</value>
+  </data>
+  <data name="Parent" xml:space="preserve">
+    <value>Parent</value>
+  </data>
+  <data name="Time Zone" xml:space="preserve">
+    <value>Time Zone</value>
+  </data>
+  <data name="Created At" xml:space="preserve">
+    <value>Created At</value>
+  </data>
+  <data name="Client" xml:space="preserve">
+    <value>Client</value>
+  </data>
+  <data name="Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Expires At" xml:space="preserve">
+    <value>Expires At</value>
+  </data>
+  <data name="Last Used At" xml:space="preserve">
+    <value>Last Used At</value>
+  </data>
+  <data name="Revoked At" xml:space="preserve">
+    <value>Revoked At</value>
+  </data>
+  <data name="Revoked Reason" xml:space="preserve">
+    <value>Revoked Reason</value>
+  </data>
+  <data name="Content Type" xml:space="preserve">
+    <value>Content Type</value>
+  </data>
+  <data name="Size" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="Restore" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="RestoreConfirm" xml:space="preserve">
+    <value>Restore the selected journal rows?</value>
+  </data>
+  <data name="ChangeRestoreOperation" xml:space="preserve">
+    <value>Row {1} of {0} was {2}: only a deleted or a changed row is restored.</value>
+  </data>
+  <data name="ChangeRestoreTable" xml:space="preserve">
+    <value>The table {0} is no one entity of this application, so row {1} is not restored.</value>
+  </data>
+  <data name="ChangeRestoreFile" xml:space="preserve">
+    <value>Row {1} of {0} is a file's: its content may be gone, so it is not restored.</value>
+  </data>
+  <data name="ChangeRestoreProvider" xml:space="preserve">
+    <value>The key of {0} takes no explicit id, so the deleted row {1} is not restored.</value>
+  </data>
+  <data name="ChangeRestoreKeepsVersion" xml:space="preserve">
+    <value>Row {1} of {0} was changed in a member only the server writes; that change is not undone here.</value>
+  </data>
+  <data name="ChangeRestorePresent" xml:space="preserve">
+    <value>Row {1} of {0} exists again.</value>
+  </data>
+  <data name="ChangeRestoreParent" xml:space="preserve">
+    <value>Row {1} of {0} names a parent row that is gone.</value>
+  </data>
+  <data name="ChangeRestoreStale" xml:space="preserve">
+    <value>Row {1} of {0} was deleted or changed again since.</value>
+  </data>
+  <data name="At" xml:space="preserve">
+    <value>At</value>
+  </data>
+  <data name="User Id" xml:space="preserve">
+    <value>User Id</value>
+  </data>
+  <data name="Operation" xml:space="preserve">
+    <value>Operation</value>
+  </data>
+  <data name="Table" xml:space="preserve">
+    <value>Table</value>
+  </data>
+  <data name="Row Id" xml:space="preserve">
+    <value>Row Id</value>
+  </data>
+  <data name="Before" xml:space="preserve">
+    <value>Before</value>
+  </data>
+  <data name="After" xml:space="preserve">
+    <value>After</value>
+  </data>
+  <data name="Correlation Id" xml:space="preserve">
+    <value>Correlation Id</value>
+  </data>
+  <data name="ConfirmTyped" xml:space="preserve">
+    <value>Type {0} to confirm</value>
+  </data>
+  <data name="TakeVideo" xml:space="preserve">
+    <value>Take video</value>
+  </data>
+  <data name="FilesCount" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="FilesFull" xml:space="preserve">
+    <value>{0} of {1}: no room for more files</value>
+  </data>
+  <data name="FilesNoRoom" xml:space="preserve">
+    <value>The record has no room for this file.</value>
+  </data>
+  <data name="CancelUpload" xml:space="preserve">
+    <value>Cancel the upload of {0}</value>
+  </data>
+  <data name="FilePreparing" xml:space="preserve">
+    <value>Preparing…</value>
+  </data>
+  <data name="FilesUploadingLeave" xml:space="preserve">
+    <value>Files are still uploading. Leave and cancel them?</value>
+  </data>
+  <data name="Leave" xml:space="preserve">
+    <value>Leave</value>
+  </data>
+  <data name="DownloadAllFiles" xml:space="preserve">
+    <value>Download all</value>
+  </data>
+  <data name="FileInfo" xml:space="preserve">
+    <value>Info</value>
+  </data>
+  <data name="FileName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="FileDescription" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="FileType" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="FileSize" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="FileDimensions" xml:space="preserve">
+    <value>Size in pixels</value>
+  </data>
+  <data name="FileAdded" xml:space="preserve">
+    <value>Added</value>
+  </data>
+  <data name="FileUploadedBy" xml:space="preserve">
+    <value>Uploaded by</value>
+  </data>
+  <data name="FileInfoSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="FileMetadata" xml:space="preserve">
+    <value>Metadata</value>
+  </data>
+  <data name="FileMetadataNone" xml:space="preserve">
+    <value>No metadata.</value>
+  </data>
+  <data name="MetadataCamera" xml:space="preserve">
+    <value>Camera</value>
+  </data>
+  <data name="MetadataLens" xml:space="preserve">
+    <value>Lens</value>
+  </data>
+  <data name="MetadataTakenAt" xml:space="preserve">
+    <value>Taken</value>
+  </data>
+  <data name="MetadataExposure" xml:space="preserve">
+    <value>Exposure</value>
+  </data>
+  <data name="MetadataAperture" xml:space="preserve">
+    <value>Aperture</value>
+  </data>
+  <data name="MetadataIso" xml:space="preserve">
+    <value>ISO</value>
+  </data>
+  <data name="MetadataFocalLength" xml:space="preserve">
+    <value>Focal length</value>
+  </data>
+  <data name="MetadataOrientation" xml:space="preserve">
+    <value>Orientation</value>
+  </data>
+  <data name="MetadataSoftware" xml:space="preserve">
+    <value>Software</value>
+  </data>
+  <data name="MetadataPlace" xml:space="preserve">
+    <value>Place</value>
+  </data>
+  <data name="MetadataAltitude" xml:space="preserve">
+    <value>Altitude</value>
+  </data>
+  <data name="MoveFile" xml:space="preserve">
+    <value>Move {0}</value>
+  </data>
+  <data name="MoveFileHint" xml:space="preserve">
+    <value>Space takes the file, the arrow keys move it, Space drops it and Escape puts it back.</value>
+  </data>
+  <data name="FilePosition" xml:space="preserve">
+    <value>{0}, position {1} of {2}</value>
+  </data>
+  <data name="FileMoveCancelled" xml:space="preserve">
+    <value>{0} put back</value>
+  </data>
+  <data name="FileArchiveTooLarge" xml:space="preserve">
+    <value>The record's files together are larger than {0} MB, the most one archive holds.</value>
+  </data>
+  <data name="FileDescriptionTooLong" xml:space="preserve">
+    <value>The description holds at most 2000 characters.</value>
+  </data>
+  <data name="File metadata" xml:space="preserve">
+    <value>File metadata</value>
+  </data>
+  <data name="TimeZoneAsOrganisation" xml:space="preserve">
+    <value>As the organisation ({0})</value>
+  </data>
+  <data name="TimeZoneAsParentOrganisation" xml:space="preserve">
+    <value>As the parent organisation ({0})</value>
+  </data>
+  <data name="TimeZoneByBrowser" xml:space="preserve">
+    <value>By the browser</value>
+  </data>
+</root>
