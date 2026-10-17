@@ -20,6 +20,7 @@ namespace Air.App.Grid;
 public interface IGridService
 {
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
+  Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
@@ -227,10 +228,58 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
   protected virtual IQueryable<TEntity> BaseQuery(PlatformDbContext context) => context.Set<TEntity>();
 
-  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default)
+  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
+    BuildScreenAsync(servicePath, null, ct);
+
+  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
   {
     var columns = new Columns<TRow>();
     SetColumns(columns);
+
+    var isSelect = request?.ReferenceLabelPaths is { Count: > 0 } || (request?.IsReferencePicker ?? false);
+    if (isSelect)
+    {
+      var labelPaths = request?.ReferenceLabelPaths is { Count: > 0 }
+        ? request.ReferenceLabelPaths
+        : ["name"];
+
+      var patchColumns = request?.PatchSourceColumns ?? [];
+
+      var matching = columns.List.Where(c =>
+        labelPaths.Any(lp => string.Equals(c.Path, lp, StringComparison.OrdinalIgnoreCase)) ||
+        patchColumns.Any(pc => string.Equals(c.Path, pc, StringComparison.OrdinalIgnoreCase))).ToList();
+
+      if (matching.Count == 0)
+      {
+        var fallback = columns.List.FirstOrDefault(c => !string.Equals(c.Path, "id", StringComparison.OrdinalIgnoreCase))
+          ?? columns.List.FirstOrDefault();
+        if (fallback != null) matching.Add(fallback);
+      }
+
+      foreach (var col in matching)
+      {
+        if (!string.IsNullOrEmpty(col.Label))
+        {
+          col.Label = Localizer.Instance[col.Label];
+        }
+      }
+
+      var selectGridModel = new GridModel
+      {
+        Service = servicePath,
+        Columns = matching,
+        IsReadOnly = true,
+        Form = new OverlayModelDto(),
+        Nav = new NavModel { Key = $"{servicePath}.select.nav" },
+        ActionNav = new NavModel { Key = $"{servicePath}.select.actions" }
+      };
+
+      var selectLayout = PanelLayout.Row(servicePath)
+        .Panel("main", selectGridModel)
+        .Build();
+
+      return Task.FromResult(new ScreenDto { Layout = selectLayout });
+    }
 
     string? detectedFormService = FormServicePath;
     if (detectedFormService == null && columns.FormServiceType != null)

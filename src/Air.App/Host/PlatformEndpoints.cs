@@ -5,7 +5,9 @@ using Air.App.Form;
 using Air.App.Localization;
 using Air.App.Metadata;
 using Air.App.Modules;
+using Air.App.Panels;
 using Air.App.Screens;
+using Air.Data;
 using Air.Data.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -257,7 +259,7 @@ public static class PlatformEndpoints
           if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
           if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
 
-          var screen = await grid.BuildScreenAsync(serviceName, ct);
+          var screen = await grid.BuildScreenAsync(serviceName, req, ct);
           var page = await grid.GetDataAsync(req, ct);
           screen.Data = page;
           return Results.Ok(screen);
@@ -383,6 +385,7 @@ public static class PlatformEndpoints
 
           var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
           var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+          await PopulateFormReferencesAsync(dict, entity, screen, form.DbContext, catalog, ct);
 
           screen.Data = new FormDataDto
           {
@@ -403,6 +406,8 @@ public static class PlatformEndpoints
 
           var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
           var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+          var screen = await form.BuildScreenAsync(serviceName, entityId, ct);
+          await PopulateFormReferencesAsync(dict, entity, screen, form.DbContext, catalog, ct);
 
           return Results.Ok(new FormDataDto
           {
@@ -572,5 +577,137 @@ public static class PlatformEndpoints
         }
       }
     }
+  }
+
+  private static async Task PopulateFormReferencesAsync(
+    Dictionary<string, object?> dict,
+    object? entity,
+    ScreenDto screen,
+    PlatformDbContext db,
+    ModuleCatalog catalog,
+    CancellationToken ct)
+  {
+    if (entity == null) return;
+
+    FormModel? formModel = null;
+    if (screen.Layout?.Root != null)
+    {
+      formModel = FindFormModel(screen.Layout.Root);
+    }
+
+    if (formModel == null) return;
+
+    var entityProps = entity.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+      .ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+    foreach (var el in formModel.Elements)
+    {
+      if (string.IsNullOrEmpty(el.ReferencePath)) continue;
+
+      long? key = null;
+      if (dict.TryGetValue(el.Path, out var rawVal) && rawVal != null)
+      {
+        if (rawVal is JsonElement je)
+        {
+          if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var jeId)) key = jeId;
+          else if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out var jeParsed)) key = jeParsed;
+        }
+        else if (rawVal is long l) key = l;
+        else if (rawVal is int i) key = i;
+        else if (long.TryParse(rawVal.ToString(), out var parsedId)) key = parsedId;
+      }
+
+      if (key == null || key <= 0)
+      {
+        dict[el.ReferencePath] = null;
+        continue;
+      }
+
+      // 1. Try reading from entity navigation property
+      object? navObj = null;
+      if (entityProps.TryGetValue(el.ReferencePath, out var navProp))
+      {
+        navObj = navProp.GetValue(entity);
+      }
+      else
+      {
+        var candidateName = el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
+          ? el.Path[..^2]
+          : el.Path;
+        if (entityProps.TryGetValue(candidateName, out navProp))
+        {
+          navObj = navProp.GetValue(entity);
+        }
+      }
+
+      string? refName = null;
+      if (navObj != null)
+      {
+        var nameProp = navObj.GetType().GetProperty("Name")
+          ?? navObj.GetType().GetProperty("Title")
+          ?? navObj.GetType().GetProperty("Number")
+          ?? navObj.GetType().GetProperty("Login");
+        refName = nameProp?.GetValue(navObj)?.ToString();
+      }
+
+      // 2. Fallback to DbContext lookup if navigation property is null
+      if (string.IsNullOrEmpty(refName) && el.Model is FormSelectModel selectModel && !string.IsNullOrEmpty(selectModel.ReferenceService))
+      {
+        var refServiceType = catalog.FindServiceType(selectModel.ReferenceService)
+          ?? catalog.FindFeature(selectModel.ReferenceService)?.ServiceType;
+
+        if (refServiceType != null)
+        {
+          Type? refEntityType = null;
+          var curType = refServiceType;
+          while (curType != null && curType != typeof(object))
+          {
+            if (curType.IsGenericType && (curType.GetGenericTypeDefinition() == typeof(GridService<,>) || curType.GetGenericTypeDefinition() == typeof(FormService<,>)))
+            {
+              refEntityType = curType.GetGenericArguments()[0];
+              break;
+            }
+            curType = curType.BaseType;
+          }
+
+          if (refEntityType != null)
+          {
+            try
+            {
+              var loaded = await db.FindAsync(refEntityType, [key.Value], ct);
+              if (loaded != null)
+              {
+                var nameProp = loaded.GetType().GetProperty("Name")
+                  ?? loaded.GetType().GetProperty("Title")
+                  ?? loaded.GetType().GetProperty("Number")
+                  ?? loaded.GetType().GetProperty("Login");
+                refName = nameProp?.GetValue(loaded)?.ToString();
+              }
+            }
+            catch { }
+          }
+        }
+      }
+
+      dict[el.ReferencePath] = new Reference
+      {
+        Id = key.Value,
+        Name = !string.IsNullOrEmpty(refName) ? refName : $"#{key.Value}"
+      };
+    }
+  }
+
+  private static FormModel? FindFormModel(PanelNodeDto node)
+  {
+    if (node.Model is FormModel fm) return fm;
+    if (node.Children != null)
+    {
+      foreach (var child in node.Children)
+      {
+        var res = FindFormModel(child);
+        if (res != null) return res;
+      }
+    }
+    return null;
   }
 }

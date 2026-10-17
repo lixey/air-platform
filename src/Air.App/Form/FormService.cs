@@ -16,6 +16,7 @@ namespace Air.App.Form;
 
 public interface IFormService
 {
+  PlatformDbContext DbContext { get; }
   OverlayModelDto Overlay(string service);
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, null, ct);
@@ -78,6 +79,8 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
   where TEntity : class, IEntity, new()
   where TInput : class, new()
 {
+  public PlatformDbContext DbContext => db;
+
   public sealed class Elements : Elements<TInput> { }
 
   protected Localizer L => Localizer.Instance;
@@ -365,40 +368,71 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     var actionStart = new List<NavElementModel>();
     var actionElements = new List<NavElementModel>();
 
-    if (elements.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && entity != null && id.HasValue && id.Value > 0)
+    if (elements.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow)
     {
-      foreach (var el in formModel.Elements.Where(e => e.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase) || e.Path.Equals("status", StringComparison.OrdinalIgnoreCase)))
+      string? statusMemberName = null;
+      if (statusFlow.StatusMember.Body is MemberExpression memberExpr)
       {
-        el.IsDisabled = true;
+        statusMemberName = memberExpr.Member.Name;
+      }
+      else if (statusFlow.StatusMember.Body is UnaryExpression { Operand: MemberExpression ueMember })
+      {
+        statusMemberName = ueMember.Member.Name;
       }
 
-      var currentStatus = statusFlow.StatusMember.Compile()(entity);
-      foreach (var transition in statusFlow.Transitions)
+      var statusOptions = statusFlow.Statuses.Select(s => new OptionDto
       {
-        if (transition.From.Contains(currentStatus))
+        Id = s.Id,
+        Name = L[s.Name],
+        Color = s.Color
+      }).ToList();
+
+      foreach (var el in formModel.Elements)
+      {
+        if ((statusMemberName != null && string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase))
+            || el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
+            || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
-          var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
-          var action = new FormNavActionModel
+          el.IsDisabled = true;
+          el.IsServerOwned = true;
+          el.Type = UiFieldType.Text;
+          el.Model = new FormSelectModel
           {
-            Key = $"status.{transition.Name.ToLowerInvariant()}",
-            Label = targetStatus?.Name ?? transition.Name,
-            Color = targetStatus?.Color,
-            Service = servicePath,
-            Method = $"move-status/{transition.Name.ToLowerInvariant()}",
-            Confirm = transition.Ask is not null || transition.Confirm is null
-              ? null
-              : new OverlayConfirmModel { Message = transition.Confirm, Color = targetStatus?.Color },
-            Ask = transition.Ask is null
-              ? null
-              : new FormAskModel
-              {
-                Title = targetStatus?.Name ?? transition.Name,
-                Message = transition.Confirm,
-                Color = targetStatus?.Color,
-                Elements = [.. transition.Ask.BuildElements()]
-              }
+            Options = statusOptions
           };
-          actionStart.Add(action);
+        }
+      }
+
+      if (entity != null && id.HasValue && id.Value > 0)
+      {
+        var currentStatus = statusFlow.StatusMember.Compile()(entity);
+        foreach (var transition in statusFlow.Transitions)
+        {
+          if (transition.From.Contains(currentStatus))
+          {
+            var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
+            var action = new FormNavActionModel
+            {
+              Key = $"status.{transition.Name.ToLowerInvariant()}",
+              Label = targetStatus?.Name ?? transition.Name,
+              Color = targetStatus?.Color,
+              Service = servicePath,
+              Method = $"move-status/{transition.Name.ToLowerInvariant()}",
+              Confirm = transition.Ask is not null || transition.Confirm is null
+                ? null
+                : new OverlayConfirmModel { Message = transition.Confirm, Color = targetStatus?.Color },
+              Ask = transition.Ask is null
+                ? null
+                : new FormAskModel
+                {
+                  Title = targetStatus?.Name ?? transition.Name,
+                  Message = transition.Confirm,
+                  Color = targetStatus?.Color,
+                  Elements = [.. transition.Ask.BuildElements()]
+                }
+            };
+            actionStart.Add(action);
+          }
         }
       }
     }
@@ -483,10 +517,27 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     if (IsNew)
     {
       entity = new TEntity();
+      if (elements.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
+      {
+        statusFlow.Initialize(entity);
+      }
     }
     else
     {
-      entity = await db.Set<TEntity>().FindAsync([id!.Value], ct)
+      IQueryable<TEntity> query = db.Set<TEntity>();
+      var efModel = db.Model.FindEntityType(typeof(TEntity));
+      if (efModel != null)
+      {
+        foreach (var nav in efModel.GetNavigations())
+        {
+          if (!nav.IsCollection)
+          {
+            query = query.Include(nav.Name);
+          }
+        }
+      }
+
+      entity = await query.FirstOrDefaultAsync(e => e.Id == id!.Value, ct)
         ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
     }
 

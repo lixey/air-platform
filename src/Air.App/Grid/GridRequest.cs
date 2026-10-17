@@ -18,6 +18,7 @@ public class GridRequest : ListRequest
   public List<long>? SelectedIds { get; set; }
   public List<int>? SelectedVersions { get; set; }
   public List<string>? ReferenceLabelPaths { get; set; }
+  public List<string>? PatchSourceColumns { get; set; }
   public bool IsReferencePicker { get; set; }
   public bool IncludesInactive { get; set; }
 

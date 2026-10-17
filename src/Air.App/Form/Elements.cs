@@ -34,9 +34,14 @@ public class Elements
     return child;
   }
 
+  private bool _disabled;
+
   public void UseRecordLabelOf<TGridService>() { }
 
-  public void Disable(bool disabled = true) { }
+  public void Disable(bool disabled = true)
+  {
+    _disabled = disabled;
+  }
 
   internal object? StatusFlow { get; private set; }
 
@@ -54,7 +59,8 @@ public class Elements
       Label = PathToLabel(path),
       Type = ResolveFieldType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
-      Tab = _currentTab
+      Tab = _currentTab,
+      IsDisabled = _disabled
     };
     _elements.Add(el);
     return new FormElement<TEntity, TProp>(el);
@@ -68,7 +74,8 @@ public class Elements
       Label = PathToLabel(path),
       Type = ResolveFieldType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
-      Tab = _currentTab
+      Tab = _currentTab,
+      IsDisabled = _disabled
     };
     _elements.Add(el);
     return new FormElement<object, TProp>(el);
@@ -262,9 +269,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormReferenceElement<TEntity, TProp, object> AsReference<TGridService>()
   {
     dto.Type = UiFieldType.Text;
+    dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
-      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService))
+      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
+      ReferenceLabelPaths = ["name"]
     };
     return new FormReferenceElement<TEntity, TProp, object>(dto);
   }
@@ -272,9 +281,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormReferenceElement<TEntity, TProp, TSource> AsReference<TGridService, TSource>()
   {
     dto.Type = UiFieldType.Text;
+    dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
-      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService))
+      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
+      ReferenceLabelPaths = ["name"]
     };
     return new FormReferenceElement<TEntity, TProp, TSource>(dto);
   }

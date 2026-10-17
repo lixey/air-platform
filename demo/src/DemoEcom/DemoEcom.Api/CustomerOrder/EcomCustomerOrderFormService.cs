@@ -31,6 +31,7 @@ public sealed class EcomCustomerOrderFormService(
 
     elements.Add(e => e.Number).AsInfo().Span(3);
     elements.Add(e => e.DocStatusId).Label("Status").Span(3);
+    elements.Disable(Frozen);
     elements.Add(e => e.Date).Span(3);
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
 
