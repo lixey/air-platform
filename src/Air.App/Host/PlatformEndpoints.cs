@@ -151,25 +151,33 @@ public static class PlatformEndpoints
 
         if (method == "get-data")
         {
-          var screen = await grid.BuildScreenAsync(serviceName, ct);
-          ListRequest? req = null;
+          GridRequest? req = null;
           if (httpRequest.ContentLength > 0)
           {
-            try { req = await httpRequest.ReadFromJsonAsync<ListRequest>(cancellationToken: ct); } catch { }
+            try { req = await httpRequest.ReadFromJsonAsync<GridRequest>(cancellationToken: ct); } catch { }
           }
-          var page = await grid.GetDataAsync(req ?? new ListRequest(), ct);
+          req ??= new GridRequest();
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
+
+          var screen = await grid.BuildScreenAsync(serviceName, ct);
+          var page = await grid.GetDataAsync(req, ct);
           screen.Data = page;
           return Results.Ok(screen);
         }
 
         if (method == "get-count")
         {
-          ListRequest? req = null;
+          GridRequest? req = null;
           if (httpRequest.ContentLength > 0)
           {
-            try { req = await httpRequest.ReadFromJsonAsync<ListRequest>(cancellationToken: ct); } catch { }
+            try { req = await httpRequest.ReadFromJsonAsync<GridRequest>(cancellationToken: ct); } catch { }
           }
-          var page = await grid.GetDataAsync(req ?? new ListRequest(), ct);
+          req ??= new GridRequest();
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
+
+          var page = await grid.GetDataAsync(req, ct);
           return Results.Ok(new GridCountDto { Total = page.Total ?? 0 });
         }
 
@@ -183,6 +191,44 @@ public static class PlatformEndpoints
             deleted++;
           }
           return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
+        }
+
+        // Custom action dispatching on grid
+        var actionMethod = feat.ServiceType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+          .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
+        if (actionMethod != null)
+        {
+          GridRequest? req = null;
+          if (httpRequest.ContentLength > 0)
+          {
+            try { req = await httpRequest.ReadFromJsonAsync<GridRequest>(cancellationToken: ct); } catch { }
+          }
+          req ??= new GridRequest();
+          if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal)) req.Id = idVal;
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
+
+          var parameters = actionMethod.GetParameters();
+          object?[] args = new object?[parameters.Length];
+          for (int i = 0; i < parameters.Length; i++)
+          {
+            var pType = parameters[i].ParameterType;
+            if (pType == typeof(CancellationToken)) args[i] = ct;
+            else if (typeof(GridRequest).IsAssignableFrom(pType)) args[i] = req;
+            else if (pType == typeof(long) && req.Id.HasValue) args[i] = req.Id.Value;
+            else args[i] = null;
+          }
+
+          var resultTask = actionMethod.Invoke(grid, args);
+          if (resultTask is Task task)
+          {
+            await task.ConfigureAwait(false);
+            var resultProp = task.GetType().GetProperty("Result");
+            var result = resultProp?.GetValue(task);
+            return Results.Ok(result ?? new GridActionDto { Outcome = MutationOutcome.Committed });
+          }
+          return Results.Ok(resultTask ?? new GridActionDto { Outcome = MutationOutcome.Committed });
         }
       }
       else if (typeof(IFormService).IsAssignableFrom(feat.ServiceType))

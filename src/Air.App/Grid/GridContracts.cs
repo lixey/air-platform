@@ -326,3 +326,27 @@ public sealed class GridDeleteDto
   public List<MessageDto>? Warnings { get; set; }
 }
 
+[UiContract]
+public sealed class GridActionDto
+{
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(MutationOutcome))]
+  public string? Outcome { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<MessageDto>? Warnings { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? OpenScreen { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public long? OpenId { get; set; }
+}
+
+[UiContract]
+[ClientOptional]
+public class GridPickRequest : GridRequest
+{
+  public long PickedId { get; set; }
+}
+

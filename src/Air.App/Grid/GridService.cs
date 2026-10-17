@@ -1,3 +1,6 @@
+using System.Linq.Expressions;
+using Air.App.Components;
+using Air.App.Localization;
 using Air.App.Modules;
 using Air.App.Nav;
 using Air.App.Overlay;
@@ -7,6 +10,7 @@ using Air.Data;
 using Air.Data.Contracts;
 using Air.Data.Entities;
 using Air.Data.Querying;
+using Microsoft.EntityFrameworkCore;
 
 namespace Air.App.Grid;
 
@@ -18,26 +22,204 @@ public interface IGridService
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridService
-  where TEntity : class, IEntity
+  where TEntity : class, IEntity, new()
   where TRow : class
 {
+  protected Localizer L => Localizer.Instance;
+
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
 
+  protected virtual bool IsReadOnly => Feature.IsReadOnly;
+  protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
-  protected virtual OverlayModelDto? FormOverlay => FormServicePath is not null
-    ? OverlayModel.Dialog(FormServicePath).Screen(FormServicePath).Width(720).Build()
-    : null;
+
+  public sealed class Parent
+  {
+    internal Func<IQueryable<TEntity>, long, IQueryable<TEntity>>? FilterFunc { get; private set; }
+    public string? BoundParentService { get; private set; }
+
+    public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
+    {
+      BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      var param = member.Parameters[0];
+      FilterFunc = (q, parentId) =>
+      {
+        var body = Expression.Equal(member.Body, Expression.Constant(parentId));
+        var lambda = Expression.Lambda<Func<TEntity, bool>>(body, param);
+        return q.Where(lambda);
+      };
+    }
+
+    public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
+    {
+      BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      var param = member.Parameters[0];
+      FilterFunc = (q, parentId) =>
+      {
+        var body = Expression.Equal(member.Body, Expression.Constant((long?)parentId, typeof(long?)));
+        var lambda = Expression.Lambda<Func<TEntity, bool>>(body, param);
+        return q.Where(lambda);
+      };
+    }
+
+    public void Read<TParentService>()
+    {
+      BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+    }
+  }
+
+  protected virtual void SetParent(Parent parent) { }
+  protected internal long? ParentId { get; set; }
+
+  public sealed class Query
+  {
+    internal List<Expression<Func<TEntity, bool>>> Filters { get; } = [];
+    internal LambdaExpression? LabelSelector { get; private set; }
+
+    public Query RecordLabel<TProp>(Expression<Func<TEntity, TProp>> expr)
+    {
+      LabelSelector = expr;
+      return this;
+    }
+
+    public Query Where(Expression<Func<TEntity, bool>> predicate)
+    {
+      Filters.Add(predicate);
+      return this;
+    }
+  }
+
+  protected virtual void SetQuery(Query query) { }
+
+  public sealed class ButtonBuilder
+  {
+    public string? LabelText { get; private set; }
+    public string? IconHandle { get; private set; }
+    public string? ColorHandle { get; private set; }
+    public string? VariantHandle { get; private set; }
+    public bool IsInMenu { get; private set; }
+
+    public ButtonBuilder Label(string label) { LabelText = label; return this; }
+    public ButtonBuilder Icon(string icon) { IconHandle = icon; return this; }
+    public ButtonBuilder Color(string color) { ColorHandle = color; return this; }
+    public ButtonBuilder Variant(string variant) { VariantHandle = variant; return this; }
+    public ButtonBuilder Soft() { VariantHandle = ButtonVariant.Soft; return this; }
+    public ButtonBuilder InMenu() { IsInMenu = true; return this; }
+  }
+
+  public sealed class NavPickerBuilder(GridNavPickerModel model)
+  {
+    public NavPickerBuilder MinLength(int len) { model.MinLength = len; return this; }
+    public NavPickerBuilder ReadsParent() { model.ReadsParent = true; return this; }
+  }
+
+  public sealed class Nav
+  {
+    internal List<GridNavActionModel> Actions { get; } = [];
+    internal List<GridNavPickerModel> Pickers { get; } = [];
+
+    public Nav AddAction(
+      Delegate method,
+      Action<ButtonBuilder>? look = null,
+      string? confirm = null,
+      bool needsSelection = true)
+    {
+      var b = new ButtonBuilder();
+      look?.Invoke(b);
+      var action = new GridNavActionModel
+      {
+        Key = method.Method.Name.ToLowerInvariant(),
+        Method = method.Method.Name,
+        Label = b.LabelText ?? method.Method.Name,
+        Icon = b.IconHandle,
+        Color = b.ColorHandle ?? UiColor.Blue,
+        Variant = b.VariantHandle ?? ButtonVariant.Soft,
+        NeedsSelection = needsSelection,
+        Confirm = confirm != null ? new OverlayConfirmModel { Message = confirm, Color = UiColor.Red } : null
+      };
+      Actions.Add(action);
+      return this;
+    }
+
+    public NavPickerBuilder AddPicker<TSource>(
+      Delegate method,
+      string? label = null)
+    {
+      var picker = new GridNavPickerModel
+      {
+        Key = method.Method.Name.ToLowerInvariant(),
+        Method = method.Method.Name,
+        Label = label,
+        ReferenceService = ServicePathResolver.Resolve(typeof(TSource)),
+        MinLength = 2
+      };
+      Pickers.Add(picker);
+      return new NavPickerBuilder(picker);
+    }
+  }
+
+  protected virtual void SetNav(Nav nav) { }
+
+  public sealed class DeleteContext
+  {
+    public required IReadOnlyList<TEntity> Records { get; init; }
+  }
+
+  public sealed class Hooks
+  {
+    internal List<Func<DeleteContext, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
+
+    public void BeforeDelete(Func<DeleteContext, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
+    public void BeforeDelete(Action<DeleteContext> handler) =>
+      BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+  }
+
+  protected virtual void SetHooks(Hooks hooks) { }
+
+  public sealed class GridBatchContext<TEntityRec>
+  {
+    public required IReadOnlyList<TEntityRec> Records { get; init; }
+  }
+
+  protected async Task<GridActionDto> ExecuteBatchAsync(
+    GridRequest request,
+    Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default)
+  {
+    var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
+    var records = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(cancellationToken);
+    var ctx = new GridBatchContext<TEntity> { Records = records };
+    await handler(ctx, cancellationToken);
+    await db.SaveChangesAsync(cancellationToken);
+    return new GridActionDto { Outcome = MutationOutcome.Committed };
+  }
 
   protected virtual void SetColumns(Columns<TRow> columns) { }
 
-  protected virtual IQueryable<TEntity> Query(PlatformDbContext context) => context.Set<TEntity>();
+  protected virtual IQueryable<TEntity> BaseQuery(PlatformDbContext context) => context.Set<TEntity>();
 
   public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default)
   {
     var columns = new Columns<TRow>();
     SetColumns(columns);
 
-    var formOverlay = FormOverlay;
+    string? detectedFormService = FormServicePath;
+    if (detectedFormService == null)
+    {
+      var openCol = columns.List.FirstOrDefault(c => c.Cell is GridCellOpenFormModel);
+      if (openCol != null && openCol.Cell is GridCellOpenFormModel)
+      {
+        detectedFormService = servicePath.Replace("-grid", "-form");
+      }
+    }
+
+    var formOverlay = detectedFormService is not null
+      ? OverlayModel.Drawer(detectedFormService).Screen(detectedFormService).Width(720).Build()
+      : null;
+
+    var nav = new Nav();
+    SetNav(nav);
+
     var navStart = new List<NavElementModel>();
     if (formOverlay is not null && !Feature.IsReadOnly)
     {
@@ -51,12 +233,22 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       });
     }
 
+    foreach (var picker in nav.Pickers)
+    {
+      navStart.Add(picker);
+    }
+
     var navElements = new List<NavElementModel>
     {
       new GridNavSearchModel { Key = "search", Label = "Search" }
     };
 
     var actionEnd = new List<NavElementModel>();
+    foreach (var act in nav.Actions)
+    {
+      actionEnd.Add(act);
+    }
+
     if (!Feature.IsReadOnly)
     {
       actionEnd.Add(new GridNavActionModel
@@ -104,8 +296,28 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
   public virtual async Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
   {
+    var parent = new Parent();
+    SetParent(parent);
+
+    var gridReq = request as GridRequest;
+    ParentId = gridReq?.ParentId;
+
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+
+    var query = BaseQuery(db);
+    foreach (var filter in queryDeclaration.Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    if (ParentId.HasValue && parent.FilterFunc != null)
+    {
+      query = parent.FilterFunc(query, ParentId.Value);
+    }
+
     var queryMap = QueryMap.FromEntity<TEntity>().Build();
-    var dataProvider = DataProvider.Create(Query(db), queryMap);
+    var dataProvider = DataProvider.Create(query, queryMap);
     var page = await dataProvider.GetPageAsync(request, ct);
 
     return new Page<object>
@@ -122,10 +334,20 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
   {
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+
+    var hooks = new Hooks();
+    SetHooks(hooks);
+
+    var ctx = new DeleteContext { Records = [entity] };
+    foreach (var h in hooks.BeforeDeleteActions)
+    {
+      await h(ctx, ct);
+    }
+
     db.Set<TEntity>().Remove(entity);
     await db.SaveChangesAsync(ct);
   }
 }
 
 public abstract class GridService<TEntity>(PlatformDbContext db) : GridService<TEntity, TEntity>(db)
-  where TEntity : class, IEntity;
+  where TEntity : class, IEntity, new();

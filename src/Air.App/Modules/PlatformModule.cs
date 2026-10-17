@@ -8,6 +8,7 @@ public interface IPlatformModule
   string Handle { get; }
   string Name { get; }
   ModuleMenu Menu { get; }
+  IReadOnlyList<Feature> Features => [];
   void ConfigureServices(IServiceCollection services);
 }
 
@@ -34,8 +35,15 @@ public abstract class PlatformModule<TDefinition> : PlatformModule
 
 public sealed class ModuleCatalog
 {
+  public static ModuleCatalog Instance { get; set; } = new();
+
   private readonly Dictionary<string, Feature> _featuresByPath = new(StringComparer.OrdinalIgnoreCase);
   private readonly List<IPlatformModule> _modules = [];
+
+  public ModuleCatalog()
+  {
+    Instance = this;
+  }
 
   public IReadOnlyList<IPlatformModule> Modules => _modules;
   public IEnumerable<Feature> AllFeatures => _featuresByPath.Values.Distinct();

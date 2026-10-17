@@ -211,3 +211,10 @@ public static class UiTexts
     ["Yes"] = "Yes"
   }.ToFrozenDictionary();
 }
+
+public sealed class Localizer
+{
+  public static readonly Localizer Instance = new();
+  public string this[string key] => UiTexts.English.TryGetValue(key, out var val) ? val : key;
+  public string of(string key) => this[key];
+}

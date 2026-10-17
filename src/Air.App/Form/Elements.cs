@@ -11,8 +11,10 @@ public class Elements
   private readonly List<FormTabDto> _tabs = [];
   private string? _currentTab;
 
+  private readonly List<ChildGridBuilder> _children = [];
   public IReadOnlyList<FormElementDto> List => _elements;
   public IReadOnlyList<FormTabDto> Tabs => _tabs;
+  public IReadOnlyList<ChildGridBuilder> Children => _children;
 
   public void AddTab(string label, string? key = null)
   {
@@ -27,7 +29,9 @@ public class Elements
 
   public ChildGridBuilder AddChild<TChildGridService>()
   {
-    return new ChildGridBuilder(Air.App.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)));
+    var child = new ChildGridBuilder(Air.App.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)));
+    _children.Add(child);
+    return child;
   }
 
   public void UseRecordLabelOf<TGridService>() { }
@@ -101,7 +105,7 @@ public class Elements
   }
 }
 
-public sealed class Elements<TEntity> : Elements
+public class Elements<TEntity> : Elements
 {
   public FormElement<TProp> Add<TProp>(Expression<Func<TEntity, TProp>> expression) =>
     Add<TEntity, TProp>(expression);
@@ -173,11 +177,33 @@ public sealed class FormElement<TProp>(FormElementDto dto)
     return this;
   }
 
+  public IReadOnlySet<string> TreeKeys { get; private set; } = new HashSet<string>();
+
+  public FormElement<TProp> AsRightsTree(Air.App.Modules.ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
+  {
+    dto.Type = "rights-tree";
+    catalog ??= Air.App.Modules.ModuleCatalog.Instance;
+    var nodes = Air.App.Auth.RightsTree.Build(catalog, held);
+    dto.Model = new FormCheckboxTreeModel { Nodes = nodes };
+    TreeKeys = Air.App.Auth.RightsTree.FlattenKeys(nodes);
+    return this;
+  }
+
   public FormElement<TProp> AsInfo() => Disabled();
   public FormElement<TProp> AsPhone(string? mask = null) => this;
   public FormElement<TProp> InputOnly() => this;
   public FormElement<TProp> Unique(string? message = null) => this;
-  public FormElement<TProp> AsCheckboxSet(object? options = null) => this;
+  public FormElement<TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
+  {
+    dto.Type = "checkbox-set";
+    dto.Model = new FormCheckboxSetModel { Options = options?.ToList() ?? [] };
+    return this;
+  }
+  public FormElement<TProp> AsCheckboxSet(object? options)
+  {
+    if (options is IEnumerable<CheckboxOptionDto> opts) return AsCheckboxSet(opts);
+    return this;
+  }
   public FormElement<TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceProp, Expression<Func<TProp, TVal>> targetProp) => this;
 
   public FormElement<TProp> AsReference<TGridService>()
@@ -204,6 +230,11 @@ public sealed class FormElement<TProp>(FormElementDto dto)
 public sealed class ChildGridBuilder(string servicePath)
 {
   public string ServicePath => servicePath;
-  public ChildGridBuilder Key(string key) => this;
-  public ChildGridBuilder Label(string label) => this;
+  public string DeclaredKey { get; private set; } = string.Empty;
+  public string DeclaredLabel { get; private set; } = string.Empty;
+  public bool IsFiles { get; private set; }
+
+  public ChildGridBuilder Key(string key) { DeclaredKey = key; return this; }
+  public ChildGridBuilder Label(string label) { DeclaredLabel = label; return this; }
+  public ChildGridBuilder AsFiles(object? look = null) { IsFiles = true; return this; }
 }
