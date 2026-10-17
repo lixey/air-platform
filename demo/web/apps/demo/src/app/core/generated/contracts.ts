@@ -490,6 +490,12 @@ export interface GridCellDatetimeModel {
   colorPath?: string;
 }
 
+export interface GridCellDto {
+  row?: unknown;
+  outcome?: MutationOutcome;
+  warnings?: MessageDto[];
+}
+
 export interface GridCellEmailModel {
   kind: 'GridCellEmail';
   colorPath?: string;
@@ -528,6 +534,30 @@ export interface GridCellPhoneModel {
 export interface GridCellReferenceModel {
   kind: 'GridCellReference';
   colorPath?: string;
+}
+
+export interface GridCellRequest {
+  path?: string;
+  ver?: number;
+  value?: unknown;
+  isDataOnly?: boolean;
+  id?: number;
+  parentService?: string;
+  parentId?: number;
+  selectedIds?: number[];
+  selectedVersions?: number[];
+  referenceLabelPaths?: string[];
+  patchSourceColumns?: string[];
+  isReferencePicker?: boolean;
+  includesInactive?: boolean;
+  namedFilters?: string[];
+  page?: number;
+  pageSize?: number;
+  sort?: SortRule[];
+  filter?: FilterNode;
+  columnFilter?: FilterNode;
+  search?: string;
+  searchFields?: string[];
 }
 
 export interface GridCellSelectModel {
@@ -768,6 +798,7 @@ export interface GridPickRequest {
   selectedIds?: number[];
   selectedVersions?: number[];
   referenceLabelPaths?: string[];
+  patchSourceColumns?: string[];
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[];
@@ -788,6 +819,7 @@ export interface GridRequest {
   selectedIds?: number[];
   selectedVersions?: number[];
   referenceLabelPaths?: string[];
+  patchSourceColumns?: string[];
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[];

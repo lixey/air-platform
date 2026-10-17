@@ -24,3 +24,4 @@ global using Air.App.Form;
 global using Air.App.Nav;
 global using Air.App.Modules;
 global using Air.App.Metadata;
+global using Air.App.Security;

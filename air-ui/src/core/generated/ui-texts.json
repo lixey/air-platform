@@ -153,6 +153,7 @@
   "UnpinEntry": "Unpin {0}",
   "DeleteFileConfirm": "Delete the file {0}?",
   "MetadataExposure": "Exposure",
+  "Reason": "Reason",
   "OpenRecord": "Open {0}",
   "OperatorNotContains": "Not contains",
   "OperatorIsNotNull": "Is not empty",

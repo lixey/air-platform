@@ -22,6 +22,7 @@ public interface IGridService
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
+  Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
@@ -155,10 +156,46 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public Query PickBy<TProp>(Expression<Func<TRow, TProp>> expr, Func<string, string>? keySelector = null) => this;
     public Query FlagRows(string flagName, Func<TRow, bool> predicate) => this;
 
+    internal List<NamedFilterItem> NamedFilters { get; } = [];
+
+    public GridNamedFilterBuilder NamedFilter(
+      string key,
+      string label,
+      Expression<Func<TEntity, bool>> predicate)
+    {
+      var filter = new NamedFilterItem(key, label, predicate);
+      NamedFilters.Add(filter);
+      return new GridNamedFilterBuilder(filter);
+    }
+
     public sealed class InitialFilterBuilder<TProp>(Query query)
     {
       public Query In(params TProp[] values) => query;
     }
+  }
+
+  public sealed class GridNamedFilterBuilder(NamedFilterItem item)
+  {
+    public GridNamedFilterBuilder Badge(bool badge = true)
+    {
+      item.HasBadge = badge;
+      return this;
+    }
+
+    public GridNamedFilterBuilder Remember(bool remember = true)
+    {
+      item.IsRemembered = remember;
+      return this;
+    }
+  }
+
+  public sealed class NamedFilterItem(string key, string label, Expression<Func<TEntity, bool>> predicate)
+  {
+    public string Key { get; } = key;
+    public string Label { get; } = label;
+    public Expression<Func<TEntity, bool>> Predicate { get; } = predicate;
+    public bool HasBadge { get; set; }
+    public bool IsRemembered { get; set; }
   }
 
   public virtual IReadOnlyList<string>? GetReferenceLabelPaths()
@@ -212,6 +249,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       }
       return _nav;
     }
+
+    public NavActionBuilder AllowReadOnly(bool allow = true) => this;
   }
 
   public sealed class Nav(string servicePath = "")
@@ -307,7 +346,25 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     };
   }
 
+  public sealed class Columns : Columns<TRow>
+  {
+    public new GridColumn<TEntity, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
+    {
+      var col = base.Add(expression);
+      return new GridColumn<TEntity, TProp>(col.Dto, this);
+    }
+  }
+
+  protected virtual void SetColumns(Columns columns) { }
   protected virtual void SetColumns(Columns<TRow> columns) { }
+
+  private Columns CreateColumns()
+  {
+    var cols = new Columns();
+    SetColumns(cols);
+    SetColumns((Columns<TRow>)cols);
+    return cols;
+  }
 
   protected virtual IQueryable<TEntity> BaseQuery(PlatformDbContext context) => context.Set<TEntity>();
 
@@ -316,8 +373,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
   public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
   {
-    var columns = new Columns<TRow>();
-    SetColumns(columns);
+    var columns = CreateColumns();
 
     var isSelect = request?.ReferenceLabelPaths is { Count: > 0 } || (request?.IsReferencePicker ?? false);
     if (isSelect)
@@ -443,6 +499,32 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     {
       new GridNavSearchModel { Key = "search", Label = Localizer.Instance["Search"] }
     };
+
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+    foreach (var item in queryDeclaration.NamedFilters)
+    {
+      string? badgeValue = null;
+      if (item.HasBadge)
+      {
+        try
+        {
+          var baseQ = BaseQuery(db);
+          foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
+          badgeValue = baseQ.Where(item.Predicate).Count().ToString(CultureInfo.InvariantCulture);
+        }
+        catch { }
+      }
+
+      navElements.Add(new GridNavNamedFilterModel
+      {
+        Key = item.Key,
+        Label = item.Label,
+        Badge = badgeValue,
+        IsRemembered = item.IsRemembered,
+        IsSelected = false
+      });
+    }
 
     var actionEnd = new List<NavElementModel>();
     var actionMore = new List<NavElementModel>();
@@ -608,8 +690,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
 
-    var cols = new Columns<TRow>();
-    SetColumns(cols);
+    var cols = CreateColumns();
 
     var query = BaseQuery(db);
     foreach (var filter in queryDeclaration.Filters)
@@ -620,6 +701,18 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     if (ParentId.HasValue && parent.FilterFunc != null)
     {
       query = parent.FilterFunc(query, ParentId.Value);
+    }
+
+    if (gridReq?.NamedFilters is { Count: > 0 } nfs)
+    {
+      foreach (var nfKey in nfs)
+      {
+        var matched = queryDeclaration.NamedFilters.FirstOrDefault(f => string.Equals(f.Key, nfKey, StringComparison.OrdinalIgnoreCase));
+        if (matched != null)
+        {
+          query = query.Where(matched.Predicate);
+        }
+      }
     }
 
     // Auto-include reference navigation properties declared in columns
@@ -652,9 +745,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
     if (queryDeclaration.Selector != null)
     {
-      var projected = query.Select(queryDeclaration.Selector);
-      var queryMap = QueryMap.FromEntity<TRow>().Build();
-      var dataProvider = DataProvider.Create(projected, queryMap);
+      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
+      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
       var page = await dataProvider.GetPageAsync(request, ct);
       if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
       {
@@ -684,6 +776,56 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       Size = defaultPage.Size,
       HasMore = defaultPage.HasMore
     };
+  }
+
+  public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
+  {
+    var parent = new Parent();
+    SetParent(parent);
+
+    ParentId = request.ParentId;
+
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+
+    var query = BaseQuery(db);
+    foreach (var filter in queryDeclaration.Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    if (ParentId.HasValue && parent.FilterFunc != null)
+    {
+      query = parent.FilterFunc(query, ParentId.Value);
+    }
+
+    if (request.NamedFilters is { Count: > 0 } nfs)
+    {
+      foreach (var nfKey in nfs)
+      {
+        var matched = queryDeclaration.NamedFilters.FirstOrDefault(f => string.Equals(f.Key, nfKey, StringComparison.OrdinalIgnoreCase));
+        if (matched != null)
+        {
+          query = query.Where(matched.Predicate);
+        }
+      }
+    }
+
+    var total = await query.CountAsync(ct);
+    Dictionary<string, int>? badges = null;
+    foreach (var item in queryDeclaration.NamedFilters)
+    {
+      if (item.HasBadge)
+      {
+        badges ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var baseQ = BaseQuery(db);
+        foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
+        if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+        badges[item.Key] = await baseQ.Where(item.Predicate).CountAsync(ct);
+      }
+    }
+
+    return new GridCountDto { Total = total, NamedFilterBadges = badges };
   }
 
   protected virtual object ShapeRow(TRow row, IReadOnlyList<GridColumnDto> columns)

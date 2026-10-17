@@ -6,6 +6,7 @@ global using Air.App.Grid;
 global using Air.App.Metadata;
 global using Air.App.Modules;
 global using Air.App.Overlay;
+global using Air.App.Security;
 global using Air.Data;
 global using Air.Data.Contracts;
 global using Air.Data.Entities;

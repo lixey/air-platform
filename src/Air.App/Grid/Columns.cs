@@ -104,7 +104,7 @@ public class Columns
   }
 }
 
-public sealed class Columns<TRow> : Columns where TRow : class
+public class Columns<TRow> : Columns where TRow : class
 {
   public GridColumn<TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression) =>
     Add<TRow, TProp>(expression);
@@ -113,7 +113,7 @@ public sealed class Columns<TRow> : Columns where TRow : class
     base.UseStatusOf(statuses);
 }
 
-public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
+public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 {
   public GridColumnDto Dto => dto;
 
@@ -260,4 +260,49 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
   public GridColumn<TProp> Color<TEntity>(Expression<Func<TEntity, string?>> colorSelector) => this;
+}
+
+public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : GridColumn<TProp>(dto, owner)
+{
+  public new GridColumn<TEntity, TProp> Label(string label) { base.Label(label); return this; }
+  public new GridColumn<TEntity, TProp> Width(int px) { base.Width(px); return this; }
+  public new GridColumn<TEntity, TProp> Width(string width) { base.Width(width); return this; }
+  public new GridColumn<TEntity, TProp> Sortable(bool sortable = true) { base.Sortable(sortable); return this; }
+  public new GridColumn<TEntity, TProp> Filterable(bool filterable = true) { base.Filterable(filterable); return this; }
+  public new GridColumn<TEntity, TProp> Computed() { base.Computed(); return this; }
+  public new GridColumn<TEntity, TProp> Hidden(bool hidden = true) { base.Hidden(hidden); return this; }
+  public new GridColumn<TEntity, TProp> AsOpenForm<TFormService>() where TFormService : class { base.AsOpenForm<TFormService>(); return this; }
+  public new GridColumn<TEntity, TProp> AsCheckbox() { base.AsCheckbox(); return this; }
+  public new GridColumn<TEntity, TProp> AsSelect(IEnumerable<OptionDto> options) { base.AsSelect(options); return this; }
+  public new GridColumn<TEntity, TProp> AsDate() { base.AsDate(); return this; }
+  public new GridColumn<TEntity, TProp> AsDatetime() { base.AsDatetime(); return this; }
+  public new GridColumn<TEntity, TProp> AsNumber() { base.AsNumber(); return this; }
+  public new GridColumn<TEntity, TProp> AsMoney(string? currency = null) { base.AsMoney(currency); return this; }
+  public new GridColumn<TEntity, TProp> AsPercent() { base.AsPercent(); return this; }
+  public new GridColumn<TEntity, TProp> Sum() { base.Sum(); return this; }
+  public new GridColumn<TEntity, TProp> Stepper(bool hasStepper = true) { base.Stepper(hasStepper); return this; }
+  public new GridColumn<TEntity, TProp> Step(double step) { base.Step(step); return this; }
+  public new GridColumn<TEntity, TProp> Min(double min) { base.Min(min); return this; }
+  public new GridColumn<TEntity, TProp> Max(double max) { base.Max(max); return this; }
+  public new GridColumn<TEntity, TProp> Editable(bool isEditable = true) { base.Editable(isEditable); return this; }
+  public new GridColumn<TEntity, TProp> AsReference<TGridService>() { base.AsReference<TGridService>(); return this; }
+  public new GridReferenceColumn<TEntity, TSource, TProp> AsReference<TGridService, TSource>()
+  {
+    base.AsReference<TGridService, TSource>();
+    return new GridReferenceColumn<TEntity, TSource, TProp>(Dto, owner);
+  }
+  public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value) { base.Where(sourceMember, value); return this; }
+  public GridColumn<TEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector) => this;
+  public GridColumn<TEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => this;
+}
+
+public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dto, Columns owner)
+  : GridColumn<TEntity, TProp>(dto, owner)
+{
+  public GridReferenceColumn<TEntity, TSourceEntity, TProp> Where<TVal>(
+    Expression<Func<TSourceEntity, TVal>> sourceMember,
+    TVal value)
+  {
+    return this;
+  }
 }

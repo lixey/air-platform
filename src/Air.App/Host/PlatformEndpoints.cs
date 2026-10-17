@@ -293,8 +293,8 @@ public static class PlatformEndpoints
           if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
           if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
 
-          var page = await grid.GetDataAsync(req, ct);
-          return Results.Ok(new GridCountDto { Total = page.Total ?? 0 });
+          var countDto = await grid.GetCountAsync(req, ct);
+          return Results.Ok(countDto);
         }
 
         if (method == "delete")
