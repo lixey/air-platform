@@ -559,6 +559,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       await h(loadCtx, ct);
     }
 
+    CopyMatchingProperties(entity, input);
     return input;
   }
 
