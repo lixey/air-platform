@@ -474,6 +474,13 @@ export interface FormTimeZoneModel {
   inherit: string;
 }
 
+export interface GridActionDto {
+  outcome?: MutationOutcome;
+  warnings?: MessageDto[];
+  openScreen?: string;
+  openId?: number;
+}
+
 export interface GridCellCheckboxModel {
   kind: 'GridCellCheckbox';
   colorPath?: string;
@@ -756,6 +763,27 @@ export interface GridNumberEditDto {
   min?: number;
   max?: number;
   hasStepper: boolean;
+}
+
+export interface GridPickRequest {
+  pickedId?: number;
+  isDataOnly?: boolean;
+  id?: number;
+  parentService?: string;
+  parentId?: number;
+  selectedIds?: number[];
+  selectedVersions?: number[];
+  referenceLabelPaths?: string[];
+  isReferencePicker?: boolean;
+  includesInactive?: boolean;
+  namedFilters?: string[];
+  page?: number;
+  pageSize?: number;
+  sort?: SortRule[];
+  filter?: FilterNode;
+  columnFilter?: FilterNode;
+  search?: string;
+  searchFields?: string[];
 }
 
 export interface GridRequest {
