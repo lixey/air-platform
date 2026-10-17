@@ -94,9 +94,10 @@ public static class DevMigrationsRunner
     await OrgSeed.RunAsync(orgDb, volume.Org, randomSeed: randomSeed, tenants: tenants);
     orgTimer.Stop();
 
-    Console.WriteLine("Seeding Ecom (customer orders, lines, stock balances via Bogus)...");
+    Console.WriteLine("Seeding Ecom (documents, lines, stock moves, links, balances via Bogus)...");
     var ecomTimer = Stopwatch.StartNew();
-    await EcomSeed.RunAsync(ecomDb, volume.Ecom, randomSeed: randomSeed, tenants: tenants);
+    var now = DateTimeOffset.UtcNow;
+    await EcomSeed.RunAsync(ecomDb, volume.Ecom, randomSeed, tenants, now);
     ecomTimer.Stop();
 
     timer.Stop();
@@ -107,15 +108,19 @@ public static class DevMigrationsRunner
     var whsTotal = await orgDb.OrgWarehouse.CountAsync();
     var custsTotal = await orgDb.OrgCustomer.CountAsync();
     var prodsTotal = await orgDb.OrgProduct.CountAsync();
+    var docsTotal = await ecomDb.EcomDoc.CountAsync();
     var ordersTotal = await ecomDb.EcomDoc.Where(d => d.DocTypeId == EcomData.DocType.CustomerOrderId).CountAsync();
     var linesTotal = await ecomDb.EcomDocLine.CountAsync();
+    var movesTotal = await ecomDb.EcomStockMove.CountAsync();
+    var balancesTotal = await ecomDb.EcomStockBalance.CountAsync();
 
     Console.WriteLine($"\nDemo database preparation completed in {timer.Elapsed.TotalSeconds:F2}s!");
     Console.WriteLine($"  - Tenants: {tenants.Length}");
     Console.WriteLine($"  - Users: {usersTotal}, Groups: {groupsTotal}");
     Console.WriteLine($"  - Organizations: {orgsTotal}, Warehouses: {whsTotal}");
     Console.WriteLine($"  - Customers: {custsTotal}, Products: {prodsTotal}");
-    Console.WriteLine($"  - Customer Orders: {ordersTotal}, Order Lines: {linesTotal}");
+    Console.WriteLine($"  - Documents: {docsTotal} (Customer Orders: {ordersTotal}), Lines: {linesTotal}");
+    Console.WriteLine($"  - Stock Moves: {movesTotal}, Stock Balances: {balancesTotal}");
 
     return 0;
   }

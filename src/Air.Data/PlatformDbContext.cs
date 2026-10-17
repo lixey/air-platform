@@ -26,6 +26,8 @@ public abstract class PlatformDbContext : DbContext
 
   public ITenantContext TenantContext => _tenantContext ?? AsyncLocalTenantContext.Instance;
 
+  public DbSet<AppPlatformInstallation> AppPlatformInstallation => Set<AppPlatformInstallation>();
+
   public long RequiredTenantId => TenantContext.TenantId
     ?? throw new InvalidOperationException("Operation requires an active tenant, but none was resolved.");
 
