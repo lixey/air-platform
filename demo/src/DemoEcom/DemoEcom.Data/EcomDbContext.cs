@@ -1,77 +1,94 @@
-using Air.Data;
-using Air.Data.Tenancy;
-using DemoApp.Data.Models;
-using DemoEcom.Data.Models;
-using DemoOrg.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Data;
 
-public class EcomDbContext : PlatformDbContext
+public class EcomDbContext : OrgDbContext
 {
-  public EcomDbContext()
-  {
-  }
+  public new string ModuleHandle => EcomData.ModuleHandle;
+  public EcomDbContext(DbContextOptions<EcomDbContext> options, ITenantContext? tenant = null) : base(options, tenant) { }
 
-  public EcomDbContext(DbContextOptions<EcomDbContext> options) : base(options)
-  {
-  }
+  protected EcomDbContext(DbContextOptions options, ITenantContext? tenant) : base(options, tenant) { }
 
-  public EcomDbContext(DbContextOptions<EcomDbContext> options, ITenantContext tenantContext) : base(options, tenantContext)
-  {
-  }
-
-  public DbSet<EcomDoc> Docs => Set<EcomDoc>();
-  public DbSet<EcomDocLine> DocLines => Set<EcomDocLine>();
-  public DbSet<EcomDocType> DocTypes => Set<EcomDocType>();
-  public DbSet<EcomDocStatus> DocStatuses => Set<EcomDocStatus>();
-  public DbSet<EcomStockBalance> StockBalances => Set<EcomStockBalance>();
+  public DbSet<EcomDocType> EcomDocType => Set<EcomDocType>();
+  public DbSet<EcomDocStatus> EcomDocStatus => Set<EcomDocStatus>();
+  public DbSet<EcomDoc> EcomDoc => Set<EcomDoc>();
+  public DbSet<EcomDocLine> EcomDocLine => Set<EcomDocLine>();
+  public DbSet<EcomStockBalance> EcomStockBalance => Set<EcomStockBalance>();
+  public DbSet<EcomStockMove> EcomStockMove => Set<EcomStockMove>();
+  public DbSet<EcomMoneyBalance> EcomMoneyBalance => Set<EcomMoneyBalance>();
+  public DbSet<EcomMoneyMove> EcomMoneyMove => Set<EcomMoneyMove>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
     base.OnModelCreating(modelBuilder);
 
-    modelBuilder.Entity<EcomDoc>(b =>
-    {
-      b.ToTable("EcomDocs");
-      b.Property(d => d.Number).HasMaxLength(50).IsRequired();
-      b.Property(d => d.Qty).HasPrecision(18, 4);
-      b.Property(d => d.Amount).HasPrecision(18, 2);
-      b.Property(d => d.PaidAmount).HasPrecision(18, 2);
-      b.HasMany(d => d.Lines)
-        .WithOne(l => l.Doc)
-        .HasForeignKey(l => l.DocId)
-        .OnDelete(DeleteBehavior.Cascade);
-    });
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDocLine>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomStockBalance>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomStockMove>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomMoneyBalance>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomMoneyMove>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
 
-    modelBuilder.Entity<EcomDocLine>(b =>
-    {
-      b.ToTable("EcomDocLines");
-      b.Property(l => l.Article).HasMaxLength(100).IsRequired();
-      b.Property(l => l.Qty).HasPrecision(18, 4);
-      b.Property(l => l.QtyReserved).HasPrecision(18, 4);
-      b.Property(l => l.QtyDone).HasPrecision(18, 4);
-      b.Property(l => l.Price).HasPrecision(18, 2);
-      b.Property(l => l.DiscountPercent).HasPrecision(18, 2);
-      b.Property(l => l.Amount).HasPrecision(18, 2);
-    });
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Warehouse).WithMany().HasForeignKey(row => row.WarehouseId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.WarehouseTo).WithMany().HasForeignKey(row => row.WarehouseToId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.MoneyAccount).WithMany().HasForeignKey(row => row.MoneyAccountId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Organization).WithMany().HasForeignKey(row => row.OrganizationId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Customer).WithMany().HasForeignKey(row => row.CustomerId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Contact).WithMany().HasForeignKey(row => row.ContactId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Counterparty).WithMany().HasForeignKey(row => row.CounterpartyId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.DeliveryType).WithMany().HasForeignKey(row => row.DeliveryTypeId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.PaymentMethod).WithMany().HasForeignKey(row => row.PaymentMethodId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.PaymentTerm).WithMany().HasForeignKey(row => row.PaymentTermId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomDoc>().HasOne(row => row.Currency).WithMany().HasForeignKey(row => row.CurrencyId)
+      .OnDelete(DeleteBehavior.Restrict);
 
-    modelBuilder.Entity<EcomDocType>(b => b.ToTable("EcomDocTypes"));
-    modelBuilder.Entity<EcomDocStatus>(b => b.ToTable("EcomDocStatuses"));
+    modelBuilder.Entity<EcomDocLine>().HasOne(row => row.Doc).WithMany().HasForeignKey(row => row.DocId)
+      .OnDelete(DeleteBehavior.Cascade);
+    modelBuilder.Entity<EcomDocLine>().HasOne(row => row.Product).WithMany().HasForeignKey(row => row.ProductId)
+      .OnDelete(DeleteBehavior.Restrict);
 
-    modelBuilder.Entity<OrgCustomer>(b => b.ToTable("OrgCustomers"));
-    modelBuilder.Entity<OrgWarehouse>(b => b.ToTable("OrgWarehouses"));
-    modelBuilder.Entity<OrgOrganization>(b => b.ToTable("OrgOrganizations"));
-    modelBuilder.Entity<OrgProduct>(b => b.ToTable("OrgProducts"));
-    modelBuilder.Entity<AppUser>(b => b.ToTable("AppUsers"));
+    modelBuilder.Entity<EcomStockBalance>().HasOne(row => row.Organization).WithMany().HasForeignKey(row => row.OrganizationId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomStockBalance>().HasOne(row => row.Warehouse).WithMany().HasForeignKey(row => row.WarehouseId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomStockBalance>().HasOne(row => row.Product).WithMany().HasForeignKey(row => row.ProductId)
+      .OnDelete(DeleteBehavior.Restrict);
 
-    modelBuilder.Entity<EcomStockBalance>(b =>
-    {
-      b.ToTable("EcomStockBalances");
-      b.Property(s => s.Article).HasMaxLength(100).IsRequired();
-      b.Property(s => s.Qty).HasPrecision(18, 4);
-      b.Property(s => s.Reserved).HasPrecision(18, 4);
-      b.Property(s => s.Expected).HasPrecision(18, 4);
-    });
+    modelBuilder.Entity<EcomStockMove>().HasOne(row => row.Doc).WithMany().HasForeignKey(row => row.DocId)
+      .OnDelete(DeleteBehavior.Cascade);
+    modelBuilder.Entity<EcomStockMove>().HasOne(row => row.DocLine).WithMany().HasForeignKey(row => row.DocLineId)
+      .OnDelete(DeleteBehavior.Cascade);
+    modelBuilder.Entity<EcomStockMove>().HasOne(row => row.Organization).WithMany().HasForeignKey(row => row.OrganizationId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomStockMove>().HasOne(row => row.Warehouse).WithMany().HasForeignKey(row => row.WarehouseId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomStockMove>().HasOne(row => row.Product).WithMany().HasForeignKey(row => row.ProductId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    modelBuilder.Entity<EcomMoneyBalance>().HasOne(row => row.Organization).WithMany().HasForeignKey(row => row.OrganizationId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomMoneyBalance>().HasOne(row => row.MoneyAccount).WithMany().HasForeignKey(row => row.MoneyAccountId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    modelBuilder.Entity<EcomMoneyMove>().HasOne(row => row.Doc).WithMany().HasForeignKey(row => row.DocId)
+      .OnDelete(DeleteBehavior.Cascade);
+    modelBuilder.Entity<EcomMoneyMove>().HasOne(row => row.Organization).WithMany().HasForeignKey(row => row.OrganizationId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<EcomMoneyMove>().HasOne(row => row.MoneyAccount).WithMany().HasForeignKey(row => row.MoneyAccountId)
+      .OnDelete(DeleteBehavior.Restrict);
   }
 }
