@@ -481,7 +481,14 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
                   Title = targetStatus?.Name ?? transition.Name,
                   Message = transition.Confirm,
                   Color = targetStatus?.Color,
-                  Elements = [.. transition.Ask.BuildElements()]
+                  Elements = transition.Ask.BuildElements().Select(e =>
+                  {
+                    if (!string.IsNullOrEmpty(e.Label))
+                    {
+                      e.Label = L[e.Label];
+                    }
+                    return e;
+                  }).ToList()
                 }
             };
             actionStart.Add(action);

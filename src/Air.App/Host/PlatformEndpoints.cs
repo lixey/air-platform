@@ -74,14 +74,27 @@ public static class PlatformEndpoints
 
         foreach (var feat in catalog.AllFeatures)
         {
-          if (metadata.Routes.All(r => r.Screen != feat.Path))
+          var screen = feat.ServiceType != null ? ServicePathResolver.Resolve(feat.ServiceType) : feat.Path;
+          if (metadata.Routes.All(r => r.Screen != screen && r.Path != feat.Path))
           {
             metadata.Routes.Add(new MenuItemDto
             {
               Path = feat.Path,
               Handle = feat.Name.ToLowerInvariant(),
               Name = Localizer.Instance[feat.Name],
-              Screen = feat.Path
+              Screen = screen
+            });
+          }
+
+          var kebabPath = ServicePathResolver.ToKebabCase(feat.Path);
+          if (!string.Equals(kebabPath, feat.Path, StringComparison.OrdinalIgnoreCase) && metadata.Routes.All(r => r.Path != kebabPath))
+          {
+            metadata.Routes.Add(new MenuItemDto
+            {
+              Path = kebabPath,
+              Handle = feat.Name.ToLowerInvariant(),
+              Name = Localizer.Instance[feat.Name],
+              Screen = screen
             });
           }
         }
@@ -227,17 +240,21 @@ public static class PlatformEndpoints
 
       // Find feature by path or service name
       var feat = catalog.FindFeature(serviceName)
+        ?? catalog.FindFeature(serviceName.Replace('/', '-'))
+        ?? catalog.FindFeature(serviceName.Replace('-', '/'))
         ?? catalog.FindFeature(serviceName.Replace("demo/", ""))
         ?? catalog.FindFeature(serviceName.Replace("-", ""))
         ?? catalog.FindFeature($"demo/{serviceName}")
-        ?? catalog.FindFeature(parts[0] + "/" + parts[1]);
+        ?? (parts.Length >= 2 ? catalog.FindFeature(parts[0] + "/" + parts[1]) : null);
 
       var serviceType = feat?.ServiceType
         ?? catalog.FindServiceType(serviceName)
+        ?? catalog.FindServiceType(serviceName.Replace('/', '-'))
+        ?? catalog.FindServiceType(serviceName.Replace('-', '/'))
         ?? catalog.FindServiceType(serviceName.Replace("demo/", ""))
         ?? catalog.FindServiceType(serviceName.Replace("-", ""))
         ?? catalog.FindServiceType($"demo/{serviceName}")
-        ?? catalog.FindServiceType(parts[0] + "/" + parts[1]);
+        ?? (parts.Length >= 2 ? catalog.FindServiceType(parts[0] + "/" + parts[1]) : null);
 
       if (serviceType is null)
       {
@@ -611,7 +628,7 @@ public static class PlatformEndpoints
       Handle = node.Handle,
       Name = node.Title != null ? Localizer.Instance[node.Title] : null,
       Icon = node.Icon,
-      Screen = node.Feature?.Path,
+      Screen = node.Feature?.ServiceType != null ? ServicePathResolver.Resolve(node.Feature.ServiceType) : node.Feature?.Path,
       IsSeparator = node.IsSeparator,
       Items = node.Children.Where(c => !c.IsHidden).Select(c => ToMenuItem(moduleHandle, c)).ToList()
     };

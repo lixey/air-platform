@@ -163,6 +163,7 @@ public static class UiTexts
     ["PeriodThisYear"] = "This year",
     ["PeriodTo"] = "To",
     ["Periods"] = "Periods",
+    ["Reason"] = "Reason",
     ["Pick"] = "Pick {0}",
     ["PickedCount"] = "{0} picked",
     ["Pin"] = "Pin",

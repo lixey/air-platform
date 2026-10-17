@@ -102,7 +102,32 @@ public sealed class ModuleCatalog
     {
       var path = ServicePathResolver.Resolve(st);
       _servicesByPath[path] = st;
+      _servicesByPath[path.Replace('/', '-')] = st;
+      _servicesByPath[path.Replace("-", "")] = st;
+      _servicesByPath[path.Replace("-", "").Replace('/', '-')] = st;
       _servicesByPath[st.Name] = st;
+
+      var clean = st.Name;
+      if (clean.EndsWith("Service", StringComparison.OrdinalIgnoreCase))
+      {
+        clean = clean[..^"Service".Length];
+      }
+      _servicesByPath[clean] = st;
+
+      if (path.EndsWith("-grid", StringComparison.OrdinalIgnoreCase))
+      {
+        var noGrid = path[..^"-grid".Length];
+        _servicesByPath[noGrid] = st;
+        _servicesByPath[noGrid.Replace('/', '-')] = st;
+        _servicesByPath[noGrid.Replace("-", "")] = st;
+      }
+      else if (path.EndsWith("-form", StringComparison.OrdinalIgnoreCase))
+      {
+        var noForm = path[..^"-form".Length];
+        _servicesByPath[noForm + "form"] = st;
+        _servicesByPath[(noForm + "form").Replace('/', '-')] = st;
+        _servicesByPath[(noForm + "form").Replace("-", "")] = st;
+      }
     }
   }
 

@@ -1174,4 +1174,7 @@
   <data name="TimeZoneByBrowser" xml:space="preserve">
     <value>За браузером</value>
   </data>
+  <data name="Reason" xml:space="preserve">
+    <value>Причина</value>
+  </data>
 </root>

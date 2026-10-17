@@ -220,4 +220,5 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   {
     return this;
   }
+  public GridColumn<TProp> Color<TEntity>(Expression<Func<TEntity, string?>> colorSelector) => this;
 }
