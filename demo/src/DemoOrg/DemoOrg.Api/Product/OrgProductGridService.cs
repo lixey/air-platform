@@ -17,5 +17,10 @@ public sealed class OrgProductGridService(OrgDbContext db, OrgService? org = nul
     columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery(Query query)
+  {
+    query.SortBy(r => r.Name);
+    query.RecordLabel(e => e.Article + " " + e.Name);
+    query.ReferenceLabel(r => r.Article, r => r.Name);
+  }
 }

@@ -363,17 +363,20 @@ public static class PlatformEndpoints
                                string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
         if (actionMethod != null)
         {
+          var parameters = actionMethod.GetParameters();
+          var pickParam = parameters.FirstOrDefault(p => typeof(GridRequest).IsAssignableFrom(p.ParameterType));
+          var pickReqType = pickParam?.ParameterType ?? typeof(GridRequest);
+
           GridRequest? req = null;
           if (httpRequest.ContentLength > 0)
           {
-            try { req = await httpRequest.ReadFromJsonAsync<GridRequest>(cancellationToken: ct); } catch { }
+            try { req = (GridRequest?)await httpRequest.ReadFromJsonAsync(pickReqType, cancellationToken: ct); } catch { }
           }
-          req ??= new GridRequest();
+          req ??= (GridRequest)Activator.CreateInstance(pickReqType)!;
           if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal)) req.Id = idVal;
           if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
           if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
 
-          var parameters = actionMethod.GetParameters();
           object?[] args = new object?[parameters.Length];
           for (int i = 0; i < parameters.Length; i++)
           {

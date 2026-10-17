@@ -10,6 +10,12 @@ public class Columns
   private readonly List<GridColumnDto> _columns = [];
   public IReadOnlyList<GridColumnDto> List => _columns;
 
+  public void RetainOnly(IEnumerable<string> paths)
+  {
+    var set = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+    _columns.RemoveAll(c => c.Path == null || !set.Contains(c.Path));
+  }
+
   public Type? FormServiceType { get; set; }
   internal object? StatusFlow { get; private set; }
 
@@ -120,6 +126,7 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   }
   public GridColumn<TProp> Sortable(bool sortable = true) { dto.IsSortable = sortable; return this; }
   public GridColumn<TProp> Filterable(bool filterable = true) { dto.IsFilterable = filterable; return this; }
+  public GridColumn<TProp> Computed() { dto.IsSortable = false; dto.IsFilterable = false; return this; }
   public GridColumn<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
 
   public GridColumn<TProp> AsOpenForm<TFormService>() where TFormService : class

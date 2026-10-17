@@ -274,6 +274,34 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       {
         el.Label = L[el.Label];
       }
+      if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))
+      {
+        if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || (select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name"))
+        {
+          var targetServiceType = ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
+          if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
+          {
+            try
+            {
+              var ctors = targetServiceType.GetConstructors();
+              var ctor = ctors.FirstOrDefault();
+              if (ctor != null)
+              {
+                var pValues = ctor.GetParameters().Select(p => p.ParameterType.IsAssignableFrom(db.GetType()) ? (object)db : null).ToArray();
+                if (Activator.CreateInstance(targetServiceType, pValues) is IGridService gridInst)
+                {
+                  var customPaths = gridInst.GetReferenceLabelPaths();
+                  if (customPaths is { Count: > 0 })
+                  {
+                    select.ReferenceLabelPaths = [.. customPaths];
+                  }
+                }
+              }
+            }
+            catch { }
+          }
+        }
+      }
     }
 
     var formModel = new FormModel

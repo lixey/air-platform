@@ -25,6 +25,7 @@ public interface IGridService
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
+  IReadOnlyList<string>? GetReferenceLabelPaths() => null;
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridService
@@ -127,10 +128,44 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public Query SearchBy(params Expression<Func<TRow, object?>>[] exprs) => this;
     public InitialFilterBuilder<TProp> InitialFilter<TProp>(Expression<Func<TRow, TProp>> expr) => new(this);
 
+    internal List<string>? ReferenceLabelPaths { get; private set; }
+    public Func<IReadOnlyList<TRow>, CancellationToken, Task>? ComputeAction { get; private set; }
+
+    private static string? GetMemberName(Expression expr)
+    {
+      if (expr is UnaryExpression ue) expr = ue.Operand;
+      return expr is MemberExpression me ? me.Member.Name : null;
+    }
+
+    public Query ReferenceLabel(params Expression<Func<TRow, object?>>[] label)
+    {
+      ReferenceLabelPaths = label
+        .Select(expr => GetMemberName(expr.Body)?.ToLowerInvariant() ?? "")
+        .Where(s => !string.IsNullOrEmpty(s))
+        .ToList();
+      return this;
+    }
+
+    public Query Compute(Func<IReadOnlyList<TRow>, CancellationToken, Task> compute)
+    {
+      ComputeAction = compute;
+      return this;
+    }
+
+    public Query PickBy<TProp>(Expression<Func<TRow, TProp>> expr, Func<string, string>? keySelector = null) => this;
+    public Query FlagRows(string flagName, Func<TRow, bool> predicate) => this;
+
     public sealed class InitialFilterBuilder<TProp>(Query query)
     {
       public Query In(params TProp[] values) => query;
     }
+  }
+
+  public virtual IReadOnlyList<string>? GetReferenceLabelPaths()
+  {
+    var q = new Query();
+    SetQuery(q);
+    return q.ReferenceLabelPaths;
   }
 
   protected virtual void SetQuery(Query query) { }
@@ -605,12 +640,26 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       }
     }
 
+    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
+    if (isSelect)
+    {
+      var labelPaths = gridReq!.ReferenceLabelPaths!;
+      var patchColumns = gridReq.PatchSourceColumns ?? [];
+      var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
+      foreach (var p in patchColumns) preserved.Add(p);
+      cols.RetainOnly(preserved);
+    }
+
     if (queryDeclaration.Selector != null)
     {
       var projected = query.Select(queryDeclaration.Selector);
       var queryMap = QueryMap.FromEntity<TRow>().Build();
       var dataProvider = DataProvider.Create(projected, queryMap);
       var page = await dataProvider.GetPageAsync(request, ct);
+      if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
+      {
+        await queryDeclaration.ComputeAction(page.Rows, ct);
+      }
       var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
       return new Page<object>
       {

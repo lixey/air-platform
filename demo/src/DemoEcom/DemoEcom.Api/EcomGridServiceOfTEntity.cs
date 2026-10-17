@@ -7,3 +7,5 @@ public abstract class EcomGridService<TEntity>(EcomDbContext db, EcomService? ec
   protected EcomDbContext Db => db;
   protected EcomService? EcomApp => ecom;
 }
+
+
