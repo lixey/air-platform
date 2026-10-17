@@ -76,6 +76,25 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
   protected virtual void SetParent(Parent parent) { }
   protected internal long? ParentId { get; set; }
 
+  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
+  {
+    if (ParentId == null || ParentId.Value <= 0)
+      return null;
+    var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
+    if (tracked != null) return tracked;
+    var efModel = db.Model.FindEntityType(typeof(TParent));
+    IQueryable<TParent> query = db.Set<TParent>();
+    if (efModel != null)
+    {
+      foreach (var nav in efModel.GetNavigations())
+      {
+        if (!nav.IsCollection)
+          query = query.Include(nav.Name);
+      }
+    }
+    return query.FirstOrDefault(e => e.Id == ParentId.Value);
+  }
+
   public sealed class Query
   {
     internal List<Expression<Func<TEntity, bool>>> Filters { get; } = [];
@@ -188,12 +207,17 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
   public sealed class Hooks
   {
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
+    internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
 
     public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>
       BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
     public void ValidateDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
     public void ValidateDelete(Action<GridDeleteContext<TEntity>> handler) => BeforeDelete(handler);
+
+    public void AfterDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
+    public void AfterDelete(Action<GridDeleteContext<TEntity>> handler) =>
+      AfterDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
   }
 
   protected virtual void SetHooks(Hooks hooks) { }
@@ -660,6 +684,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
+    ParentId = request.ParentId;
     var ids = request.SelectedIds ?? [];
     if (ids.Count == 0 && request.Id.HasValue)
     {
@@ -691,6 +716,12 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     }
 
     db.Set<TEntity>().RemoveRange(entities);
+    await db.SaveChangesAsync(ct);
+
+    foreach (var h in hooks.AfterDeleteActions)
+    {
+      await h(ctx, ct);
+    }
     await db.SaveChangesAsync(ct);
 
     return new GridDeleteDto

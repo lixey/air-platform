@@ -19,9 +19,12 @@ public interface IFormService
   PlatformDbContext DbContext { get; }
   OverlayModelDto Overlay(string service);
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);
-  Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, null, ct);
+  Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default);
+  Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, (long?)null, ct);
   Task<object?> GetModelAsync(long? id, CancellationToken ct = default);
+  Task<object?> GetModelAsync(FormRequest request, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
+  Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);
   Task DeleteAsync(long id, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, CancellationToken ct = default);
 }
@@ -92,10 +95,56 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
   protected bool IsNew { get; set; }
   protected virtual bool IsReadOnly => Feature.IsReadOnly;
   protected FormRequest Request { get; set; } = new();
+  protected long? ParentId => Request.ParentId;
+
+  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
+  {
+    if (ParentId == null || ParentId.Value <= 0)
+      return null;
+    var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
+    if (tracked != null) return tracked;
+    var efModel = db.Model.FindEntityType(typeof(TParent));
+    IQueryable<TParent> query = db.Set<TParent>();
+    if (efModel != null)
+    {
+      foreach (var nav in efModel.GetNavigations())
+      {
+        if (!nav.IsCollection)
+          query = query.Include(nav.Name);
+      }
+    }
+    return query.FirstOrDefault(e => e.Id == ParentId.Value);
+  }
+
   public sealed class Parent
   {
-    public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false) { }
-    public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false) { }
+    public string? BoundParentService { get; private set; }
+    public PropertyInfo? BoundProperty { get; private set; }
+    public bool IsOptional { get; private set; }
+
+    public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
+    {
+      BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      IsOptional = optional;
+      var expr = member.Body;
+      if (expr is UnaryExpression ue) expr = ue.Operand;
+      if (expr is MemberExpression me && me.Member is PropertyInfo pi)
+      {
+        BoundProperty = pi;
+      }
+    }
+
+    public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
+    {
+      BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      IsOptional = optional;
+      var expr = member.Body;
+      if (expr is UnaryExpression ue) expr = ue.Operand;
+      if (expr is MemberExpression me && me.Member is PropertyInfo pi)
+      {
+        BoundProperty = pi;
+      }
+    }
   }
 
   protected virtual void SetParent(Parent parent) { }
@@ -199,9 +248,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       : $"{title} {label}";
   }
 
-  public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default)
+  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default) =>
+    BuildScreenAsync(servicePath, new FormRequest { Id = id }, ct);
+
+  public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default)
   {
-    Request.Id = id;
+    Request = request;
+    var id = request.Id;
     IsNew = (id is null or 0);
 
     var elements = new Elements();
@@ -505,10 +558,17 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     };
   }
 
-  public virtual async Task<object?> GetModelAsync(long? id, CancellationToken ct = default)
+  public virtual Task<object?> GetModelAsync(long? id, CancellationToken ct = default) =>
+    GetModelAsync(new FormRequest { Id = id }, ct);
+
+  public virtual async Task<object?> GetModelAsync(FormRequest request, CancellationToken ct = default)
   {
-    Request.Id = id;
+    Request = request;
+    var id = request.Id;
     IsNew = (id is null or 0);
+
+    var parent = new Parent();
+    SetParent(parent);
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
@@ -517,6 +577,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     if (IsNew)
     {
       entity = new TEntity();
+      if (request.ParentId.HasValue && parent.BoundProperty != null)
+      {
+        if (parent.BoundProperty.PropertyType == typeof(long))
+          parent.BoundProperty.SetValue(entity, request.ParentId.Value);
+        else if (parent.BoundProperty.PropertyType == typeof(long?))
+          parent.BoundProperty.SetValue(entity, (long?)request.ParentId.Value);
+      }
       if (elements.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
       {
         statusFlow.Initialize(entity);
@@ -539,17 +606,26 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
 
       entity = await query.FirstOrDefaultAsync(e => e.Id == id!.Value, ct)
         ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+
+      if (entity != null && parent.BoundProperty != null)
+      {
+        var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
+        if (storedParentId.HasValue && !Request.ParentId.HasValue)
+        {
+          Request.ParentId = storedParentId.Value;
+        }
+      }
     }
 
     var input = new TInput();
-    CopyMatchingProperties(entity, input);
+    CopyMatchingProperties(entity!, input);
 
     var hooks = new Hooks();
     SetHooks(hooks);
 
     var loadCtx = new FormLoadContext<TEntity, TInput>
     {
-      Entity = entity,
+      Entity = entity!,
       Input = input,
       IsNew = IsNew
     };
@@ -559,11 +635,14 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       await h(loadCtx, ct);
     }
 
-    CopyMatchingProperties(entity, input);
+    CopyMatchingProperties(entity!, input);
     return input;
   }
 
-  public virtual async Task<object> SaveAsync(JsonElement json, CancellationToken ct = default)
+  public virtual Task<object> SaveAsync(JsonElement json, CancellationToken ct = default) =>
+    SaveAsync(json, null, ct);
+
+  public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
     var entityJson = json.ValueKind == JsonValueKind.Object && json.TryGetProperty("value", out var val)
       ? val
@@ -589,8 +668,22 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       }
     }
 
-    Request.Id = id;
+    request ??= new FormRequest();
+    request.Id = id;
+    if (!request.ParentId.HasValue && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var jsonPid))
+    {
+      request.ParentId = jsonPid;
+    }
+    if (string.IsNullOrEmpty(request.ParentService) && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } jsonPs)
+    {
+      request.ParentService = jsonPs;
+    }
+
+    Request = request;
     IsNew = (id is null or 0);
+
+    var parent = new Parent();
+    SetParent(parent);
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
@@ -599,17 +692,39 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     if (IsNew)
     {
       entity = new TEntity();
+      if (Request.ParentId.HasValue && parent.BoundProperty != null)
+      {
+        if (parent.BoundProperty.PropertyType == typeof(long))
+          parent.BoundProperty.SetValue(entity, Request.ParentId.Value);
+        else if (parent.BoundProperty.PropertyType == typeof(long?))
+          parent.BoundProperty.SetValue(entity, (long?)Request.ParentId.Value);
+      }
     }
     else
     {
       entity = await db.Set<TEntity>().FindAsync([id!.Value], ct)
         ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+      if (parent.BoundProperty != null)
+      {
+        var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
+        if (storedParentId.HasValue && !Request.ParentId.HasValue)
+        {
+          Request.ParentId = storedParentId.Value;
+        }
+      }
     }
 
     CopyMatchingProperties(input, entity);
     if (id.HasValue && id.Value > 0)
     {
       entity.Id = id.Value;
+    }
+    if (Request.ParentId.HasValue && parent.BoundProperty != null)
+    {
+      if (parent.BoundProperty.PropertyType == typeof(long))
+        parent.BoundProperty.SetValue(entity, Request.ParentId.Value);
+      else if (parent.BoundProperty.PropertyType == typeof(long?))
+        parent.BoundProperty.SetValue(entity, (long?)Request.ParentId.Value);
     }
 
     var saveCtx = new FormSaveContext<TEntity, TInput>
@@ -738,6 +853,18 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
     {
       if (sp.CanRead && tgtProps.TryGetValue(sp.Name, out var tp) && tp.PropertyType.IsAssignableFrom(sp.PropertyType))
       {
+        if (typeof(IEntity).IsAssignableFrom(tp.PropertyType))
+        {
+          continue;
+        }
+
+        if (typeof(System.Collections.IEnumerable).IsAssignableFrom(tp.PropertyType) &&
+            tp.PropertyType != typeof(string) &&
+            tp.PropertyType != typeof(byte[]))
+        {
+          continue;
+        }
+
         try
         {
           var val = sp.GetValue(source);

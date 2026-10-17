@@ -1,3 +1,7 @@
+using DemoEcom.Data;
+using DemoEcom.Data.Documents;
+using DemoEcom.Data.Models;
+
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomService? ecom = null)
@@ -10,5 +14,18 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
   {
     query.Select(EcomDocLines.Row);
     query.SortBy(r => r.SortOrder);
+  }
+
+  protected override void SetHooks(Hooks hooks)
+  {
+    base.SetHooks(hooks);
+    hooks.AfterDelete(async (ctx, ct) =>
+    {
+      var parentDoc = ParentRecord<EcomDoc>();
+      if (parentDoc != null)
+      {
+        await EcomDocTotals.ApplyAsync(db, parentDoc, ct);
+      }
+    });
   }
 }

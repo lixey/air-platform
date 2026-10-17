@@ -266,6 +266,39 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
+  public FormElement<TEntity, TProp> ServerOwned(bool serverOwned = true)
+  {
+    dto.IsServerOwned = serverOwned;
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Stepper(bool hasStepper = true)
+  {
+    if (dto.Model is FormNumberModel numModel)
+    {
+      numModel.HasStepper = hasStepper;
+    }
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Step(double step)
+  {
+    if (dto.Model is FormNumberModel numModel)
+    {
+      numModel.Step = step;
+    }
+    return this;
+  }
+
+  internal static string? GetMemberName(Expression expr)
+  {
+    if (expr is UnaryExpression ue) expr = ue.Operand;
+    return expr is MemberExpression me ? me.Member.Name : null;
+  }
+
+  internal static string ToCamel(string str) =>
+    string.IsNullOrEmpty(str) ? str : char.ToLowerInvariant(str[0]) + str[1..];
+
   public FormReferenceElement<TEntity, TProp, object> AsReference<TGridService>()
   {
     dto.Type = UiFieldType.Text;
@@ -293,6 +326,24 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
 public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) : FormElement<TEntity, TProp>(dto)
 {
+  public FormReferenceElement<TEntity, TProp, TSource> PatchOnSelect<TSourceRow>(
+    Expression<Func<TEntity, object?>> target,
+    Expression<Func<TSourceRow, object?>> source)
+  {
+    var targetPath = GetMemberName(target.Body);
+    var sourcePath = GetMemberName(source.Body);
+    if (targetPath != null && sourcePath != null)
+    {
+      dto.SelectPatches ??= [];
+      dto.SelectPatches.Add(new SelectPatchDto
+      {
+        TargetField = ToCamel(targetPath),
+        SourceColumn = ToCamel(sourcePath)
+      });
+    }
+    return this;
+  }
+
   public FormReferenceElement<TEntity, TProp, TSource> Where<TSourceVal, TDraftVal>(
     Expression<Func<TSource, TSourceVal>> sourceMember,
     Expression<Func<TEntity, TDraftVal>> draftMember)

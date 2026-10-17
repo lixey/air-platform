@@ -292,6 +292,14 @@ public static class PlatformEndpoints
           {
             req.Id = idVal;
           }
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal))
+          {
+            req.ParentId = pidVal;
+          }
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr))
+          {
+            req.ParentService = psStr;
+          }
 
           var result = await grid.DeleteAsync(req, ct);
           return Results.Ok(result);
@@ -360,27 +368,44 @@ public static class PlatformEndpoints
 
         if (method == "get-data")
         {
-          long? id = null;
+          var req = new FormRequest();
           if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
           {
-            id = parsedId;
+            req.Id = parsedId;
           }
-          else if (httpRequest.ContentLength > 0)
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid))
+          {
+            req.ParentId = parsedPid;
+          }
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr))
+          {
+            req.ParentService = psStr;
+          }
+
+          if (httpRequest.ContentLength > 0)
           {
             try
             {
               using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-              if (doc.RootElement.TryGetProperty("id", out var idProp) && idProp.TryGetInt64(out var bodyId))
+              if (doc.RootElement.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId))
               {
-                id = bodyId;
+                req.Id = bodyId;
+              }
+              if (doc.RootElement.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid))
+              {
+                req.ParentId = bodyPid;
+              }
+              if (doc.RootElement.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } bodyPs)
+              {
+                req.ParentService = bodyPs;
               }
             }
             catch { }
           }
 
-          var screen = await form.BuildScreenAsync(serviceName, id, ct);
-          var entity = await form.GetModelAsync(id, ct);
-          var entityId = (entity as Air.Data.Entities.IEntity)?.Id ?? id;
+          var screen = await form.BuildScreenAsync(serviceName, req, ct);
+          var entity = await form.GetModelAsync(req, ct);
+          var entityId = (entity as Air.Data.Entities.IEntity)?.Id ?? req.Id;
           var ver = (entity as Air.Data.Entities.IHasVersion)?.Ver ?? 1;
 
           var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
@@ -400,13 +425,44 @@ public static class PlatformEndpoints
         if (method == "save")
         {
           using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-          var entity = await form.SaveAsync(doc.RootElement, ct);
+          var req = new FormRequest();
+          if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
+          {
+            req.Id = parsedId;
+          }
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid))
+          {
+            req.ParentId = parsedPid;
+          }
+          if (httpRequest.Query.TryGetValue("parentService", out var psStr))
+          {
+            req.ParentService = psStr;
+          }
+
+          if (doc.RootElement.ValueKind == JsonValueKind.Object)
+          {
+            if (doc.RootElement.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId))
+            {
+              req.Id = bodyId;
+            }
+            if (doc.RootElement.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid))
+            {
+              req.ParentId = bodyPid;
+            }
+            if (doc.RootElement.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } bodyPs)
+            {
+              req.ParentService = bodyPs;
+            }
+          }
+
+          var entity = await form.SaveAsync(doc.RootElement, req, ct);
           var entityId = (entity as Air.Data.Entities.IEntity)?.Id;
           var ver = (entity as Air.Data.Entities.IHasVersion)?.Ver;
 
           var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
           var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-          var screen = await form.BuildScreenAsync(serviceName, entityId, ct);
+          req.Id = entityId;
+          var screen = await form.BuildScreenAsync(serviceName, req, ct);
           await PopulateFormReferencesAsync(dict, entity, screen, form.DbContext, catalog, ct);
 
           return Results.Ok(new FormDataDto

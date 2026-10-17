@@ -75,5 +75,5 @@ public static class EcomDocTotals
   /// its lines once the stored ones were loaded.
   /// </summary>
   internal static List<EcomDocLine> Tracked(EcomDbContext db, EcomDoc doc) =>
-    [.. db.EcomDocLine.Local.Where(line => line.Doc == doc || doc.Id != 0 && line.DocId == doc.Id)];
+    [.. db.EcomDocLine.Local.Where(line => db.Entry(line).State != EntityState.Deleted && (line.Doc == doc || doc.Id != 0 && line.DocId == doc.Id))];
 }
