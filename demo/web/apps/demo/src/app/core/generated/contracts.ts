@@ -55,14 +55,6 @@ export interface ActionInputDto {
   value: Record<string, unknown>;
 }
 
-export interface GridActionDto {
-  count: number;
-  id?: number | null;
-  openId?: unknown | null;
-  openScreen?: string | null;
-  outcome?: MutationOutcome | null;
-  warnings?: MessageDto[] | null;
-}
 export interface GridActionInputRequest extends GridRequest {
   method?: string | null;
 }
@@ -475,10 +467,12 @@ export interface FormTimeZoneModel {
 }
 
 export interface GridActionDto {
+  count: number;
+  id?: number;
   outcome?: MutationOutcome;
   warnings?: MessageDto[];
   openScreen?: string;
-  openId?: number;
+  openId?: unknown;
 }
 
 export interface GridCellCheckboxModel {

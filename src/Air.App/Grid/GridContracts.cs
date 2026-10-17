@@ -329,6 +329,11 @@ public sealed class GridDeleteDto
 [UiContract]
 public sealed class GridActionDto
 {
+  public int Count { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public long? Id { get; set; }
+
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(MutationOutcome))]
   public string? Outcome { get; set; }
@@ -340,7 +345,7 @@ public sealed class GridActionDto
   public string? OpenScreen { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public long? OpenId { get; set; }
+  public object? OpenId { get; set; }
 }
 
 [UiContract]

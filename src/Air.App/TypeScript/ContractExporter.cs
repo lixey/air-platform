@@ -119,14 +119,6 @@ public static class ContractExporter
     sb.AppendLine("  value: Record<string, unknown>;");
     sb.AppendLine("}");
     sb.AppendLine();
-    sb.AppendLine("export interface GridActionDto {");
-    sb.AppendLine("  count: number;");
-    sb.AppendLine("  id?: number | null;");
-    sb.AppendLine("  openId?: unknown | null;");
-    sb.AppendLine("  openScreen?: string | null;");
-    sb.AppendLine("  outcome?: MutationOutcome | null;");
-    sb.AppendLine("  warnings?: MessageDto[] | null;");
-    sb.AppendLine("}");
     sb.AppendLine("export interface GridActionInputRequest extends GridRequest {");
     sb.AppendLine("  method?: string | null;");
     sb.AppendLine("}");
