@@ -34,7 +34,7 @@ public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturn
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus"));
+    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus")).InMenu();
   }
 
   public async Task<GridActionDto> CreateOutgoingPayment(GridRequest request, CancellationToken cancellationToken)

@@ -38,8 +38,8 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateSupplierInvoice, b => b.Label(L["Create supplier invoice"]).Icon("plus"));
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus"));
+    nav.AddAction(CreateSupplierInvoice, b => b.Label(L["Create supplier invoice"]).Icon("plus")).InMenu();
+    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus")).InMenu();
   }
 
   protected override void SetHooks(Hooks hooks)

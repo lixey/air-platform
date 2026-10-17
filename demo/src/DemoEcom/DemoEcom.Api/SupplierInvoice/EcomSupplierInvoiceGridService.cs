@@ -38,8 +38,8 @@ public sealed class EcomSupplierInvoiceGridService(
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateSupplierReturn, b => b.Label(L["Create supplier return"]).Icon("plus"));
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus"));
+    nav.AddAction(CreateSupplierReturn, b => b.Label(L["Create supplier return"]).Icon("plus")).InMenu();
+    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus")).InMenu();
   }
 
   public async Task<GridActionDto> CreateSupplierReturn(GridRequest request, CancellationToken cancellationToken)
