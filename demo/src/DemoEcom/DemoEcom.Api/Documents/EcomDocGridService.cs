@@ -12,6 +12,7 @@ public abstract class EcomDocGridService(EcomDbContext db, EcomService? ecom = n
     if (Flow != null)
     {
       col.AsSelect(Flow.Statuses);
+      columns.UseStatusOf(Flow);
     }
     return col;
   }
@@ -22,5 +23,15 @@ public abstract class EcomDocGridService(EcomDbContext db, EcomService? ecom = n
     query.SortByDescending(r => r.Date);
     query.RecordLabel(e => e.Number);
   }
+
+  protected override void SetHooks(Hooks hooks) =>
+    hooks.ValidateDelete((c, cancellationToken) => EcomDocActions.RefuseDeleteAsync(
+        db,
+        c,
+        Type,
+        EcomDocTexts.Of(L),
+        cancellationToken
+      )
+    );
 }
 

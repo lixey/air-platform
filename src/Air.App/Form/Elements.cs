@@ -45,7 +45,7 @@ public class Elements
     StatusFlow = statuses;
   }
 
-  public FormElement<TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression)
+  public FormElement<TEntity, TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression)
   {
     var path = ToCamelPath(MemberPath.Of(expression));
     var el = new FormElementDto
@@ -57,10 +57,10 @@ public class Elements
       Tab = _currentTab
     };
     _elements.Add(el);
-    return new FormElement<TProp>(el);
+    return new FormElement<TEntity, TProp>(el);
   }
 
-  public FormElement<TProp> Add<TProp>(string path)
+  public FormElement<object, TProp> Add<TProp>(string path)
   {
     var el = new FormElementDto
     {
@@ -71,7 +71,7 @@ public class Elements
       Tab = _currentTab
     };
     _elements.Add(el);
-    return new FormElement<TProp>(el);
+    return new FormElement<object, TProp>(el);
   }
 
   private static string ToCamelPath(string path)
@@ -114,93 +114,109 @@ public class Elements
 
 public class Elements<TEntity> : Elements where TEntity : class
 {
-  public FormElement<TProp> Add<TProp>(Expression<Func<TEntity, TProp>> expression) =>
+  public FormElement<TEntity, TProp> Add<TProp>(Expression<Func<TEntity, TProp>> expression) =>
     Add<TEntity, TProp>(expression);
 
   public void UseStatusOf(Screens.IRecordStatuses<TEntity> statuses) =>
     base.UseStatusOf(statuses);
 }
 
-public sealed class FormElement<TProp>(FormElementDto dto)
+public class FormElement<TProp>(FormElementDto dto) : FormElement<object, TProp>(dto)
+{
+}
+
+public class FormElement<TEntity, TProp>(FormElementDto dto)
 {
   public FormElementDto Dto => dto;
 
-  public FormElement<TProp> Label(string label) { dto.Label = label; return this; }
-  public FormElement<TProp> Span(int cols) { dto.Span = cols; return this; }
-  public FormElement<TProp> Required(bool required = true) { dto.IsRequired = required; return this; }
-  public FormElement<TProp> Disabled(bool disabled = true) { dto.IsDisabled = disabled; return this; }
-  public FormElement<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
-  public FormElement<TProp> Placeholder(string placeholder) { dto.Placeholder = placeholder; return this; }
-  public FormElement<TProp> Tab(string tab) { dto.Tab = tab; return this; }
+  public FormElement<TEntity, TProp> Label(string label) { dto.Label = label; return this; }
+  public FormElement<TEntity, TProp> Span(int cols) { dto.Span = cols; return this; }
+  public FormElement<TEntity, TProp> Required(bool required = true) { dto.IsRequired = required; return this; }
+  public FormElement<TEntity, TProp> Disabled(bool disabled = true) { dto.IsDisabled = disabled; return this; }
+  public FormElement<TEntity, TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
+  public FormElement<TEntity, TProp> Placeholder(string placeholder) { dto.Placeholder = placeholder; return this; }
+  public FormElement<TEntity, TProp> Tab(string tab) { dto.Tab = tab; return this; }
 
-  public FormElement<TProp> Range(double min, double max)
+  public FormElement<TEntity, TProp> Range(double min, double max)
   {
     dto.Constraints.Min = System.Text.Json.JsonSerializer.SerializeToElement(min);
     dto.Constraints.Max = System.Text.Json.JsonSerializer.SerializeToElement(max);
     return this;
   }
 
-  public FormElement<TProp> AsPercent()
+  public FormElement<TEntity, TProp> Min(decimal min)
+  {
+    dto.Constraints.Min = System.Text.Json.JsonSerializer.SerializeToElement(min);
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Max(decimal max)
+  {
+    dto.Constraints.Max = System.Text.Json.JsonSerializer.SerializeToElement(max);
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> AsPercent()
   {
     dto.Model = new FormPercentModel();
     return this;
   }
 
-  public FormElement<TProp> AsMoney(string? currency = null)
+  public FormElement<TEntity, TProp> AsMoney(string? currency = null)
   {
     dto.Type = UiFieldType.Number;
     dto.Model = new FormNumberModel();
     return this;
   }
 
-  public FormElement<TProp> AsTextarea()
+  public FormElement<TEntity, TProp> AsTextarea()
   {
     dto.Model = new FormTextareaModel();
     return this;
   }
 
-  public FormElement<TProp> AsCheckbox()
+  public FormElement<TEntity, TProp> AsCheckbox()
   {
     dto.Type = UiFieldType.Checkbox;
     dto.Model = new FormCheckboxModel();
     return this;
   }
 
-  public FormElement<TProp> AsDate()
+  public FormElement<TEntity, TProp> AsDate()
   {
     dto.Type = UiFieldType.Date;
     dto.Model = new FormDateModel();
     return this;
   }
 
-  public FormElement<TProp> AsDatetime()
+  public FormElement<TEntity, TProp> AsDatetime()
   {
     dto.Type = UiFieldType.Datetime;
     dto.Model = new FormDatetimeModel();
     return this;
   }
 
-  public FormElement<TProp> AsSelect(IEnumerable<OptionDto> options)
+  public FormElement<TEntity, TProp> AsSelect(IEnumerable<OptionDto> options)
   {
     dto.Model = new FormSelectModel { Options = options.ToList() };
     return this;
   }
 
-  public FormElement<TProp> AsPassword()
+  public FormElement<TEntity, TProp> AsPassword()
   {
     dto.Type = UiFieldType.Text;
     dto.Model = new FormInputModel();
     return this;
   }
 
-  public FormElement<TProp> AsEmail()
+  public FormElement<TEntity, TProp> AsEmail()
   {
     dto.Type = UiFieldType.Text;
     dto.Model = new FormInputModel();
     return this;
   }
 
-  public FormElement<TProp> AsTimeZone()
+  public FormElement<TEntity, TProp> AsTimeZone()
   {
     dto.Type = UiFieldType.Text;
     dto.Model = new FormInputModel();
@@ -209,7 +225,7 @@ public sealed class FormElement<TProp>(FormElementDto dto)
 
   public IReadOnlySet<string> TreeKeys { get; private set; } = new HashSet<string>();
 
-  public FormElement<TProp> AsRightsTree(Air.App.Modules.ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
+  public FormElement<TEntity, TProp> AsRightsTree(Air.App.Modules.ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
   {
     dto.Type = "rights-tree";
     catalog ??= Air.App.Modules.ModuleCatalog.Instance;
@@ -219,40 +235,80 @@ public sealed class FormElement<TProp>(FormElementDto dto)
     return this;
   }
 
-  public FormElement<TProp> AsInfo() => Disabled();
-  public FormElement<TProp> AsPhone(string? mask = null) => this;
-  public FormElement<TProp> InputOnly() => this;
-  public FormElement<TProp> Unique(string? message = null) => this;
-  public FormElement<TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
+  public FormElement<TEntity, TProp> AsInfo() => Disabled();
+  public FormElement<TEntity, TProp> AsPhone(string? mask = null) => this;
+  public FormElement<TEntity, TProp> InputOnly() => this;
+  public FormElement<TEntity, TProp> Unique(string? message = null) => this;
+  public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
   {
     dto.Type = "checkbox-set";
     dto.Model = new FormCheckboxSetModel { Options = options?.ToList() ?? [] };
     return this;
   }
-  public FormElement<TProp> AsCheckboxSet(object? options)
+  public FormElement<TEntity, TProp> AsCheckboxSet(object? options)
   {
     if (options is IEnumerable<CheckboxOptionDto> opts) return AsCheckboxSet(opts);
     return this;
   }
-  public FormElement<TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceProp, Expression<Func<TProp, TVal>> targetProp) => this;
 
-  public FormElement<TProp> AsReference<TGridService>()
+  public FormReferenceElement<TEntity, TProp, object> AsReference<TGridService>()
   {
     dto.Type = UiFieldType.Text;
     dto.Model = new FormSelectModel
     {
       ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService))
     };
+    return new FormReferenceElement<TEntity, TProp, object>(dto);
+  }
+
+  public FormReferenceElement<TEntity, TProp, TSource> AsReference<TGridService, TSource>()
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Model = new FormSelectModel
+    {
+      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService))
+    };
+    return new FormReferenceElement<TEntity, TProp, TSource>(dto);
+  }
+}
+
+public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) : FormElement<TEntity, TProp>(dto)
+{
+  public FormReferenceElement<TEntity, TProp, TSource> Where<TSourceVal, TDraftVal>(
+    Expression<Func<TSource, TSourceVal>> sourceMember,
+    Expression<Func<TEntity, TDraftVal>> draftMember)
+  {
     return this;
   }
 
-  public FormElement<TProp> AsReference<TGridService, TSource>()
+  public FormReferenceElement<TEntity, TProp, TSource> Where<TVal>(
+    Expression<Func<TSource, TVal>> sourceMember,
+    TVal value)
   {
-    dto.Type = UiFieldType.Text;
-    dto.Model = new FormSelectModel
-    {
-      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService))
-    };
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Required(bool required = true)
+  {
+    base.Required(required);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Disabled(bool disabled = true)
+  {
+    base.Disabled(disabled);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Span(int cols)
+  {
+    base.Span(cols);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Label(string label)
+  {
+    base.Label(label);
     return this;
   }
 }

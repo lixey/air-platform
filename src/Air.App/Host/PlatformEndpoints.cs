@@ -219,6 +219,25 @@ public static class PlatformEndpoints
           return Results.Ok(result);
         }
 
+        if (method == "move-status")
+        {
+          GridRequest? req = null;
+          JsonElement? bodyElement = null;
+          if (httpRequest.ContentLength > 0)
+          {
+            try
+            {
+              using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+              bodyElement = doc.RootElement.Clone();
+              req = JsonSerializer.Deserialize<GridRequest>(bodyElement.Value.GetRawText(), PlatformJsonOptions.DefaultOptions);
+            }
+            catch { }
+          }
+          req ??= new GridRequest();
+          var actionResult = await grid.MoveStatusAsync(req, subMethod ?? "", bodyElement, ct);
+          return Results.Ok(actionResult);
+        }
+
         // Custom action dispatching on grid
         var actionMethod = serviceType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
           .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||

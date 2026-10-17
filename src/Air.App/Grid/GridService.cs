@@ -22,6 +22,7 @@ public interface IGridService
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
+  Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridService
@@ -190,6 +191,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>
       BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+    public void ValidateDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
+    public void ValidateDelete(Action<GridDeleteContext<TEntity>> handler) => BeforeDelete(handler);
   }
 
   protected virtual void SetHooks(Hooks hooks) { }
@@ -315,6 +318,49 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       });
     }
 
+    var actionElements = new List<NavElementModel>();
+    if (columns.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow)
+    {
+      var statusMoves = statusFlow.Transitions.Select(t =>
+      {
+        var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
+        return new GridNavStatusMoveDto
+        {
+          From = [.. t.From],
+          Action = new GridNavActionModel
+          {
+            Key = $"status.{t.Name.ToLowerInvariant()}",
+            Label = target?.Name ?? t.Name,
+            Color = target?.Color,
+            Service = servicePath,
+            Method = $"move-status/{t.Name.ToLowerInvariant()}",
+            NeedsSelection = true,
+            Confirm = t.Ask is not null || t.Confirm is null
+              ? null
+              : new OverlayConfirmModel { Message = t.Confirm, Color = target?.Color },
+            Ask = t.Ask is null
+              ? null
+              : new FormAskModel
+              {
+                Title = target?.Name ?? t.Name,
+                Message = t.Confirm,
+                Color = target?.Color,
+                Elements = [.. t.Ask.BuildElements()]
+              }
+          }
+        };
+      }).ToList();
+
+      var statusButton = new GridNavStatusModel
+      {
+        Key = "status",
+        Label = "Status",
+        Path = "docStatusId",
+        Moves = statusMoves
+      };
+      actionElements.Add(statusButton);
+    }
+
     var gridModel = new GridModel
     {
       Service = servicePath,
@@ -332,7 +378,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       {
         Key = $"{servicePath}.actions",
         Start = [],
-        Elements = [],
+        Elements = actionElements,
         End = actionEnd
       }
     };
@@ -342,6 +388,46 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       .Build();
 
     return Task.FromResult(new ScreenDto { Layout = layout });
+  }
+
+  public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default)
+  {
+    var cols = new Columns<TRow>();
+    SetColumns(cols);
+    if (cols.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow)
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };
+    }
+
+    var transition = statusFlow.Transitions.FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
+    if (transition is null)
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
+    }
+
+    var selectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
+    if (selectedIds.Count == 0)
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
+    }
+
+    var entities = await db.Set<TEntity>().Where(e => selectedIds.Contains(e.Id)).ToListAsync(ct);
+    var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
+    var statusProp = typeof(TEntity).GetProperty("DocStatusId") ?? typeof(TEntity).GetProperty("StatusId");
+
+    foreach (var entity in entities)
+    {
+      var currentStatus = statusFlow.StatusMember.Compile()(entity);
+      if (!transition.From.Contains(currentStatus)) continue;
+
+      if (statusProp != null && targetStatus != null)
+      {
+        statusProp.SetValue(entity, targetStatus.Id);
+      }
+    }
+
+    await db.SaveChangesAsync(ct);
+    return new GridActionDto { Outcome = MutationOutcome.Committed };
   }
 
   public virtual async Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)

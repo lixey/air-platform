@@ -33,6 +33,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
     Statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
     Doc = IsNew ? null : await db.EcomDoc.Include(doc => doc.DocStatus).FirstOrDefaultAsync(doc => doc.Id == Request.Id, cancellationToken);
     Status = IsNew ? (Statuses.Count > 0 ? Statuses[0] : null) : Doc?.DocStatus;
+    await base.SetElementsAsync(elements, cancellationToken);
   }
 
   protected override void SetHooks(Hooks hooks)

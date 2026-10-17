@@ -11,10 +11,16 @@ public class Columns
   public IReadOnlyList<GridColumnDto> List => _columns;
 
   public Type? FormServiceType { get; set; }
+  internal object? StatusFlow { get; private set; }
 
   public void UseForm<TFormService>() where TFormService : class
   {
     FormServiceType = typeof(TFormService);
+  }
+
+  public void UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
+  {
+    StatusFlow = statuses;
   }
 
   public GridColumn<TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
@@ -84,10 +90,13 @@ public class Columns
   }
 }
 
-public sealed class Columns<TRow> : Columns
+public sealed class Columns<TRow> : Columns where TRow : class
 {
   public GridColumn<TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression) =>
     Add<TRow, TProp>(expression);
+
+  public void UseStatusOf(Screens.IRecordStatuses<TRow> statuses) =>
+    base.UseStatusOf(statuses);
 }
 
 public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
@@ -181,6 +190,23 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService));
     return this;
   }
+
+  public GridColumn<TProp> AsReference<TGridService, TSource>()
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Cell = new GridCellReferenceModel();
+    dto.Header = new GridHeaderReferenceModel();
+    dto.ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService));
+    return this;
+  }
+
+  public GridColumn<TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value)
+  {
+    return this;
+  }
+
+  public GridColumn<TProp> Hue(Func<object, string?> selector) => this;
+  public GridColumn<TProp> Hue<TRow>(Func<TRow, string?> selector) => this;
 
   public GridColumn<TProp> Color(Func<TProp, string> colorSelector)
   {

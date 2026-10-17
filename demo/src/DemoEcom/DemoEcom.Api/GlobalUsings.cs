@@ -1,5 +1,6 @@
 global using System.Linq.Expressions;
 global using Air.App.Components;
+global using Air.App.Flow;
 global using Air.App.Form;
 global using Air.App.Grid;
 global using Air.App.Metadata;
