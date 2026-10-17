@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DemoOrg.Data\DemoOrg.Data.csproj" />
+    <ProjectReference Include="..\..\DemoApp\DemoApp.Api\DemoApp.Api.csproj" />
     <ProjectReference Include="..\..\..\..\src\Air.App\Air.App.csproj" />
   </ItemGroup>
 
