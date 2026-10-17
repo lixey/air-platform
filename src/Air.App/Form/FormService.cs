@@ -22,6 +22,7 @@ public interface IFormService
   Task<object?> GetModelAsync(long? id, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
   Task DeleteAsync(long id, CancellationToken ct = default);
+  Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, CancellationToken ct = default);
 }
 
 public class FormLoadContext<TEntity, TInput>
@@ -326,9 +327,64 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       End = navEnd
     };
 
+    var actionStart = new List<NavElementModel>();
+    var actionElements = new List<NavElementModel>();
+
+    if (elements.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && entity != null && id.HasValue && id.Value > 0)
+    {
+      foreach (var el in formModel.Elements.Where(e => e.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase) || e.Path.Equals("status", StringComparison.OrdinalIgnoreCase)))
+      {
+        el.IsDisabled = true;
+      }
+
+      var currentStatus = statusFlow.StatusMember.Compile()(entity);
+      foreach (var transition in statusFlow.Transitions)
+      {
+        if (transition.From.Contains(currentStatus))
+        {
+          var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
+          var action = new FormNavActionModel
+          {
+            Key = $"status.{transition.Name.ToLowerInvariant()}",
+            Label = targetStatus?.Name ?? transition.Name,
+            Color = targetStatus?.Color,
+            Service = servicePath,
+            Method = $"move-status/{transition.Name.ToLowerInvariant()}",
+            Confirm = transition.Ask is not null || transition.Confirm is null
+              ? null
+              : new OverlayConfirmModel { Message = transition.Confirm, Color = targetStatus?.Color },
+            Ask = transition.Ask is null
+              ? null
+              : new FormAskModel
+              {
+                Title = targetStatus?.Name ?? transition.Name,
+                Message = transition.Confirm,
+                Color = targetStatus?.Color,
+                Elements = [.. transition.Ask.BuildElements()]
+              }
+          };
+          actionStart.Add(action);
+        }
+      }
+    }
+
+    var hasActions = actionStart.Count > 0 || actionElements.Count > 0;
+
     var layout = PanelLayout.Column(servicePath)
-      .Panel("bar", p => p.Model(nav).Auto().Pinned().Rigid())
-      .Panel("form", p =>
+      .Panel("bar", p => p.Model(nav).Auto().Pinned().Rigid());
+
+    if (hasActions)
+    {
+      var actionNav = new NavModel
+      {
+        Key = $"{servicePath}.actions",
+        Start = actionStart,
+        Elements = actionElements
+      };
+      layout.Panel("actions", p => p.Model(actionNav).Auto().Pinned().Rigid());
+    }
+
+    layout.Panel("form", p =>
       {
         p.Model(formModel);
         if (hasPages)
@@ -535,6 +591,53 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
     db.Set<TEntity>().Remove(entity);
     await db.SaveChangesAsync(ct);
+  }
+
+  public virtual async Task<FormActionDto> MoveStatusAsync(
+    long id,
+    string transitionName,
+    JsonElement? body,
+    CancellationToken ct = default
+  )
+  {
+    var elements = new Elements();
+    await SetElementsAsync(elements, ct);
+    if (elements.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow)
+    {
+      throw new InvalidOperationException($"Form '{GetType().Name}' does not use a status flow.");
+    }
+
+    var entity = await db.Set<TEntity>().FindAsync([id], ct);
+    if (entity == null)
+    {
+      throw new InvalidOperationException($"Record #{id} not found.");
+    }
+
+    var transition = statusFlow.Transitions.FirstOrDefault(t =>
+      string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
+    if (transition == null)
+    {
+      throw new InvalidOperationException($"Transition '{transitionName}' not found in '{statusFlow.GetType().Name}'.");
+    }
+
+    object? input = transition.Ask?.Read(body);
+
+    var context = new Mutations.MutationContext(db);
+    await statusFlow.MoveAsync(context, [entity], transition.Name, input, ct);
+
+    if (context.Errors.Count > 0)
+    {
+      return new FormActionDto
+      {
+        Outcome = "refused",
+        Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+      };
+    }
+
+    return new FormActionDto
+    {
+      Outcome = MutationOutcome.Committed
+    };
   }
 
   private static void CopyMatchingProperties(object source, object target)

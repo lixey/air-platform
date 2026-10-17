@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Linq.Expressions;
+using System.Reflection;
 using Air.App.Components;
 using Air.App.Localization;
 using Air.App.Modules;
@@ -348,6 +350,9 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
 
+    var cols = new Columns<TRow>();
+    SetColumns(cols);
+
     var query = BaseQuery(db);
     foreach (var filter in queryDeclaration.Filters)
     {
@@ -359,15 +364,34 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       query = parent.FilterFunc(query, ParentId.Value);
     }
 
+    // Auto-include reference navigation properties declared in columns
+    var entityType = typeof(TEntity);
+    foreach (var col in cols.List)
+    {
+      if (col.ReferenceService != null && !string.IsNullOrEmpty(col.Path))
+      {
+        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
+        {
+          try
+          {
+            query = query.Include(prop.Name);
+          }
+          catch { }
+        }
+      }
+    }
+
     if (queryDeclaration.Selector != null)
     {
       var projected = query.Select(queryDeclaration.Selector);
       var queryMap = QueryMap.FromEntity<TRow>().Build();
       var dataProvider = DataProvider.Create(projected, queryMap);
       var page = await dataProvider.GetPageAsync(request, ct);
+      var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
       return new Page<object>
       {
-        Rows = page.Rows.Cast<object>().ToList(),
+        Rows = shapedRows,
         Total = page.Total,
         Number = page.Number,
         Size = page.Size,
@@ -378,16 +402,103 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     var defaultQueryMap = QueryMap.FromEntity<TEntity>().Build();
     var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
+    var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
 
     return new Page<object>
     {
-      Rows = defaultPage.Rows.Cast<object>().ToList(),
+      Rows = defaultShapedRows,
       Total = defaultPage.Total,
       Number = defaultPage.Number,
       Size = defaultPage.Size,
       HasMore = defaultPage.HasMore
     };
   }
+
+  protected virtual object ShapeRow(TRow row, IReadOnlyList<GridColumnDto> columns)
+  {
+    if (row is null || columns.Count == 0) return row!;
+
+    var shaped = new Dictionary<string, object?>(StringComparer.Ordinal);
+    var idProp = typeof(TRow).GetProperty("Id", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+    if (idProp is not null && idProp.GetValue(row) is { } idVal)
+    {
+      shaped["id"] = idVal;
+    }
+    var verProp = typeof(TRow).GetProperty("Ver", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+    if (verProp is not null && verProp.GetValue(row) is { } verVal)
+    {
+      shaped["ver"] = verVal;
+    }
+
+    foreach (var column in columns)
+    {
+      if (string.IsNullOrEmpty(column.Path)) continue;
+
+      var value = ReadPathValue(row, column.Path);
+
+      if (column.Options is { Count: > 0 } options)
+      {
+        if (value is not null)
+        {
+          var id = Convert.ToInt64(value, CultureInfo.InvariantCulture);
+          var name = options.FirstOrDefault(o => o.Id == id)?.Name ?? id.ToString(CultureInfo.InvariantCulture);
+          value = new Reference { Id = id, Name = name };
+        }
+      }
+      else if (column.ReferenceService is not null && value is not null and not Reference)
+      {
+        if (value is IEntity refEntity)
+        {
+          var nameProp = value.GetType().GetProperty("Name", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+          var name = nameProp?.GetValue(value)?.ToString() ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
+          value = new Reference { Id = refEntity.Id, Name = name };
+        }
+      }
+
+      PutValue(shaped, column.Path.Split('.'), value);
+    }
+
+    return shaped;
+  }
+
+  private static object? ReadPathValue(object? target, string path)
+  {
+    if (target is null) return null;
+    var current = target;
+    foreach (var segment in path.Split('.'))
+    {
+      if (current is null) return null;
+      if (current is IDictionary<string, object?> dict)
+      {
+        dict.TryGetValue(segment, out current);
+        continue;
+      }
+      var prop = current.GetType().GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+      if (prop is null) return null;
+      current = prop.GetValue(current);
+    }
+    return current;
+  }
+
+  private static void PutValue(Dictionary<string, object?> target, string[] segments, object? value)
+  {
+    var current = target;
+    for (var i = 0; i < segments.Length - 1; i++)
+    {
+      var key = ToCamel(segments[i]);
+      if (!current.TryGetValue(key, out var existing) || existing is not Dictionary<string, object?> nested)
+      {
+        nested = new Dictionary<string, object?>(StringComparer.Ordinal);
+        current[key] = nested;
+      }
+      current = nested;
+    }
+    current[ToCamel(segments[^1])] = value;
+  }
+
+  private static string ToCamel(string str) =>
+    string.IsNullOrEmpty(str) ? str : char.ToLowerInvariant(str[0]) + str[1..];
+
 
   public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
   {

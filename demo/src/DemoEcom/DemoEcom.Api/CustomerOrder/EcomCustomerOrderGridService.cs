@@ -1,7 +1,7 @@
 namespace DemoEcom.CustomerOrder;
 
-public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? ecom = null)
-  : EcomDocGridService(db, ecom)
+public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? ecom = null, EcomCustomerOrderFlowService? flow = null)
+  : EcomDocGridService(db, ecom, flow)
 {
   protected override long Type => EcomData.DocType.CustomerOrderId;
 
@@ -58,7 +58,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
         var payment = new EcomDoc
         {
           DocTypeId = EcomData.DocType.IncomingPaymentId,
-          DocStatusId = EcomData.DocStatus.PaymentDraftId,
+          DocStatusId = EcomData.DocStatus.IncomingPaymentDraftId,
           Date = DateOnly.FromDateTime(DateTime.UtcNow),
           OrganizationId = order.OrganizationId,
           CustomerId = order.CustomerId,

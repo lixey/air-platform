@@ -38,6 +38,13 @@ public class Elements
 
   public void Disable(bool disabled = true) { }
 
+  internal object? StatusFlow { get; private set; }
+
+  public void UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
+  {
+    StatusFlow = statuses;
+  }
+
   public FormElement<TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression)
   {
     var path = ToCamelPath(MemberPath.Of(expression));
@@ -105,10 +112,13 @@ public class Elements
   }
 }
 
-public class Elements<TEntity> : Elements
+public class Elements<TEntity> : Elements where TEntity : class
 {
   public FormElement<TProp> Add<TProp>(Expression<Func<TEntity, TProp>> expression) =>
     Add<TEntity, TProp>(expression);
+
+  public void UseStatusOf(Screens.IRecordStatuses<TEntity> statuses) =>
+    base.UseStatusOf(statuses);
 }
 
 public sealed class FormElement<TProp>(FormElementDto dto)

@@ -123,8 +123,18 @@ public static class PlatformJsonOptions
       return;
     }
 
-    // Abstract slot bases configure polymorphic derived types with 'kind' discriminator
-    if (info.Type.IsAbstract && SlotTypes.Any(st => st.IsAssignableFrom(info.Type)))
+    if (!info.Type.IsAbstract && SlotTypes.Any(st => st.IsAssignableFrom(info.Type)))
+    {
+      var kind = info.Type.Name.EndsWith("Model") ? info.Type.Name[..^5] : info.Type.Name;
+      if (!info.Properties.Any(p => p.Name.Equals("kind", StringComparison.OrdinalIgnoreCase)))
+      {
+        var property = info.CreateJsonPropertyInfo(typeof(string), "kind");
+        property.Get = _ => kind;
+        property.Order = int.MinValue;
+        info.Properties.Insert(0, property);
+      }
+    }
+    else if (info.Type.IsAbstract && SlotTypes.Any(st => st.IsAssignableFrom(info.Type)))
     {
       var slotType = info.Type;
       var derived = slotType.Assembly.GetTypes()
@@ -136,16 +146,10 @@ public static class PlatformJsonOptions
         .Distinct()
         .ToList();
 
-      info.PolymorphismOptions = new JsonPolymorphismOptions
-      {
-        TypeDiscriminatorPropertyName = "kind",
-        UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FallBackToBaseType
-      };
-
+      info.PolymorphismOptions = new JsonPolymorphismOptions();
       foreach (var type in derived)
       {
-        var kind = type.Name.EndsWith("Model") ? type.Name[..^5] : type.Name;
-        info.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(type, kind));
+        info.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(type));
       }
     }
   }

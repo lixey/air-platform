@@ -119,6 +119,14 @@ public sealed class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> AsSelect(IEnumerable<OptionDto> options)
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Cell = new GridCellSelectModel();
+    dto.Options = options.Select(o => new Reference { Id = o.Id, Name = o.Name }).ToList();
+    return this;
+  }
+
   public GridColumn<TProp> AsDate()
   {
     dto.Type = UiFieldType.Date;

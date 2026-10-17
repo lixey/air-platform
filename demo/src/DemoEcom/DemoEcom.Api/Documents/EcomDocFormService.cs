@@ -1,3 +1,8 @@
+using Air.App.Overlay;
+using DemoEcom.Data;
+using DemoEcom.Data.Documents;
+using Microsoft.EntityFrameworkCore;
+
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = null)
@@ -5,26 +10,36 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 {
   protected abstract long Type { get; }
 
+  protected virtual EcomDocFlowService? Flow => null;
+
+  protected IReadOnlyList<EcomDocStatus> Statuses { get; private set; } = [];
+
+  protected EcomDoc? Doc { get; private set; }
+
+  protected EcomDocStatus? Status { get; private set; }
+
+  protected bool Frozen => Status is not { IsEditable: true };
+
+  protected override bool IsReadOnly => base.IsReadOnly || Status is { IsFinal: true };
+
   protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
+
+  protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
+  {
+    if (Flow != null)
+    {
+      elements.UseStatusOf(Flow);
+    }
+    Statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
+    Doc = IsNew ? null : await db.EcomDoc.Include(doc => doc.DocStatus).FirstOrDefaultAsync(doc => doc.Id == Request.Id, cancellationToken);
+    Status = IsNew ? (Statuses.Count > 0 ? Statuses[0] : null) : Doc?.DocStatus;
+  }
 
   protected override void SetHooks(Hooks hooks)
   {
-    hooks.BeforeSave(async (c, ct) =>
-    {
-      if (c.IsNew)
-      {
-        c.Entity.DocTypeId = Type;
-        if (c.Entity.Date == default)
-        {
-          c.Entity.Date = DateOnly.FromDateTime(DateTime.UtcNow);
-        }
-
-        if (string.IsNullOrWhiteSpace(c.Entity.Number))
-        {
-          var count = await db.Set<EcomDoc>().CountAsync(d => d.DocTypeId == Type, ct) + 1;
-          c.Entity.Number = $"{Type}-{count:D5}";
-        }
-      }
-    });
+    hooks.AfterLoad((c, cancellationToken) =>
+      c.IsNew ? EcomDocDefaults.NewAsync(c.Entity, Type, cancellationToken) : Task.CompletedTask);
+    hooks.BeforeSave((c, cancellationToken) =>
+      EcomDocActions.SaveAsync(db, c, null, Status ?? (Statuses.Count > 0 ? Statuses[0] : new EcomDocStatus { IsEditable = true }), cancellationToken));
   }
 }

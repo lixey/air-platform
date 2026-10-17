@@ -131,8 +131,21 @@ public static class PlatformEndpoints
         return Results.NotFound();
       }
 
-      var method = parts[^1];
-      var serviceName = string.Join('/', parts[..^1]);
+      string serviceName;
+      string method;
+      string? subMethod = null;
+
+      if (parts.Length >= 3 && string.Equals(parts[^2], "move-status", StringComparison.OrdinalIgnoreCase))
+      {
+        serviceName = string.Join('/', parts[..^2]);
+        method = "move-status";
+        subMethod = parts[^1];
+      }
+      else
+      {
+        serviceName = string.Join('/', parts[..^1]);
+        method = parts[^1];
+      }
 
       // Find feature by path or service name
       var feat = catalog.FindFeature(serviceName)
@@ -298,6 +311,46 @@ public static class PlatformEndpoints
             Value = dict,
             Outcome = MutationOutcome.Committed
           });
+        }
+
+        if (method == "move-status" && subMethod != null)
+        {
+          long? id = null;
+          JsonElement? bodyElement = null;
+          JsonDocument? jsonDoc = null;
+          if (httpRequest.ContentLength > 0)
+          {
+            try
+            {
+              jsonDoc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+              bodyElement = jsonDoc.RootElement;
+              if (bodyElement.Value.TryGetProperty("id", out var idProp) && idProp.TryGetInt64(out var parsedId))
+              {
+                id = parsedId;
+              }
+            }
+            catch { }
+          }
+
+          if (id == null && httpRequest.Query.TryGetValue("id", out var qIdStr) && long.TryParse(qIdStr, out var qId))
+          {
+            id = qId;
+          }
+
+          if (id == null)
+          {
+            return Results.BadRequest(new { error = "Record id is required for move-status." });
+          }
+
+          var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ct);
+          jsonDoc?.Dispose();
+
+          if (result.Outcome == "refused")
+          {
+            return Results.UnprocessableEntity(new { messages = result.Warnings });
+          }
+
+          return Results.Ok(result);
         }
 
         if (method == "delete")
