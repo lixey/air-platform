@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using Air.App.Components;
+using Air.App.Grid.Selection;
 using Air.App.Localization;
 using Air.App.Modules;
 using Air.App.Nav;
@@ -20,7 +21,7 @@ public interface IGridService
 {
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
-  Task DeleteAsync(long id, CancellationToken ct = default);
+  Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridService
@@ -134,7 +135,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public NavPickerBuilder ReadsParent() { model.ReadsParent = true; return this; }
   }
 
-  public sealed class Nav
+  public sealed class Nav(string servicePath = "")
   {
     internal List<GridNavActionModel> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
@@ -149,6 +150,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       look?.Invoke(b);
       var action = new GridNavActionModel
       {
+        Service = servicePath,
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
         Label = b.LabelText ?? method.Method.Name,
@@ -181,26 +183,16 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
 
   protected virtual void SetNav(Nav nav) { }
 
-  public sealed class DeleteContext
-  {
-    public required IReadOnlyList<TEntity> Records { get; init; }
-  }
-
   public sealed class Hooks
   {
-    internal List<Func<DeleteContext, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
+    internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
 
-    public void BeforeDelete(Func<DeleteContext, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
-    public void BeforeDelete(Action<DeleteContext> handler) =>
+    public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
+    public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>
       BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
   }
 
   protected virtual void SetHooks(Hooks hooks) { }
-
-  public sealed class GridBatchContext<TEntityRec>
-  {
-    public required IReadOnlyList<TEntityRec> Records { get; init; }
-  }
 
   protected async Task<GridActionDto> ExecuteBatchAsync(
     GridRequest request,
@@ -209,10 +201,23 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
   {
     var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
     var records = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(cancellationToken);
-    var ctx = new GridBatchContext<TEntity> { Records = records };
+    var ctx = new GridBatchContext<TEntity>(ids, records, ct => db.SaveChangesAsync(ct));
     await handler(ctx, cancellationToken);
+    if (ctx.Errors.Count > 0)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = ctx.Errors.Select(e => e.ToMessage("error")).ToList()
+      };
+    }
     await db.SaveChangesAsync(cancellationToken);
-    return new GridActionDto { Outcome = MutationOutcome.Committed };
+    return new GridActionDto
+    {
+      Outcome = MutationOutcome.Committed,
+      OpenScreen = ctx.OpenScreen,
+      OpenId = ctx.OpenId
+    };
   }
 
   protected virtual void SetColumns(Columns<TRow> columns) { }
@@ -262,7 +267,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       }
     }
 
-    var nav = new Nav();
+    var nav = new Nav(servicePath);
     SetNav(nav);
 
     var navStart = new List<NavElementModel>();
@@ -500,22 +505,46 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     string.IsNullOrEmpty(str) ? str : char.ToLowerInvariant(str[0]) + str[1..];
 
 
-  public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
+  public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
-    var entity = await db.Set<TEntity>().FindAsync([id], ct)
-      ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+    var ids = request.SelectedIds ?? [];
+    if (ids.Count == 0 && request.Id.HasValue)
+    {
+      ids = [request.Id.Value];
+    }
+    if (ids.Count == 0)
+    {
+      return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
+    }
 
+    var entities = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(ct);
     var hooks = new Hooks();
     SetHooks(hooks);
 
-    var ctx = new DeleteContext { Records = [entity] };
+    var ctx = new GridDeleteContext<TEntity>(ids, entities, token => db.SaveChangesAsync(token));
     foreach (var h in hooks.BeforeDeleteActions)
     {
       await h(ctx, ct);
     }
 
-    db.Set<TEntity>().Remove(entity);
+    if (ctx.Errors.Count > 0)
+    {
+      return new GridDeleteDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Deleted = 0,
+        Warnings = [.. ctx.Errors.Select(e => e.ToMessage())]
+      };
+    }
+
+    db.Set<TEntity>().RemoveRange(entities);
     await db.SaveChangesAsync(ct);
+
+    return new GridDeleteDto
+    {
+      Outcome = MutationOutcome.Committed,
+      Deleted = entities.Count
+    };
   }
 }
 

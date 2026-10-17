@@ -22,51 +22,52 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
     columns.Add(r => r.PaidAmount).Label("Paid").AsMoney().Sum();
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetHooks(Hooks hooks)
   {
-    nav.AddAction(CreateSalesInvoice, b => b.Label("Create sales invoice").Icon(UiIcon.Plus));
-    nav.AddAction(CreateIncomingPayment, b => b.Label("Create incoming payment").Icon(UiIcon.Plus));
+    hooks.BeforeDelete((context, ct) =>
+      EcomDocActions.RefuseDeleteAsync(db, context, Type, EcomDocTexts.Of(L), ct));
   }
 
-  public Task<GridActionDto> CreateSalesInvoice(GridRequest request, CancellationToken cancellationToken) =>
-    ExecuteBatchAsync(request, (context, ct) =>
-    {
-      foreach (var order in context.Records)
-      {
-        var invoice = new EcomDoc
-        {
-          DocTypeId = EcomData.DocType.SalesInvoiceId,
-          DocStatusId = EcomData.DocStatus.SalesInvoiceDraftId,
-          Date = DateOnly.FromDateTime(DateTime.UtcNow),
-          OrganizationId = order.OrganizationId,
-          CustomerId = order.CustomerId,
-          WarehouseId = order.WarehouseId,
-          Amount = order.Amount,
-          Qty = order.Qty,
-          Note = $"Entered on order {order.Number}"
-        };
-        db.Add(invoice);
-      }
-      return Task.CompletedTask;
-    }, cancellationToken);
+  protected override void SetNav(Nav nav)
+  {
+    _ = EcomDocTexts.Of(L);
+    nav.AddAction(CreateSalesInvoice, b => b.Label(L["Create sales invoice"]).Icon(UiIcon.Plus));
+    nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon(UiIcon.Plus));
+  }
 
-  public Task<GridActionDto> CreateIncomingPayment(GridRequest request, CancellationToken cancellationToken) =>
-    ExecuteBatchAsync(request, (context, ct) =>
-    {
-      foreach (var order in context.Records)
-      {
-        var payment = new EcomDoc
-        {
-          DocTypeId = EcomData.DocType.IncomingPaymentId,
-          DocStatusId = EcomData.DocStatus.IncomingPaymentDraftId,
-          Date = DateOnly.FromDateTime(DateTime.UtcNow),
-          OrganizationId = order.OrganizationId,
-          CustomerId = order.CustomerId,
-          Amount = order.Amount - order.PaidAmount,
-          Note = $"Payment for order {order.Number}"
-        };
-        db.Add(payment);
-      }
-      return Task.CompletedTask;
-    }, cancellationToken);
+  public Task<GridActionDto> CreateSalesInvoice(GridRequest request, CancellationToken cancellationToken)
+  {
+    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    return ExecuteBatchAsync(
+      request,
+      (context, ct) => EcomDocActions.EnterAsync<EcomSalesInvoiceFormService>(
+        db,
+        context,
+        EcomData.DocType.SalesInvoiceId,
+        EcomData.DocStatus.SalesInvoiceDraftId,
+        date,
+        EcomDocTexts.Of(L),
+        ct
+      ),
+      cancellationToken
+    );
+  }
+
+  public Task<GridActionDto> CreateIncomingPayment(GridRequest request, CancellationToken cancellationToken)
+  {
+    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    return ExecuteBatchAsync(
+      request,
+      (context, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
+        db,
+        context,
+        EcomData.DocType.IncomingPaymentId,
+        EcomData.DocStatus.IncomingPaymentDraftId,
+        date,
+        EcomDocTexts.Of(L),
+        ct
+      ),
+      cancellationToken
+    );
+  }
 }

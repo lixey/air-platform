@@ -26,18 +26,16 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
   }
 
   public Task<GridActionDto> CreatePurchaseOrder(GridRequest request, CancellationToken cancellationToken) =>
-    ExecuteBatchAsync(request, (context, ct) =>
-    {
-      if (context.Records.Count > 0)
-      {
-        var order = new EcomDoc
-        {
-          DocTypeId = EcomData.DocType.PurchaseOrderId,
-          Date = DateOnly.FromDateTime(DateTime.UtcNow),
-          Note = "Auto-generated from fulfillment worklist"
-        };
-        db.Add(order);
-      }
-      return Task.CompletedTask;
-    }, cancellationToken);
+    ExecuteBatchAsync(
+      request,
+      (context, ct) => EcomDocActions.PurchaseAsync(
+        db,
+        context,
+        null,
+        DateOnly.FromDateTime(DateTime.UtcNow),
+        EcomDocTexts.Of(L),
+        ct
+      ),
+      cancellationToken
+    );
 }

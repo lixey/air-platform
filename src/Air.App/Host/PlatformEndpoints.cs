@@ -204,14 +204,19 @@ public static class PlatformEndpoints
 
         if (method == "delete")
         {
-          var ids = await ExtractIdsAsync(httpRequest, ct);
-          int deleted = 0;
-          foreach (var id in ids)
+          GridRequest? req = null;
+          if (httpRequest.ContentLength > 0)
           {
-            await grid.DeleteAsync(id, ct);
-            deleted++;
+            try { req = await httpRequest.ReadFromJsonAsync<GridRequest>(cancellationToken: ct); } catch { }
           }
-          return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
+          req ??= new GridRequest();
+          if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal))
+          {
+            req.Id = idVal;
+          }
+
+          var result = await grid.DeleteAsync(req, ct);
+          return Results.Ok(result);
         }
 
         // Custom action dispatching on grid
