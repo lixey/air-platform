@@ -5,9 +5,9 @@ using DemoOrg;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddPlatformModule<AppModule>();
-builder.AddPlatformModule<OrgModule>();
 builder.AddPlatformModule<EcomModule>();
+builder.AddPlatformModule<OrgModule>();
+builder.AddPlatformModule<AppModule>();
 
 // CORS for Angular / Vite dev server
 builder.Services.AddCors(options =>
