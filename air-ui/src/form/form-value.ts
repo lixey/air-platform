@@ -1,5 +1,6 @@
 import { hasZone, temporalText } from '../controls/temporal-text';
-import type { FormElementDto } from '../core/generated/contracts';
+import type { FormDataDto, FormElementDto, FormModel } from '../core/generated/contracts';
+import { isRecord } from '../core/json';
 
 /** The form service owns JSON values; callers cannot mutate nested state behind its guards. */
 export function frozenCopy<T>(value: T): T {
@@ -34,6 +35,71 @@ export function sanitizeFormDraft(value: Record<string, unknown>, elements?: rea
     sanitized[key] = val;
   }
   return sanitized;
+}
+
+/**
+ * Removes secret fields that the user did not type into before posting a form save.
+ */
+export function stripUntouchedSecrets(
+  rawValue: Readonly<Record<string, unknown>>,
+  elements: readonly FormElementDto[],
+): Record<string, unknown> {
+  const value = { ...rawValue };
+  for (const element of elements.filter(isSecret)) {
+    if (!hasSecret(rawValue[element.path])) {
+      delete value[element.path];
+    }
+  }
+  return value;
+}
+
+/**
+ * A form record by the contract: an object whose `value` is an object. The server always answers a
+ * `value` (`FormDataDto.Value` is a dictionary it initialises), so `{ value: null }` and an array
+ * are not a form record.
+ */
+export function isFormData(value: unknown): value is FormDataDto {
+  return isRecord(value) && isRecord(value['value']);
+}
+
+/**
+ * The draft a form over `elements` holds for `value`: no secret path, and null at every path and caption path the
+ * value does not carry.
+ */
+export function draftOf(value: Readonly<Record<string, unknown>>, elements: readonly FormElementDto[]): Record<string, unknown> {
+  const draft = { ...value };
+  for (const element of elements.filter(isSecret)) {
+    delete draft[element.path];
+  }
+  for (const element of elements) {
+    if (!Object.hasOwn(draft, element.path)) {
+      draft[element.path] = null;
+    }
+    if (element.referencePath && !Object.hasOwn(draft, element.referencePath)) {
+      draft[element.referencePath] = null;
+    }
+  }
+  return draft;
+}
+
+/** The model of a form of input alone over `elements`: no service, no text of a save. */
+export function inputModelOf(elements: readonly FormElementDto[]): FormModel {
+  return {
+    kind: 'Form',
+    service: '',
+    isReadOnly: false,
+    elements: [...elements],
+    dirtyDialog: { kind: 'OverlayDirty', title: '', description: '', saveLabel: '', discardLabel: '', continueLabel: '' },
+    mutationTexts: {
+      committedWarningTitle: '',
+      conflictTitle: '',
+      reloadLabel: '',
+      selectionCorrectionLabel: '',
+      unknownDescription: '',
+      unknownTitle: '',
+      verifyLabel: '',
+    },
+  };
 }
 
 /**

@@ -6,10 +6,9 @@ import { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { withIdempotencyKey } from '../app/auth/credentials.interceptor';
 import { LocaleService } from '../app/locale.service';
-import { Api, type RequestOf, serviceUrl } from '../core/api';
+import { Api, type RequestOf } from '../core/api';
 import type { CloseApproval } from '../core/close-decision';
 import type {
-  FormActionDto,
   FormDataDto,
   FormElementDto,
   FormModel,
@@ -18,16 +17,14 @@ import type {
   FormServiceEndpoints,
   MessageDto,
   MutationOutcome,
-  OverlayModelDto,
   ScreenDto,
 } from '../core/generated/contracts';
-import { isRecord } from '../core/json';
 import { Lifetime } from '../core/lifetime';
 import { classifyMutationFailure, refusalDetailOf } from '../core/mutation-failure';
 import { problemOf } from '../core/problem';
 import { TextsService } from '../core/texts.service';
 import type { Unavailable } from '../nav/nav-availability';
-import { AskService, ownMessages } from '../overlay/ask.service';
+import { AskService } from '../overlay/ask.service';
 import { ConfirmationService } from '../overlay/confirmation.service';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
@@ -35,35 +32,20 @@ import { parentParams, SCREEN_ADDRESS, SCREEN_HOST } from '../screen/screen-addr
 import { ScreenLifecycle } from '../screen/screen-lifecycle';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
+import { FormActions } from './form-actions';
 import { formFieldRules, isFieldDisabled } from './form-field-rules';
-import { canonicalJson, frozenCopy, hasSecret, isSecret } from './form-value';
+import {
+  canonicalJson,
+  draftOf,
+  frozenCopy,
+  hasSecret,
+  inputModelOf,
+  isFormData,
+  isSecret,
+  stripUntouchedSecrets,
+} from './form-value';
 
-/**
- * The state of the action under way and the phase it is in. `method` is null for the wait a save started: the phase
- * `reading` is also the wait for the screen after the first save of a new record that stays.
- */
-interface ActingState {
-  readonly method: string | null;
-  readonly phase: 'asking' | 'posting' | 'reading';
-}
-
-/** One press of an action, from the press until its confirmation or its dialog is answered. */
-interface ActionFlow {
-  /** Whether the press saved a new record first: its screen is read again whatever the action answers. */
-  savedNew: boolean;
-  isCommitted: boolean;
-  /** The record the action was posted for; none before the first post. */
-  id: number | null;
-  /** The acting state of the press's own post, which nothing else holds. */
-  posting: ActingState | null;
-  isCurrent: () => boolean;
-}
-
-/** A refusal's messages at the paths of the form's elements, kept for the record `id` read again. */
-interface KeptMessages {
-  readonly id: number;
-  readonly messages: readonly MessageDto[];
-}
+export { isFormData } from './form-value';
 
 /** A create whose outcome is open: its idempotency key and the submission posted under it. */
 interface KeptCreate {
@@ -160,19 +142,6 @@ export class FormService {
   readonly isSaving = this._isSaving.asReadonly();
   private readonly _isRecovering = signal(false);
   readonly isRecovering = this._isRecovering.asReadonly();
-  /**
-   * The action under way: `asking` from the press (the confirmation, the save first), `posting` while its request or
-   * the form's own read is in flight, `reading` while the screen host reads the screen the action asked for, or the
-   * screen of a new record after its first save, a wait that names no method.
-   */
-  private readonly acting = signal<ActingState | null>(null);
-  /**
-   * Whether an action is under way: from its post until the screen read again after it is adopted. True also while
-   * the host reads the screen of a new record after its first save.
-   */
-  readonly isActing = computed(() => this.acting()?.phase === 'posting' || this.acting()?.phase === 'reading');
-  /** The method of the action under way, from the press: the button that shows the busy mark. */
-  readonly actingMethod = computed(() => this.acting()?.method ?? null);
   private readonly _outcome = signal<MutationOutcome | null>(null);
   readonly outcome = this._outcome.asReadonly();
   private readonly _isStale = signal(false);
@@ -182,35 +151,12 @@ export class FormService {
   private reads = 0;
   private closingResult: FormDataDto | undefined;
   private operation: ScreenOperation | undefined;
-  /** What a refused action after a new record's first save left for the record read again; a new press or a reset drops it. */
-  private kept: KeptMessages | null = null;
   /** The create posted last while its answer has not settled it: a commit, a refusal, a roll-back or a conflict. */
   private readonly keptCreate = signal<KeptCreate | null>(null);
   /** A child of the screen's lifetime, current while the overlay the form stands in is open; every record starts an epoch. */
   private readonly lifetime = (inject(SCREEN_LIFETIME, { optional: true }) ?? new Lifetime()).child(() => !this.ref?.isClosed);
   private readonly invalidations = new Set<() => void>();
   private readonly refusals = new Set<(messages: readonly MessageDto[]) => void>();
-
-  readonly isBusy = computed(() => this.isSaving() || this.isRecovering() || this.isActing());
-  readonly canSave = computed(
-    () => !!this.service() && !this.isReadOnly() && !this.isBusy() && !this.lifecycle?.isLocked() && !this.isUnsettled(),
-  );
-  /** Whether an action may start: a read-only form acts on a persisted record alone, since it cannot save a new one first. */
-  readonly canAct = computed(
-    () =>
-      !!this.service() &&
-      !this.isBusy() &&
-      !this.lifecycle?.isLocked() &&
-      !this.isUnsettled() &&
-      !(this.isReadOnly() && this.id() === null),
-  );
-  /** Whether the record can be read again after an unsettled save, or a create of unknown outcome posted again under its key. */
-  readonly canRecover = computed(
-    () =>
-      !this.lifecycle?.isLocked() &&
-      this.isUnsettled() &&
-      (this.id() !== null || (this.outcome() === 'unknown' && this.keptCreate() !== null)),
-  );
 
   readonly service = computed(() => this.model()?.service ?? null);
   readonly isReadOnly = computed(() => this.model()?.isReadOnly ?? true);
@@ -237,6 +183,64 @@ export class FormService {
 
   /** Whether the last save left the record unsettled: refused for a newer version, or of an outcome nobody knows. */
   private readonly isUnsettled = computed(() => this.outcome() === 'conflict' || this.outcome() === 'unknown');
+
+  private readonly actions: FormActions = new FormActions({
+    http: this.http,
+    alert: this.alert,
+    asks: this.asks,
+    confirmation: this.confirmation,
+    overlay: this.overlay,
+    ref: this.ref,
+    injector: this.injector,
+    mutations: this.mutations,
+    address: () => this.address?.(),
+    service: () => this.service(),
+    model: () => this.model(),
+    id: () => this.id(),
+    ver: () => this.ver(),
+    isDirty: () => this.isDirty(),
+    canAct: () => this.canAct(),
+    capture: () => this.capture(),
+    saveBeforeAct: () => this.performSave('act'),
+    beginOperation: () => {
+      const op = this.mutations?.begin();
+      this.operation = op;
+      return op;
+    },
+    releaseOperation: op => this.releaseOperation(op),
+    showsMessage: path => this.showsMessage(path),
+    reportFailure: (error, own) => this.reportFailure(error, own),
+    readAgain: (service, id, method, isCurrent) => this.readAgain(service, id, method, isCurrent),
+  });
+
+  /**
+   * Whether an action is under way: from its post until the screen read again after it is adopted. True also while
+   * the host reads the screen of a new record after its first save.
+   */
+  readonly isActing = this.actions.isActing;
+  /** The method of the action under way, from the press: the button that shows the busy mark. */
+  readonly actingMethod = this.actions.actingMethod;
+
+  readonly isBusy = computed(() => this.isSaving() || this.isRecovering() || this.isActing());
+  readonly canSave = computed(
+    () => !!this.service() && !this.isReadOnly() && !this.isBusy() && !this.lifecycle?.isLocked() && !this.isUnsettled(),
+  );
+  /** Whether an action may start: a read-only form acts on a persisted record alone, since it cannot save a new one first. */
+  readonly canAct = computed(
+    () =>
+      !!this.service() &&
+      !this.isBusy() &&
+      !this.lifecycle?.isLocked() &&
+      !this.isUnsettled() &&
+      !(this.isReadOnly() && this.id() === null),
+  );
+  /** Whether the record can be read again after an unsettled save, or a create of unknown outcome posted again under its key. */
+  readonly canRecover = computed(
+    () =>
+      !this.lifecycle?.isLocked() &&
+      this.isUnsettled() &&
+      (this.id() !== null || (this.outcome() === 'unknown' && this.keptCreate() !== null)),
+  );
 
   private readonly elementsByPath = computed(() => {
     const map = new Map<string, FormElementDto>();
@@ -281,7 +285,7 @@ export class FormService {
     // No record is the window in which the screen loads again, after an action or after the first save of a new
     // record: the form stays busy through it.
     if (data) {
-      this.acting.set(null);
+      this.actions.clearActing();
       this.putBack();
     }
   }
@@ -299,8 +303,7 @@ export class FormService {
 
   reset(): void {
     this.invalidate();
-    this.acting.set(null);
-    this.kept = null;
+    this.actions.reset();
     this._model.set(null);
     this.adopt(null);
   }
@@ -388,28 +391,8 @@ export class FormService {
    * while a refusal names one of its fields, saves a dirty or new form first, posts the record's id and version with
    * the dialog's values, and after a commit reads the screen again, busy until that screen's record is adopted.
    */
-  async act(action: FormNavActionModel): Promise<void> {
-    const service = this.service();
-    if (!this.canAct() || !service) {
-      return;
-    }
-    const press: ActingState = { method: action.method, phase: 'asking' };
-    this.acting.set(press);
-    this.kept = null;
-    const flow: ActionFlow = { savedNew: false, isCommitted: false, id: null, posting: null, isCurrent: this.capture() };
-    try {
-      if (action.ask) {
-        await this.asks.ask(
-          { ...action.ask, title: action.ask.title ?? action.label },
-          value => this.submit(action, service, press, flow, value),
-          this.injector,
-        );
-      } else if (!action.confirm || (await this.confirmation.confirm(action.confirm))) {
-        await this.submit(action, service, press, flow, {});
-      }
-    } finally {
-      this.endPress(service, press, flow);
-    }
+  act(action: FormNavActionModel): Promise<void> {
+    return this.actions.act(action);
   }
 
   /**
@@ -522,120 +505,11 @@ export class FormService {
   }
 
   /**
-   * One submission of a press: the save a dirty or new form runs first, then the post of the record's id and version
-   * beside `value`. Answers the messages that stay on the fields of the action's dialog; none ends the press.
-   */
-  private async submit(
-    action: FormNavActionModel,
-    service: string,
-    press: ActingState,
-    flow: ActionFlow,
-    value: Readonly<Record<string, unknown>>,
-  ): Promise<readonly MessageDto[]> {
-    // The record may have been replaced, or another action pressed, while the confirmation or the dialog stood.
-    if (this.acting() !== press || !flow.isCurrent() || !this.canAct()) {
-      return [];
-    }
-    if (this.id() === null || this.isDirty()) {
-      const wasNew = this.id() === null;
-      if (!(await this.performSave('act'))) {
-        return [];
-      }
-      flow.savedNew ||= wasNew;
-      flow.isCurrent = this.capture();
-    }
-    const id = this.id();
-    if (this.acting() !== press || id === null) {
-      return [];
-    }
-    flow.id = id;
-    const operation = this.mutations?.begin();
-    this.operation = operation;
-    flow.posting = { method: action.method, phase: 'posting' };
-    this.acting.set(flow.posting);
-    let refusal: unknown;
-    try {
-      const answer = await firstValueFrom(
-        this.http.post<FormActionDto | null>(
-          serviceUrl(action.service, action.method),
-          // The record's members last, so no value of the dialog replaces one.
-          { ...value, ...parentParams(this.address?.(), service), id, ver: this.ver() },
-          shownByCaller(),
-        ),
-      );
-      if (!flow.isCurrent()) {
-        return [];
-      }
-      if (answer?.outcome === 'committed') {
-        this.alert.warnings(answer.warnings, this.model()?.mutationTexts.committedWarningTitle);
-        if (operation) {
-          this.mutations?.publish(operation, { service, recordId: id, operation: 'save' });
-        }
-        if (answer.openScreen) {
-          this.openScreen(answer.openScreen, answer.openId);
-        }
-        // What an earlier refusal of this press left for the record read again is of an action that has now succeeded.
-        this.kept = null;
-        flow.isCommitted = true;
-        return [];
-      }
-      refusal = answer;
-    } catch (error: unknown) {
-      if (!flow.isCurrent()) {
-        return [];
-      }
-      refusal = error;
-    } finally {
-      this.releaseOperation(operation);
-    }
-    return this.refuse(action, press, flow, refusal);
-  }
-
-  /**
-   * A refused action: the messages at the fields of its dialog are answered to it and the press asks again; the others
-   * stand on the form's fields and in the alert, and those of the form's elements are kept for the screen read again
-   * after a new record's first save.
-   */
-  private refuse(action: FormNavActionModel, press: ActingState, flow: ActionFlow, refusal: unknown): readonly MessageDto[] {
-    const failure = classifyMutationFailure(refusal);
-    const own = action.ask ? ownMessages(action.ask, failure.messages) : [];
-    // A refusal that names the dialog's fields alone leaves the form's own state as it is.
-    if (!own.length || own.length !== failure.messages.length) {
-      this.reportFailure(refusal, own);
-    }
-    if (flow.savedNew && flow.id !== null) {
-      const messages = failure.messages.filter(m => !!m.path && !own.includes(m) && this.showsMessage(m.path));
-      this.kept = { id: flow.id, messages: frozenCopy(messages) };
-    }
-    if (!own.length) {
-      return [];
-    }
-    this.acting.set(press);
-    return own;
-  }
-
-  /**
-   * The end of a press, once its confirmation or its dialog is answered: after a commit, or after a new record's first
-   * save, the screen is read again; else the acting state is left, unless another record or action took it over.
-   */
-  private endPress(service: string, press: ActingState, flow: ActionFlow): void {
-    const state = this.acting();
-    if (state !== press && (state === null || state !== flow.posting)) {
-      return;
-    }
-    if ((flow.isCommitted || flow.savedNew) && flow.id !== null) {
-      this.readAgain(service, flow.id, press.method, flow.isCurrent);
-    } else {
-      this.acting.set(null);
-    }
-  }
-
-  /**
    * Nothing of the form is in flight: it waits for the screen an action of its own, or the first save of a new record,
    * asked its host for.
    */
   private awaitsScreen(): boolean {
-    return this.acting()?.phase === 'reading' && !this.isSaving() && !this.isRecovering();
+    return this.actions.isReading() && !this.isSaving() && !this.isRecovering();
   }
 
   /** Whether nothing of the form is under way: no save, recovery or action from its press on, and the screen not locked. */
@@ -761,7 +635,7 @@ export class FormService {
    */
   private readAgain(service: string, id: number, method: string | null, isCurrent: () => boolean): void {
     if (this.host) {
-      this.acting.set({ method, phase: 'reading' });
+      this.actions.setReading(method);
       this.host.reload({ id });
     } else {
       void this.readRecord(service, id, isCurrent);
@@ -782,19 +656,9 @@ export class FormService {
     } finally {
       // A read that is no longer current leaves the acting state: it is of the record the form shows now.
       if (isCurrent()) {
-        this.acting.set(null);
+        this.actions.clearActing();
       }
     }
-  }
-
-  /** Opens the screen an action's answer names: in the presentation of the form's own overlay, else as a dialog. */
-  private openScreen(service: string, id: number | null | undefined): void {
-    const params = id == null ? {} : { id };
-    const template = this.ref?.model;
-    const model: OverlayModelDto = template?.screen
-      ? { ...template, key: service, screen: { ...template.screen, service, params } }
-      : { key: service, presentation: 'dialog', closesOnEscape: true, screen: { service, params } };
-    this.overlay.open(model, null, this.injector);
   }
 
   /** `'act'` is the save an action asks for first: it stays, and leaves the reading of a new record's screen to the action. */
@@ -919,7 +783,7 @@ export class FormService {
     this.adopt(answer);
     this.alert.warnings(answer.warnings, this.model()?.mutationTexts.committedWarningTitle);
     if (reloads && this.host) {
-      this.acting.set({ method: null, phase: 'reading' });
+      this.actions.setReading(null);
       this.host.reload({ id: answer.id });
     }
     const saved = { ...answer, value: this.value() };
@@ -944,14 +808,7 @@ export class FormService {
   /** What a save posts: the value without the secrets the user did not type, with the parent parameters, `id` and `ver`. */
   private buildSubmission(): FormRequest {
     const service = this.service();
-    const rawValue = this.value();
-    const elements = this.model()?.elements ?? [];
-    const value = { ...rawValue };
-    for (const element of elements.filter(isSecret)) {
-      if (!hasSecret(rawValue[element.path])) {
-        delete value[element.path];
-      }
-    }
+    const value = stripUntouchedSecrets(this.value(), this.model()?.elements ?? []);
     return frozenCopy({ ...parentParams(this.address?.(), service), id: this.id(), ver: this.ver(), value });
   }
 
@@ -979,10 +836,9 @@ export class FormService {
 
   /** The messages kept for the record read again stand on its fields, when it is that record; they are kept once. */
   private putBack(): void {
-    const kept = this.kept;
-    this.kept = null;
-    if (kept?.messages.length && kept.id === this.id()) {
-      this._messages.set(kept.messages);
+    const messages = this.actions.takeKeptMessages(this.id());
+    if (messages) {
+      this._messages.set(messages);
       this.tellRefused();
     }
   }
@@ -1031,53 +887,4 @@ export class FormService {
     const text = message.title ?? message.detail;
     return label && text ? { ...message, title: `${label}: ${text}` } : message;
   }
-}
-
-/**
- * A form record by the contract: an object whose `value` is an object. The server always answers a
- * `value` (`FormDataDto.Value` is a dictionary it initialises), so `{ value: null }` and an array
- * are not a form record.
- */
-export function isFormData(value: unknown): value is FormDataDto {
-  return isRecord(value) && isRecord(value['value']);
-}
-
-/**
- * The draft a form over `elements` holds for `value`: no secret path, and null at every path and caption path the
- * value does not carry.
- */
-function draftOf(value: Readonly<Record<string, unknown>>, elements: readonly FormElementDto[]): Record<string, unknown> {
-  const draft = { ...value };
-  for (const element of elements.filter(isSecret)) {
-    delete draft[element.path];
-  }
-  for (const element of elements) {
-    if (!Object.hasOwn(draft, element.path)) {
-      draft[element.path] = null;
-    }
-    if (element.referencePath && !Object.hasOwn(draft, element.referencePath)) {
-      draft[element.referencePath] = null;
-    }
-  }
-  return draft;
-}
-
-/** The model of a form of input alone over `elements`: no service, no text of a save. */
-function inputModelOf(elements: readonly FormElementDto[]): FormModel {
-  return {
-    kind: 'Form',
-    service: '',
-    isReadOnly: false,
-    elements: [...elements],
-    dirtyDialog: { kind: 'OverlayDirty', title: '', description: '', saveLabel: '', discardLabel: '', continueLabel: '' },
-    mutationTexts: {
-      committedWarningTitle: '',
-      conflictTitle: '',
-      reloadLabel: '',
-      selectionCorrectionLabel: '',
-      unknownDescription: '',
-      unknownTitle: '',
-      verifyLabel: '',
-    },
-  };
 }
