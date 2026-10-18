@@ -22,7 +22,7 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
     columns.Add(r => r.Name);
     columns.Add(r => r.Email);
     columns.Add(r => r.Tenant).AsReference<AppTenantGridService>();
-    columns.Add(r => r.UserGroup).AsReference<AppUserGroupGridService>();
+    columns.Add(r => r.UserGroup).AsReference<AppUserGroupGridService>().Color(u => u.UserGroup!.Color.Handle);
     columns.Add(r => r.Language).AsReference<AppLanguageGridService>();
     columns.Add(r => r.IsActive).AsCheckbox();
   }

@@ -272,6 +272,27 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> AsPhone()
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Cell = new GridCellPhoneModel();
+    return this;
+  }
+
+  public GridColumn<TProp> AsEmail()
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Cell = new GridCellEmailModel();
+    return this;
+  }
+
+  public GridColumn<TProp> AsUrl()
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Cell = new GridCellUrlModel();
+    return this;
+  }
+
   public GridColumn<TProp> Hue(Func<object, string?> selector) => this;
   public GridColumn<TProp> Hue<TRow>(Func<TRow, string?> selector) => this;
 
@@ -299,6 +320,9 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> AsNumber() { base.AsNumber(); return this; }
   public new GridColumn<TEntity, TProp> AsMoney(string? currency = null) { base.AsMoney(currency); return this; }
   public new GridColumn<TEntity, TProp> AsPercent() { base.AsPercent(); return this; }
+  public new GridColumn<TEntity, TProp> AsPhone() { base.AsPhone(); return this; }
+  public new GridColumn<TEntity, TProp> AsEmail() { base.AsEmail(); return this; }
+  public new GridColumn<TEntity, TProp> AsUrl() { base.AsUrl(); return this; }
   public new GridColumn<TEntity, TProp> Sum() { base.Sum(); return this; }
   public new GridColumn<TEntity, TProp> Stepper(bool hasStepper = true) { base.Stepper(hasStepper); return this; }
   public new GridColumn<TEntity, TProp> Step(double step) { base.Step(step); return this; }
@@ -317,8 +341,42 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     return new GridReferenceColumn<TEntity, TSource, TProp>(Dto, owner);
   }
   public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value) { base.Where(sourceMember, value); return this; }
-  public GridColumn<TEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector) => this;
-  public GridColumn<TEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => this;
+  public GridColumn<TEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
+  {
+    var compiled = colorSelector.Compile();
+    Dto.ColorEvaluator = obj =>
+    {
+      if (obj is TEntity entity)
+      {
+        try { return compiled(entity); } catch { return null; }
+      }
+      return null;
+    };
+    Dto.ColorNavPath = ExtractNavigationPath(colorSelector.Body);
+    var isRef = Dto.Cell is GridCellReferenceModel || Dto.ReferenceService != null;
+    var colorPath = isRef ? $"{Dto.Path}.color" : $"{Dto.Path}Color";
+    Dto.Cell.ColorPath = colorPath;
+    return this;
+  }
+
+  public GridColumn<TEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => Color(hueSelector);
+
+  private static string? ExtractNavigationPath(Expression expr)
+  {
+    var parts = new List<string>();
+    var current = expr;
+    while (current is MemberExpression me)
+    {
+      parts.Add(me.Member.Name);
+      current = me.Expression;
+    }
+    if (parts.Count > 1)
+    {
+      parts.Reverse();
+      return string.Join('.', parts.Take(parts.Count - 1));
+    }
+    return null;
+  }
 }
 
 public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dto, Columns owner)
@@ -330,6 +388,14 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
   {
     return this;
   }
-  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector) => this;
-  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => this;
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
+  {
+    base.Color(colorSelector);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector)
+  {
+    base.Color(hueSelector);
+    return this;
+  }
 }

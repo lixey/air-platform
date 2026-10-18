@@ -9,7 +9,7 @@ public sealed class OrgWarehouseGridService(OrgDbContext db, OrgService? org = n
   {
     columns.Add(r => r.Id).AsOpenForm<OrgWarehouseFormService>();
     columns.Add(r => r.Name);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>();
+    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(w => w.Organization.Color.Handle);
     columns.Add(r => r.IsActive).AsCheckbox();
   }
 

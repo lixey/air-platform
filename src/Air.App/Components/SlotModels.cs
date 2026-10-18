@@ -13,7 +13,7 @@ public abstract record NavElementModel
 public abstract record CellModel
 {
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public string? ColorPath { get; init; }
+  public string? ColorPath { get; set; }
 }
 
 [UiContract]

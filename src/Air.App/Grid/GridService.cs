@@ -770,6 +770,14 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
           catch { }
         }
       }
+      if (!string.IsNullOrEmpty(col.ColorNavPath))
+      {
+        try
+        {
+          query = query.Include(col.ColorNavPath);
+        }
+        catch { }
+      }
     }
 
     var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
@@ -1085,6 +1093,31 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
           var nameProp = value.GetType().GetProperty("Name", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
           var name = nameProp?.GetValue(value)?.ToString() ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
           value = new Reference { Id = refEntity.Id, Name = name };
+        }
+      }
+
+      if (column.ColorEvaluator is not null && row is not null)
+      {
+        var hue = column.ColorEvaluator(row);
+        if (!string.IsNullOrEmpty(hue))
+        {
+          if (value is Reference r)
+          {
+            value = new Dictionary<string, object?>
+            {
+              ["id"] = r.Id,
+              ["name"] = r.Name,
+              ["color"] = hue
+            };
+          }
+          else if (value is Dictionary<string, object?> dictVal)
+          {
+            dictVal["color"] = hue;
+          }
+          else
+          {
+            shaped[$"{column.Path}Color"] = hue;
+          }
         }
       }
 

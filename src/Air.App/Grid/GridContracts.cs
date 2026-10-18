@@ -143,6 +143,12 @@ public sealed class GridColumnDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public HeaderModel? Header { get; set; }
+
+  [JsonIgnore]
+  internal Func<object, string?>? ColorEvaluator { get; set; }
+
+  [JsonIgnore]
+  internal string? ColorNavPath { get; set; }
 }
 
 // Concrete Cell Models

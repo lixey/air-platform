@@ -13,7 +13,7 @@ public sealed class AppColorGridService(AppDbContext db, AppService? app = null)
   protected override void SetColumns(Columns<AppColor> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<AppColorFormService>();
-    columns.Add(r => r.Name);
+    columns.Add(r => r.Name).Color(c => c.Handle);
     columns.Add(r => r.Handle);
   }
 }
