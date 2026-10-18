@@ -1,0 +1,442 @@
+using System.Linq.Expressions;
+using Air.App.Internal;
+using Air.App.Modules;
+using Air.Data.Contracts;
+using Air.Data.Entities;
+using Air.Data.Querying;
+using Microsoft.EntityFrameworkCore;
+
+namespace Air.App.Grid;
+
+public abstract partial class GridService<TEntity, TRow>
+  where TEntity : class, IEntity, new()
+  where TRow : class
+{
+  private IQueryable<TEntity> BuildFilteredEntityQuery(GridRequest? gridReq, out Parent parent, out Query queryDeclaration)
+  {
+    parent = new Parent();
+    SetParent(parent);
+
+    ParentId = gridReq?.ParentId;
+
+    queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+
+    var query = BaseQuery(db);
+    foreach (var filter in queryDeclaration.Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    if (ParentId.HasValue && parent.FilterFunc != null)
+    {
+      query = parent.FilterFunc(query, ParentId.Value);
+    }
+
+    if (gridReq?.NamedFilters is { Count: > 0 } nfs)
+    {
+      foreach (var nfKey in nfs)
+      {
+        var matched = queryDeclaration.NamedFilters.FirstOrDefault(f => string.Equals(f.Key, nfKey, StringComparison.OrdinalIgnoreCase));
+        if (matched != null)
+        {
+          query = query.Where(matched.Predicate);
+        }
+      }
+    }
+
+    return query;
+  }
+
+  public virtual async Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
+  {
+    var gridReq = request as GridRequest;
+    var query = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
+    var cols = CreateColumns();
+
+    query = IncludeColumnNavigations(query, cols.List);
+
+    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
+    if (isSelect)
+    {
+      var labelPaths = gridReq!.ReferenceLabelPaths!;
+      var patchColumns = gridReq.PatchSourceColumns ?? [];
+      var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
+      foreach (var p in patchColumns) preserved.Add(p);
+      cols.RetainOnly(preserved);
+    }
+
+    if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
+    {
+      request.Sort = queryDeclaration.DefaultSort.ToList();
+    }
+
+    if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
+    {
+      request.SearchFields = queryDeclaration.SearchFields.ToList();
+    }
+
+    if (!isSelect && request.Filter is null && request.ColumnFilter is null && (gridReq?.NamedFilters is not { Count: > 0 }) && queryDeclaration.InitialFilters.Count > 0)
+    {
+      request.Filter = queryDeclaration.InitialFilters.Count == 1
+        ? queryDeclaration.InitialFilters[0]
+        : FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()]);
+    }
+
+    if (queryDeclaration.Selector != null)
+    {
+      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
+      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
+      var page = await dataProvider.GetPageAsync(request, ct);
+      if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
+      {
+        await queryDeclaration.ComputeAction(page.Rows, ct);
+      }
+      var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
+      await PopulateCoversAsync(shapedRows, cols.List, ct);
+      await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
+      var bottomRows = !isSelect ? await ComputeSumRowsAsync(dataProvider.Filter(request).Select(queryDeclaration.Selector), cols.List, ct) : null;
+      return new Page<object>
+      {
+        Rows = shapedRows,
+        BottomRows = bottomRows,
+        Total = page.Total,
+        Number = page.Number,
+        Size = page.Size,
+        HasMore = page.HasMore
+      };
+    }
+
+    var defaultQueryMap = BuildDefaultQueryMap(cols.List);
+    var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+    var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
+    var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
+    await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
+    var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), cols.List, ct) : null;
+
+    return new Page<object>
+    {
+      Rows = defaultShapedRows,
+      BottomRows = defaultBottomRows,
+      Total = defaultPage.Total,
+      Number = defaultPage.Number,
+      Size = defaultPage.Size,
+      HasMore = defaultPage.HasMore
+    };
+  }
+
+  public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
+  {
+    var query = BuildFilteredEntityQuery(request, out var parent, out var queryDeclaration);
+    var cols = CreateColumns();
+
+    if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
+    {
+      request.SearchFields = queryDeclaration.SearchFields.ToList();
+    }
+
+    int total;
+    if (queryDeclaration.Selector != null)
+    {
+      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
+      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
+      total = await dataProvider.Filter(request).CountAsync(ct);
+    }
+    else
+    {
+      var defaultQueryMap = BuildDefaultQueryMap(cols.List);
+      var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+      total = await defaultDataProvider.Filter(request).CountAsync(ct);
+    }
+
+    Dictionary<string, int>? badges = null;
+    foreach (var item in queryDeclaration.NamedFilters)
+    {
+      if (item.HasBadge)
+      {
+        badges ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var baseQ = BaseQuery(db);
+        foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
+        if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+        badges[item.Key] = await baseQ.Where(item.Predicate).CountAsync(ct);
+      }
+    }
+
+    return new GridCountDto { Total = total, NamedFilterBadges = badges };
+  }
+
+  private async Task PopulateCoversAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    var coverCol = columns.FirstOrDefault(c => c.Cell is AddOns.Covers.Contracts.GridCellCoverModel);
+    if (coverCol == null || shapedRows.Count == 0) return;
+
+    var coverCell = (AddOns.Covers.Contracts.GridCellCoverModel)coverCol.Cell!;
+    var ownerIds = ExtractRowIds(shapedRows);
+    if (ownerIds.Count == 0) return;
+
+    var fileGridType = ModuleCatalog.Instance.FindServiceType(coverCell.Service);
+    if (fileGridType != null && typeof(Files.Internal.IFileCoverSource).IsAssignableFrom(fileGridType))
+    {
+      try
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(fileGridType, db, _app) is Files.Internal.IFileCoverSource coverSource)
+        {
+          var covers = await coverSource.CoversAsync(ownerIds, ct);
+          foreach (var rowObj in shapedRows)
+          {
+            if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+            {
+              if (long.TryParse(idVal.ToString(), out var parsedId) && covers.TryGetValue(parsedId, out var coverDto))
+              {
+                dict[coverCol.Path ?? "idCover"] = coverDto;
+              }
+            }
+          }
+        }
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine($"[PopulateCoversAsync error]: {ex}");
+      }
+    }
+  }
+
+  private async Task PopulateProjectedColorsAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    if (typeof(TRow) == typeof(TEntity) || shapedRows.Count == 0) return;
+
+    var colorCols = columns.Where(c => c.ColorEvaluator != null && !string.IsNullOrEmpty(c.Path)).ToList();
+    if (colorCols.Count == 0) return;
+
+    var rowIds = ExtractRowIds(shapedRows);
+    if (rowIds.Count == 0) return;
+
+    var entityQuery = IncludeColumnNavigations(db.Set<TEntity>().AsNoTracking(), colorCols)
+      .Where(e => rowIds.Contains(e.Id));
+    var entitiesById = await entityQuery.ToDictionaryAsync(e => e.Id, ct);
+
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null) continue;
+      if (!long.TryParse(idVal.ToString(), out var parsedId) || !entitiesById.TryGetValue(parsedId, out var entity)) continue;
+
+      foreach (var col in colorCols)
+      {
+        var hue = col.ColorEvaluator!(entity);
+        if (string.IsNullOrEmpty(hue) || string.IsNullOrEmpty(col.Path)) continue;
+
+        var key = ToCamel(col.Path.Split('.')[0]);
+        if (dict.TryGetValue(key, out var val))
+        {
+          if (val is Reference r)
+          {
+            dict[key] = new Dictionary<string, object?>
+            {
+              ["id"] = r.Id,
+              ["name"] = r.Name,
+              ["color"] = hue
+            };
+          }
+          else if (val is Dictionary<string, object?> dictVal)
+          {
+            dictVal["color"] = hue;
+          }
+          else
+          {
+            dict[$"{col.Path}Color"] = hue;
+          }
+        }
+      }
+    }
+  }
+
+  private static List<long> ExtractRowIds(List<object> shapedRows)
+  {
+    var ids = new List<long>(shapedRows.Count);
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+      {
+        if (idVal is long l)
+        {
+          ids.Add(l);
+        }
+        else if (long.TryParse(idVal.ToString(), out var parsedId))
+        {
+          ids.Add(parsedId);
+        }
+      }
+    }
+    return ids;
+  }
+
+  private static async Task<List<object>?> ComputeSumRowsAsync<TSource>(IQueryable<TSource> filteredQuery, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    var sumCols = columns.Where(c => c.IsSummed && !string.IsNullOrEmpty(c.Path)).ToList();
+    if (sumCols.Count == 0) return null;
+
+    var sumRow = new Dictionary<string, object?>(StringComparer.Ordinal);
+    var rowParam = Expression.Parameter(typeof(TSource), "r");
+
+    foreach (var col in sumCols)
+    {
+      if (string.IsNullOrEmpty(col.Path)) continue;
+
+      Expression? current = rowParam;
+      var currentType = typeof(TSource);
+      foreach (var seg in col.Path.Split('.'))
+      {
+        var prop = PropertyAccessorCache.GetProperty(currentType, seg);
+        if (prop == null)
+        {
+          current = null;
+          break;
+        }
+        current = Expression.Property(current, prop);
+        currentType = prop.PropertyType;
+      }
+
+      if (current == null) continue;
+      var underlying = Nullable.GetUnderlyingType(currentType) ?? currentType;
+
+      try
+      {
+        if (underlying == typeof(decimal))
+        {
+          var expr = Expression.Lambda<Func<TSource, decimal?>>(
+            currentType == typeof(decimal?) ? current : Expression.Convert(current, typeof(decimal?)),
+            rowParam);
+          var total = await filteredQuery.SumAsync(expr, ct) ?? 0m;
+          PutValue(sumRow, col.Path.Split('.'), total);
+        }
+        else if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short))
+        {
+          var expr = Expression.Lambda<Func<TSource, long?>>(
+            currentType == typeof(long?) ? current : Expression.Convert(current, typeof(long?)),
+            rowParam);
+          var total = await filteredQuery.SumAsync(expr, ct) ?? 0L;
+          PutValue(sumRow, col.Path.Split('.'), total);
+        }
+        else if (underlying == typeof(double) || underlying == typeof(float))
+        {
+          var expr = Expression.Lambda<Func<TSource, double?>>(
+            currentType == typeof(double?) ? current : Expression.Convert(current, typeof(double?)),
+            rowParam);
+          var total = await filteredQuery.SumAsync(expr, ct) ?? 0d;
+          PutValue(sumRow, col.Path.Split('.'), total);
+        }
+      }
+      catch { }
+    }
+
+    return sumRow.Count > 0 ? [sumRow] : null;
+  }
+
+  private static IQueryable<TEntity> IncludeColumnNavigations(IQueryable<TEntity> query, IEnumerable<GridColumnDto> columns)
+  {
+    var entityType = typeof(TEntity);
+    foreach (var col in columns)
+    {
+      if (string.IsNullOrEmpty(col.Path)) continue;
+
+      var parts = col.Path.Split('.');
+      if (parts.Length > 1)
+      {
+        var actualNavPath = ResolvePropertyPath(entityType, parts[..^1]);
+        if (actualNavPath != null)
+        {
+          try { query = query.Include(actualNavPath); } catch { }
+        }
+      }
+      else if (col.ReferenceService != null)
+      {
+        var prop = PropertyAccessorCache.GetProperty(entityType, col.Path);
+        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
+        {
+          try { query = query.Include(prop.Name); } catch { }
+        }
+      }
+
+      if (!string.IsNullOrEmpty(col.ColorNavPath))
+      {
+        var actualColorNavPath = ResolvePropertyPath(entityType, col.ColorNavPath.Split('.'));
+        if (actualColorNavPath != null)
+        {
+          try { query = query.Include(actualColorNavPath); } catch { }
+        }
+      }
+    }
+
+    return query;
+  }
+
+  private static string? ResolvePropertyPath(Type rootType, string[] segments)
+  {
+    var currentType = rootType;
+    var validProps = new List<string>(segments.Length);
+    foreach (var segment in segments)
+    {
+      var prop = PropertyAccessorCache.GetProperty(currentType, segment);
+      if (prop == null) return null;
+      validProps.Add(prop.Name);
+      currentType = prop.PropertyType;
+    }
+
+    return validProps.Count > 0 ? string.Join('.', validProps) : null;
+  }
+
+  private static QueryMap<TEntity> BuildDefaultQueryMap(IReadOnlyList<GridColumnDto> columns)
+  {
+    var builder = QueryMap.FromEntity<TEntity>();
+    var entityParam = Expression.Parameter(typeof(TEntity), "e");
+
+    foreach (var col in columns)
+    {
+      if (string.IsNullOrEmpty(col.Path) || builder.FindExpression(col.Path) is not null) continue;
+
+      var segments = col.Path.Split('.');
+      Expression? current = entityParam;
+      var currentType = typeof(TEntity);
+
+      foreach (var segment in segments)
+      {
+        var prop = PropertyAccessorCache.GetProperty(currentType, segment);
+        if (prop is null)
+        {
+          current = null;
+          break;
+        }
+        current = Expression.Property(current, prop);
+        currentType = prop.PropertyType;
+      }
+
+      if (current is null) continue;
+
+      if (!IsScalarType(currentType))
+      {
+        var nameProp = PropertyAccessorCache.GetProperty(currentType, "Name");
+        if (nameProp != null && IsScalarType(nameProp.PropertyType))
+        {
+          current = Expression.Property(current, nameProp);
+        }
+        else
+        {
+          current = null;
+        }
+      }
+
+      if (current is not null)
+      {
+        builder.Field(col.Path, Expression.Lambda(current, entityParam));
+      }
+    }
+
+    return builder.Build();
+  }
+
+  private static bool IsScalarType(Type t)
+  {
+    var u = Nullable.GetUnderlyingType(t) ?? t;
+    return u.IsValueType || u == typeof(string);
+  }
+}

@@ -151,6 +151,34 @@ public sealed class ModuleCatalog
       ?? _servicesByPath.GetValueOrDefault(path.Replace("-", ""));
   }
 
+  public object? CreateServiceInstance(Type serviceType, params object?[] availableServices)
+  {
+    var ctor = serviceType.GetConstructors().FirstOrDefault();
+    if (ctor is null) return null;
+
+    var parameters = ctor.GetParameters();
+    var args = new object?[parameters.Length];
+    for (var i = 0; i < parameters.Length; i++)
+    {
+      var param = parameters[i];
+      var match = availableServices.FirstOrDefault(s => s is not null && param.ParameterType.IsInstanceOfType(s));
+      if (match is not null)
+      {
+        args[i] = match;
+      }
+      else if (param.HasDefaultValue)
+      {
+        args[i] = param.DefaultValue;
+      }
+      else if (param.ParameterType.IsValueType)
+      {
+        args[i] = Activator.CreateInstance(param.ParameterType);
+      }
+    }
+
+    return ctor.Invoke(args);
+  }
+
   public static IEnumerable<ModuleMenuNode> Flatten(IEnumerable<ModuleMenuNode> nodes)
   {
     foreach (var node in nodes)
