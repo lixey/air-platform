@@ -36,6 +36,7 @@ public static class GrantedRights
     }
 
     var roles = await db.Set<TRole>()
+      .IgnoreQueryFilters()
       .Where(r => assignments.Contains(r.Id) && r.IsActive)
       .ToListAsync(cancellationToken);
 
