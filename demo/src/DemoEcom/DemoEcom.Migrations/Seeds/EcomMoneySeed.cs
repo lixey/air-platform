@@ -16,7 +16,7 @@ internal sealed class EcomMoneySeed
   private const decimal CapitalStep = 100_000m;
 
   private const string UkrainianLocale = "uk";
-  private const string UkrainianCapitalNote = "Початковий капітал.";
+  private const string UkrainianCapitalNote = "\u041f\u043e\u0447\u0430\u0442\u043a\u043e\u0432\u0438\u0439 \u043a\u0430\u043f\u0456\u0442\u0430\u043b.";
   private const string EnglishCapitalNote = "Opening capital.";
 
   private static readonly End[] Ends = [End.Paid, End.Paid, End.Draft, End.Paid, End.Nothing, End.Paid, End.Paid, End.Draft, End.Paid, End.Paid];

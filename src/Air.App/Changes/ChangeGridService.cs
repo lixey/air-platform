@@ -1,3 +1,4 @@
+using Air.App.Components;
 using Air.App.Grid;
 using Air.App.Modules;
 using Air.Data;
@@ -34,7 +35,7 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(Restore, b => b.Label("Відновити").Icon("reload"), "Відновити вибрані записи?").AllowReadOnly();
+    nav.AddAction(Restore, b => b.Label(L["Restore"]).Icon(UiIcon.Reload), L["RestoreConfirm"]).AllowReadOnly();
   }
 
   public virtual async Task<GridActionDto> Restore(GridRequest request, CancellationToken cancellationToken)

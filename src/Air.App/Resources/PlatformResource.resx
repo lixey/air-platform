@@ -1177,4 +1177,10 @@
   <data name="Reason" xml:space="preserve">
     <value>Reason</value>
   </data>
+  <data name="Ukrainian" xml:space="preserve">
+    <value>Українська</value>
+  </data>
+  <data name="English" xml:space="preserve">
+    <value>English</value>
+  </data>
 </root>

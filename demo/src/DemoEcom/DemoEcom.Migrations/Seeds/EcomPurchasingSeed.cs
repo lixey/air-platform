@@ -15,7 +15,7 @@ internal sealed class EcomPurchasingSeed
   private const int SortStep = 10;
 
   private const string UkrainianLocale = "uk";
-  private const string UkrainianReturnNote = "Товар поза замовленням: повернено постачальнику.";
+  private const string UkrainianReturnNote = "\u0422\u043e\u0432\u0430\u0440 \u043f\u043e\u0437\u0430 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f\u043c: \u043f\u043e\u0432\u0435\u0440\u043d\u0435\u043d\u043e \u043f\u043e\u0441\u0442\u0430\u0447\u0430\u043b\u044c\u043d\u0438\u043a\u0443.";
   private const string EnglishReturnNote = "Goods beyond the order: returned to the supplier.";
 
   private static readonly End[] Ends = [End.Received, End.Sent, End.Nothing, End.New];

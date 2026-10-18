@@ -79,6 +79,7 @@ public static class UiIcon
   public const string Menu = "menu";
   public const string Photo = "photo";
   public const string Plus = "plus";
+  public const string Reload = "reload";
   public const string Save = "save";
   public const string Search = "search";
   public const string Trash = "trash";

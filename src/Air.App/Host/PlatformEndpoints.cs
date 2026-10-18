@@ -43,10 +43,10 @@ public static class PlatformEndpoints
           Language = new SwitcherDto
           {
             Label = Localizer.Instance["Language"],
-            Current = isUk ? new Reference { Id = 1, Name = "Українська" } : new Reference { Id = 2, Name = "English" },
+            Current = isUk ? new Reference { Id = 1, Name = Localizer.Instance["Ukrainian"] } : new Reference { Id = 2, Name = Localizer.Instance["English"] },
             Options = [
-              new Reference { Id = 1, Name = "Українська" },
-              new Reference { Id = 2, Name = "English" }
+              new Reference { Id = 1, Name = Localizer.Instance["Ukrainian"] },
+              new Reference { Id = 2, Name = Localizer.Instance["English"] }
             ],
             Service = "platform-language",
             Method = "switch"
