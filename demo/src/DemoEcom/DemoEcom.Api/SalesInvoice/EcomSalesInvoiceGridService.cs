@@ -39,6 +39,7 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
     nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon("plus")).InMenu();
   }
 
+  [RequireRight<EcomSalesReturnGridService>(EndpointAction.Edit)]
   public async Task<GridActionDto> CreateSalesReturn(GridRequest request, CancellationToken cancellationToken)
   {
     var date = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -57,6 +58,7 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
     );
   }
 
+  [RequireRight<EcomIncomingPaymentGridService>(EndpointAction.Edit)]
   public async Task<GridActionDto> CreateIncomingPayment(GridRequest request, CancellationToken cancellationToken)
   {
     var date = DateOnly.FromDateTime(DateTime.UtcNow);

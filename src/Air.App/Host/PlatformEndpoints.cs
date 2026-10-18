@@ -667,6 +667,7 @@ public static class PlatformEndpoints
       if (typeof(IGridService).IsAssignableFrom(serviceType))
       {
         var grid = (IGridService)services.GetRequiredService(serviceType);
+        feat ??= grid.Feature;
         if (services.GetService<PlatformAppService>() is { } appInstance)
         {
           grid.AttachPlatformApp(appInstance);
@@ -828,7 +829,8 @@ public static class PlatformEndpoints
             }
             else
             {
-              permitted = userContext.Can(feat?.Edit?.Key ?? "*") || userContext.Can("*");
+              var targetKey = feat?.Edit?.Key;
+              permitted = targetKey != null ? (userContext.Can(targetKey) || userContext.Can(feat!.All) || userContext.Can("*")) : userContext.Can("*");
             }
 
             if (!permitted)

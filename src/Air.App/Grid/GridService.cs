@@ -31,6 +31,7 @@ public interface IGridService
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   void AttachPlatformApp(PlatformAppService app);
+  Feature Feature { get; }
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformAppService? app = null) : IGridService
@@ -347,15 +348,6 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
     CancellationToken cancellationToken = default)
   {
-    if (User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All))
-    {
-      return new GridActionDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
-      };
-    }
-
     var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
     var records = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(cancellationToken);
     var ctx = new GridBatchContext<TEntity>(ids, records, ct => db.SaveChangesAsync(ct));
