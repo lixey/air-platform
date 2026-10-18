@@ -29,7 +29,7 @@ public class Elements
 
   public ChildGridBuilder AddChild<TChildGridService>()
   {
-    var child = new ChildGridBuilder(Air.App.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)));
+    var child = new ChildGridBuilder(Air.App.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService));
     _children.Add(child);
     return child;
   }
@@ -384,14 +384,16 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   }
 }
 
-public sealed class ChildGridBuilder(string servicePath)
+public sealed class ChildGridBuilder(string servicePath, Type? serviceType = null)
 {
   public string ServicePath => servicePath;
+  public Type? ServiceType => serviceType;
   public string DeclaredKey { get; private set; } = string.Empty;
   public string DeclaredLabel { get; private set; } = string.Empty;
   public bool IsFiles { get; private set; }
+  public string Look { get; private set; } = Contracts.FilesLook.Tiles;
 
   public ChildGridBuilder Key(string key) { DeclaredKey = key; return this; }
   public ChildGridBuilder Label(string label) { DeclaredLabel = label; return this; }
-  public ChildGridBuilder AsFiles(object? look = null) { IsFiles = true; return this; }
+  public ChildGridBuilder AsFiles(string look = Contracts.FilesLook.Tiles) { IsFiles = true; Look = look; return this; }
 }

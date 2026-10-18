@@ -1,11 +1,15 @@
 import { defineComponents } from './core/dynamic-component/component-map';
-import type { GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
+import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
 import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
+import { FileUploadOverlayComponent } from './file/file-upload-overlay.component';
+import type { ShownFile } from './file/file-upload-queue';
+import { FileViewerOverlayComponent } from './file/file-viewer-overlay.component';
 import { FormCheckboxSetComponent } from './form/element/form-checkbox-set.component';
 import { FormCheckboxTreeComponent } from './form/element/form-checkbox-tree.component';
 import { FormCheckboxComponent } from './form/element/form-checkbox.component';
 import { FormDateComponent } from './form/element/form-date.component';
 import { FormDatetimeComponent } from './form/element/form-datetime.component';
+import { FormFilesComponent } from './form/element/form-files.component';
 import { FormInfoComponent } from './form/element/form-info.component';
 import { FormInputComponent } from './form/element/form-input.component';
 import { FormMoneyComponent } from './form/element/form-money.component';
@@ -24,9 +28,11 @@ import { FormNavSaveCloseComponent } from './form/nav/form-nav-save-close.compon
 import { FormNavSaveOpenComponent } from './form/nav/form-nav-save-open.component';
 import { FormNavSaveComponent } from './form/nav/form-nav-save.component';
 import { GridCellCheckboxComponent } from './grid/cell/grid-cell-checkbox.component';
+import { GridCellCoverComponent } from './grid/cell/grid-cell-cover.component';
 import { GridCellDateComponent } from './grid/cell/grid-cell-date.component';
 import { GridCellDatetimeComponent } from './grid/cell/grid-cell-datetime.component';
 import { GridCellEmailComponent } from './grid/cell/grid-cell-email.component';
+import { GridCellFileComponent } from './grid/cell/grid-cell-file.component';
 import { GridCellMoneyComponent } from './grid/cell/grid-cell-money.component';
 import { GridCellNumberComponent } from './grid/cell/grid-cell-number.component';
 import { GridCellOpenFormComponent } from './grid/cell/grid-cell-open-form.component';
@@ -40,6 +46,7 @@ import { GridCellUrlComponent } from './grid/cell/grid-cell-url.component';
 import { GridColumnFilterOverlayComponent } from './grid/filter/grid-column-filter-overlay.component';
 import { GridDateRangeOverlayComponent } from './grid/filter/grid-date-range-overlay.component';
 import { GridFiltersOverlayComponent } from './grid/filter/grid-filters-overlay.component';
+import type { GridRowKey } from './grid/grid-row';
 import { GridComponent } from './grid/grid.component';
 import { GridHeaderCheckboxComponent } from './grid/header/grid-header-checkbox.component';
 import { GridHeaderDateComponent } from './grid/header/grid-header-date.component';
@@ -55,6 +62,7 @@ import { GridNavNamedFilterComponent } from './grid/nav/grid-nav-named-filter.co
 import { GridNavPickerComponent } from './grid/nav/grid-nav-picker.component';
 import { GridNavSearchComponent } from './grid/nav/grid-nav-search.component';
 import { GridNavStatusComponent } from './grid/nav/grid-nav-status.component';
+import { GridNavUploadComponent } from './grid/nav/grid-nav-upload.component';
 import { GridPickerOverlayComponent } from './grid/nav/grid-picker-overlay.component';
 import { LayoutMegaMenuBodyComponent } from './layout/layout-mega-menu-body.component';
 import { LayoutMenuComponent } from './layout/layout-menu.component';
@@ -133,6 +141,30 @@ export interface GridDateRangeOverlayModel {
   column: GridColumnDto;
 }
 
+/**
+ * The body of the upload dialog: the file grid each file is posted to, the parent the files go under, the grid's
+ * `FileUploadLimitsDto` (the accepted types, their extensions, the largest size posted and the largest picked image
+ * taken, the most files and bytes of a record, its image rules and the server's bounds of every upload), the files the
+ * grid shows at the opening, which take the record's room, and the title a committed upload's warnings take.
+ */
+export interface FileUploadOverlayModel extends FileUploadLimitsDto {
+  kind: 'FileUploadOverlay';
+  service: string;
+  parentService?: string | null;
+  parentId?: number | null;
+  shownFiles: readonly ShownFile[];
+  committedWarningTitle?: string | null;
+}
+
+/**
+ * The body of the file viewer: the file it opens at. The files it walks, and what it may do with them, come from its
+ * opener through `FILE_VIEWER_SOURCE`, a live sequence no model could carry.
+ */
+export interface FileViewerOverlayModel {
+  kind: 'FileViewerOverlay';
+  key: GridRowKey;
+}
+
 /** The header of a column that names none: the label, the sort and the filter. */
 export interface GridHeaderDefaultModel {
   kind: 'GridHeaderDefault';
@@ -155,6 +187,8 @@ interface ClientPanelKinds {
   GridDateRangeOverlay: GridDateRangeOverlayModel;
   GridPickerOverlay: GridPickerOverlayModel;
   NavMenuBody: NavMenuBodyModel;
+  FileUploadOverlay: FileUploadOverlayModel;
+  FileViewerOverlay: FileViewerOverlayModel;
 }
 
 /** The column headers only the library composes. */
@@ -163,7 +197,8 @@ interface ClientHeaderKinds {
   GridHeaderSelection: GridHeaderSelectionModel;
 }
 
-/* eslint-disable @typescript-eslint/no-empty-interface, @typescript-eslint/no-empty-object-type */
+/* eslint-disable @typescript-eslint/no-empty-interface, @typescript-eslint/no-empty-object-type
+   -- an augmentation adds its kinds by extending */
 declare module './core/generated/contracts' {
   interface PanelKinds extends ClientPanelKinds {}
   interface HeaderKinds extends ClientHeaderKinds {}
@@ -202,8 +237,11 @@ export const UI_COMPONENTS = defineComponents({
   GridNavNamedFilterGroup: GridNavNamedFilterGroupComponent,
   GridNavSearch: GridNavSearchComponent,
   GridNavStatus: GridNavStatusComponent,
+  GridNavUpload: GridNavUploadComponent,
   GridNavPicker: GridNavPickerComponent,
   GridPickerOverlay: GridPickerOverlayComponent,
+  FileUploadOverlay: FileUploadOverlayComponent,
+  FileViewerOverlay: FileViewerOverlayComponent,
   GridCellText: GridCellTextComponent,
   GridCellCheckbox: GridCellCheckboxComponent,
   GridCellNumber: GridCellNumberComponent,
@@ -213,6 +251,8 @@ export const UI_COMPONENTS = defineComponents({
   GridCellOpenForm: GridCellOpenFormComponent,
   GridCellReference: GridCellReferenceComponent,
   GridCellSelect: GridCellSelectComponent,
+  GridCellFile: GridCellFileComponent,
+  GridCellCover: GridCellCoverComponent,
   GridCellMoney: GridCellMoneyComponent,
   GridCellPercent: GridCellPercentComponent,
   GridCellPhone: GridCellPhoneComponent,
@@ -246,6 +286,7 @@ export const UI_COMPONENTS = defineComponents({
   FormCheckboxSet: FormCheckboxSetComponent,
   FormCheckboxTree: FormCheckboxTreeComponent,
   FormInfo: FormInfoComponent,
+  FormFiles: FormFilesComponent,
   FormNavAction: FormNavActionComponent,
   FormNavSave: FormNavSaveComponent,
   FormNavSaveClose: FormNavSaveCloseComponent,

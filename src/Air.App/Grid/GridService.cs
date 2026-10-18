@@ -48,10 +48,13 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
   {
     internal Func<IQueryable<TEntity>, long, IQueryable<TEntity>>? FilterFunc { get; private set; }
     public string? BoundParentService { get; private set; }
+    public PropertyInfo? BoundProperty { get; private set; }
 
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi) BoundProperty = pi;
+      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi) BoundProperty = upi;
       var param = member.Parameters[0];
       FilterFunc = (q, parentId) =>
       {
@@ -64,6 +67,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
     {
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi) BoundProperty = pi;
+      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi) BoundProperty = upi;
       var param = member.Parameters[0];
       FilterFunc = (q, parentId) =>
       {
@@ -261,6 +266,9 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
   {
     internal List<(GridNavActionModel Model, bool IsInMenu)> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
+    internal List<NavElementModel> CustomStart { get; } = [];
+
+    public void AddStart(NavElementModel model) => CustomStart.Add(model);
 
     public NavActionBuilder AddAction(
       Delegate method,
@@ -498,6 +506,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     {
       navStart.Add(picker);
     }
+    navStart.AddRange(nav.CustomStart);
 
     var navElements = new List<NavElementModel>
     {
@@ -783,6 +792,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
         await queryDeclaration.ComputeAction(page.Rows, ct);
       }
       var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
+      await PopulateCoversAsync(shapedRows, cols.List, ct);
       return new Page<object>
       {
         Rows = shapedRows,
@@ -797,6 +807,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
+    await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
 
     return new Page<object>
     {
@@ -806,6 +817,73 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       Size = defaultPage.Size,
       HasMore = defaultPage.HasMore
     };
+  }
+
+  private async Task PopulateCoversAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    var coverCol = columns.FirstOrDefault(c => c.Cell is Grid.AddOns.Covers.Contracts.GridCellCoverModel);
+    if (coverCol == null || shapedRows.Count == 0) return;
+
+    var coverCell = (Grid.AddOns.Covers.Contracts.GridCellCoverModel)coverCol.Cell!;
+    var ownerIds = new List<long>();
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+      {
+        if (long.TryParse(idVal.ToString(), out var parsedId))
+        {
+          ownerIds.Add(parsedId);
+        }
+      }
+    }
+
+    if (ownerIds.Count == 0) return;
+
+    var fileGridType = ModuleCatalog.Instance.FindServiceType(coverCell.Service);
+    if (fileGridType != null && typeof(Files.Internal.IFileCoverSource).IsAssignableFrom(fileGridType))
+    {
+      try
+      {
+        object? fileGridInstance = null;
+        var constructors = fileGridType.GetConstructors();
+        foreach (var ctor in constructors)
+        {
+          var pars = ctor.GetParameters();
+          if (pars.Length == 1 && pars[0].ParameterType.IsAssignableFrom(db.GetType()))
+          {
+            fileGridInstance = ctor.Invoke([db]);
+            break;
+          }
+          if (pars.Length >= 2 && pars[0].ParameterType.IsAssignableFrom(db.GetType()))
+          {
+            var args = new object?[pars.Length];
+            args[0] = db;
+            fileGridInstance = ctor.Invoke(args);
+            break;
+          }
+        }
+        fileGridInstance ??= Activator.CreateInstance(fileGridType, db);
+
+        if (fileGridInstance is Files.Internal.IFileCoverSource coverSource)
+        {
+          var covers = await coverSource.CoversAsync(ownerIds, ct);
+          foreach (var rowObj in shapedRows)
+          {
+            if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+            {
+              if (long.TryParse(idVal.ToString(), out var parsedId) && covers.TryGetValue(parsedId, out var coverDto))
+              {
+                dict[coverCol.Path ?? "idCover"] = coverDto;
+              }
+            }
+          }
+        }
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine($"[PopulateCoversAsync error]: {ex}");
+      }
+    }
   }
 
   public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)

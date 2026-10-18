@@ -26,6 +26,14 @@ export type NavDirection = 'row' | 'column';
 
 export type NavOverflow = 'scroll' | 'wrap';
 
+export type FilesLook = 'tiles' | 'list';
+
+export type FileImages = 'keep' | 'lossless' | 'optimize';
+
+export type FileType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/svg+xml' | 'application/pdf' | 'text/plain' | 'text/csv' | 'text/markdown' | 'text/html' | 'application/json' | 'application/xml' | 'application/zip' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' | 'application/vnd.ms-excel' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.openxmlformats-officedocument.presentationml.presentation' | 'application/vnd.oasis.opendocument.text' | 'application/vnd.oasis.opendocument.spreadsheet' | 'audio/mpeg' | 'video/mp4' | 'video/quicktime' | 'video/webm' | 'video/3gpp';
+
+export type FileCover = 'auto' | 'manual';
+
 export type UiIcon = string;
 export type ButtonVariant = 'soft' | 'solid' | 'ghost';
 export type ButtonSize = 'small' | 'medium';
@@ -81,6 +89,23 @@ export interface GridServiceEndpoints {
   'save-cell': { request: GridCellRequest; answer: GridCellDto };
 }
 
+export interface FileGridServiceEndpoints {
+  delete: { request: GridRequest; answer: GridDeleteDto };
+  'download-all': { request: GridRequest; answer: Blob };
+  export: { request: GridRequest | null; answer: Blob };
+  'file-metadata': { request: GridRequest; answer: FileMetadataDto | null };
+  'get-action-input': { request: GridActionInputRequest; answer: ActionInputDto };
+  'get-count': { request: GridRequest | null; answer: GridCountDto };
+  'get-data': { request: GridRequest | null; answer: ScreenDto };
+  'get-info': { request: GridRequest; answer: FileInfoDto };
+  'get-one': { request: GridRequest; answer: unknown };
+  move: { request: FileMoveRequest; answer: GridActionDto };
+  'save-cell': { request: GridCellRequest; answer: GridCellDto };
+  'set-cover': { request: GridRequest; answer: GridActionDto };
+  'set-info': { request: FileInfoRequest; answer: GridActionDto };
+  upload: { request: FormData; answer: GridActionDto };
+}
+
 export interface ScreenServiceEndpoints {
   'get-data': { request: void; answer: ScreenDto };
 }
@@ -105,6 +130,7 @@ export interface PlatformEndpoints {
 export interface PanelKinds {
   FormAsk: FormAskModel;
   FormChildScreen: FormChildScreenModel;
+  FormFiles: FormFilesModel;
   Form: FormModel;
   GridFiltersOverlay: GridFiltersOverlayModel;
   Grid: GridModel;
@@ -117,9 +143,11 @@ export type PanelModel = PanelKinds[keyof PanelKinds];
 
 export interface CellKinds {
   GridCellCheckbox: GridCellCheckboxModel;
+  GridCellCover: GridCellCoverModel;
   GridCellDate: GridCellDateModel;
   GridCellDatetime: GridCellDatetimeModel;
   GridCellEmail: GridCellEmailModel;
+  GridCellFile: GridCellFileModel;
   GridCellMoney: GridCellMoneyModel;
   GridCellNumber: GridCellNumberModel;
   GridCellOpenForm: GridCellOpenFormModel;
@@ -176,6 +204,7 @@ export interface NavElementKinds {
   GridNavPicker: GridNavPickerModel;
   GridNavSearch: GridNavSearchModel;
   GridNavStatus: GridNavStatusModel;
+  GridNavUpload: GridNavUploadModel;
   NavClose: NavCloseModel;
   NavLabel: NavLabelModel;
   NavLink: NavLinkModel;
@@ -222,6 +251,94 @@ export interface CheckboxTreeNodeDto {
   note?: string;
   isDisabled: boolean;
   children: CheckboxTreeNodeDto[];
+}
+
+export interface FileInfoDto {
+  id: number;
+  name: string;
+  contentType: string;
+  size: number;
+  width?: number;
+  height?: number;
+  createdAt: string;
+  uploadedBy?: string;
+  description?: string;
+  ver: number;
+}
+
+export interface FileInfoRequest {
+  name?: string;
+  description?: string;
+  isDataOnly?: boolean;
+  id?: number;
+  parentService?: string;
+  parentId?: number;
+  selectedIds?: number[];
+  selectedVersions?: number[];
+  referenceLabelPaths?: string[];
+  patchSourceColumns?: string[];
+  isReferencePicker?: boolean;
+  includesInactive?: boolean;
+  namedFilters?: string[];
+  page?: number;
+  pageSize?: number;
+  sort?: SortRule[];
+  filter?: FilterNode;
+  columnFilter?: FilterNode;
+  search?: string;
+  searchFields?: string[];
+}
+
+export interface FileMetadataDto {
+  make?: string;
+  model?: string;
+  lens?: string;
+  takenAt?: string;
+  exposureTime?: string;
+  fNumber?: number;
+  iso?: number;
+  focalLength?: number;
+  orientation?: number;
+  software?: string;
+  latitude?: number;
+  longitude?: number;
+  altitude?: number;
+}
+
+export interface FileMoveRequest {
+  beforeId?: number;
+  isDataOnly?: boolean;
+  id?: number;
+  parentService?: string;
+  parentId?: number;
+  selectedIds?: number[];
+  selectedVersions?: number[];
+  referenceLabelPaths?: string[];
+  patchSourceColumns?: string[];
+  isReferencePicker?: boolean;
+  includesInactive?: boolean;
+  namedFilters?: string[];
+  page?: number;
+  pageSize?: number;
+  sort?: SortRule[];
+  filter?: FilterNode;
+  columnFilter?: FilterNode;
+  search?: string;
+  searchFields?: string[];
+}
+
+export interface FileUploadLimitsDto {
+  accept: string[];
+  extensions: string[];
+  maxBytes: number;
+  sourceMaxBytes: number;
+  maxFiles: number;
+  maxTotalBytes: number;
+  images: FileImages;
+  imageMaxSide: number;
+  imageQuality: number;
+  maxPixels: number;
+  thumbnailMaxBytes: number;
 }
 
 export interface FilterGroup {
@@ -329,6 +446,22 @@ export interface FormElementDto {
   selectPatches?: SelectPatchDto[];
 }
 
+export interface FormFilesModel {
+  kind: 'FormFiles';
+  key: string;
+  label?: string;
+  tab?: string;
+  service: string;
+  parentService: string;
+  parentId?: number;
+  look: FilesLook;
+  limits: FileUploadLimitsDto;
+  canUpload: boolean;
+  canDelete: boolean;
+  canSetCover: boolean;
+  canReadMetadata: boolean;
+}
+
 export interface FormInfoModel {
   kind: 'FormInfo';
   isGrouped?: boolean;
@@ -343,6 +476,7 @@ export interface FormModel {
   service: string;
   elements: FormElementDto[];
   tabs?: FormTabDto[];
+  files?: FormFilesModel[];
   isReadOnly: boolean;
   dirtyDialog: OverlayDirtyModel;
   mutationTexts: MutationTextsDto;
@@ -480,6 +614,13 @@ export interface GridCellCheckboxModel {
   colorPath?: string;
 }
 
+export interface GridCellCoverModel {
+  kind: 'GridCellCover';
+  service: string;
+  parentService: string;
+  colorPath?: string;
+}
+
 export interface GridCellDateModel {
   kind: 'GridCellDate';
   colorPath?: string;
@@ -498,6 +639,11 @@ export interface GridCellDto {
 
 export interface GridCellEmailModel {
   kind: 'GridCellEmail';
+  colorPath?: string;
+}
+
+export interface GridCellFileModel {
+  kind: 'GridCellFile';
   colorPath?: string;
 }
 
@@ -613,6 +759,14 @@ export interface GridColumnDto {
 export interface GridCountDto {
   total: number;
   namedFilterBadges?: Record<string, number>;
+}
+
+export interface GridCoverDto {
+  id: number;
+  name: string;
+  contentType: string;
+  url: string;
+  thumbUrl?: string;
 }
 
 export interface GridDeleteDto {
@@ -782,6 +936,22 @@ export interface GridNavStatusMoveDto {
   action: GridNavActionModel;
 }
 
+export interface GridNavUploadModel {
+  kind: 'GridNavUpload';
+  limits?: FileUploadLimitsDto;
+  canReadMetadata?: boolean;
+  label?: string;
+  title?: string;
+  icon?: string;
+  color?: UiColor;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  badge?: string;
+  isDisabled?: boolean;
+  isSelected?: boolean;
+  key?: string;
+}
+
 export interface GridNumberEditDto {
   step?: number;
   min?: number;
@@ -830,6 +1000,13 @@ export interface GridRequest {
   columnFilter?: FilterNode;
   search?: string;
   searchFields?: string[];
+}
+
+export interface GridUploadRequest {
+  parentService?: string;
+  parentId?: number;
+  afterId?: number;
+  metadata?: string;
 }
 
 export interface ListRequest {

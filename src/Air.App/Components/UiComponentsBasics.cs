@@ -71,10 +71,13 @@ public static class UiIcon
   public const string Checkmark = "checkmark";
   public const string Close = "close";
   public const string Dots = "dots";
+  public const string Download = "download";
   public const string Edit = "edit";
   public const string Excel = "excel";
   public const string Filter = "filter";
+  public const string Import = "import";
   public const string Menu = "menu";
+  public const string Photo = "photo";
   public const string Plus = "plus";
   public const string Save = "save";
   public const string Search = "search";

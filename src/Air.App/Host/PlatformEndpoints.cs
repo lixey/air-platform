@@ -199,6 +199,50 @@ public static class PlatformEndpoints
     api.MapPost("/platform-language/switch", switchLanguageHandler);
     api.MapPost("/PlatformLanguageService/Switch", switchLanguageHandler);
 
+    // 2.1 Signed Platform Files Endpoint
+    api.MapGet("/platform-files/{token}", async (string token, HttpContext httpContext) =>
+    {
+      var links = new Files.FileLinks();
+      var link = links.Read(token);
+      if (link == null)
+      {
+        return Results.NotFound();
+      }
+
+      var storage = new Data.Files.LocalFileStorage();
+      var stream = await storage.OpenReadAsync(link.Key, httpContext.RequestAborted);
+      if (stream == null)
+      {
+        return Results.NotFound();
+      }
+
+      var type = link.ContentType;
+      var name = link.Name;
+
+      if (link.IsThumbnail)
+      {
+        var head = new byte[Files.Internal.FileTypeTable.ThumbnailHeadBytes];
+        var read = await stream.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, httpContext.RequestAborted);
+        if (Files.Internal.FileTypeTable.ThumbnailTypeOf(head.AsSpan(0, read)) is not { } thumbnail)
+        {
+          return Results.NotFound();
+        }
+        stream.Seek(0, SeekOrigin.Begin);
+        type = thumbnail;
+        name = Path.GetFileNameWithoutExtension(link.Name) + (thumbnail == Air.Data.Entities.FileType.WebP ? ".webp" : ".jpg");
+      }
+
+      var isInline = !httpContext.Request.Query.ContainsKey("download") &&
+                     (link.IsThumbnail || Files.Internal.FileTypeTable.IsServedInline(type));
+
+      var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue(isInline ? "inline" : "attachment");
+      disposition.SetHttpFileName(name);
+      httpContext.Response.Headers.ContentDisposition = disposition.ToString();
+      httpContext.Response.Headers[Microsoft.Net.Http.Headers.HeaderNames.XContentTypeOptions] = "nosniff";
+
+      return Results.Stream(stream, type, enableRangeProcessing: true);
+    });
+
     // 3. Dynamic service endpoints
     api.MapPost("/{**servicePath}", async (
       string servicePath,
@@ -372,6 +416,35 @@ public static class PlatformEndpoints
           return await grid.ExportAsync(req, ct);
         }
 
+        if (string.Equals(method, "upload", StringComparison.OrdinalIgnoreCase))
+        {
+          var uploadMethod = serviceType.GetMethod("Upload");
+          if (uploadMethod != null && httpRequest.HasFormContentType)
+          {
+            var formCollection = await httpRequest.ReadFormAsync(ct);
+            var uploadReq = new Files.Contracts.GridUploadRequest();
+            if (formCollection.TryGetValue("parentService", out var psVal)) uploadReq.ParentService = psVal;
+            if (formCollection.TryGetValue("parentId", out var pidVal) && long.TryParse(pidVal, out var parsedPid)) uploadReq.ParentId = parsedPid;
+            if (formCollection.TryGetValue("afterId", out var aidVal) && long.TryParse(aidVal, out var parsedAid)) uploadReq.AfterId = parsedAid;
+            if (formCollection.TryGetValue("metadata", out var metaVal)) uploadReq.Metadata = metaVal;
+
+            if (httpRequest.Query.TryGetValue("parentId", out var qPid) && long.TryParse(qPid, out var parsedQPid)) uploadReq.ParentId = parsedQPid;
+            if (httpRequest.Query.TryGetValue("parentService", out var qPs)) uploadReq.ParentService = qPs;
+
+            var taskObj = uploadMethod.Invoke(grid, [uploadReq, formCollection.Files, ct]);
+            if (taskObj is Task<GridActionDto> typedTask)
+            {
+              return Results.Ok(await typedTask);
+            }
+            if (taskObj is Task task)
+            {
+              await task.ConfigureAwait(false);
+              var resProp = task.GetType().GetProperty("Result");
+              return Results.Ok(resProp?.GetValue(task));
+            }
+          }
+        }
+
         // Custom action dispatching on grid
         var actionMethod = serviceType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
           .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
@@ -403,13 +476,19 @@ public static class PlatformEndpoints
           }
 
           var resultTask = actionMethod.Invoke(grid, args);
+          if (resultTask is Task<IResult> taskResult)
+          {
+            return await taskResult;
+          }
           if (resultTask is Task task)
           {
             await task.ConfigureAwait(false);
             var resultProp = task.GetType().GetProperty("Result");
             var result = resultProp?.GetValue(task);
+            if (result is IResult r) return r;
             return Results.Ok(result ?? new GridActionDto { Outcome = MutationOutcome.Committed });
           }
+          if (resultTask is IResult immediateResult) return immediateResult;
           return Results.Ok(resultTask ?? new GridActionDto { Outcome = MutationOutcome.Committed });
         }
       }

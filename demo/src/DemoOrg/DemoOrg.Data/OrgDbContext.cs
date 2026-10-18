@@ -21,6 +21,7 @@ public class OrgDbContext : AppDbContext
   public DbSet<OrgBrand> OrgBrand => Set<OrgBrand>();
   public DbSet<OrgProductCategory> OrgProductCategory => Set<OrgProductCategory>();
   public DbSet<OrgProduct> OrgProduct => Set<OrgProduct>();
+  public DbSet<OrgProductFile> OrgProductFile => Set<OrgProductFile>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
@@ -83,5 +84,10 @@ public class OrgDbContext : AppDbContext
       .OnDelete(DeleteBehavior.SetNull);
     modelBuilder.Entity<OrgProduct>().HasOne(row => row.Unit).WithMany().HasForeignKey(row => row.UnitId)
       .OnDelete(DeleteBehavior.Restrict);
+
+    modelBuilder.Entity<OrgProductFile>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
+      .OnDelete(DeleteBehavior.Restrict);
+    modelBuilder.Entity<OrgProductFile>().HasOne(row => row.Product).WithMany().HasForeignKey(row => row.ProductId)
+      .OnDelete(DeleteBehavior.Cascade);
   }
 }

@@ -409,7 +409,66 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
       });
     }
 
-    var hasPages = elements.Children.Count > 0 && id.HasValue && id.Value > 0;
+    var filesChildren = elements.Children.Where(c => c.IsFiles).ToList();
+    var pageChildren = elements.Children.Where(c => !c.IsFiles).ToList();
+    var hasPages = pageChildren.Count > 0 && id.HasValue && id.Value > 0;
+
+    if (filesChildren.Count > 0)
+    {
+      formModel.Files = [];
+      foreach (var child in filesChildren)
+      {
+        Air.Data.Entities.FileRulesAttribute? rules = null;
+        var hasCoverFile = false;
+        if (child.ServiceType != null)
+        {
+          var cur = child.ServiceType;
+          while (cur != null && cur != typeof(object))
+          {
+            if (cur.IsGenericType && cur.Name.StartsWith("FileGridService"))
+            {
+              var fileEntity = cur.GetGenericArguments()[0];
+              rules = Air.Data.Entities.FileRulesAttribute.TryGet(fileEntity);
+              hasCoverFile = typeof(Air.Data.Entities.IHasCoverFile).IsAssignableFrom(fileEntity);
+              break;
+            }
+            cur = cur.BaseType;
+          }
+        }
+
+        var limits = rules != null
+          ? new Files.Contracts.FileUploadLimitsDto
+          {
+            Accept = [.. rules.ContentTypes],
+            Extensions = [.. Files.Internal.FileTypeTable.ExtensionsOf(rules.ContentTypes)],
+            MaxBytes = rules.MaxBytes,
+            SourceMaxBytes = rules.SourceMaxBytes > 0 ? rules.SourceMaxBytes : rules.MaxBytes,
+            MaxFiles = rules.MaxFiles,
+            MaxTotalBytes = rules.MaxTotalBytes,
+            Images = rules.Images,
+            ImageMaxSide = rules.ImageMaxSide,
+            ImageQuality = rules.ImageQuality,
+            MaxPixels = Files.Internal.FileTypeTable.MaxPixels,
+            ThumbnailMaxBytes = Files.Internal.FileTypeTable.ThumbnailMaxBytes
+          }
+          : new Files.Contracts.FileUploadLimitsDto();
+
+        formModel.Files.Add(new Contracts.FormFilesModel
+        {
+          Key = !string.IsNullOrEmpty(child.DeclaredKey) ? child.DeclaredKey : "files",
+          Label = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : null,
+          Service = child.ServicePath,
+          ParentService = servicePath,
+          ParentId = id.HasValue && id.Value > 0 ? id.Value : null,
+          Look = child.Look,
+          Limits = limits,
+          CanUpload = !IsReadOnly,
+          CanDelete = !IsReadOnly,
+          CanSetCover = hasCoverFile && !IsReadOnly,
+          CanReadMetadata = true
+        });
+      }
+    }
 
     if (elements.Tabs.Count == 0)
     {
@@ -599,7 +658,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
         Start = [new NavTabsModel { Key = "tabs", Color = UiColor.Indigo }]
       };
 
-      foreach (var child in elements.Children)
+      foreach (var child in pageChildren)
       {
         layout.Panel(child.DeclaredKey, p => p
           .Model(new FormChildScreenModel

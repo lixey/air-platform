@@ -18,7 +18,7 @@ public sealed class OrgProductGridService(OrgDbContext db, OrgService? org = nul
   protected override void SetColumns(Columns<OrgProduct> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<OrgProductFormService>();
-    // columns.Add(r => r.Id).AsCover<OrgProductFileGridService>().Width(72);
+    columns.Add(r => r.Id).AsCover<OrgProductFileGridService>().Width(72);
     columns.Add(r => r.Article);
     columns.Add(r => r.Name);
     columns.Add(r => r.Brand).AsReference<OrgBrandGridService>();

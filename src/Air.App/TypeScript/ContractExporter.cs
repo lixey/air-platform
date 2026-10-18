@@ -89,6 +89,10 @@ public static class ContractExporter
     ExportUnionFromConsts(sb, typeof(FormFieldType), "FormFieldType");
     ExportUnionFromConsts(sb, typeof(NavDirection), "NavDirection");
     ExportUnionFromConsts(sb, typeof(NavOverflow), "NavOverflow");
+    ExportUnionFromConsts(sb, typeof(Air.App.Form.Contracts.FilesLook), "FilesLook");
+    ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileImages), "FileImages");
+    ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileType), "FileType");
+    ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileCover), "FileCover");
 
     sb.AppendLine("export type UiIcon = string;");
     sb.AppendLine("export type ButtonVariant = 'soft' | 'solid' | 'ghost';");
@@ -143,6 +147,23 @@ public static class ContractExporter
     sb.AppendLine("  'get-data': { request: GridRequest | null; answer: ScreenDto };");
     sb.AppendLine("  'get-one': { request: GridRequest; answer: unknown };");
     sb.AppendLine("  'save-cell': { request: GridCellRequest; answer: GridCellDto };");
+    sb.AppendLine("}");
+    sb.AppendLine();
+    sb.AppendLine("export interface FileGridServiceEndpoints {");
+    sb.AppendLine("  delete: { request: GridRequest; answer: GridDeleteDto };");
+    sb.AppendLine("  'download-all': { request: GridRequest; answer: Blob };");
+    sb.AppendLine("  export: { request: GridRequest | null; answer: Blob };");
+    sb.AppendLine("  'file-metadata': { request: GridRequest; answer: FileMetadataDto | null };");
+    sb.AppendLine("  'get-action-input': { request: GridActionInputRequest; answer: ActionInputDto };");
+    sb.AppendLine("  'get-count': { request: GridRequest | null; answer: GridCountDto };");
+    sb.AppendLine("  'get-data': { request: GridRequest | null; answer: ScreenDto };");
+    sb.AppendLine("  'get-info': { request: GridRequest; answer: FileInfoDto };");
+    sb.AppendLine("  'get-one': { request: GridRequest; answer: unknown };");
+    sb.AppendLine("  move: { request: FileMoveRequest; answer: GridActionDto };");
+    sb.AppendLine("  'save-cell': { request: GridCellRequest; answer: GridCellDto };");
+    sb.AppendLine("  'set-cover': { request: GridRequest; answer: GridActionDto };");
+    sb.AppendLine("  'set-info': { request: FileInfoRequest; answer: GridActionDto };");
+    sb.AppendLine("  upload: { request: FormData; answer: GridActionDto };");
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface ScreenServiceEndpoints {");

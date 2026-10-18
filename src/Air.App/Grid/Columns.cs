@@ -17,6 +17,7 @@ public class Columns
   }
 
   public Type? FormServiceType { get; set; }
+  public Type? CoverFileGridType { get; set; }
   internal object? StatusFlow { get; private set; }
 
   public void UseForm<TFormService>() where TFormService : class
@@ -131,6 +132,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   public GridColumn<TProp> Filterable(bool filterable = true) { dto.IsFilterable = filterable; return this; }
   public GridColumn<TProp> Computed() { dto.IsSortable = false; dto.IsFilterable = false; return this; }
   public GridColumn<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
+  public GridColumn<TProp> Cell(CellModel cell) { dto.Cell = cell; return this; }
 
   public GridColumn<TProp> AsOpenForm<TFormService>() where TFormService : class
   {
@@ -139,7 +141,20 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
-  public GridColumn<TProp> AsCover<TFileGrid>() => this;
+  public GridColumn<TProp> AsCover<TFileGrid>() where TFileGrid : class
+  {
+    dto.Path = (dto.Path ?? "id") + "Cover";
+    dto.Label = "Cover";
+    dto.IsSortable = false;
+    dto.IsFilterable = false;
+    dto.Cell = new Grid.AddOns.Covers.Contracts.GridCellCoverModel
+    {
+      Service = Air.App.Modules.ServicePathResolver.Resolve(typeof(TFileGrid)),
+      ParentService = owner.FormServiceType != null ? Air.App.Modules.ServicePathResolver.Resolve(owner.FormServiceType) : string.Empty
+    };
+    owner.CoverFileGridType = typeof(TFileGrid);
+    return this;
+  }
 
   public GridColumn<TProp> AsCheckbox()
   {
@@ -290,7 +305,7 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Min(double min) { base.Min(min); return this; }
   public new GridColumn<TEntity, TProp> Max(double max) { base.Max(max); return this; }
   public new GridColumn<TEntity, TProp> Editable(bool isEditable = true) { base.Editable(isEditable); return this; }
-  public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() { base.AsCover<TFileGrid>(); return this; }
+  public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() where TFileGrid : class { base.AsCover<TFileGrid>(); return this; }
   public new GridReferenceColumn<TEntity, TProp, TProp> AsReference<TGridService>()
   {
     base.AsReference<TGridService>();

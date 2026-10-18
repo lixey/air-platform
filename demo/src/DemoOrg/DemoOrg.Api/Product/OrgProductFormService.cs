@@ -30,6 +30,7 @@ public sealed class OrgProductFormService(OrgDbContext db, OrgService? org = nul
     elements.Add(e => e.PurchasePrice).Min(0).AsMoney(Currency).Span(4);
     elements.Add(e => e.IsActive).AsCheckbox();
     elements.Add(e => e.Description).AsTextarea();
+    elements.AddChild<OrgProductFileGridService>().Key("files").Label("Photos").AsFiles();
   }
 
   protected override void SetRules(Rules rules)
