@@ -42,7 +42,7 @@ public static class OrgPartySeed
           {
             TenantId = tenantId,
             Name = $"{faker.Company.CompanyName()} {(isSupplier ? "Supplies" : "Trade")} #{i}",
-            TaxId = faker.Finance.Account(8),
+            TaxId = $"{faker.Finance.Account(5)}{i:D3}",
             IsSupplier = isSupplier,
             IsBuyer = !isSupplier || i % 4 == 0,
             IsActive = faker.Random.Bool(0.95f)

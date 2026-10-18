@@ -1,3 +1,4 @@
+using Air.App.Auth;
 using DemoApp.Data;
 using DemoApp.Data.Models;
 using Microsoft.EntityFrameworkCore;
@@ -6,12 +7,16 @@ namespace DemoApp.Migrations.Seeds;
 
 public static class AppIdentitySeed
 {
+  public const string DefaultSeedPassword = "Password123!";
+
   public static async Task RunAsync(
     AppDbContext db,
     IReadOnlyList<AppSeedTenant> tenants,
     CancellationToken cancellationToken = default
   )
   {
+    var passwordHash = new PasswordHasher().HashPassword(DefaultSeedPassword);
+
     foreach (var tenant in tenants)
     {
       var tenantId = tenant.Row.Id;
@@ -35,17 +40,29 @@ public static class AppIdentitySeed
 
       var users = new[]
       {
-        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "admin" : $"admin{tenantId}", Name = $"Administrator ({tenant.Row.Name})", Email = $"admin@{tenant.Row.Handle.ToLowerInvariant()}.demo", IsActive = true },
-        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "olena.koval" : $"olena{tenantId}", Name = "Olena Koval", Email = $"olena@{tenant.Row.Handle.ToLowerInvariant()}.demo", IsActive = true },
-        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "dmytro.bond" : $"dmytro{tenantId}", Name = "Dmytro Bondarenko", Email = $"dmytro@{tenant.Row.Handle.ToLowerInvariant()}.demo", IsActive = true },
-        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "iryna.melnyk" : $"iryna{tenantId}", Name = "Iryna Melnyk", Email = $"iryna@{tenant.Row.Handle.ToLowerInvariant()}.demo", IsActive = true }
+        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "admin" : $"admin{tenantId}", Name = $"Administrator ({tenant.Row.Name})", Email = $"admin@{tenant.Row.Handle.ToLowerInvariant()}.demo", PasswordHash = passwordHash, IsRoot = tenantId == 1, IsActive = true },
+        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "olena.koval" : $"olena{tenantId}", Name = "Olena Koval", Email = $"olena@{tenant.Row.Handle.ToLowerInvariant()}.demo", PasswordHash = passwordHash, IsActive = true },
+        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "dmytro.bond" : $"dmytro{tenantId}", Name = "Dmytro Bondarenko", Email = $"dmytro@{tenant.Row.Handle.ToLowerInvariant()}.demo", PasswordHash = passwordHash, IsActive = true },
+        new AppUser { TenantId = tenantId, Login = tenantId == 1 ? "iryna.melnyk" : $"iryna{tenantId}", Name = "Iryna Melnyk", Email = $"iryna@{tenant.Row.Handle.ToLowerInvariant()}.demo", PasswordHash = passwordHash, IsActive = true }
       };
 
       foreach (var u in users)
       {
-        if (!await db.AppUser.AnyAsync(x => x.TenantId == tenantId && x.Login == u.Login, cancellationToken))
+        var existing = await db.AppUser.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Login == u.Login, cancellationToken);
+        if (existing == null)
         {
           db.AppUser.Add(u);
+        }
+        else
+        {
+          if (string.IsNullOrEmpty(existing.PasswordHash))
+          {
+            existing.PasswordHash = passwordHash;
+          }
+          if (u.IsRoot && !existing.IsRoot)
+          {
+            existing.IsRoot = true;
+          }
         }
       }
 

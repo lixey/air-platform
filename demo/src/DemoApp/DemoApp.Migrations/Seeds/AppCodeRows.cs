@@ -1,5 +1,6 @@
 using Air.App.Components;
 using Air.Data;
+using Air.Data.Entities;
 using DemoApp.Data;
 using DemoApp.Data.Models;
 

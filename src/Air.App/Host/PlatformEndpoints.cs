@@ -107,12 +107,12 @@ public static class PlatformEndpoints
             });
           }
 
-          var kebabPath = ServicePathResolver.ToKebabCase(feat.Path);
-          if (!string.Equals(kebabPath, feat.Path, StringComparison.OrdinalIgnoreCase) && metadata.Routes.All(r => r.Path != kebabPath))
+          var flatPath = feat.Path.Replace("-", "", StringComparison.Ordinal);
+          if (!string.Equals(flatPath, feat.Path, StringComparison.OrdinalIgnoreCase) && metadata.Routes.All(r => r.Path != flatPath))
           {
             metadata.Routes.Add(new MenuItemDto
             {
-              Path = kebabPath,
+              Path = flatPath,
               Handle = feat.Name.ToLowerInvariant(),
               Name = Localizer.Instance[feat.Name],
               Screen = screen

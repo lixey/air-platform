@@ -252,7 +252,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
 
   public virtual Feature Feature => new("", GetType().Name.Replace("FormService", "").ToLowerInvariant(), GetType());
 
-  protected virtual string Title => !string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name;
+  protected virtual string Title => !string.IsNullOrEmpty(Feature.Label) ? Feature.Label : (!string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name);
 
   protected bool IsNew { get; set; }
   protected virtual bool IsReadOnly => Feature.IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All));
@@ -449,8 +449,10 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       }
       if (!string.IsNullOrEmpty(el.Label))
       {
-        el.Label = !string.IsNullOrEmpty(Feature.Name) && !string.IsNullOrEmpty(el.Path)
-          ? L.TextOr($"{Feature.Name}.{el.Path}", L[el.Label])
+        el.Label = !string.IsNullOrEmpty(el.Path)
+          ? L.TextOr($"{Feature.CleanName}.{el.Path}",
+              L.TextOr($"{Feature.Label}.{el.Path}",
+                L.TextOr($"{Feature.Name}.{el.Path}", L[el.Label])))
           : L[el.Label];
       }
       if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))

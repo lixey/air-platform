@@ -43,14 +43,15 @@ public class Feature
   public static readonly ConcurrentDictionary<Type, Feature> FeaturesByServiceType = new();
   private readonly ConcurrentDictionary<string, Right> _rights = new(StringComparer.OrdinalIgnoreCase);
 
-  public Feature(string module, string name, Type? serviceType = null)
+  public Feature(string module, string name, Type? serviceType = null, Action<Feature>? configure = null)
   {
     Module = module;
     CleanName = name;
     Label = PascalToSpaced(name);
-    Name = PascalToSpaced(name);
+    Name = PascalToSpaced(Pluralize(name));
     ServiceType = serviceType;
-    Path = $"{module.ToLowerInvariant()}/{name.ToLowerInvariant()}";
+    Path = $"{module.ToKebabCase()}/{name.ToKebabCase()}";
+    configure?.Invoke(this);
     if (serviceType != null)
     {
       FeaturesByServiceType[serviceType] = this;
@@ -58,15 +59,43 @@ public class Feature
   }
 
   public string Label { get; set; } = string.Empty;
+  public string Name { get; set; } = string.Empty;
 
   private static string PascalToSpaced(string s) =>
     System.Text.RegularExpressions.Regex.Replace(s, "([a-z])([A-Z])", "$1 $2");
+
+  private static string Pluralize(string word)
+  {
+    if (string.IsNullOrEmpty(word)) return string.Empty;
+    if (word.EndsWith("y", StringComparison.OrdinalIgnoreCase))
+    {
+      if (word.EndsWith("ay", StringComparison.OrdinalIgnoreCase) ||
+          word.EndsWith("ey", StringComparison.OrdinalIgnoreCase) ||
+          word.EndsWith("iy", StringComparison.OrdinalIgnoreCase) ||
+          word.EndsWith("oy", StringComparison.OrdinalIgnoreCase) ||
+          word.EndsWith("uy", StringComparison.OrdinalIgnoreCase))
+      {
+        return word + "s";
+      }
+      return word[..^1] + "ies";
+    }
+    if (word.EndsWith("s", StringComparison.OrdinalIgnoreCase) ||
+        word.EndsWith("x", StringComparison.OrdinalIgnoreCase) ||
+        word.EndsWith("z", StringComparison.OrdinalIgnoreCase) ||
+        word.EndsWith("sh", StringComparison.OrdinalIgnoreCase) ||
+        word.EndsWith("ch", StringComparison.OrdinalIgnoreCase))
+    {
+      return word + "es";
+    }
+    return word + "s";
+  }
 
   protected Feature(Feature source)
   {
     ArgumentNullException.ThrowIfNull(source);
     Module = source.Module;
     Name = source.Name;
+    Label = source.Label;
     CleanName = source.CleanName;
     ServiceType = source.ServiceType;
     Path = source.Path;
@@ -75,7 +104,6 @@ public class Feature
   }
 
   public string Module { get; }
-  public string Name { get; }
   public string CleanName { get; }
   public string Path { get; }
   public Type? ServiceType { get; set; }
@@ -189,6 +217,12 @@ public abstract class ModuleDefinition<TSelf> : ModuleDefinition where TSelf : M
   protected static Feature Feature<TService>([CallerMemberName] string name = "") =>
     new(ModuleHandle, name, typeof(TService));
 
+  protected static Feature Feature<TService>(Action<Feature> configure, [CallerMemberName] string name = "") =>
+    new(ModuleHandle, name, typeof(TService), configure);
+
   protected static Feature Feature([CallerMemberName] string name = "") =>
     new(ModuleHandle, name);
+
+  protected static Feature Feature(Action<Feature> configure, [CallerMemberName] string name = "") =>
+    new(ModuleHandle, name, configure: configure);
 }

@@ -1,3 +1,4 @@
+using Air.App.Auth;
 using Bogus;
 using DemoApp.Data;
 using DemoApp.Data.Models;
@@ -19,6 +20,7 @@ public static class AppVolumeSeed
     CancellationToken cancellationToken = default
   )
   {
+    var passwordHash = new PasswordHasher().HashPassword(AppIdentitySeed.DefaultSeedPassword);
     var random = new Randomizer(randomSeed);
     var fakers = tenants.Select(t => t.Locale).Distinct()
       .ToDictionary(loc => loc, loc => new Faker(loc) { Random = random });
@@ -64,6 +66,7 @@ public static class AppVolumeSeed
             Login = login,
             Name = $"{faker.Name.FirstName(gender)} {faker.Name.LastName(gender)}",
             Email = $"{login}@{tenant.Handle.ToLowerInvariant()}.demo",
+            PasswordHash = passwordHash,
             UserGroupId = groupIds.Count > 0 && faker.Random.Bool(0.85f) ? faker.PickRandom(groupIds) : null,
             IsActive = faker.Random.Bool(0.95f)
           };
@@ -74,6 +77,18 @@ public static class AppVolumeSeed
           db.AppUser.AddRange(batch);
           await db.SaveChangesAsync(cancellationToken);
         }
+      }
+
+      var usersWithoutPassword = await db.AppUser
+        .Where(u => u.TenantId == tenant.Id && (u.PasswordHash == null || u.PasswordHash == ""))
+        .ToListAsync(cancellationToken);
+      if (usersWithoutPassword.Count > 0)
+      {
+        foreach (var u in usersWithoutPassword)
+        {
+          u.PasswordHash = passwordHash;
+        }
+        await db.SaveChangesAsync(cancellationToken);
       }
     }
   }

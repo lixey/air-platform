@@ -480,8 +480,10 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       {
         if (!string.IsNullOrEmpty(col.Label))
         {
-          col.Label = !string.IsNullOrEmpty(Feature.Name) && !string.IsNullOrEmpty(col.Path)
-            ? Localizer.Instance.TextOr($"{Feature.Name}.{col.Path}", Localizer.Instance[col.Label])
+          col.Label = !string.IsNullOrEmpty(col.Path)
+            ? Localizer.Instance.TextOr($"{Feature.CleanName}.{col.Path}",
+                Localizer.Instance.TextOr($"{Feature.Label}.{col.Path}",
+                  Localizer.Instance.TextOr($"{Feature.Name}.{col.Path}", Localizer.Instance[col.Label])))
             : Localizer.Instance[col.Label];
         }
         if (col.IsFilterable && col.Operators == null)
@@ -552,8 +554,10 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     {
       if (!string.IsNullOrEmpty(col.Label))
       {
-        col.Label = !string.IsNullOrEmpty(Feature.Name) && !string.IsNullOrEmpty(col.Path)
-          ? Localizer.Instance.TextOr($"{Feature.Name}.{col.Path}", Localizer.Instance[col.Label])
+        col.Label = !string.IsNullOrEmpty(col.Path)
+          ? Localizer.Instance.TextOr($"{Feature.CleanName}.{col.Path}",
+              Localizer.Instance.TextOr($"{Feature.Label}.{col.Path}",
+                Localizer.Instance.TextOr($"{Feature.Name}.{col.Path}", Localizer.Instance[col.Label])))
           : Localizer.Instance[col.Label];
       }
       if (col.IsFilterable && col.Operators == null)
