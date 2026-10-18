@@ -29,6 +29,9 @@ public class PlatformAppService(
   /// <summary>The request's localizer.</summary>
   public ILocalizer L { get; } = localizer ?? Localizer.Instance;
 
+  /// <summary>Password hasher and verifier.</summary>
+  public IPasswordHasher Hasher => Services.GetService<IPasswordHasher>() ?? new PasswordHasher();
+
   /// <summary>Direct string translation indexer.</summary>
   public string this[string name] => L[name];
 

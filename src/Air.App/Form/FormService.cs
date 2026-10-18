@@ -827,11 +827,6 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     if (IsNew)
     {
       entity = new TEntity();
-      var loadCtx = new FormLoadContext<TEntity, TInput> { Entity = entity, Input = input, IsNew = true };
-      foreach (var h in hooks.AfterLoadActions)
-      {
-        await h(loadCtx, ct);
-      }
       if (Request.ParentId.HasValue && parent.BoundProperty != null)
       {
         if (parent.BoundProperty.PropertyType == typeof(long))

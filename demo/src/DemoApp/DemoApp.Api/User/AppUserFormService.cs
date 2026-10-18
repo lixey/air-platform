@@ -53,6 +53,14 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
             .ToArrayAsync(cancellationToken);
     });
 
+    hooks.BeforeSave(c =>
+    {
+      if (!string.IsNullOrEmpty(c.Input.Password))
+      {
+        c.Entity.PasswordHash = (app?.Hasher ?? new Air.App.Auth.PasswordHasher()).HashPassword(c.Input.Password);
+      }
+    });
+
     hooks.AfterSave(async (c, cancellationToken) =>
     {
       var assignments = await db.Set<AppAuthAssignment>().Where(r => r.UserId == c.Entity.Id).ToListAsync(cancellationToken);

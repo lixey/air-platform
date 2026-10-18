@@ -797,30 +797,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     }
 
     // Auto-include reference navigation properties declared in columns
-    var entityType = typeof(TEntity);
-    foreach (var col in cols.List)
-    {
-      if (col.ReferenceService != null && !string.IsNullOrEmpty(col.Path))
-      {
-        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
-        {
-          try
-          {
-            query = query.Include(prop.Name);
-          }
-          catch { }
-        }
-      }
-      if (!string.IsNullOrEmpty(col.ColorNavPath))
-      {
-        try
-        {
-          query = query.Include(col.ColorNavPath);
-        }
-        catch { }
-      }
-    }
+    query = IncludeColumnNavigations(query, cols.List);
 
     var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
     if (isSelect)
@@ -853,7 +830,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       };
     }
 
-    var defaultQueryMap = QueryMap.FromEntity<TEntity>().Build();
+    var defaultQueryMap = BuildDefaultQueryMap(cols.List);
     var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
@@ -934,6 +911,119 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
         Console.WriteLine($"[PopulateCoversAsync error]: {ex}");
       }
     }
+  }
+
+  private static IQueryable<TEntity> IncludeColumnNavigations(IQueryable<TEntity> query, IEnumerable<GridColumnDto> columns)
+  {
+    var entityType = typeof(TEntity);
+    foreach (var col in columns)
+    {
+      if (string.IsNullOrEmpty(col.Path)) continue;
+
+      var parts = col.Path.Split('.');
+      if (parts.Length > 1)
+      {
+        var currentType = entityType;
+        var validProps = new List<string>();
+        foreach (var part in parts[..^1])
+        {
+          var prop = currentType.GetProperty(part, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+          if (prop == null)
+          {
+            validProps.Clear();
+            break;
+          }
+          validProps.Add(prop.Name);
+          currentType = prop.PropertyType;
+        }
+
+        if (validProps.Count > 0)
+        {
+          var actualNavPath = string.Join('.', validProps);
+          try { query = query.Include(actualNavPath); } catch { }
+        }
+      }
+      else if (col.ReferenceService != null)
+      {
+        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
+        {
+          try { query = query.Include(prop.Name); } catch { }
+        }
+      }
+
+      if (!string.IsNullOrEmpty(col.ColorNavPath))
+      {
+        var prop = entityType.GetProperty(col.ColorNavPath, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (prop != null)
+        {
+          try { query = query.Include(prop.Name); } catch { }
+        }
+      }
+    }
+
+    return query;
+  }
+
+  private static QueryMap<TEntity> BuildDefaultQueryMap(IReadOnlyList<GridColumnDto> columns)
+  {
+    var builder = QueryMap.FromEntity<TEntity>();
+    var entityParam = Expression.Parameter(typeof(TEntity), "e");
+
+    foreach (var col in columns)
+    {
+      if (string.IsNullOrEmpty(col.Path)) continue;
+
+      if (builder.FindExpression(col.Path) is null)
+      {
+        var segments = col.Path.Split('.');
+        Expression? current = entityParam;
+        Type currentType = typeof(TEntity);
+
+        foreach (var segment in segments)
+        {
+          var prop = currentType.GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+          if (prop is null)
+          {
+            current = null;
+            break;
+          }
+          current = Expression.Property(current, prop);
+          currentType = prop.PropertyType;
+        }
+
+        if (current is not null)
+        {
+          if (!IsScalarType(currentType))
+          {
+            var nameProp = currentType.GetProperty("Name", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            if (nameProp != null && IsScalarType(nameProp.PropertyType))
+            {
+              current = Expression.Property(current, nameProp);
+              currentType = nameProp.PropertyType;
+            }
+            else
+            {
+              current = null;
+            }
+          }
+
+          if (current is not null)
+          {
+            var lambda = Expression.Lambda(current, entityParam);
+            builder.Field(col.Path, lambda);
+          }
+        }
+      }
+    }
+
+    return builder.Build();
+  }
+
+  private static bool IsScalarType(Type t)
+  {
+    var u = Nullable.GetUnderlyingType(t) ?? t;
+    return u.IsValueType || u == typeof(string);
   }
 
   public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
@@ -1027,18 +1117,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       query = query.Where(e => selectedIds.Contains(e.Id));
     }
 
-    var entityType = typeof(TEntity);
-    foreach (var col in exportColumns)
-    {
-      if (col.ReferenceService != null && !string.IsNullOrEmpty(col.Path))
-      {
-        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
-        {
-          try { query = query.Include(prop.Name); } catch { }
-        }
-      }
-    }
+    query = IncludeColumnNavigations(query, exportColumns);
 
     const int limit = 100_000;
     IAsyncEnumerable<object> rowStream;
@@ -1057,7 +1136,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     }
     else
     {
-      var defaultQueryMap = QueryMap.FromEntity<TEntity>().Build();
+      var defaultQueryMap = BuildDefaultQueryMap(cols.List);
       var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
       var defaultPage = await defaultDataProvider.GetPageAsync(new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields }, ct);
       var shaped = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List));
@@ -1284,22 +1363,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       query = parent.FilterFunc(query, ParentId.Value);
     }
 
-    var entityType = typeof(TEntity);
-    foreach (var col in cols.List)
-    {
-      if (col.ReferenceService != null && !string.IsNullOrEmpty(col.Path))
-      {
-        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
-        {
-          try
-          {
-            query = query.Include(prop.Name);
-          }
-          catch { }
-        }
-      }
-    }
+    query = IncludeColumnNavigations(query, cols.List);
 
     if (queryDeclaration.Selector != null)
     {
