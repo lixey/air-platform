@@ -63,6 +63,30 @@ public abstract class PlatformDbContext : DbContext
         modelBuilder.Entity(clrType).HasQueryFilter(lambda);
       }
 
+      if (typeof(IInheritedByChildTenants).IsAssignableFrom(clrType))
+      {
+        var parameter = Expression.Parameter(clrType, "e");
+        var property = Expression.Call(
+          typeof(EF),
+          nameof(EF.Property),
+          [typeof(long?)],
+          parameter,
+          Expression.Constant(nameof(IInheritedByChildTenants.TenantId)));
+
+        var tenantIdExpr = Expression.Property(Expression.Constant(this), nameof(TenantContext));
+        var currentTenantId = Expression.Property(tenantIdExpr, nameof(ITenantContext.TenantId));
+
+        // Filter: TenantContext.TenantId == null || EF.Property<long?>(e, "TenantId") == null || EF.Property<long?>(e, "TenantId") == TenantContext.TenantId
+        var nullContextCheck = Expression.Equal(currentTenantId, Expression.Constant(null, typeof(long?)));
+        var nullTenantCheck = Expression.Equal(property, Expression.Constant(null, typeof(long?)));
+        var equality = Expression.Equal(property, currentTenantId);
+        var filterBody = Expression.OrElse(nullContextCheck, Expression.OrElse(nullTenantCheck, equality));
+
+        var lambda = Expression.Lambda(filterBody, parameter);
+        modelBuilder.Entity(clrType).HasQueryFilter(lambda);
+        modelBuilder.Entity(clrType).Property(nameof(IInheritedByChildTenants.TenantId)).IsConcurrencyToken();
+      }
+
       if (typeof(IHasVersion).IsAssignableFrom(clrType))
       {
         modelBuilder.Entity(clrType).Property(nameof(IHasVersion.Ver)).IsConcurrencyToken();
@@ -194,6 +218,11 @@ public abstract class PlatformDbContext : DbContext
           tenantEntity.TenantId = tenantId ?? throw new InvalidOperationException(
             $"Cannot insert {entry.Metadata.ClrType.Name} without an active tenant."
           );
+        }
+
+        if (entry.Entity is IInheritedByChildTenants inherited && inherited.TenantId == 0)
+        {
+          inherited.TenantId = tenantId;
         }
 
         if (entry.Entity is IHasVersion version && version.Ver == 0)
