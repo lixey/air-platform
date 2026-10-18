@@ -562,4 +562,16 @@
   <data name="To status" xml:space="preserve">
     <value>У статус</value>
   </data>
+  <data name="StockBalance" xml:space="preserve">
+    <value>Залишок на складі</value>
+  </data>
+  <data name="MoneyBalance" xml:space="preserve">
+    <value>Залишок коштів</value>
+  </data>
+  <data name="CustomerOrderFulfillment" xml:space="preserve">
+    <value>Виконання замовлень клієнтів</value>
+  </data>
+  <data name="Source warehouse and target warehouse must be different." xml:space="preserve">
+    <value>Склад-відправник і склад-отримувач мають відрізнятися.</value>
+  </data>
 </root>

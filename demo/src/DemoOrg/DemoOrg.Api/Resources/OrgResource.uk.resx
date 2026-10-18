@@ -331,4 +331,28 @@
   <data name="The counterparty supplies products and cannot be deleted." xml:space="preserve">
     <value>Контрагент є постачальником товарів, тому його не можна видалити.</value>
   </data>
+  <data name="CustomerContact" xml:space="preserve">
+    <value>Контакт</value>
+  </data>
+  <data name="CustomerContacts" xml:space="preserve">
+    <value>Контакти</value>
+  </data>
+  <data name="New CustomerContact" xml:space="preserve">
+    <value>Новий контакт</value>
+  </data>
+  <data name="Active" xml:space="preserve">
+    <value>Активні</value>
+  </data>
+  <data name="Buyers" xml:space="preserve">
+    <value>Покупці</value>
+  </data>
+  <data name="Suppliers" xml:space="preserve">
+    <value>Постачальники</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>Усі</value>
+  </data>
+  <data name="The currency does not match the organization's currency." xml:space="preserve">
+    <value>Валюта не збігається з валютою організації.</value>
+  </data>
 </root>

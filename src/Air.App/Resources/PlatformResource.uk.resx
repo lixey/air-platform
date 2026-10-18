@@ -1183,4 +1183,7 @@
   <data name="English" xml:space="preserve">
     <value>English</value>
   </data>
+  <data name="New User" xml:space="preserve">
+    <value>Новий користувач</value>
+  </data>
 </root>

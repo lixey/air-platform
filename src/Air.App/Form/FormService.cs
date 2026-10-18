@@ -387,7 +387,9 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       }
       if (!string.IsNullOrEmpty(el.Label))
       {
-        el.Label = L[el.Label];
+        el.Label = !string.IsNullOrEmpty(Feature.Name) && !string.IsNullOrEmpty(el.Path)
+          ? L.TextOr($"{Feature.Name}.{el.Path}", L[el.Label])
+          : L[el.Label];
       }
       if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))
       {
