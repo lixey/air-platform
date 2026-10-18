@@ -702,21 +702,20 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     }
 
     var entities = await db.Set<TEntity>().Where(e => selectedIds.Contains(e.Id)).ToListAsync(ct);
-    var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
-    var statusProp = typeof(TEntity).GetProperty("DocStatusId") ?? typeof(TEntity).GetProperty("StatusId");
+    var context = new Mutations.MutationContext(db);
+    object? input = transition.Ask?.Read(body);
 
-    foreach (var entity in entities)
+    await statusFlow.MoveAsync(context, entities, transition.Name, input, ct);
+
+    if (context.Errors.Count > 0)
     {
-      var currentStatus = statusFlow.StatusMember.Compile()(entity);
-      if (!transition.From.Contains(currentStatus)) continue;
-
-      if (statusProp != null && targetStatus != null)
+      return new GridActionDto
       {
-        statusProp.SetValue(entity, targetStatus.Id);
-      }
+        Outcome = MutationOutcome.Refused,
+        Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+      };
     }
 
-    await db.SaveChangesAsync(ct);
     return new GridActionDto { Outcome = MutationOutcome.Committed };
   }
 

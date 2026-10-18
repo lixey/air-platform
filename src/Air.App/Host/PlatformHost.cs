@@ -73,6 +73,7 @@ public static class PlatformHost
     builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
+    builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
     builder.Services.TryAddScoped<IUserContext, UserContext>();
     builder.Services.TryAddScoped<PlatformAppService>();
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
@@ -224,6 +225,7 @@ public static class PlatformHost
     builder.Services.AddScoped<ScreenCatalog>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
+    builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
     builder.Services.TryAddScoped<IUserContext, UserContext>();
     builder.Services.TryAddScoped<PlatformAppService>();
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();

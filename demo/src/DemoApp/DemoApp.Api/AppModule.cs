@@ -14,7 +14,7 @@ public sealed class AppModule : PlatformModule<App>
   protected override void ConfigureServices(WebApplicationBuilder builder)
   {
     builder.AddPlatformPostgres<AppDbContext>();
-    builder.Services.AddScoped<IAuthStore, AuthStore<AppUser, AppAuthSession, AppAuthRole, AppAuthGrant, AppAuthAssignment, AppDbContext>>();
+    builder.Services.AddScoped<IAuthStore, AuthStore<AppUser, AppAuthSession, AppAuthRole, AppAuthGrant, AppAuthAssignment, AppTenant, AppDbContext>>();
   }
 
   public override ModuleMenu Menu => ModuleMenu

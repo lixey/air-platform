@@ -7,12 +7,13 @@ namespace Air.App.Auth;
 /// <summary>
 /// Default generic implementation of IAuthStore over an application's DbContext.
 /// </summary>
-public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TDbContext>(TDbContext db) : IAuthStore
+public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTenant, TDbContext>(TDbContext db) : IAuthStore
   where TUser : BaseAppUser
   where TSession : BaseAppAuthSession, new()
   where TRole : BaseAppAuthRole
   where TGrant : BaseAppAuthGrant
   where TAssignment : BaseAppAuthAssignment
+  where TTenant : BaseAppTenant
   where TDbContext : PlatformDbContext
 {
   public async Task<BaseAppUser?> FindUserByLoginAsync(string login, CancellationToken ct = default)
@@ -33,6 +34,18 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TDbCo
 
   public async Task<SecurityInfo> LoadSecurityInfoAsync(long userId, CancellationToken ct = default) =>
     await GrantedRights.LoadAsync<TAssignment, TRole, TGrant>(db, userId, ct);
+
+  public async Task<List<BaseAppTenant>> GetActiveTenantsAsync(CancellationToken ct = default) =>
+    (await db.Set<TTenant>().IgnoreQueryFilters()
+      .Where(t => t.IsActive)
+      .OrderBy(t => t.SortOrder)
+      .ThenBy(t => t.Name)
+      .ToListAsync(ct))
+    .Cast<BaseAppTenant>()
+    .ToList();
+
+  public async Task<BaseAppTenant?> FindTenantByIdAsync(long id, CancellationToken ct = default) =>
+    await db.Set<TTenant>().IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id, ct);
 
   public BaseAppAuthSession CreateSession(long userId, long? tenantId, Guid familyId, string refreshTokenHash, DateTimeOffset expiresAt, string? client, string? address)
   {

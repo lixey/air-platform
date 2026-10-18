@@ -23,7 +23,7 @@ public static class PlatformEndpoints
     var api = app.MapGroup("/api");
 
     // 1. Metadata (both GET and POST for convenience)
-    var getMetadataHandler = (ModuleCatalog catalog, HttpContext httpContext, IUserContext userContext) =>
+    var getMetadataHandler = async (ModuleCatalog catalog, HttpContext httpContext, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
       var culture = ResolveRequestCulture(httpContext.Request);
       var prevCulture = System.Globalization.CultureInfo.CurrentCulture;
@@ -36,6 +36,10 @@ public static class PlatformEndpoints
         Localizer.Instance.EnsureManagersLoaded();
         var texts = UiTexts.English.Keys.ToDictionary(k => k, k => Localizer.Instance[k]);
         var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
+
+        var tenants = await authStore.GetActiveTenantsAsync(ct);
+        var activeTenantId = AsyncLocalTenantContext.Instance.TenantId ?? (userContext.IsAuthenticated && userContext.Claim(AuthClaims.Tenant) is { } tc && long.TryParse(tc, out var tId) ? tId : 1);
+        var currentTenant = tenants.FirstOrDefault(t => t.Id == activeTenantId) ?? tenants.FirstOrDefault();
 
         var metadata = new AppMetadataDto
         {
@@ -51,11 +55,14 @@ public static class PlatformEndpoints
             Service = "platform-language",
             Method = "switch"
           },
-          Tenant = new SwitcherDto
+          Tenant = currentTenant != null ? new SwitcherDto
           {
             Label = Localizer.Instance["Tenant"],
-            Current = new Reference { Id = 1, Name = "Demo Tenant" }
-          },
+            Current = new Reference { Id = currentTenant.Id, Name = currentTenant.Name },
+            Options = tenants.Select(t => new Reference { Id = t.Id, Name = t.Name }).ToList(),
+            Service = "platform-tenant",
+            Method = "switch"
+          } : null,
           DefaultCurrency = "UAH"
         };
 
@@ -181,7 +188,7 @@ public static class PlatformEndpoints
       return Results.Ok(profile);
     });
 
-    api.MapPost("/auth/login", async (LoginRequest? req, HttpContext ctx, IAuthStore authStore, CancellationToken ct) =>
+    api.MapPost("/auth/login", async (LoginRequest? req, HttpContext ctx, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
     {
       var culture = ResolveRequestCulture(ctx.Request);
       var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
@@ -196,6 +203,14 @@ public static class PlatformEndpoints
       if (user == null || !user.IsActive)
       {
         return Results.Unauthorized();
+      }
+
+      if (!string.IsNullOrEmpty(user.PasswordHash))
+      {
+        if (string.IsNullOrEmpty(req?.Password) || hasher.VerifyPassword(req.Password, user.PasswordHash) == PasswordVerification.Failed)
+        {
+          return Results.Unauthorized();
+        }
       }
 
       var tenantId = (user as IHasTenant)?.TenantId;
@@ -241,6 +256,91 @@ public static class PlatformEndpoints
           Language = isUk ? "uk" : "en",
           TimeZone = user.TimeZone ?? "UTC",
           MustChangePassword = user.MustChangePassword,
+          Permissions = securityInfo.Permissions.ToList()
+        },
+        ExpiresIn = 1800
+      };
+
+      return Results.Ok(sessionDto);
+    });
+
+    api.MapPost("/auth/change-password", async (ChangePasswordRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
+    {
+      if (!userContext.IsAuthenticated || userContext.UserId is null)
+      {
+        return Results.Unauthorized();
+      }
+
+      if (req == null || string.IsNullOrWhiteSpace(req.NewPassword))
+      {
+        return Results.BadRequest(new { error = "New password is required." });
+      }
+
+      var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
+      if (user == null || !user.IsActive)
+      {
+        return Results.Unauthorized();
+      }
+
+      if (!string.IsNullOrEmpty(user.PasswordHash))
+      {
+        if (string.IsNullOrEmpty(req.CurrentPassword) || hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
+        {
+          return Results.BadRequest(new { error = "Current password is incorrect." });
+        }
+      }
+
+      user.PasswordHash = hasher.HashPassword(req.NewPassword);
+      user.MustChangePassword = false;
+      user.TokenVersion++;
+      await authStore.SaveChangesAsync(ct);
+
+      long? sessionId = userContext.SessionId;
+      var session = sessionId != null ? await authStore.FindSessionAsync(sessionId.Value, ct) : null;
+      if (session != null)
+      {
+        session.ExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
+        session.LastUsedAt = DateTimeOffset.UtcNow;
+        await authStore.SaveChangesAsync(ct);
+      }
+      else
+      {
+        session = authStore.CreateSession(
+          user.Id,
+          (user as IHasTenant)?.TenantId,
+          Guid.NewGuid(),
+          SessionTokenService.HashRefreshToken(SessionTokenService.CreateRefreshToken()),
+          DateTimeOffset.UtcNow.AddDays(30),
+          ctx.Request.Headers.UserAgent.ToString(),
+          ctx.Connection.RemoteIpAddress?.ToString()
+        );
+        await authStore.SaveChangesAsync(ct);
+      }
+
+      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      var culture = ResolveRequestCulture(ctx.Request);
+      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
+
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
+      ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
+      {
+        Path = "/",
+        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        SameSite = SameSiteMode.Lax,
+        HttpOnly = false
+      });
+
+      var sessionDto = new SessionDto
+      {
+        User = new UserProfileDto
+        {
+          Id = user.Id,
+          Login = user.Login,
+          Name = user.Name ?? user.Login,
+          Email = user.Email ?? $"{user.Login}@demo.invalid",
+          Language = isUk ? "uk" : "en",
+          TimeZone = user.TimeZone ?? "UTC",
+          MustChangePassword = false,
           Permissions = securityInfo.Permissions.ToList()
         },
         ExpiresIn = 1800
@@ -326,9 +426,9 @@ public static class PlatformEndpoints
       return Results.Ok(new { });
     });
 
-    var switchLanguageHandler = (SwitchRequest req, HttpContext ctx) =>
+    var switchLanguageHandler = async (SwitchRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
-      var lang = req.Id == 1 ? "uk" : "en";
+      var lang = req?.Id == 1 ? "uk" : "en";
       ctx.Response.Cookies.Append("culture", lang, new CookieOptions
       {
         Path = "/",
@@ -336,21 +436,127 @@ public static class PlatformEndpoints
         SameSite = SameSiteMode.Lax
       });
 
-      var user = new UserProfileDto
+      if (userContext.IsAuthenticated && userContext.UserId is { } uid)
+      {
+        var user = await authStore.FindUserByIdAsync(uid, ct);
+        if (user != null && user.IsActive)
+        {
+          var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+          return Results.Ok(new UserProfileDto
+          {
+            Id = user.Id,
+            Login = user.Login,
+            Name = user.Name ?? user.Login,
+            Email = user.Email ?? $"{user.Login}@demo.invalid",
+            Language = lang,
+            TimeZone = user.TimeZone ?? "UTC",
+            MustChangePassword = user.MustChangePassword,
+            Permissions = securityInfo.Permissions.ToList()
+          });
+        }
+      }
+
+      var defaultUser = new UserProfileDto
       {
         Id = 1,
         Login = "admin",
-        Name = "Demo Administrator",
+        Name = "Administrator",
         Email = "admin@air.platform",
         Language = lang,
         TimeZone = "UTC",
         Permissions = ["*"]
       };
-      return Results.Ok(user);
+      return Results.Ok(defaultUser);
     };
 
     api.MapPost("/platform-language/switch", switchLanguageHandler);
     api.MapPost("/PlatformLanguageService/Switch", switchLanguageHandler);
+
+    var switchTenantHandler = async (SwitchRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
+    {
+      if (req == null)
+      {
+        return Results.BadRequest(new { error = "Tenant id is required." });
+      }
+
+      if (!userContext.IsAuthenticated || userContext.UserId is null)
+      {
+        return Results.Unauthorized();
+      }
+
+      var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
+      if (user == null || !user.IsActive)
+      {
+        return Results.Unauthorized();
+      }
+
+      long? sessionId = userContext.SessionId;
+      if (sessionId == null && ctx.Request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
+          SessionTokenService.TryValidateAccessToken(cookieToken, out var sId, out _, out _))
+      {
+        sessionId = sId;
+      }
+
+      if (sessionId == null)
+      {
+        return Results.Unauthorized();
+      }
+
+      var session = await authStore.FindSessionAsync(sessionId.Value, ct);
+      if (session == null || session.RevokedAt != null || session.ExpiresAt <= DateTimeOffset.UtcNow)
+      {
+        return Results.Unauthorized();
+      }
+
+      var targetTenant = await authStore.FindTenantByIdAsync(req.Id, ct);
+      if (targetTenant == null || !targetTenant.IsActive)
+      {
+        return Results.BadRequest(new { error = "Select an active tenant." });
+      }
+
+      session.TenantId = req.Id;
+      session.LastUsedAt = DateTimeOffset.UtcNow;
+      await authStore.SaveChangesAsync(ct);
+
+      SecurityInfo securityInfo;
+      using (AsyncLocalTenantContext.Use(req.Id, null))
+      {
+        securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      }
+
+      var culture = ResolveRequestCulture(ctx.Request);
+      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
+
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
+      ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
+      {
+        Path = "/",
+        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        SameSite = SameSiteMode.Lax,
+        HttpOnly = false
+      });
+
+      var sessionDto = new SessionDto
+      {
+        User = new UserProfileDto
+        {
+          Id = user.Id,
+          Login = user.Login,
+          Name = user.Name ?? user.Login,
+          Email = user.Email ?? $"{user.Login}@demo.invalid",
+          Language = isUk ? "uk" : "en",
+          TimeZone = user.TimeZone ?? "UTC",
+          MustChangePassword = user.MustChangePassword,
+          Permissions = securityInfo.Permissions.ToList()
+        },
+        ExpiresIn = 1800
+      };
+
+      return Results.Ok(sessionDto);
+    };
+
+    api.MapPost("/platform-tenant/switch", switchTenantHandler);
+    api.MapPost("/PlatformTenantService/Switch", switchTenantHandler);
 
     // 2.1 Signed Platform Files Endpoint
     api.MapGet("/platform-files/{token}", async (string token, HttpContext httpContext) =>
