@@ -1,10 +1,15 @@
+using Air.App;
+using Air.App.Grid;
+using Air.Data.Entities;
+using DemoEcom.Data;
+
 namespace DemoEcom;
 
-public abstract class EcomGridService<TEntity, TRow>(EcomDbContext db, EcomService? ecom = null)
-  : GridService<TEntity, TRow>(db)
+public abstract class EcomGridService<TEntity, TRow>(EcomDbContext db, PlatformAppService? app = null)
+  : GridService<TEntity, TRow>(db, app)
   where TEntity : class, IEntity, new()
   where TRow : class
 {
   protected EcomDbContext Db => db;
-  protected EcomService? EcomApp => ecom;
+  protected PlatformAppService? EcomApp => app;
 }

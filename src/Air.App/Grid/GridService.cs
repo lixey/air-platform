@@ -30,14 +30,18 @@ public interface IGridService
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
+  void AttachPlatformApp(PlatformAppService app);
 }
 
 public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformAppService? app = null) : IGridService
   where TEntity : class, IEntity, new()
   where TRow : class
 {
-  protected PlatformAppService? PlatformApp => app;
-  protected Air.App.Auth.IUserContext? User => app?.User;
+  private PlatformAppService? _app = app;
+  public void AttachPlatformApp(PlatformAppService service) => _app ??= service;
+
+  public PlatformAppService? PlatformApp => _app;
+  protected Air.App.Auth.IUserContext? User => _app?.User;
   protected Localizer L => Localizer.Instance;
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
@@ -240,33 +244,32 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     public NavPickerBuilder ReadsParent() { model.ReadsParent = true; return this; }
   }
 
-  public sealed class NavActionBuilder
+  public sealed class NavActionEntry
   {
-    private readonly (GridNavActionModel Model, bool IsInMenu) _item;
-    private readonly Nav _nav;
+    public required GridNavActionModel Model { get; init; }
+    public bool IsInMenu { get; set; }
+    public bool IsAllowedInReadOnly { get; set; }
+    public Delegate Method { get; init; } = null!;
+  }
 
-    internal NavActionBuilder((GridNavActionModel Model, bool IsInMenu) item, Nav nav)
-    {
-      _item = item;
-      _nav = nav;
-    }
-
+  public sealed class NavActionBuilder(NavActionEntry entry, Nav nav)
+  {
     public Nav InMenu()
     {
-      var idx = _nav.Actions.IndexOf(_item);
-      if (idx >= 0)
-      {
-        _nav.Actions[idx] = (_item.Model, true);
-      }
-      return _nav;
+      entry.IsInMenu = true;
+      return nav;
     }
 
-    public NavActionBuilder AllowReadOnly(bool allow = true) => this;
+    public NavActionBuilder AllowReadOnly(bool allow = true)
+    {
+      entry.IsAllowedInReadOnly = allow;
+      return this;
+    }
   }
 
   public sealed class Nav(string servicePath = "")
   {
-    internal List<(GridNavActionModel Model, bool IsInMenu)> Actions { get; } = [];
+    internal List<NavActionEntry> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
     internal List<NavElementModel> CustomStart { get; } = [];
 
@@ -292,9 +295,14 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
         NeedsSelection = needsSelection,
         Confirm = confirm != null ? new OverlayConfirmModel { Message = confirm, Color = UiColor.Red } : null
       };
-      var item = (action, b.IsInMenu);
-      Actions.Add(item);
-      return new NavActionBuilder(item, this);
+      var entry = new NavActionEntry
+      {
+        Model = action,
+        IsInMenu = b.IsInMenu,
+        Method = method
+      };
+      Actions.Add(entry);
+      return new NavActionBuilder(entry, this);
     }
 
     public NavPickerBuilder AddPicker<TSource>(
@@ -339,6 +347,15 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
     CancellationToken cancellationToken = default)
   {
+    if (User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
     var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
     var records = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(cancellationToken);
     var ctx = new GridBatchContext<TEntity>(ids, records, ct => db.SaveChangesAsync(ct));
@@ -491,8 +508,11 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       }
     }
 
+    var isUserReadOnly = User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
+    var isGridReadOnly = Feature.IsReadOnly || isUserReadOnly;
+
     var navStart = new List<NavElementModel>();
-    if (formOverlay is not null && !Feature.IsReadOnly)
+    if (formOverlay is not null && !isGridReadOnly)
     {
       navStart.Add(new GridNavAddModel
       {
@@ -543,15 +563,35 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
     var actionEnd = new List<NavElementModel>();
     var actionMore = new List<NavElementModel>();
-    foreach (var (act, inMenu) in nav.Actions)
+    foreach (var entry in nav.Actions)
     {
-      if (inMenu)
+      var methodInfo = entry.Method.Method;
+      var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>();
+      bool hasRight = true;
+      if (reqAttr != null && User != null && User.IsAuthenticated)
       {
-        actionMore.Add(act);
+        if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
+        {
+          hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(Feature.All);
+        }
+      }
+      else if (!entry.IsAllowedInReadOnly && isUserReadOnly)
+      {
+        hasRight = false;
+      }
+
+      if (!hasRight)
+      {
+        continue;
+      }
+
+      if (entry.IsInMenu)
+      {
+        actionMore.Add(entry.Model);
       }
       else
       {
-        actionEnd.Add(act);
+        actionEnd.Add(entry.Model);
       }
     }
 
@@ -568,7 +608,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       Label = Localizer.Instance["Export"]
     });
 
-    if (!Feature.IsReadOnly)
+    if (!isGridReadOnly && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All)))
     {
       actionEnd.Add(new GridNavActionModel
       {
@@ -585,53 +625,58 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     }
 
     var actionElements = new List<NavElementModel>();
-    if (columns.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow)
+    if (columns.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && !isGridReadOnly)
     {
-      var statusMoves = statusFlow.Transitions.Select(t =>
-      {
-        var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
-        return new GridNavStatusMoveDto
+      var statusMoves = statusFlow.Transitions
+        .Where(t => User == null || !User.IsAuthenticated || User.Can(Feature.Action(t.Name)) || User.Can(Feature.Edit) || User.Can(Feature.All))
+        .Select(t =>
         {
-          From = [.. t.From],
-          Action = new GridNavActionModel
+          var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
+          return new GridNavStatusMoveDto
           {
-            Key = $"status.{t.Name.ToLowerInvariant()}",
-            Label = target?.Name ?? t.Name,
-            Color = target?.Color,
-            Service = servicePath,
-            Method = $"move-status/{t.Name.ToLowerInvariant()}",
-            NeedsSelection = true,
-            Confirm = t.Ask is not null || t.Confirm is null
-              ? null
-              : new OverlayConfirmModel { Message = t.Confirm, Color = target?.Color },
-            Ask = t.Ask is null
-              ? null
-              : new FormAskModel
-              {
-                Title = target?.Name ?? t.Name,
-                Message = t.Confirm,
-                Color = target?.Color,
-                Elements = [.. t.Ask.BuildElements()]
-              }
-          }
-        };
-      }).ToList();
+            From = [.. t.From],
+            Action = new GridNavActionModel
+            {
+              Key = $"status.{t.Name.ToLowerInvariant()}",
+              Label = target?.Name ?? t.Name,
+              Color = target?.Color,
+              Service = servicePath,
+              Method = $"move-status/{t.Name.ToLowerInvariant()}",
+              NeedsSelection = true,
+              Confirm = t.Ask is not null || t.Confirm is null
+                ? null
+                : new OverlayConfirmModel { Message = t.Confirm, Color = target?.Color },
+              Ask = t.Ask is null
+                ? null
+                : new FormAskModel
+                {
+                  Title = target?.Name ?? t.Name,
+                  Message = t.Confirm,
+                  Color = target?.Color,
+                  Elements = [.. t.Ask.BuildElements()]
+                }
+            }
+          };
+        }).ToList();
 
-      var statusButton = new GridNavStatusModel
+      if (statusMoves.Count > 0)
       {
-        Key = "status",
-        Label = Localizer.Instance["Status"],
-        Path = "docStatusId",
-        Moves = statusMoves
-      };
-      actionElements.Add(statusButton);
+        var statusButton = new GridNavStatusModel
+        {
+          Key = "status",
+          Label = Localizer.Instance["Status"],
+          Path = "docStatusId",
+          Moves = statusMoves
+        };
+        actionElements.Add(statusButton);
+      }
     }
 
     var gridModel = new GridModel
     {
       Service = servicePath,
       Columns = columns.List.ToList(),
-      IsReadOnly = Feature.IsReadOnly,
+      IsReadOnly = isGridReadOnly,
       Form = formOverlay,
       MutationTexts = new MutationTextsDto
       {
@@ -693,6 +738,11 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     if (transition is null)
     {
       return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
+    }
+
+    if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }] };
     }
 
     var selectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
@@ -1169,6 +1219,16 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
+    if (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All))
+    {
+      return new GridDeleteDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Deleted = 0,
+        Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
     ParentId = request.ParentId;
     var ids = request.SelectedIds ?? [];
     if (ids.Count == 0 && request.Id.HasValue)
@@ -1322,5 +1382,5 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
   }
 }
 
-public abstract class GridService<TEntity>(PlatformDbContext db) : GridService<TEntity, TEntity>(db)
+public abstract class GridService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : GridService<TEntity, TEntity>(db, app)
   where TEntity : class, IEntity, new();

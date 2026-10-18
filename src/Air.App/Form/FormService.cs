@@ -31,6 +31,7 @@ public interface IFormService
   Task DeleteAsync(long id, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
+  void AttachPlatformApp(PlatformAppService app);
 }
 
 public class FormLoadContext<TEntity, TInput>
@@ -114,9 +115,12 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
   where TEntity : class, IEntity, new()
   where TInput : class, new()
 {
+  private PlatformAppService? _app = app;
+  public void AttachPlatformApp(PlatformAppService service) => _app ??= service;
+
   public PlatformDbContext DbContext => db;
-  protected PlatformAppService? PlatformApp => app;
-  protected Air.App.Auth.IUserContext? User => app?.User;
+  protected PlatformAppService? PlatformApp => _app;
+  protected Air.App.Auth.IUserContext? User => _app?.User;
 
   public sealed class Elements : Elements<TInput> { }
 
@@ -127,7 +131,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
   protected virtual string Title => !string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name;
 
   protected bool IsNew { get; set; }
-  protected virtual bool IsReadOnly => Feature.IsReadOnly;
+  protected virtual bool IsReadOnly => Feature.IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All));
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
 

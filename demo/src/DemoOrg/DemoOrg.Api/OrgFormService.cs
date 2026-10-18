@@ -1,13 +1,15 @@
+using Air.App;
 using Air.App.Form;
 using Air.Data.Entities;
 using DemoOrg.Data;
 
 namespace DemoOrg;
 
-public abstract class OrgFormService<TEntity, TInput>(OrgDbContext db, OrgService? org = null)
-  : FormService<TEntity, TInput>(db)
+public abstract class OrgFormService<TEntity, TInput>(OrgDbContext db, PlatformAppService? app = null)
+  : FormService<TEntity, TInput>(db, app)
   where TEntity : class, IEntity, new()
   where TInput : class, new()
 {
-  protected OrgService? OrgService => org;
+  protected OrgDbContext Db => db;
+  protected PlatformAppService? OrgService => app;
 }

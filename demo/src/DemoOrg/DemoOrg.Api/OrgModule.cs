@@ -11,6 +11,7 @@ public sealed class OrgModule : PlatformModule<Org>
   protected override void ConfigureServices(WebApplicationBuilder builder)
   {
     builder.AddPlatformPostgres<OrgDbContext>();
+    builder.Services.AddScoped<OrgService>();
   }
 
   public override ModuleMenu Menu => ModuleMenu

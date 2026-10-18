@@ -667,6 +667,10 @@ public static class PlatformEndpoints
       if (typeof(IGridService).IsAssignableFrom(serviceType))
       {
         var grid = (IGridService)services.GetRequiredService(serviceType);
+        if (services.GetService<PlatformAppService>() is { } appInstance)
+        {
+          grid.AttachPlatformApp(appInstance);
+        }
 
         if (method == "get-data")
         {
@@ -810,6 +814,33 @@ public static class PlatformEndpoints
                                string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
         if (actionMethod != null)
         {
+          var reqAttr = actionMethod.GetCustomAttribute<Security.RequireRightAttribute>();
+          var userContext = services.GetService<IUserContext>();
+          if (userContext != null && userContext.IsAuthenticated)
+          {
+            bool permitted = true;
+            if (reqAttr != null)
+            {
+              if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
+              {
+                permitted = userContext.Can(targetFeat.Action(reqAttr.Action.ToString())) || userContext.Can(targetFeat.All) || userContext.Can("*");
+              }
+            }
+            else
+            {
+              permitted = userContext.Can(feat?.Edit?.Key ?? "*") || userContext.Can("*");
+            }
+
+            if (!permitted)
+            {
+              return Results.Ok(new GridActionDto
+              {
+                Outcome = MutationOutcome.Refused,
+                Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
+              });
+            }
+          }
+
           var parameters = actionMethod.GetParameters();
           var pickParam = parameters.FirstOrDefault(p => typeof(GridRequest).IsAssignableFrom(p.ParameterType));
           var pickReqType = pickParam?.ParameterType ?? typeof(GridRequest);
@@ -854,6 +885,10 @@ public static class PlatformEndpoints
       else if (typeof(IFormService).IsAssignableFrom(serviceType))
       {
         var form = (IFormService)services.GetRequiredService(serviceType);
+        if (services.GetService<PlatformAppService>() is { } appInstance)
+        {
+          form.AttachPlatformApp(appInstance);
+        }
 
         if (method == "get-data")
         {

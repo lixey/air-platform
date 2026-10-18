@@ -1,3 +1,7 @@
+using Air.App.Security;
+using DemoEcom.IncomingPayment;
+using DemoEcom.SalesInvoice;
+
 namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? ecom = null, EcomCustomerOrderFlowService? flow = null)
@@ -35,6 +39,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
     nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon(UiIcon.Plus)).InMenu();
   }
 
+  [RequireRight<EcomSalesInvoiceGridService>(EndpointAction.Edit)]
   public Task<GridActionDto> CreateSalesInvoice(GridRequest request, CancellationToken cancellationToken)
   {
     var date = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -53,6 +58,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
     );
   }
 
+  [RequireRight<EcomIncomingPaymentGridService>(EndpointAction.Edit)]
   public Task<GridActionDto> CreateIncomingPayment(GridRequest request, CancellationToken cancellationToken)
   {
     var date = DateOnly.FromDateTime(DateTime.UtcNow);

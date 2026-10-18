@@ -11,6 +11,7 @@ public sealed class EcomModule : PlatformModule<Ecom>
   protected override void ConfigureServices(WebApplicationBuilder builder)
   {
     builder.AddPlatformPostgres<EcomDbContext>();
+    builder.Services.AddScoped<EcomService>();
   }
 
   public override ModuleMenu Menu => ModuleMenu
