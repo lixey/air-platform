@@ -357,6 +357,21 @@ public static class PlatformEndpoints
           return Results.Ok(actionResult);
         }
 
+        if (string.Equals(method, "export", StringComparison.OrdinalIgnoreCase))
+        {
+          GridRequest? req = null;
+          if (httpRequest.ContentLength > 0)
+          {
+            try { req = await httpRequest.ReadFromJsonAsync<GridRequest>(cancellationToken: ct); } catch { }
+          }
+          req ??= new GridRequest();
+          if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal))
+          {
+            req.ParentId = pidVal;
+          }
+          return await grid.ExportAsync(req, ct);
+        }
+
         // Custom action dispatching on grid
         var actionMethod = serviceType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
           .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||

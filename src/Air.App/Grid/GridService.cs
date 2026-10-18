@@ -14,6 +14,8 @@ using Air.Data.Contracts;
 using Air.Data.Entities;
 using Air.Data.Querying;
 using Microsoft.EntityFrameworkCore;
+using Air.App.Grid.Export;
+using Microsoft.AspNetCore.Http;
 
 namespace Air.App.Grid;
 
@@ -23,6 +25,7 @@ public interface IGridService
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
+  Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
@@ -541,6 +544,19 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
       }
     }
 
+    actionEnd.Add(new GridNavActionModel
+    {
+      Key = "export",
+      Service = servicePath,
+      Method = "export",
+      NeedsSelection = true,
+      IsDownload = true,
+      Color = UiColor.Green,
+      Variant = ButtonVariant.Soft,
+      Icon = UiIcon.Excel,
+      Label = Localizer.Instance["Export"]
+    });
+
     if (!Feature.IsReadOnly)
     {
       actionEnd.Add(new GridNavActionModel
@@ -621,7 +637,20 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
         Key = $"{servicePath}.nav",
         Start = navStart,
         Elements = navElements,
-        End = []
+        End = [],
+        More = [
+          new GridNavActionModel
+          {
+            Key = "export",
+            Service = servicePath,
+            Method = "export",
+            NeedsSelection = false,
+            IsDownload = true,
+            Color = UiColor.Green,
+            Icon = UiIcon.Excel,
+            Label = Localizer.Instance["Export"]
+          }
+        ]
       },
       ActionNav = new NavModel
       {
@@ -827,6 +856,117 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridSe
     }
 
     return new GridCountDto { Total = total, NamedFilterBadges = badges };
+  }
+
+  public virtual async Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default)
+  {
+    var parent = new Parent();
+    SetParent(parent);
+
+    ParentId = request.ParentId;
+
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+
+    var cols = CreateColumns();
+    var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.IsSortable).ToList();
+
+    var query = BaseQuery(db);
+    foreach (var filter in queryDeclaration.Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    if (ParentId.HasValue && parent.FilterFunc != null)
+    {
+      query = parent.FilterFunc(query, ParentId.Value);
+    }
+
+    if (request.NamedFilters is { Count: > 0 } nfs)
+    {
+      foreach (var nfKey in nfs)
+      {
+        var matched = queryDeclaration.NamedFilters.FirstOrDefault(f => string.Equals(f.Key, nfKey, StringComparison.OrdinalIgnoreCase));
+        if (matched != null)
+        {
+          query = query.Where(matched.Predicate);
+        }
+      }
+    }
+
+    if (request.SelectedIds is { Count: > 0 } selectedIds)
+    {
+      query = query.Where(e => selectedIds.Contains(e.Id));
+    }
+
+    var entityType = typeof(TEntity);
+    foreach (var col in exportColumns)
+    {
+      if (col.ReferenceService != null && !string.IsNullOrEmpty(col.Path))
+      {
+        var prop = entityType.GetProperty(col.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
+        {
+          try { query = query.Include(prop.Name); } catch { }
+        }
+      }
+    }
+
+    const int limit = 100_000;
+    IAsyncEnumerable<object> rowStream;
+
+    if (queryDeclaration.Selector != null)
+    {
+      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
+      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
+      var page = await dataProvider.GetPageAsync(new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields }, ct);
+      if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
+      {
+        await queryDeclaration.ComputeAction(page.Rows, ct);
+      }
+      var shaped = page.Rows.Select(r => ShapeRow(r, cols.List));
+      rowStream = ToAsyncEnumerable(shaped);
+    }
+    else
+    {
+      var defaultQueryMap = QueryMap.FromEntity<TEntity>().Build();
+      var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+      var defaultPage = await defaultDataProvider.GetPageAsync(new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields }, ct);
+      var shaped = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List));
+      rowStream = ToAsyncEnumerable(shaped);
+    }
+
+    var tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+    var fileStream = new FileStream(tempFilePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+
+    var label = L.TryGetString(Feature.Name, out var l) ? l : (string.IsNullOrEmpty(Feature.Name) ? typeof(TEntity).Name : Feature.Name);
+    var cleanName = System.Text.RegularExpressions.Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
+    var fileName = $"{cleanName}_{DateTime.UtcNow:yyyyMMdd_HHmm}.xlsx";
+
+    await GridExcelWriter.WriteAsync(
+      fileStream,
+      label,
+      exportColumns,
+      col => typeof(TRow).GetProperty(col.Path ?? "", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.PropertyType,
+      rowStream,
+      L,
+      TimeZoneInfo.Utc,
+      limit,
+      $"Export truncated to {limit} rows.",
+      ct
+    );
+
+    fileStream.Position = 0;
+    return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
+  }
+
+  private static async IAsyncEnumerable<object> ToAsyncEnumerable(IEnumerable<object> source)
+  {
+    foreach (var item in source)
+    {
+      yield return item;
+    }
+    await Task.CompletedTask;
   }
 
   protected virtual object ShapeRow(TRow row, IReadOnlyList<GridColumnDto> columns)
