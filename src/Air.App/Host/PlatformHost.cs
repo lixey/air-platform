@@ -40,21 +40,30 @@ public static class PlatformHost
   public const string ExportContractsSwitch = "--export-ui-contracts";
 
   public static WebApplicationBuilder AddPlatformModule<TModule>(this WebApplicationBuilder builder)
-    where TModule : class, IPlatformModule, new()
-  {
-    var module = new TModule();
+    where TModule : class, IPlatformModule, new() =>
+    builder.AddPlatformModule(new TModule());
 
-    // 1. Auto-register module assembly *Service, IGridService, IFormService
-    var moduleAssembly = typeof(TModule).Assembly;
+  public static WebApplicationBuilder AddPlatformModule(this WebApplicationBuilder builder, IPlatformModule module)
+  {
+    ArgumentNullException.ThrowIfNull(module);
+
+    // 1. Auto-register module assembly *Service, IGridService, IFormService, IScreenService
+    var moduleAssembly = module.GetType().Assembly;
     var serviceTypes = moduleAssembly.GetTypes()
       .Where(t => t is { IsClass: true, IsAbstract: false } &&
                   (typeof(IGridService).IsAssignableFrom(t) ||
                    typeof(IFormService).IsAssignableFrom(t) ||
+                   typeof(IScreenService).IsAssignableFrom(t) ||
+                   typeof(PlatformAppService).IsAssignableFrom(t) ||
                    t.Name.EndsWith("Service")));
 
     foreach (var st in serviceTypes)
     {
       builder.Services.TryAddScoped(st);
+      if (typeof(PlatformAppService).IsAssignableFrom(st) && st != typeof(PlatformAppService))
+      {
+        builder.Services.TryAddScoped(typeof(PlatformAppService), sp => sp.GetRequiredService(st));
+      }
     }
 
     // 2. Also register any service types explicitly specified in Menu features
@@ -66,10 +75,16 @@ public static class PlatformHost
       }
     }
 
-    // 3. User custom module configuration
+    // 3. Register module ResourceManager if present in module assembly
+    foreach (var resType in moduleAssembly.GetTypes().Where(t => t.Name.EndsWith("Resource", StringComparison.OrdinalIgnoreCase) && !t.IsAbstract && !t.IsGenericType))
+    {
+      Localizer.Instance.Register(resType);
+    }
+
+    // 4. User custom module configuration
     module.Configure(builder);
 
-    // 4. Common platform services: JSON, Tenant context, User context, Localizer, AppService
+    // 5. Common platform services: JSON, Tenant context, User context, Localizer, AppService
     builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
@@ -139,7 +154,7 @@ public static class PlatformHost
                 claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
               }
 
-              var tenantId = session.TenantId ?? (user as IHasTenant)?.TenantId;
+              var tenantId = session.TenantId ?? (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId;
               if (tenantId is > 0)
               {
                 claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));
@@ -158,7 +173,8 @@ public static class PlatformHost
                 context.Items[AuthClaims.ViaCookieItem] = true;
               }
 
-              using (AsyncLocalTenantContext.Use(tenantId, securityInfo.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase)))
+              var rightsSet = securityInfo.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+              using (AsyncLocalTenantContext.Use(tenantId, rightsSet, user.Id, context.TraceIdentifier))
               {
                 await next();
                 return;
@@ -213,27 +229,13 @@ public static class PlatformHost
 
     var builder = WebApplication.CreateBuilder(args);
 
-    // Register Platform Infrastructure
-    var catalog = new ModuleCatalog();
     foreach (var module in options.Modules)
     {
-      module.Configure(builder);
-      catalog.Register(module);
+      builder.AddPlatformModule(module);
     }
 
-    builder.Services.AddSingleton(catalog);
-    builder.Services.AddScoped<ScreenCatalog>();
-    builder.Services.AddHttpContextAccessor();
-    builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
-    builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
-    builder.Services.TryAddScoped<IUserContext, UserContext>();
-    builder.Services.TryAddScoped<PlatformAppService>();
-    builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
-
     var app = builder.Build();
-
-    app.UsePlatformAuth();
-    app.MapPlatformEndpoints();
+    app.MapPlatform();
     pipeline?.Invoke(app);
 
     await app.RunAsync();

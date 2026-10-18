@@ -4,7 +4,7 @@ namespace Air.App.Localization;
 
 public static class UiTexts
 {
-  public static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>
+  public static readonly IReadOnlyDictionary<string, string> English = BuildEnglish(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
   {
     ["ActualSize"] = "Actual size",
     ["AddCondition"] = "Add a condition",
@@ -205,7 +205,7 @@ public static class UiTexts
     ["ThemeLight"] = "Light theme",
     ["Today"] = "Today",
     ["TypeAtLeast"] = "Type at least {0} characters",
-    ["Ukrainian"] = "Ukrainian",
+    ["Ukrainian"] = "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430",
     ["Unpin"] = "Unpin",
     ["UnpinEntry"] = "Unpin {0}",
     ["Upload"] = "Upload",
@@ -214,15 +214,39 @@ public static class UiTexts
     ["Week"] = "Week",
     ["Where"] = "Where",
     ["Yes"] = "Yes"
-  }.ToFrozenDictionary();
+  });
+
+  private static FrozenDictionary<string, string> BuildEnglish(Dictionary<string, string> seed)
+  {
+    try
+    {
+      var mgr = new System.Resources.ResourceManager(typeof(Air.App.Resources.PlatformResource));
+      var set = mgr.GetResourceSet(System.Globalization.CultureInfo.InvariantCulture, true, true);
+      if (set != null)
+      {
+        foreach (System.Collections.DictionaryEntry entry in set)
+        {
+          if (entry.Key is string key && entry.Value is string val && !seed.ContainsKey(key))
+          {
+            seed[key] = val;
+          }
+        }
+      }
+    }
+    catch { }
+    return seed.ToFrozenDictionary(StringComparer.Ordinal);
+  }
 }
 
 public sealed class Localizer : ILocalizer
 {
   public static readonly Localizer Instance = new();
 
+  private readonly Lock _sync = new();
   private readonly List<System.Resources.ResourceManager> _managers = [];
-  private readonly HashSet<string> _loadedNames = [];
+  private readonly Dictionary<string, string> _canonicalKeys = new(StringComparer.OrdinalIgnoreCase);
+  private readonly HashSet<string> _loadedNames = new(StringComparer.Ordinal);
+  private int _lastAssemblyCount;
 
   public Localizer()
   {
@@ -232,64 +256,105 @@ public sealed class Localizer : ILocalizer
 
   public void Register(Type resourceType)
   {
-    if (resourceType != null && _loadedNames.Add(resourceType.FullName ?? resourceType.Name))
+    if (resourceType == null) return;
+    lock (_sync)
     {
-      _managers.Add(new System.Resources.ResourceManager(resourceType));
+      RegisterLocked(resourceType);
     }
   }
 
-  public void EnsureManagersLoaded()
+  private void RegisterLocked(Type resourceType)
   {
-    TryAddManager("DemoApp.Resources.AppResource, DemoApp.Api");
-    TryAddManager("DemoOrg.Resources.OrgResource, DemoOrg.Api");
-    TryAddManager("DemoEcom.Resources.EcomResource, DemoEcom.Api");
-
-    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+    if (!_loadedNames.Add(resourceType.FullName ?? resourceType.Name))
     {
-      try
-      {
-        foreach (var type in asm.GetTypes())
-        {
-          if (type.Name.EndsWith("Resource", StringComparison.OrdinalIgnoreCase) && !type.IsAbstract && !type.IsGenericType)
-          {
-            Register(type);
-          }
-        }
-      }
-      catch { }
+      return;
     }
+
+    var mgr = new System.Resources.ResourceManager(resourceType);
+    _managers.Add(mgr);
+    IndexKeysLocked(mgr, System.Globalization.CultureInfo.InvariantCulture);
+    try
+    {
+      IndexKeysLocked(mgr, new System.Globalization.CultureInfo("uk"));
+    }
+    catch { }
   }
 
-  private void TryAddManager(string typeName)
+  private void IndexKeysLocked(System.Resources.ResourceManager mgr, System.Globalization.CultureInfo culture)
   {
     try
     {
-      var type = Type.GetType(typeName);
-      if (type == null)
+      var set = mgr.GetResourceSet(culture, true, false);
+      if (set == null) return;
+      foreach (System.Collections.DictionaryEntry entry in set)
       {
-        var shortName = typeName.Split(',')[0].Trim();
-        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        if (entry.Key is string k && !_canonicalKeys.ContainsKey(k))
         {
-          type = asm.GetType(shortName);
-          if (type != null) break;
+          _canonicalKeys[k] = k;
         }
-      }
-      if (type != null)
-      {
-        Register(type);
       }
     }
     catch { }
   }
 
+  public void EnsureManagersLoaded()
+  {
+    var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+    if (assemblies.Length == _lastAssemblyCount)
+    {
+      return;
+    }
+
+    lock (_sync)
+    {
+      if (assemblies.Length == _lastAssemblyCount)
+      {
+        return;
+      }
+
+      foreach (var asm in assemblies)
+      {
+        if (asm.IsDynamic) continue;
+        try
+        {
+          foreach (var type in asm.GetTypes())
+          {
+            if (type.Name.EndsWith("Resource", StringComparison.OrdinalIgnoreCase) && !type.IsAbstract && !type.IsGenericType)
+            {
+              RegisterLocked(type);
+            }
+          }
+        }
+        catch { }
+      }
+
+      _lastAssemblyCount = assemblies.Length;
+    }
+  }
+
   public bool TryGetString(string key, out string result)
   {
+    if (string.IsNullOrEmpty(key))
+    {
+      result = string.Empty;
+      return false;
+    }
+
     var culture = System.Globalization.CultureInfo.CurrentUICulture;
-    foreach (var mgr in _managers)
+    System.Resources.ResourceManager[] snapshot;
+    string? canonical;
+    lock (_sync)
+    {
+      snapshot = [.. _managers];
+      _canonicalKeys.TryGetValue(key, out canonical);
+    }
+
+    foreach (var mgr in snapshot)
     {
       try
       {
-        var text = mgr.GetString(key, culture);
+        var text = mgr.GetString(key, culture)
+          ?? (canonical != null && canonical != key ? mgr.GetString(canonical, culture) : null);
         if (!string.IsNullOrEmpty(text))
         {
           result = text;
@@ -298,7 +363,8 @@ public sealed class Localizer : ILocalizer
       }
       catch { }
     }
-    if (UiTexts.English.TryGetValue(key, out var val))
+    if (UiTexts.English.TryGetValue(key, out var val) ||
+        (canonical != null && UiTexts.English.TryGetValue(canonical, out val)))
     {
       result = val;
       return true;

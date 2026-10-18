@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 namespace Air.App.Host;
 
 /// <summary>
-/// Resolves the current tenant and user rights for web requests from Claims, X-Tenant-Id header, or ambient AsyncLocal.
+/// Resolves the current tenant, user, and rights for web requests from Claims, X-Tenant-Id header, or ambient AsyncLocal.
 /// </summary>
 public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) : ITenantContext
 {
@@ -32,13 +32,29 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
           return tid;
         }
 
-        // Single tenant fallback for local dev / demo
         return 1;
       }
 
       return null;
     }
   }
+
+  public long? UserId
+  {
+    get
+    {
+      if (AsyncLocalTenantContext.Instance.UserId is { } ambient)
+      {
+        return ambient;
+      }
+
+      var sub = httpContextAccessor.HttpContext?.User.FindFirst(AuthClaims.Sub)?.Value;
+      return long.TryParse(sub, out var uid) ? uid : null;
+    }
+  }
+
+  public string? CorrelationId =>
+    AsyncLocalTenantContext.Instance.CorrelationId ?? httpContextAccessor.HttpContext?.TraceIdentifier;
 
   public IReadOnlySet<string>? Rights
   {

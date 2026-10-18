@@ -10,6 +10,7 @@ internal static class PredicateFactory
   private static readonly MethodInfo StringContains = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
   private static readonly MethodInfo StringStartsWith = typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string)])!;
   private static readonly MethodInfo StringEndsWith = typeof(string).GetMethod(nameof(string.EndsWith), [typeof(string)])!;
+  private static readonly MethodInfo StringToLower = typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)!;
 
   private static readonly FrozenDictionary<string, (string Positive, bool Negate)> Operators =
     new Dictionary<string, (string Positive, bool Negate)>
@@ -168,13 +169,14 @@ internal static class PredicateFactory
 
   internal static Expression TextMatch(QueryField field, Expression member, TextPattern pattern)
   {
-    var term = BoundValue.Of(pattern.Term, typeof(string));
+    var loweredMember = Expression.Call(member, StringToLower);
+    var term = BoundValue.Of(pattern.Term.ToLowerInvariant(), typeof(string));
     Expression match = pattern.Kind switch
     {
-      TextPatternKind.Equals => Expression.Equal(member, term),
-      TextPatternKind.StartsWith => Expression.Call(member, StringStartsWith, term),
-      TextPatternKind.EndsWith => Expression.Call(member, StringEndsWith, term),
-      _ => Expression.Call(member, StringContains, term)
+      TextPatternKind.Equals => Expression.Equal(loweredMember, term),
+      TextPatternKind.StartsWith => Expression.Call(loweredMember, StringStartsWith, term),
+      TextPatternKind.EndsWith => Expression.Call(loweredMember, StringEndsWith, term),
+      _ => Expression.Call(loweredMember, StringContains, term)
     };
     return Guarded(field, member, match);
   }

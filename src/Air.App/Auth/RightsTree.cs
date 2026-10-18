@@ -1,5 +1,7 @@
 using Air.App.Form;
+using Air.App.Localization;
 using Air.App.Modules;
+using Air.Data.Tenancy;
 
 namespace Air.App.Auth;
 
@@ -7,6 +9,7 @@ public static class RightsTree
 {
   public static List<CheckboxTreeNodeDto> Build(ModuleCatalog catalog, IReadOnlySet<string>? held = null)
   {
+    var L = Localizer.Instance;
     var modules = new List<CheckboxTreeNodeDto>();
 
     foreach (var module in catalog.Modules)
@@ -19,22 +22,23 @@ public static class RightsTree
       {
         var rights = new List<CheckboxTreeNodeDto>
         {
-          Node(feat.View.Key, "View")
+          Node(feat.View.Key, L["View"])
         };
 
         if (!feat.IsReadOnly)
         {
-          rights.Add(Node(feat.Edit.Key, "Edit"));
+          rights.Add(Node(feat.Edit.Key, L["Edit"]));
           if (feat.HasDelete)
           {
-            rights.Add(Node(feat.Delete.Key, "Delete"));
+            rights.Add(Node(feat.Delete.Key, L["Delete"]));
           }
         }
-        rights.Add(Node(feat.Export.Key, "Export"));
+        rights.Add(Node(feat.Export.Key, L["Export"]));
 
+        var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? L[feat.Name] : L[feat.CleanName];
         featureNodes.Add(Node(
           feat.All.Key,
-          feat.Name,
+          featureLabel,
           rights,
           feat.CleanName
         ));
@@ -42,12 +46,12 @@ public static class RightsTree
 
       modules.Add(Node(
         $"{module.Handle}.*",
-        module.Name,
+        L[module.Name],
         featureNodes
       ));
     }
 
-    return [Node("*", "All rights", modules)];
+    return [Node("*", L.TextOr("RightsTreeAll", L["All rights"]), modules)];
 
     CheckboxTreeNodeDto Node(string key, string label, List<CheckboxTreeNodeDto>? children = null, string? note = null) =>
       new()
@@ -74,15 +78,6 @@ public static class RightsTree
     return set;
   }
 
-  public static bool Covers(IReadOnlySet<string> held, string key)
-  {
-    if (held.Contains("*")) return true;
-    if (held.Contains(key)) return true;
-
-    var parts = key.Split('.');
-    if (parts.Length >= 2 && held.Contains($"{parts[0]}.*")) return true;
-    if (parts.Length >= 3 && held.Contains($"{parts[0]}.{parts[1]}.*")) return true;
-
-    return false;
-  }
+  public static bool Covers(IReadOnlySet<string> held, string key) =>
+    HeldRights.Covers(held, key);
 }

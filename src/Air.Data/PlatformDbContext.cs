@@ -26,6 +26,7 @@ public abstract class PlatformDbContext : DbContext
 
   public ITenantContext TenantContext => _tenantContext ?? AsyncLocalTenantContext.Instance;
 
+  public DbSet<AppLanguage> AppLanguage => Set<AppLanguage>();
   public DbSet<AppPlatformInstallation> AppPlatformInstallation => Set<AppPlatformInstallation>();
   public DbSet<Entities.AppPlatformChange> AppPlatformChange => Set<Entities.AppPlatformChange>();
 
@@ -105,7 +106,7 @@ public abstract class PlatformDbContext : DbContext
     ApplyEntityConventions();
 
     var pendingEntries = ChangeTracker.Entries()
-      .Where(e => e.Entity is IEntity and not Entities.AppPlatformChange && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      .Where(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
       .ToList();
 
     if (pendingEntries.Count == 0)
@@ -114,8 +115,10 @@ public abstract class PlatformDbContext : DbContext
     }
 
     var now = DateTimeOffset.UtcNow;
-    var runId = Guid.NewGuid();
+    var runId = Guid.CreateVersion7();
     var tenantId = TenantContext.TenantId ?? 0;
+    var userId = TenantContext.UserId;
+    var correlationId = TenantContext.CorrelationId;
 
     var journalSnapshots = new List<(EntityEntry Entry, Entities.AppPlatformChange Row)>();
     foreach (var entry in pendingEntries)
@@ -125,6 +128,8 @@ public abstract class PlatformDbContext : DbContext
       {
         RunId = runId,
         At = now,
+        UserId = userId,
+        CorrelationId = correlationId,
         TenantId = entry.Entity is IHasTenant t && t.TenantId != 0 ? t.TenantId : tenantId,
         Table = table
       };
@@ -138,10 +143,6 @@ public abstract class PlatformDbContext : DbContext
         row.Operation = Entities.ChangeOperations.Modified;
         row.RowId = ((IEntity)entry.Entity).Id;
         var modified = entry.Properties.Where(p => p.IsModified).ToList();
-        if (entry.Entity is IHasVersion)
-        {
-          modified.Add(entry.Property(nameof(IHasVersion.Ver)));
-        }
         row.Before = SerializeProperties(modified, p => p.OriginalValue);
         row.After = SerializeProperties(modified, p => p.CurrentValue);
       }
@@ -157,9 +158,9 @@ public abstract class PlatformDbContext : DbContext
 
     var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
 
+    var journalRows = new List<Entities.AppPlatformChange>(journalSnapshots.Count);
     try
     {
-      var journalRows = new List<Entities.AppPlatformChange>();
       foreach (var (entry, row) in journalSnapshots)
       {
         if (row.Operation == Entities.ChangeOperations.Added)
@@ -174,19 +175,32 @@ public abstract class PlatformDbContext : DbContext
       {
         AppPlatformChange.AddRange(journalRows);
         await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-        foreach (var r in journalRows)
-        {
-          Entry(r).State = EntityState.Detached;
-        }
       }
     }
     catch
     {
       // Non-fatal if table not yet created
     }
+    finally
+    {
+      foreach (var r in journalRows)
+      {
+        Entry(r).State = EntityState.Detached;
+      }
+    }
 
     return result;
   }
+
+  private static bool IsJournaled(EntityEntry entry) =>
+    entry.Entity is IEntity and not Entities.AppPlatformChange and not BaseAppAuthSession &&
+    !ChangesLoginCountersOnly(entry);
+
+  private static bool ChangesLoginCountersOnly(EntityEntry entry) =>
+    entry.Entity is BaseAppUser &&
+    entry.State == EntityState.Modified &&
+    entry.Properties.Any(p => p.IsModified) &&
+    entry.Properties.Where(p => p.IsModified).All(p => BaseAppUser.LoginCounters.Contains(p.Metadata.Name));
 
   private static string SerializeProperties(IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
   {
@@ -194,6 +208,11 @@ public abstract class PlatformDbContext : DbContext
     foreach (var p in properties)
     {
       if (p.Metadata.Name is nameof(IHasTimestamps.UpdatedAt)) continue;
+      if (((MemberInfo?)p.Metadata.PropertyInfo ?? p.Metadata.FieldInfo) is { } member &&
+          Attribute.IsDefined(member, typeof(SensitiveAttribute), inherit: true))
+      {
+        continue;
+      }
       dict[p.Metadata.Name] = val(p);
     }
     return System.Text.Json.JsonSerializer.Serialize(dict);
@@ -208,7 +227,7 @@ public abstract class PlatformDbContext : DbContext
     {
       if (entry.State == EntityState.Added)
       {
-        if (entry.Entity is IHasTimestamps timestamps)
+        if (entry.Entity is IHasTimestamps timestamps && timestamps.CreatedAt == default)
         {
           timestamps.CreatedAt = now;
         }
@@ -232,7 +251,9 @@ public abstract class PlatformDbContext : DbContext
       }
       else if (entry.State == EntityState.Modified)
       {
-        if (entry.Entity is IHasTimestamps timestamps)
+        var keepsVersion = ChangesLoginCountersOnly(entry);
+
+        if (entry.Entity is IHasTimestamps timestamps && !keepsVersion)
         {
           timestamps.UpdatedAt = now;
         }
@@ -244,7 +265,15 @@ public abstract class PlatformDbContext : DbContext
 
         if (entry.Entity is IHasVersion version)
         {
-          version.Ver++;
+          if (keepsVersion)
+          {
+            entry.Property(nameof(IHasVersion.Ver)).IsModified = false;
+          }
+          else
+          {
+            var origVer = entry.Property(nameof(IHasVersion.Ver)).OriginalValue as int? ?? version.Ver;
+            version.Ver = origVer + 1;
+          }
         }
       }
     }

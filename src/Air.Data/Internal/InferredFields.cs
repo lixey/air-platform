@@ -31,13 +31,13 @@ internal static class InferredFields
     {
       var path = prefix + member.Name;
       var inner = Unwrap(value);
-      if (inner is MemberInitExpression or NewExpression { Members: not null })
-      {
-        Collect(inner, path + ".", entity, fields);
-      }
-      else if (FieldKinds.Of(value.Type) is not null)
+      if (FieldKinds.Of(value.Type) is not null)
       {
         fields.Add((path, Expression.Lambda(value, entity)));
+      }
+      else if (inner is MemberInitExpression or NewExpression { Arguments.Count: > 0 })
+      {
+        Collect(inner, path + ".", entity, fields);
       }
     }
   }

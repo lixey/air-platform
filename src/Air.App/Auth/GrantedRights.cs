@@ -42,6 +42,7 @@ public static class GrantedRights
 
     var roleIds = roles.Select(r => r.Id).ToList();
     var isGlobal = roles.Any(r => r.TenantId == null);
+    var homeTenantId = roles.FirstOrDefault(r => r.TenantId != null)?.TenantId;
 
     var permissions = await db.Set<TGrant>()
       .Where(g => roleIds.Contains(g.AuthRoleId))
@@ -49,6 +50,6 @@ public static class GrantedRights
       .Distinct()
       .ToListAsync(cancellationToken);
 
-    return new SecurityInfo(permissions, isGlobal);
+    return new SecurityInfo(permissions, isGlobal, homeTenantId);
   }
 }

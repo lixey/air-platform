@@ -136,24 +136,36 @@ public static class PlatformEndpoints
     api.MapPost("/auth/get-login-screen", (HttpContext ctx) =>
     {
       var culture = ResolveRequestCulture(ctx.Request);
-      return Results.Ok(new LoginScreenDto
+      var prevCulture = System.Globalization.CultureInfo.CurrentCulture;
+      var prevUiCulture = System.Globalization.CultureInfo.CurrentUICulture;
+      System.Globalization.CultureInfo.CurrentCulture = culture;
+      System.Globalization.CultureInfo.CurrentUICulture = culture;
+      try
       {
-        Title = Localizer.Instance["SignIn"],
-        Login = Localizer.Instance["Login"],
-        Password = Localizer.Instance["Password"],
-        Submit = Localizer.Instance["SignIn"],
-        InvalidCredentials = Localizer.Instance["InvalidCredentials"],
-        TooManyAttempts = Localizer.Instance["TooManyAttempts"],
-        Unavailable = Localizer.Instance["Unavailable"],
-        ChangePasswordTitle = Localizer.Instance["ChangePasswordTitle"],
-        CurrentPassword = Localizer.Instance["PasswordCurrent"],
-        NewPassword = Localizer.Instance["PasswordNew"],
-        RepeatPassword = Localizer.Instance["PasswordRepeat"],
-        ChangePasswordSubmit = Localizer.Instance["ChangePasswordSubmit"],
-        PasswordsDiffer = Localizer.Instance["PasswordsDiffer"],
-        SignOut = Localizer.Instance["SignOut"],
-        Culture = culture.Name
-      });
+        return Results.Ok(new LoginScreenDto
+        {
+          Title = Localizer.Instance["SignIn"],
+          Login = Localizer.Instance["Login"],
+          Password = Localizer.Instance["Password"],
+          Submit = Localizer.Instance["SignIn"],
+          InvalidCredentials = Localizer.Instance["InvalidCredentials"],
+          TooManyAttempts = Localizer.Instance["TooManyAttempts"],
+          Unavailable = Localizer.Instance["Unavailable"],
+          ChangePasswordTitle = Localizer.Instance["ChangePasswordTitle"],
+          CurrentPassword = Localizer.Instance["PasswordCurrent"],
+          NewPassword = Localizer.Instance["PasswordNew"],
+          RepeatPassword = Localizer.Instance["PasswordRepeat"],
+          ChangePasswordSubmit = Localizer.Instance["ChangePasswordSubmit"],
+          PasswordsDiffer = Localizer.Instance["PasswordsDiffer"],
+          SignOut = Localizer.Instance["SignOut"],
+          Culture = culture.Name
+        });
+      }
+      finally
+      {
+        System.Globalization.CultureInfo.CurrentCulture = prevCulture;
+        System.Globalization.CultureInfo.CurrentUICulture = prevUiCulture;
+      }
     });
 
     api.MapPost("/auth/get-profile", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
@@ -194,7 +206,7 @@ public static class PlatformEndpoints
       var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
       var login = req?.Login?.Trim() ?? "";
 
-      if (string.IsNullOrWhiteSpace(login))
+      if (string.IsNullOrWhiteSpace(login) || string.IsNullOrEmpty(req?.Password))
       {
         return Results.Unauthorized();
       }
@@ -205,34 +217,54 @@ public static class PlatformEndpoints
         return Results.Unauthorized();
       }
 
-      if (!string.IsNullOrEmpty(user.PasswordHash))
+      var now = DateTimeOffset.UtcNow;
+      if (user.LockoutEnd is { } lockoutEnd && lockoutEnd > now)
       {
-        if (string.IsNullOrEmpty(req?.Password) || hasher.VerifyPassword(req.Password, user.PasswordHash) == PasswordVerification.Failed)
-        {
-          return Results.Unauthorized();
-        }
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
       }
 
-      var tenantId = (user as IHasTenant)?.TenantId;
+      if (string.IsNullOrEmpty(user.PasswordHash) ||
+          hasher.VerifyPassword(req.Password, user.PasswordHash) == PasswordVerification.Failed)
+      {
+        if (!user.IsRoot)
+        {
+          user.AccessFailedCount++;
+          if (user.AccessFailedCount >= 5)
+          {
+            user.LockoutCount++;
+            user.AccessFailedCount = 0;
+            user.LockoutEnd = now.AddMinutes(Math.Min(60, 5 * user.LockoutCount));
+          }
+          await authStore.SaveChangesAsync(ct);
+        }
+        return Results.Unauthorized();
+      }
+
+      user.AccessFailedCount = 0;
+      user.LockoutCount = 0;
+      user.LockoutEnd = null;
+      user.LastLoggedIn = now;
+
+      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      var tenantId = (user as Air.Data.Entities.IHasTenant)?.TenantId ?? securityInfo.HomeTenantId;
+      var refreshToken = SessionTokenService.CreateRefreshToken();
       var session = authStore.CreateSession(
         user.Id,
         tenantId,
         Guid.NewGuid(),
-        SessionTokenService.HashRefreshToken(SessionTokenService.CreateRefreshToken()),
-        DateTimeOffset.UtcNow.AddDays(30),
+        SessionTokenService.HashRefreshToken(refreshToken),
+        now.AddDays(30),
         ctx.Request.Headers.UserAgent.ToString(),
         ctx.Connection.RemoteIpAddress?.ToString()
       );
       await authStore.SaveChangesAsync(ct);
 
-      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
-      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
-      var refreshToken = SessionTokenService.CreateRefreshToken();
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, now.AddMinutes(30));
 
       ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
       {
         Path = "/",
-        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        Expires = now.AddMinutes(30),
         SameSite = SameSiteMode.Lax,
         HttpOnly = false
       });
@@ -240,7 +272,7 @@ public static class PlatformEndpoints
       ctx.Response.Cookies.Append(AuthClaims.RefreshCookie, refreshToken, new CookieOptions
       {
         Path = "/api/auth",
-        Expires = DateTimeOffset.UtcNow.AddDays(30),
+        Expires = now.AddDays(30),
         SameSite = SameSiteMode.Lax,
         HttpOnly = true
       });
@@ -273,7 +305,7 @@ public static class PlatformEndpoints
 
       if (req == null || string.IsNullOrWhiteSpace(req.NewPassword))
       {
-        return Results.BadRequest(new { error = "New password is required." });
+        return Results.BadRequest(new { error = Localizer.Instance["FormValidationRequired"] });
       }
 
       var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
@@ -282,12 +314,11 @@ public static class PlatformEndpoints
         return Results.Unauthorized();
       }
 
-      if (!string.IsNullOrEmpty(user.PasswordHash))
+      if (string.IsNullOrEmpty(user.PasswordHash) ||
+          string.IsNullOrEmpty(req.CurrentPassword) ||
+          hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
       {
-        if (string.IsNullOrEmpty(req.CurrentPassword) || hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
-        {
-          return Results.BadRequest(new { error = "Current password is incorrect." });
-        }
+        return Results.BadRequest(new { error = Localizer.Instance["InvalidCredentials"] });
       }
 
       user.PasswordHash = hasher.HashPassword(req.NewPassword);
@@ -295,40 +326,55 @@ public static class PlatformEndpoints
       user.TokenVersion++;
       await authStore.SaveChangesAsync(ct);
 
+      var now = DateTimeOffset.UtcNow;
+      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
       long? sessionId = userContext.SessionId;
       var session = sessionId != null ? await authStore.FindSessionAsync(sessionId.Value, ct) : null;
+      string? newRefreshToken = null;
+
       if (session != null)
       {
-        session.ExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
-        session.LastUsedAt = DateTimeOffset.UtcNow;
+        session.ExpiresAt = now.AddDays(30);
+        session.LastUsedAt = now;
         await authStore.SaveChangesAsync(ct);
       }
       else
       {
+        newRefreshToken = SessionTokenService.CreateRefreshToken();
         session = authStore.CreateSession(
           user.Id,
-          (user as IHasTenant)?.TenantId,
+          (user as Air.Data.Entities.IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
           Guid.NewGuid(),
-          SessionTokenService.HashRefreshToken(SessionTokenService.CreateRefreshToken()),
-          DateTimeOffset.UtcNow.AddDays(30),
+          SessionTokenService.HashRefreshToken(newRefreshToken),
+          now.AddDays(30),
           ctx.Request.Headers.UserAgent.ToString(),
           ctx.Connection.RemoteIpAddress?.ToString()
         );
         await authStore.SaveChangesAsync(ct);
       }
 
-      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
       var culture = ResolveRequestCulture(ctx.Request);
       var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
 
-      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, now.AddMinutes(30));
       ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
       {
         Path = "/",
-        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        Expires = now.AddMinutes(30),
         SameSite = SameSiteMode.Lax,
         HttpOnly = false
       });
+
+      if (newRefreshToken != null)
+      {
+        ctx.Response.Cookies.Append(AuthClaims.RefreshCookie, newRefreshToken, new CookieOptions
+        {
+          Path = "/api/auth",
+          Expires = now.AddDays(30),
+          SameSite = SameSiteMode.Lax,
+          HttpOnly = true
+        });
+      }
 
       var sessionDto = new SessionDto
       {
@@ -351,20 +397,34 @@ public static class PlatformEndpoints
 
     api.MapPost("/auth/refresh", async (RefreshRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
-      long? sessionId = userContext.SessionId;
-      if (sessionId == null && ctx.Request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
-          SessionTokenService.TryValidateAccessToken(cookieToken, out var sId, out _, out _))
+      var now = DateTimeOffset.UtcNow;
+      Air.Data.Entities.BaseAppAuthSession? session = null;
+
+      var rawRefresh = !string.IsNullOrWhiteSpace(req?.RefreshToken)
+        ? req.RefreshToken
+        : ctx.Request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var refreshCookie) ? refreshCookie : null;
+
+      if (!string.IsNullOrWhiteSpace(rawRefresh))
       {
-        sessionId = sId;
+        var hash = SessionTokenService.HashRefreshToken(rawRefresh);
+        session = await authStore.FindSessionByHashAsync(hash, ct);
       }
 
-      if (sessionId == null)
+      if (session == null)
       {
-        return Results.Unauthorized();
+        long? sessionId = userContext.SessionId;
+        if (sessionId == null && ctx.Request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
+            SessionTokenService.TryValidateAccessToken(cookieToken, out var sId, out _, out _))
+        {
+          sessionId = sId;
+        }
+        if (sessionId != null)
+        {
+          session = await authStore.FindSessionAsync(sessionId.Value, ct);
+        }
       }
 
-      var session = await authStore.FindSessionAsync(sessionId.Value, ct);
-      if (session == null || session.RevokedAt != null || session.ExpiresAt <= DateTimeOffset.UtcNow)
+      if (session == null || session.RevokedAt != null || session.ExpiresAt <= now)
       {
         return Results.Unauthorized();
       }
@@ -375,17 +435,31 @@ public static class PlatformEndpoints
         return Results.Unauthorized();
       }
 
+      var nextRefresh = SessionTokenService.CreateRefreshToken();
+      session.PreviousRefreshTokenHash = session.RefreshTokenHash;
+      session.RefreshTokenHash = SessionTokenService.HashRefreshToken(nextRefresh);
+      session.LastUsedAt = now;
+      await authStore.SaveChangesAsync(ct);
+
       var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
       var culture = ResolveRequestCulture(ctx.Request);
       var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
 
-      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, now.AddMinutes(30));
       ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
       {
         Path = "/",
-        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        Expires = now.AddMinutes(30),
         SameSite = SameSiteMode.Lax,
         HttpOnly = false
+      });
+
+      ctx.Response.Cookies.Append(AuthClaims.RefreshCookie, nextRefresh, new CookieOptions
+      {
+        Path = "/api/auth",
+        Expires = session.ExpiresAt,
+        SameSite = SameSiteMode.Lax,
+        HttpOnly = true
       });
 
       var sessionDto = new SessionDto
@@ -1052,6 +1126,15 @@ public static class PlatformEndpoints
           return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
         }
       }
+      else if (typeof(IScreenService).IsAssignableFrom(serviceType))
+      {
+        var screenService = (IScreenService)services.GetRequiredService(serviceType);
+        if (method == "get-data")
+        {
+          var screen = await screenService.BuildScreenAsync(serviceName, ct);
+          return Results.Ok(screen);
+        }
+      }
 
       return Results.NotFound();
       }
@@ -1069,20 +1152,20 @@ public static class PlatformEndpoints
     {
       var s = langVal.ToString();
       if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("uk-UA");
-      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return System.Globalization.CultureInfo.InvariantCulture;
+      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("en-US");
     }
 
     if (req.Cookies.TryGetValue("culture", out var cookieVal) && !string.IsNullOrWhiteSpace(cookieVal))
     {
       if (cookieVal.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("uk-UA");
-      if (cookieVal.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return System.Globalization.CultureInfo.InvariantCulture;
+      if (cookieVal.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("en-US");
     }
 
     if (req.Headers.TryGetValue("Accept-Language", out var acceptVal) && !string.IsNullOrWhiteSpace(acceptVal))
     {
       var s = acceptVal.ToString();
       if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("uk-UA");
-      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return System.Globalization.CultureInfo.InvariantCulture;
+      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return new System.Globalization.CultureInfo("en-US");
     }
 
     return new System.Globalization.CultureInfo("uk-UA");
@@ -1321,7 +1404,7 @@ public static class PlatformEndpoints
       dict[el.ReferencePath] = new Reference
       {
         Id = key.Value,
-        Name = !string.IsNullOrEmpty(refName) ? refName : $"#{key.Value}"
+        Name = !string.IsNullOrEmpty(refName) ? Localizer.Instance[refName] : $"#{key.Value}"
       };
     }
   }

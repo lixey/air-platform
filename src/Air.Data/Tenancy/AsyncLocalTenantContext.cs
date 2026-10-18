@@ -1,13 +1,15 @@
 namespace Air.Data.Tenancy;
 
 /// <summary>
-/// Ambient tenant context backed by AsyncLocal, allowing tenant propagation across async flows.
+/// Ambient tenant context backed by AsyncLocal, allowing tenant and user propagation across async flows.
 /// </summary>
 public class AsyncLocalTenantContext : ITenantContext
 {
   private sealed class TenantBox
   {
     public long? TenantId;
+    public long? UserId;
+    public string? CorrelationId;
     public IReadOnlySet<string>? Rights;
   }
 
@@ -16,15 +18,23 @@ public class AsyncLocalTenantContext : ITenantContext
   public static AsyncLocalTenantContext Instance { get; } = new();
 
   public long? TenantId => _box.Value?.TenantId;
+  public long? UserId => _box.Value?.UserId;
+  public string? CorrelationId => _box.Value?.CorrelationId;
   public IReadOnlySet<string>? Rights => _box.Value?.Rights;
 
-  public static IDisposable Use(long? tenantId, IReadOnlySet<string>? rights = null)
+  public static IDisposable Use(
+    long? tenantId,
+    IReadOnlySet<string>? rights = null,
+    long? userId = null,
+    string? correlationId = null)
   {
     var previous = _box.Value;
     _box.Value = new TenantBox
     {
       TenantId = tenantId,
-      Rights = rights ?? previous?.Rights
+      Rights = rights ?? previous?.Rights,
+      UserId = userId ?? previous?.UserId,
+      CorrelationId = correlationId ?? previous?.CorrelationId
     };
     return new Scope(previous);
   }
