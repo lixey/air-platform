@@ -11,7 +11,7 @@ namespace Air.App.Changes;
 /// The change journal (AppPlatformChange) of the tenant: a grid an application routes with a sealed
 /// service of its own and a read-only feature.
 /// </summary>
-public abstract class ChangeGridService(PlatformDbContext db) : GridService<AppPlatformChange>(db)
+public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null) : GridService<AppPlatformChange>(db)
 {
   protected override void SetColumns(Columns<AppPlatformChange> columns)
   {
@@ -52,20 +52,23 @@ public abstract class ChangeGridService(PlatformDbContext db) : GridService<AppP
       .OrderByDescending(c => c.Id)
       .ToListAsync(cancellationToken);
 
+    var modifiedContexts = new HashSet<PlatformDbContext>();
+
     foreach (var change in changes)
     {
-      var entityType = db.Model.GetEntityTypes().FirstOrDefault(e => e.ClrType.Name == change.Table)?.ClrType;
+      var targetDb = GetDbContextForTable(change.Table);
+      var entityType = targetDb.Model.GetEntityTypes().FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table)?.ClrType;
       if (entityType == null) continue;
 
       if (change.Operation == ChangeOperations.Modified && !string.IsNullOrEmpty(change.Before))
       {
-        var entity = await db.FindAsync(entityType, [change.RowId], cancellationToken);
+        var entity = await targetDb.FindAsync(entityType, [change.RowId], cancellationToken);
         if (entity != null)
         {
           var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before);
           if (beforeDict != null)
           {
-            var entry = db.Entry(entity);
+            var entry = targetDb.Entry(entity);
             foreach (var kvp in beforeDict)
             {
               if (kvp.Key == "Ver") continue;
@@ -89,6 +92,7 @@ public abstract class ChangeGridService(PlatformDbContext db) : GridService<AppP
               }
               catch { }
             }
+            modifiedContexts.Add(targetDb);
           }
         }
       }
@@ -100,7 +104,7 @@ public abstract class ChangeGridService(PlatformDbContext db) : GridService<AppP
           var entity = Activator.CreateInstance(entityType);
           if (entity != null)
           {
-            var entry = db.Entry(entity);
+            var entry = targetDb.Entry(entity);
             foreach (var kvp in beforeDict)
             {
               try
@@ -124,12 +128,43 @@ public abstract class ChangeGridService(PlatformDbContext db) : GridService<AppP
               catch { }
             }
             entry.State = EntityState.Added;
+            modifiedContexts.Add(targetDb);
           }
         }
       }
     }
 
-    await db.SaveChangesAsync(cancellationToken);
+    foreach (var ctx in modifiedContexts)
+    {
+      await ctx.SaveChangesAsync(cancellationToken);
+    }
+
     return new GridActionDto { Outcome = MutationOutcome.Committed };
+  }
+
+  private PlatformDbContext GetDbContextForTable(string table)
+  {
+    if (db.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
+    {
+      return db;
+    }
+    if (services != null)
+    {
+      var dbTypes = AppDomain.CurrentDomain.GetAssemblies()
+        .SelectMany(a => { try { return a.GetTypes(); } catch { return Type.EmptyTypes; } })
+        .Where(t => typeof(PlatformDbContext).IsAssignableFrom(t) && !t.IsAbstract && t != db.GetType());
+
+      foreach (var dbType in dbTypes)
+      {
+        if (services.GetService(dbType) is PlatformDbContext otherDb)
+        {
+          if (otherDb.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
+          {
+            return otherDb;
+          }
+        }
+      }
+    }
+    return db;
   }
 }
