@@ -41,6 +41,17 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
     hooks.AfterLoad((c, cancellationToken) =>
       c.IsNew ? EcomDocDefaults.NewAsync(c.Entity, Type, cancellationToken) : Task.CompletedTask);
     hooks.BeforeSave((c, cancellationToken) =>
-      EcomDocActions.SaveAsync(db, c, null, Status ?? (Statuses.Count > 0 ? Statuses[0] : new EcomDocStatus { IsEditable = true }), cancellationToken));
+    {
+      if (c.Entity.DocTypeId == 0)
+      {
+        c.Entity.DocTypeId = Type;
+      }
+      var status = Status ?? (Statuses.Count > 0 ? Statuses[0] : null);
+      if (c.Entity.DocStatusId == 0 && status != null)
+      {
+        c.Entity.DocStatusId = status.Id;
+      }
+      return EcomDocActions.SaveAsync(db, c, null, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
+    });
   }
 }

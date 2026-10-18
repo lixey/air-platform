@@ -719,8 +719,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
   public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, System.Text.Json.JsonElement? body, CancellationToken ct = default)
   {
-    var cols = new Columns<TRow>();
-    SetColumns(cols);
+    var cols = CreateColumns();
     if (cols.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow)
     {
       return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };

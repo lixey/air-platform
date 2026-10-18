@@ -776,7 +776,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
 
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
-    var entityJson = json.ValueKind == JsonValueKind.Object && json.TryGetProperty("value", out var val)
+    var entityJson = json.ValueKind == JsonValueKind.Object && (json.TryGetProperty("value", out var val) || json.TryGetProperty("entity", out val))
       ? val
       : json;
 
@@ -820,10 +820,18 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
 
+    var hooks = new Hooks();
+    SetHooks(hooks);
+
     TEntity entity;
     if (IsNew)
     {
       entity = new TEntity();
+      var loadCtx = new FormLoadContext<TEntity, TInput> { Entity = entity, Input = input, IsNew = true };
+      foreach (var h in hooks.AfterLoadActions)
+      {
+        await h(loadCtx, ct);
+      }
       if (Request.ParentId.HasValue && parent.BoundProperty != null)
       {
         if (parent.BoundProperty.PropertyType == typeof(long))
@@ -865,9 +873,6 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       Input = input,
       IsNew = IsNew
     };
-
-    var hooks = new Hooks();
-    SetHooks(hooks);
 
     foreach (var h in hooks.BeforeValidateActions)
     {
