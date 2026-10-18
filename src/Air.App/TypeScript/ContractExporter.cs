@@ -78,6 +78,7 @@ public static class ContractExporter
   {
     ExportUnionFromConsts(sb, typeof(UiFieldType), "UiFieldType");
     ExportUnionFromConsts(sb, typeof(UiColor), "UiColor");
+    ExportUnionFromConsts(sb, typeof(UiIcon), "UiIcon");
     ExportUnionFromConsts(sb, typeof(FilterOperator), "FilterOperator");
     ExportUnionFromConsts(sb, typeof(FilterLogic), "FilterLogic");
     ExportUnionFromConsts(sb, typeof(SortDirection), "SortDirection");
@@ -87,6 +88,8 @@ public static class ContractExporter
     ExportUnionFromConsts(sb, typeof(PanelDirection), "PanelDirection");
     ExportUnionFromConsts(sb, typeof(FormTab), "FormTab");
     ExportUnionFromConsts(sb, typeof(FormFieldType), "FormFieldType");
+    ExportUnionFromConsts(sb, typeof(FormLengthUnit), "FormLengthUnit");
+    ExportUnionFromConsts(sb, typeof(FormValueKind), "FormValueKind");
     ExportUnionFromConsts(sb, typeof(NavDirection), "NavDirection");
     ExportUnionFromConsts(sb, typeof(NavOverflow), "NavOverflow");
     ExportUnionFromConsts(sb, typeof(Air.App.Form.Contracts.FilesLook), "FilesLook");
@@ -94,7 +97,6 @@ public static class ContractExporter
     ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileType), "FileType");
     ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileCover), "FileCover");
 
-    sb.AppendLine("export type UiIcon = string;");
     sb.AppendLine("export type ButtonVariant = 'soft' | 'solid' | 'ghost';");
     sb.AppendLine("export type ButtonSize = 'small' | 'medium';");
     sb.AppendLine("export type FilterNode = FilterGroup | FilterRule;");
@@ -103,20 +105,16 @@ public static class ContractExporter
     sb.AppendLine();
     sb.AppendLine("export interface Page<TRow = unknown> {");
     sb.AppendLine("  rows: TRow[];");
-    sb.AppendLine("  total: number;");
-    sb.AppendLine("  hasMore?: boolean;");
-    sb.AppendLine("  page?: number;");
-    sb.AppendLine("  pageSize?: number;");
+    sb.AppendLine("  total?: number | null;");
+    sb.AppendLine("  hasMore: boolean;");
+    sb.AppendLine("  page: number;");
+    sb.AppendLine("  pageSize: number;");
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface GridPageDto<TRow = unknown> extends Page<TRow> {");
     sb.AppendLine("  bottomRows?: TRow[] | null;");
     sb.AppendLine("  forms?: Record<string, OverlayModelDto> | null;");
     sb.AppendLine("  topRows?: TRow[] | null;");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface GridPickRequest extends GridRequest {");
-    sb.AppendLine("  pickedId?: number;");
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface ActionInputDto {");
@@ -127,21 +125,9 @@ public static class ContractExporter
     sb.AppendLine("  method?: string | null;");
     sb.AppendLine("}");
     sb.AppendLine();
-    sb.AppendLine("export interface GridCellDto {");
-    sb.AppendLine("  outcome?: MutationOutcome | null;");
-    sb.AppendLine("  row?: unknown | null;");
-    sb.AppendLine("  warnings?: MessageDto[] | null;");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface GridCellRequest extends GridRequest {");
-    sb.AppendLine("  column?: string | null;");
-    sb.AppendLine("  path?: string | null;");
-    sb.AppendLine("  value?: unknown;");
-    sb.AppendLine("}");
-    sb.AppendLine();
     sb.AppendLine("export interface GridServiceEndpoints {");
     sb.AppendLine("  delete: { request: GridRequest; answer: GridDeleteDto };");
-    sb.AppendLine("  export: { request: GridRequest | null; answer: unknown };");
+    sb.AppendLine("  export: { request: GridRequest | null; answer: Blob };");
     sb.AppendLine("  'get-action-input': { request: GridActionInputRequest; answer: ActionInputDto };");
     sb.AppendLine("  'get-count': { request: GridRequest | null; answer: GridCountDto };");
     sb.AppendLine("  'get-data': { request: GridRequest | null; answer: ScreenDto };");
@@ -229,16 +215,18 @@ public static class ContractExporter
       }
 
       var nullInfo = nullability.Create(prop);
-      var isNullable = nullInfo.WriteState == NullabilityState.Nullable || nullInfo.ReadState == NullabilityState.Nullable;
+      var isNullable = nullInfo.WriteState == NullabilityState.Nullable ||
+                       nullInfo.ReadState == NullabilityState.Nullable ||
+                       Nullable.GetUnderlyingType(prop.PropertyType) != null ||
+                       (jsonIgnore != null && jsonIgnore.Condition == JsonIgnoreCondition.WhenWritingNull);
       var propName = char.ToLowerInvariant(prop.Name[0]) + prop.Name[1..];
       var isOptional = isClientOptionalType ||
                        isNullable ||
                        prop.GetCustomAttribute<ClientOptionalAttribute>() != null ||
-                       Nullable.GetUnderlyingType(prop.PropertyType) != null ||
-                       (jsonIgnore != null && jsonIgnore.Condition != JsonIgnoreCondition.Never);
+                       (jsonIgnore != null && jsonIgnore.Condition == JsonIgnoreCondition.WhenWritingDefault);
       var tsType = ToTsType(prop);
 
-      sb.AppendLine($"  {propName}{(isOptional ? "?" : "")}: {tsType};");
+      sb.AppendLine($"  {propName}{(isOptional ? "?" : "")}: {(isNullable ? $"{tsType} | null" : tsType)};");
     }
 
     sb.AppendLine("}");
@@ -290,6 +278,16 @@ public static class ContractExporter
 
   private static string ToTsType(PropertyInfo prop)
   {
+    if (prop.DeclaringType == typeof(NavButtonModel) && prop.Name == nameof(NavButtonModel.Badge))
+    {
+      return "string | number";
+    }
+
+    if (prop.GetCustomAttribute<WireNumberAttribute>() != null)
+    {
+      return "number";
+    }
+
     var oneOf = prop.GetCustomAttribute<OneOfAttribute>();
     if (oneOf?.Vocabularies.Count > 0)
     {

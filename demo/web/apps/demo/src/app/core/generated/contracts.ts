@@ -4,6 +4,8 @@ export type UiFieldType = 'text' | 'number' | 'date' | 'datetime' | 'time' | 'ch
 
 export type UiColor = 'primary' | 'brand' | 'slate' | 'gray' | 'zinc' | 'neutral' | 'stone' | 'red' | 'orange' | 'amber' | 'yellow' | 'lime' | 'green' | 'emerald' | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple' | 'fuchsia' | 'pink' | 'rose';
 
+export type UiIcon = 'alert' | 'apply' | 'arrow-bottom' | 'arrow-left' | 'arrow-right' | 'arrow-top' | 'ban' | 'box' | 'calendar' | 'cart' | 'chart' | 'checkmark' | 'chevron-bottom' | 'chevron-left' | 'chevron-right' | 'chevron-top' | 'chevrons-down' | 'chevrons-up' | 'chevrons-up-down' | 'circle' | 'circle-filled' | 'clock' | 'close' | 'columns' | 'compose' | 'desktop' | 'dots' | 'download' | 'edit' | 'ellipsis-horizontal' | 'ellipsis-vertical' | 'ellipsis-vertical-horizontal' | 'excel' | 'export' | 'external' | 'eye' | 'filter' | 'folder' | 'full' | 'fullscreen' | 'fullscreen-exit' | 'gear' | 'gift' | 'globe' | 'grip-vertical' | 'heart' | 'home' | 'import' | 'info' | 'internet' | 'kanban' | 'list-check' | 'location' | 'logout' | 'mail' | 'map' | 'mapPin' | 'maximize' | 'measure' | 'menu' | 'minimize' | 'minus' | 'moon' | 'move' | 'msg' | 'multiple' | 'options' | 'panelBottomClose' | 'panelBottomOpen' | 'panelRightClose' | 'panelRightOpen' | 'phone' | 'photo' | 'pin' | 'play' | 'plus' | 'print' | 'question' | 'reload' | 'rows' | 'save' | 'search' | 'secondary' | 'secondaryBottom' | 'secondaryLeft' | 'secondaryRight' | 'secondaryTop' | 'settings' | 'shelving' | 'sidebar' | 'sidebar-left' | 'sidebar-right' | 'signin' | 'signout' | 'sort-arrows' | 'spinner' | 'star' | 'sun' | 'telephone' | 'trash' | 'user' | 'users';
+
 export type FilterOperator = 'equals' | 'notEquals' | 'greaterThan' | 'greaterThanOrEqual' | 'lessThan' | 'lessThanOrEqual' | 'in' | 'notIn' | 'isNull' | 'isNotNull' | 'contains' | 'notContains' | 'startsWith' | 'notStartsWith' | 'endsWith' | 'notEndsWith' | 'matches' | 'notMatches';
 
 export type FilterLogic = 'and' | 'or';
@@ -22,6 +24,10 @@ export type FormTab = 'formTab' | 'record';
 
 export type FormFieldType = 'password' | 'email' | 'url';
 
+export type FormLengthUnit = 'utf16' | 'bytes' | 'items';
+
+export type FormValueKind = 'scalar' | 'list' | 'reference';
+
 export type NavDirection = 'row' | 'column';
 
 export type NavOverflow = 'scroll' | 'wrap';
@@ -34,7 +40,6 @@ export type FileType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' |
 
 export type FileCover = 'auto' | 'manual';
 
-export type UiIcon = string;
 export type ButtonVariant = 'soft' | 'solid' | 'ghost';
 export type ButtonSize = 'small' | 'medium';
 export type FilterNode = FilterGroup | FilterRule;
@@ -43,20 +48,16 @@ export type MutationOutcome = 'committed' | 'refused' | 'rolledBack' | 'conflict
 
 export interface Page<TRow = unknown> {
   rows: TRow[];
-  total: number;
-  hasMore?: boolean;
-  page?: number;
-  pageSize?: number;
+  total?: number | null;
+  hasMore: boolean;
+  page: number;
+  pageSize: number;
 }
 
 export interface GridPageDto<TRow = unknown> extends Page<TRow> {
   bottomRows?: TRow[] | null;
   forms?: Record<string, OverlayModelDto> | null;
   topRows?: TRow[] | null;
-}
-
-export interface GridPickRequest extends GridRequest {
-  pickedId?: number;
 }
 
 export interface ActionInputDto {
@@ -67,21 +68,9 @@ export interface GridActionInputRequest extends GridRequest {
   method?: string | null;
 }
 
-export interface GridCellDto {
-  outcome?: MutationOutcome | null;
-  row?: unknown | null;
-  warnings?: MessageDto[] | null;
-}
-
-export interface GridCellRequest extends GridRequest {
-  column?: string | null;
-  path?: string | null;
-  value?: unknown;
-}
-
 export interface GridServiceEndpoints {
   delete: { request: GridRequest; answer: GridDeleteDto };
-  export: { request: GridRequest | null; answer: unknown };
+  export: { request: GridRequest | null; answer: Blob };
   'get-action-input': { request: GridActionInputRequest; answer: ActionInputDto };
   'get-count': { request: GridRequest | null; answer: GridCountDto };
   'get-data': { request: GridRequest | null; answer: ScreenDto };
@@ -229,9 +218,9 @@ export type PlatformKind =
 export interface AppMetadataDto {
   menu: MenuItemDto[];
   routes: MenuItemDto[];
-  tenant?: SwitcherDto;
-  language?: SwitcherDto;
-  defaultCurrency?: string;
+  tenant?: SwitcherDto | null;
+  language?: SwitcherDto | null;
+  defaultCurrency?: string | null;
   texts: Record<string, string>;
 }
 
@@ -248,7 +237,7 @@ export interface CheckboxOptionDto {
 export interface CheckboxTreeNodeDto {
   key: string;
   label: string;
-  note?: string;
+  note?: string | null;
   isDisabled: boolean;
   children: CheckboxTreeNodeDto[];
 }
@@ -258,73 +247,73 @@ export interface FileInfoDto {
   name: string;
   contentType: string;
   size: number;
-  width?: number;
-  height?: number;
+  width?: number | null;
+  height?: number | null;
   createdAt: string;
-  uploadedBy?: string;
-  description?: string;
+  uploadedBy?: string | null;
+  description?: string | null;
   ver: number;
 }
 
 export interface FileInfoRequest {
-  name?: string;
-  description?: string;
+  name?: string | null;
+  description?: string | null;
   isDataOnly?: boolean;
-  id?: number;
-  parentService?: string;
-  parentId?: number;
-  selectedIds?: number[];
-  selectedVersions?: number[];
-  referenceLabelPaths?: string[];
-  patchSourceColumns?: string[];
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  selectedIds?: number[] | null;
+  selectedVersions?: number[] | null;
+  referenceLabelPaths?: string[] | null;
+  patchSourceColumns?: string[] | null;
   isReferencePicker?: boolean;
   includesInactive?: boolean;
-  namedFilters?: string[];
+  namedFilters?: string[] | null;
   page?: number;
   pageSize?: number;
-  sort?: SortRule[];
-  filter?: FilterNode;
-  columnFilter?: FilterNode;
-  search?: string;
-  searchFields?: string[];
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface FileMetadataDto {
-  make?: string;
-  model?: string;
-  lens?: string;
-  takenAt?: string;
-  exposureTime?: string;
-  fNumber?: number;
-  iso?: number;
-  focalLength?: number;
-  orientation?: number;
-  software?: string;
-  latitude?: number;
-  longitude?: number;
-  altitude?: number;
+  make?: string | null;
+  model?: string | null;
+  lens?: string | null;
+  takenAt?: string | null;
+  exposureTime?: string | null;
+  fNumber?: number | null;
+  iso?: number | null;
+  focalLength?: number | null;
+  orientation?: number | null;
+  software?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude?: number | null;
 }
 
 export interface FileMoveRequest {
-  beforeId?: number;
+  beforeId?: number | null;
   isDataOnly?: boolean;
-  id?: number;
-  parentService?: string;
-  parentId?: number;
-  selectedIds?: number[];
-  selectedVersions?: number[];
-  referenceLabelPaths?: string[];
-  patchSourceColumns?: string[];
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  selectedIds?: number[] | null;
+  selectedVersions?: number[] | null;
+  referenceLabelPaths?: string[] | null;
+  patchSourceColumns?: string[] | null;
   isReferencePicker?: boolean;
   includesInactive?: boolean;
-  namedFilters?: string[];
+  namedFilters?: string[] | null;
   page?: number;
   pageSize?: number;
-  sort?: SortRule[];
-  filter?: FilterNode;
-  columnFilter?: FilterNode;
-  search?: string;
-  searchFields?: string[];
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface FileUploadLimitsDto {
@@ -351,23 +340,23 @@ export interface FilterRule {
   kind: 'FilterRule';
   field: string;
   operator: FilterOperator;
-  value?: unknown;
-  picked?: PickedValue[];
+  value?: unknown | null;
+  picked?: PickedValue[] | null;
 }
 
 export interface FormActionDto {
-  outcome?: MutationOutcome;
-  warnings?: MessageDto[];
-  openScreen?: string;
-  openId?: number;
+  outcome?: MutationOutcome | null;
+  warnings?: MessageDto[] | null;
+  openScreen?: string | null;
+  openId?: number | null;
 }
 
 export interface FormAskModel {
   kind: 'FormAsk';
   elements: FormElementDto[];
-  title?: string;
-  message?: string;
-  color?: UiColor;
+  title?: string | null;
+  message?: string | null;
+  color?: UiColor | null;
   hasDefaults?: boolean;
 }
 
@@ -390,28 +379,28 @@ export interface FormChildScreenModel {
   service: string;
   parentService: string;
   parentId: number;
-  tabs?: NavModel;
+  tabs?: NavModel | null;
 }
 
 export interface FormConstraintsDto {
-  allowsNull?: boolean;
-  rejectsBlank?: boolean;
-  lengthUnit?: string;
-  minLength?: number;
-  maxLength?: number;
-  precision?: number;
-  scale?: number;
-  min?: unknown;
-  max?: unknown;
+  allowsNull?: boolean | null;
+  rejectsBlank?: boolean | null;
+  lengthUnit?: FormLengthUnit | null;
+  minLength?: number | null;
+  maxLength?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  min?: number | null;
+  max?: number | null;
 }
 
 export interface FormDataDto {
-  id?: number;
-  ver?: number;
+  id?: number | null;
+  ver?: number | null;
   value: Record<string, unknown>;
-  outcome?: MutationOutcome;
-  warnings?: MessageDto[];
-  unavailable?: Record<string, number>;
+  outcome?: MutationOutcome | null;
+  warnings?: MessageDto[] | null;
+  unavailable?: Record<string, number> | null;
 }
 
 export interface FormDateModel {
@@ -420,40 +409,41 @@ export interface FormDateModel {
 
 export interface FormDatetimeModel {
   kind: 'FormDatetime';
-  minuteStep?: number;
+  minuteStep?: number | null;
 }
 
 export interface FormElementDto {
   path: string;
-  referencePath?: string;
-  label?: string;
+  referencePath?: string | null;
+  label?: string | null;
   type: UiFieldType | FormFieldType;
-  temporalType?: UiTemporalType;
+  temporalType?: UiTemporalType | null;
   model: FormElementModel;
   span: number;
-  tab?: string;
+  tab?: string | null;
   isRequired: boolean;
   constraints: FormConstraintsDto;
   isDisabled: boolean;
   isHidden: boolean;
   isServerOwned: boolean;
+  isInputOnly: boolean;
   isSecret?: boolean;
-  valueKind: string;
+  valueKind: FormValueKind;
   hasSeparatorAfter?: boolean;
-  separatorLabel?: string;
-  placeholder?: string;
-  help?: string;
-  selectPatches?: SelectPatchDto[];
+  separatorLabel?: string | null;
+  placeholder?: string | null;
+  help?: string | null;
+  selectPatches?: SelectPatchDto[] | null;
 }
 
 export interface FormFilesModel {
   kind: 'FormFiles';
   key: string;
-  label?: string;
-  tab?: string;
+  label?: string | null;
+  tab?: string | null;
   service: string;
   parentService: string;
-  parentId?: number;
+  parentId?: number | null;
   look: FilesLook;
   limits: FileUploadLimitsDto;
   canUpload: boolean;
@@ -464,7 +454,7 @@ export interface FormFilesModel {
 
 export interface FormInfoModel {
   kind: 'FormInfo';
-  isGrouped?: boolean;
+  isGrouped?: boolean | null;
 }
 
 export interface FormInputModel {
@@ -475,8 +465,8 @@ export interface FormModel {
   kind: 'Form';
   service: string;
   elements: FormElementDto[];
-  tabs?: FormTabDto[];
-  files?: FormFilesModel[];
+  tabs?: FormTabDto[] | null;
+  files?: FormFilesModel[] | null;
   isReadOnly: boolean;
   dirtyDialog: OverlayDirtyModel;
   mutationTexts: MutationTextsDto;
@@ -484,73 +474,74 @@ export interface FormModel {
 
 export interface FormMoneyModel {
   kind: 'FormMoney';
-  currency?: string;
+  currency?: string | null;
 }
 
 export interface FormNavActionModel {
   kind: 'FormNavAction';
-  service?: string;
-  method?: string;
-  confirm?: OverlayConfirmModel;
-  ask?: FormAskModel;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  service: string;
+  method: string;
+  confirm?: OverlayConfirmModel | null;
+  ask?: FormAskModel | null;
+  unavailableReasons?: string[] | null;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface FormNavSaveCloseModel {
   kind: 'FormNavSaveClose';
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface FormNavSaveModel {
   kind: 'FormNavSave';
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface FormNavSaveOpenModel {
   kind: 'FormNavSaveOpen';
-  path?: string;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  path: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface FormNumberModel {
   kind: 'FormNumber';
-  step?: number;
+  step?: number | null;
   hasStepper?: boolean;
 }
 
@@ -564,20 +555,20 @@ export interface FormPhoneModel {
 }
 
 export interface FormRequest {
-  id?: number;
-  parentService?: string;
-  parentId?: number;
-  ver?: number;
-  value?: unknown;
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  ver?: number | null;
+  value?: unknown | null;
 }
 
 export interface FormSelectModel {
   kind: 'FormSelect';
-  referenceService?: string;
+  referenceService?: string | null;
   referenceLabelPaths: string[];
-  options?: OptionDto[];
-  referenceFilter?: FilterNode;
-  referenceDraftRules?: ReferenceDraftRuleDto[];
+  options?: OptionDto[] | null;
+  referenceFilter?: FilterNode | null;
+  referenceDraftRules?: ReferenceDraftRuleDto[] | null;
 }
 
 export interface FormTabDto {
@@ -591,7 +582,7 @@ export interface FormTextareaModel {
 
 export interface FormTimeModel {
   kind: 'FormTime';
-  minuteStep?: number;
+  minuteStep?: number | null;
 }
 
 export interface FormTimeZoneModel {
@@ -602,163 +593,163 @@ export interface FormTimeZoneModel {
 
 export interface GridActionDto {
   count: number;
-  id?: number;
-  outcome?: MutationOutcome;
-  warnings?: MessageDto[];
-  openScreen?: string;
-  openId?: unknown;
+  id?: number | null;
+  outcome?: MutationOutcome | null;
+  warnings?: MessageDto[] | null;
+  openScreen?: string | null;
+  openId?: unknown | null;
 }
 
 export interface GridCellCheckboxModel {
   kind: 'GridCellCheckbox';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellCoverModel {
   kind: 'GridCellCover';
   service: string;
   parentService: string;
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellDateModel {
   kind: 'GridCellDate';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellDatetimeModel {
   kind: 'GridCellDatetime';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellDto {
-  row?: unknown;
-  outcome?: MutationOutcome;
-  warnings?: MessageDto[];
+  row?: unknown | null;
+  outcome?: MutationOutcome | null;
+  warnings?: MessageDto[] | null;
 }
 
 export interface GridCellEmailModel {
   kind: 'GridCellEmail';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellFileModel {
   kind: 'GridCellFile';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellMoneyModel {
   kind: 'GridCellMoney';
-  currency?: string;
-  decimals?: number;
-  colorPath?: string;
+  currency?: string | null;
+  decimals?: number | null;
+  colorPath?: string | null;
 }
 
 export interface GridCellNumberModel {
   kind: 'GridCellNumber';
-  decimals?: number;
+  decimals?: number | null;
   isGrouped?: boolean;
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellOpenFormModel {
   kind: 'GridCellOpenForm';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellPercentModel {
   kind: 'GridCellPercent';
-  decimals?: number;
-  colorPath?: string;
+  decimals?: number | null;
+  colorPath?: string | null;
 }
 
 export interface GridCellPhoneModel {
   kind: 'GridCellPhone';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellReferenceModel {
   kind: 'GridCellReference';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellRequest {
   path?: string;
-  ver?: number;
+  ver?: number | null;
   value?: unknown;
   isDataOnly?: boolean;
-  id?: number;
-  parentService?: string;
-  parentId?: number;
-  selectedIds?: number[];
-  selectedVersions?: number[];
-  referenceLabelPaths?: string[];
-  patchSourceColumns?: string[];
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  selectedIds?: number[] | null;
+  selectedVersions?: number[] | null;
+  referenceLabelPaths?: string[] | null;
+  patchSourceColumns?: string[] | null;
   isReferencePicker?: boolean;
   includesInactive?: boolean;
-  namedFilters?: string[];
+  namedFilters?: string[] | null;
   page?: number;
   pageSize?: number;
-  sort?: SortRule[];
-  filter?: FilterNode;
-  columnFilter?: FilterNode;
-  search?: string;
-  searchFields?: string[];
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface GridCellSelectModel {
   kind: 'GridCellSelect';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellTextModel {
   kind: 'GridCellText';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellTimeModel {
   kind: 'GridCellTime';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridCellUrlModel {
   kind: 'GridCellUrl';
-  colorPath?: string;
+  colorPath?: string | null;
 }
 
 export interface GridColumnDto {
-  path?: string;
-  filterPath?: string;
-  label?: string;
-  type?: UiFieldType;
-  temporalType?: UiTemporalType;
-  width?: number;
-  maxWidth?: number;
-  isSortable?: boolean;
-  isFilterable?: boolean;
-  operators?: GridFilterOperatorDto[];
-  isResizable?: boolean;
-  isHidden?: boolean;
-  isDisabled?: boolean;
-  isRequired?: boolean;
-  isSticky?: boolean;
-  isStickyRight?: boolean;
+  path?: string | null;
+  filterPath?: string | null;
+  label?: string | null;
+  type: UiFieldType;
+  temporalType?: UiTemporalType | null;
+  width?: number | null;
+  maxWidth?: number | null;
+  isSortable: boolean;
+  isFilterable: boolean;
+  operators?: GridFilterOperatorDto[] | null;
+  isResizable: boolean;
+  isHidden: boolean;
+  isDisabled: boolean;
+  isRequired: boolean;
+  isSticky: boolean;
+  isStickyRight: boolean;
   isWrapped?: boolean;
   isEditable?: boolean;
   confirmsEdit?: boolean;
-  confirmText?: string;
-  referenceService?: string;
-  referenceLabelPaths?: string[];
-  referenceFilter?: FilterNode;
-  numberEdit?: GridNumberEditDto;
-  options?: Reference[];
-  cell?: CellModel;
-  header?: HeaderModel;
+  confirmText?: string | null;
+  referenceService?: string | null;
+  referenceLabelPaths?: string[] | null;
+  referenceFilter?: FilterNode | null;
+  numberEdit?: GridNumberEditDto | null;
+  options?: OptionDto[] | null;
+  cell: CellModel;
+  header?: HeaderModel | null;
 }
 
 export interface GridCountDto {
   total: number;
-  namedFilterBadges?: Record<string, number>;
+  namedFilterBadges?: Record<string, number> | null;
 }
 
 export interface GridCoverDto {
@@ -766,19 +757,19 @@ export interface GridCoverDto {
   name: string;
   contentType: string;
   url: string;
-  thumbUrl?: string;
+  thumbUrl?: string | null;
 }
 
 export interface GridDeleteDto {
   deleted: number;
-  outcome?: MutationOutcome;
-  warnings?: MessageDto[];
+  outcome?: MutationOutcome | null;
+  warnings?: MessageDto[] | null;
 }
 
 export interface GridFilterOperatorDto {
   handle: FilterOperator;
   label: string;
-  symbol?: string;
+  symbol?: string | null;
 }
 
 export interface GridFiltersOverlayModel {
@@ -789,7 +780,7 @@ export interface GridHeaderCellDto {
   label: string;
   colspan: number;
   model: HeaderModel;
-  color?: UiColor;
+  color?: UiColor | null;
 }
 
 export interface GridHeaderCheckboxModel {
@@ -802,8 +793,8 @@ export interface GridHeaderDateModel {
 
 export interface GridHeaderLabelModel {
   kind: 'GridHeaderLabel';
-  icon?: string;
-  filter?: FilterNode;
+  icon?: UiIcon | null;
+  filter?: FilterNode | null;
   isHighlighted?: boolean;
 }
 
@@ -827,108 +818,109 @@ export interface GridModel {
   isSelectable: boolean;
   isReadOnly: boolean;
   mutationTexts: MutationTextsDto;
-  form?: OverlayModelDto;
-  initialSearch?: string;
-  initialFilter?: FilterNode;
+  form?: OverlayModelDto | null;
+  initialSearch?: string | null;
+  initialFilter?: FilterNode | null;
   focusesSearch?: boolean;
 }
 
 export interface GridNavActionModel {
   kind: 'GridNavAction';
-  service?: string;
-  method?: string;
-  needsSelection?: boolean;
-  isDownload?: boolean;
-  confirm?: OverlayConfirmModel;
-  ask?: FormAskModel;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  service: string;
+  method: string;
+  needsSelection: boolean;
+  isDownload: boolean;
+  confirm?: OverlayConfirmModel | null;
+  ask?: FormAskModel | null;
+  unavailableReasons?: string[] | null;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface GridNavAddModel {
   kind: 'GridNavAdd';
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface GridNavNamedFilterGroupModel {
   kind: 'GridNavNamedFilterGroup';
-  items?: GridNavNamedFilterModel[];
+  items: GridNavNamedFilterModel[];
   isRemembered?: boolean;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface GridNavNamedFilterModel {
   kind: 'GridNavNamedFilter';
   isRemembered?: boolean;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface GridNavPickerModel {
   kind: 'GridNavPicker';
-  label?: string;
+  label?: string | null;
   referenceService: string;
   method: string;
   minLength: number;
-  readsParent: boolean;
+  readsParent?: boolean;
   key: string;
 }
 
 export interface GridNavSearchModel {
   kind: 'GridNavSearch';
-  label?: string;
+  label?: string | null;
   key: string;
 }
 
 export interface GridNavStatusModel {
   kind: 'GridNavStatus';
-  path?: string;
-  emptyTitle?: string;
-  moves?: GridNavStatusMoveDto[];
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  path: string;
+  emptyTitle: string;
+  moves: GridNavStatusMoveDto[];
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface GridNavStatusMoveDto {
@@ -938,85 +930,85 @@ export interface GridNavStatusMoveDto {
 
 export interface GridNavUploadModel {
   kind: 'GridNavUpload';
-  limits?: FileUploadLimitsDto;
-  canReadMetadata?: boolean;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  limits: FileUploadLimitsDto;
+  canReadMetadata: boolean;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface GridNumberEditDto {
-  step?: number;
-  min?: number;
-  max?: number;
-  hasStepper: boolean;
+  step?: number | null;
+  min?: number | null;
+  max?: number | null;
+  hasStepper?: boolean;
 }
 
 export interface GridPickRequest {
   pickedId?: number;
   isDataOnly?: boolean;
-  id?: number;
-  parentService?: string;
-  parentId?: number;
-  selectedIds?: number[];
-  selectedVersions?: number[];
-  referenceLabelPaths?: string[];
-  patchSourceColumns?: string[];
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  selectedIds?: number[] | null;
+  selectedVersions?: number[] | null;
+  referenceLabelPaths?: string[] | null;
+  patchSourceColumns?: string[] | null;
   isReferencePicker?: boolean;
   includesInactive?: boolean;
-  namedFilters?: string[];
+  namedFilters?: string[] | null;
   page?: number;
   pageSize?: number;
-  sort?: SortRule[];
-  filter?: FilterNode;
-  columnFilter?: FilterNode;
-  search?: string;
-  searchFields?: string[];
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface GridRequest {
   isDataOnly?: boolean;
-  id?: number;
-  parentService?: string;
-  parentId?: number;
-  selectedIds?: number[];
-  selectedVersions?: number[];
-  referenceLabelPaths?: string[];
-  patchSourceColumns?: string[];
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  selectedIds?: number[] | null;
+  selectedVersions?: number[] | null;
+  referenceLabelPaths?: string[] | null;
+  patchSourceColumns?: string[] | null;
   isReferencePicker?: boolean;
   includesInactive?: boolean;
-  namedFilters?: string[];
+  namedFilters?: string[] | null;
   page?: number;
   pageSize?: number;
-  sort?: SortRule[];
-  filter?: FilterNode;
-  columnFilter?: FilterNode;
-  search?: string;
-  searchFields?: string[];
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface GridUploadRequest {
-  parentService?: string;
-  parentId?: number;
-  afterId?: number;
-  metadata?: string;
+  parentService?: string | null;
+  parentId?: number | null;
+  afterId?: number | null;
+  metadata?: string | null;
 }
 
 export interface ListRequest {
   page?: number;
   pageSize?: number;
-  sort?: SortRule[];
-  filter?: FilterNode;
-  columnFilter?: FilterNode;
-  search?: string;
-  searchFields?: string[];
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface LoginRequest {
@@ -1043,32 +1035,32 @@ export interface LoginScreenDto {
 }
 
 export interface MenuItemDto {
-  path?: string;
-  handle?: string;
-  name?: string;
-  icon?: string;
-  screen?: string;
+  path?: string | null;
+  handle?: string | null;
+  name?: string | null;
+  icon?: string | null;
+  screen?: string | null;
   isSeparator?: boolean;
-  badge?: string;
+  badge?: string | null;
   items: MenuItemDto[];
 }
 
 export interface MessageDto {
-  code?: string;
-  detail?: string;
-  path?: string;
-  recordId?: number;
-  recordLabel?: string;
-  title?: string;
+  code?: string | null;
+  detail?: string | null;
+  path?: string | null;
+  recordId?: number | null;
+  recordLabel?: string | null;
+  title?: string | null;
   type: MessageType;
 }
 
 export interface MetadataDto {
   menu: MenuItemDto[];
   routes: MenuItemDto[];
-  tenant?: SwitcherDto;
-  language?: SwitcherDto;
-  defaultCurrency?: string;
+  tenant?: SwitcherDto | null;
+  language?: SwitcherDto | null;
+  defaultCurrency?: string | null;
   texts: Record<string, string>;
 }
 
@@ -1083,75 +1075,75 @@ export interface MutationTextsDto {
 }
 
 export interface NavButtonModel {
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavCloseModel {
   kind: 'NavClose';
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavLabelModel {
   kind: 'NavLabel';
-  path?: string;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  path?: string | null;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavLinkModel {
   kind: 'NavLink';
-  path?: string;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  path: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavMenuModel {
   kind: 'NavMenu';
-  elements?: NavElementModel[];
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  elements: NavElementModel[];
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavModel {
@@ -1161,7 +1153,7 @@ export interface NavModel {
   elements: NavElementModel[];
   end: NavElementModel[];
   more: NavElementModel[];
-  options?: NavOptionsDto;
+  options: NavOptionsDto;
 }
 
 export interface NavOptionsDto {
@@ -1171,22 +1163,22 @@ export interface NavOptionsDto {
 
 export interface NavOverlayModel {
   kind: 'NavOverlay';
-  overlay?: OverlayModelDto;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  overlay: OverlayModelDto;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavSearchModel {
   kind: 'NavSearch';
-  label?: string;
+  label?: string | null;
   value: string;
   key: string;
 }
@@ -1198,66 +1190,66 @@ export interface NavSeparatorModel {
 
 export interface NavTabModel {
   kind: 'NavTab';
-  group?: string;
-  value?: string;
-  path?: string;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  group: string;
+  value: string;
+  path?: string | null;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavTabsModel {
   kind: 'NavTabs';
   isPagedOnly?: boolean;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface NavToggleModel {
   kind: 'NavToggle';
-  path?: string;
+  path: string;
   targetsRoot?: boolean;
-  label?: string;
-  title?: string;
-  icon?: string;
-  color?: UiColor;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  badge?: string;
+  label?: string | null;
+  title?: string | null;
+  icon?: UiIcon | null;
+  color?: UiColor | null;
+  variant?: ButtonVariant | null;
+  size?: ButtonSize | null;
+  badge?: string | number | null;
   isDisabled?: boolean;
   isSelected?: boolean;
-  key?: string;
+  key: string;
 }
 
 export interface OptionDto {
   id: number;
   name: string;
-  color?: UiColor;
+  color?: UiColor | null;
 }
 
 export interface OverlayConfirmModel {
   kind: 'OverlayConfirm';
   message: string;
-  title?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  color?: UiColor;
-  typedAnswer?: string;
+  title?: string | null;
+  confirmLabel?: string | null;
+  cancelLabel?: string | null;
+  color?: UiColor | null;
+  typedAnswer?: string | null;
 }
 
 export interface OverlayDirtyModel {
@@ -1272,34 +1264,34 @@ export interface OverlayDirtyModel {
 export interface OverlayModelDto {
   key: string;
   presentation: OverlayPresentation;
-  layout?: PanelLayoutDto;
-  screen?: OverlayScreenDto;
-  width?: string;
-  height?: string;
-  maxWidth?: string;
+  layout?: PanelLayoutDto | null;
+  screen?: OverlayScreenDto | null;
+  width?: string | null;
+  height?: string | null;
+  maxWidth?: string | null;
   closesOnEscape?: boolean;
   closesOnOutside?: boolean;
 }
 
 export interface OverlayScreenDto {
   service: string;
-  params?: unknown;
+  params?: unknown | null;
 }
 
 export interface PanelLayoutDto {
   key: string;
-  gap?: number;
-  hideSecondaryUnder?: number;
+  gap?: number | null;
+  hideSecondaryUnder?: number | null;
   root: PanelNodeDto;
 }
 
 export interface PanelNodeDto {
   key: string;
-  model?: PanelModel;
-  label?: string;
+  model?: PanelModel | null;
+  label?: string | null;
   size?: string;
-  minSize?: string;
-  maxSize?: string;
+  minSize?: string | null;
+  maxSize?: string | null;
   isResizable?: boolean;
   isRigid?: boolean;
   isCollapsible?: boolean;
@@ -1307,16 +1299,16 @@ export interface PanelNodeDto {
   isTransparent?: boolean;
   isPinned?: boolean;
   isExclusive?: boolean;
-  hideUnder?: number;
-  pageUnder?: number;
-  pageUnderHeight?: number;
-  direction?: PanelDirection;
-  children?: PanelNodeDto[];
+  hideUnder?: number | null;
+  pageUnder?: number | null;
+  pageUnderHeight?: number | null;
+  direction?: PanelDirection | null;
+  children?: PanelNodeDto[] | null;
 }
 
 export interface PickedValue {
-  id?: unknown;
-  label?: string;
+  id?: unknown | null;
+  label?: string | null;
 }
 
 export interface Reference {
@@ -1330,14 +1322,14 @@ export interface ReferenceDraftRuleDto {
 }
 
 export interface RefreshRequest {
-  refreshToken?: string;
+  refreshToken?: string | null;
 }
 
 export interface ScreenDto {
-  layout?: PanelLayoutDto;
-  data?: unknown;
-  overlayWidth?: string;
-  overlayHeight?: string;
+  layout?: PanelLayoutDto | null;
+  data?: unknown | null;
+  overlayWidth?: string | null;
+  overlayHeight?: string | null;
 }
 
 export interface SelectPatchDto {
@@ -1358,9 +1350,9 @@ export interface SortRule {
 export interface SwitcherDto {
   label: string;
   current: Reference;
-  options?: Reference[];
-  service?: string;
-  method?: string;
+  options?: Reference[] | null;
+  service?: string | null;
+  method?: string | null;
 }
 
 export interface SwitchRequest {
@@ -1370,8 +1362,8 @@ export interface SwitchRequest {
 export interface UserProfileDto {
   id: number;
   login: string;
-  name?: string;
-  email?: string;
+  name?: string | null;
+  email?: string | null;
   language: string;
   timeZone: string;
   mustChangePassword: boolean;

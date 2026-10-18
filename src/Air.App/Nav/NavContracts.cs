@@ -35,30 +35,41 @@ public sealed record NavModel : PanelModel
   public List<NavElementModel> Elements { get; set; } = [];
   public List<NavElementModel> End { get; set; } = [];
   public List<NavElementModel> More { get; set; } = [];
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public NavOptionsDto? Options { get; set; }
+  public NavOptionsDto Options { get; set; } = new();
 }
 
-[ClientOptional]
 [UiContract]
 public abstract record NavButtonModel : NavElementModel
 {
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Label { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Title { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(UiIcon))]
   public string? Icon { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(UiColor))]
   public string? Color { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(ButtonVariant))]
   public string? Variant { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(ButtonSize))]
   public string? Size { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Badge { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsDisabled { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsSelected { get; set; }
 }
 
@@ -140,6 +151,9 @@ public sealed record FormNavActionModel : NavButtonModel
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public FormAskModel? Ask { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<string>? UnavailableReasons { get; set; }
 }
 
 [UiContract]
@@ -151,6 +165,5 @@ public sealed record FormNavSaveCloseModel : NavButtonModel;
 [UiContract]
 public sealed record FormNavSaveOpenModel : NavButtonModel
 {
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public string? Path { get; set; }
+  public string Path { get; set; } = string.Empty;
 }

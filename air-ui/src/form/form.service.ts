@@ -220,10 +220,15 @@ export class FormService {
 
   /** Whether the value differs from what the record was opened or last saved with. */
   readonly isDirty = computed(() => {
+    const value = this.value();
+    const baseline = this.baseline();
     const elements = this.model()?.elements ?? [];
+    if (baseline && value === baseline.value) {
+      return elements.some(e => isSecret(e) && !e.isDisabled && !e.isServerOwned && hasSecret(value[e.path]));
+    }
     return (
-      canonicalJson(this.value(), elements, this.zone()) !== this.baselineText() ||
-      elements.some(e => isSecret(e) && !e.isDisabled && !e.isServerOwned && hasSecret(this.value()[e.path]))
+      canonicalJson(value, elements, this.zone()) !== this.baselineText() ||
+      elements.some(e => isSecret(e) && !e.isDisabled && !e.isServerOwned && hasSecret(value[e.path]))
     );
   });
 

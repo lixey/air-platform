@@ -67,6 +67,7 @@ public sealed class GridNumberEditDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public double? Max { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool HasStepper { get; set; }
 }
 
@@ -79,7 +80,6 @@ public sealed class GridFilterOperatorDto
   public string? Symbol { get; set; }
 }
 
-[ClientOptional]
 [UiContract]
 public sealed class GridColumnDto
 {
@@ -117,8 +117,14 @@ public sealed class GridColumnDto
   public bool IsRequired { get; set; }
   public bool IsSticky { get; set; }
   public bool IsStickyRight { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsWrapped { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsEditable { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool ConfirmsEdit { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -232,6 +238,7 @@ public sealed record GridHeaderCheckboxModel : HeaderModel;
 public sealed record GridHeaderLabelModel : HeaderModel
 {
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(UiIcon))]
   public string? Icon { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -274,6 +281,9 @@ public sealed record GridNavActionModel : NavButtonModel
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public FormAskModel? Ask { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<string>? UnavailableReasons { get; set; }
 }
 
 [UiContract]
@@ -294,6 +304,7 @@ public sealed record GridNavStatusModel : NavButtonModel
 [UiContract]
 public sealed record GridNavNamedFilterModel : NavButtonModel
 {
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsRemembered { get; set; }
 }
 
@@ -301,6 +312,8 @@ public sealed record GridNavNamedFilterModel : NavButtonModel
 public sealed record GridNavNamedFilterGroupModel : NavButtonModel
 {
   public List<GridNavNamedFilterModel> Items { get; set; } = [];
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsRemembered { get; set; }
 }
 
@@ -313,6 +326,8 @@ public sealed record GridNavPickerModel : NavElementModel
   public string ReferenceService { get; set; } = string.Empty;
   public string Method { get; set; } = string.Empty;
   public int MinLength { get; set; } = 2;
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool ReadsParent { get; set; }
 }
 

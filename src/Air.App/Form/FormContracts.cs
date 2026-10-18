@@ -24,6 +24,22 @@ public static class FormFieldType
 }
 
 [UiContract]
+public static class FormLengthUnit
+{
+  public const string Utf16 = "utf16";
+  public const string Bytes = "bytes";
+  public const string Items = "items";
+}
+
+[UiContract]
+public static class FormValueKind
+{
+  public const string Scalar = "scalar";
+  public const string List = "list";
+  public const string Reference = "reference";
+}
+
+[UiContract]
 public sealed class CheckboxOptionDto
 {
   public long Id { get; set; }
@@ -54,6 +70,7 @@ public sealed class FormConstraintsDto
   public bool? RejectsBlank { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(FormLengthUnit))]
   public string? LengthUnit { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -69,9 +86,11 @@ public sealed class FormConstraintsDto
   public int? Scale { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [WireNumber]
   public JsonElement? Min { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [WireNumber]
   public JsonElement? Max { get; set; }
 }
 
@@ -164,14 +183,13 @@ public sealed class FormElementDto
   public bool IsDisabled { get; set; }
   public bool IsHidden { get; set; }
   public bool IsServerOwned { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsInputOnly { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsSecret { get; set; }
 
-  public string ValueKind { get; set; } = "scalar";
+  [OneOf(typeof(FormValueKind))]
+  public string ValueKind { get; set; } = FormValueKind.Scalar;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool HasSeparatorAfter { get; set; }

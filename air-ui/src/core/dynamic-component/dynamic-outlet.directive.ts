@@ -49,8 +49,8 @@ export class DynamicOutletDirective {
 
   private requestId = 0;
   private ref?: ComponentRef<unknown>;
-  private inputNames = new Map<string, string>();
-  private appliedInputs = new Set<string>();
+  private inputNames: ReadonlyMap<string, string> = new Map();
+  private appliedInputs = new Map<string, unknown>();
 
   private readonly resolveEffect = effect(() => {
     const resolved = this.resolved();
@@ -117,22 +117,24 @@ export class DynamicOutletDirective {
         next.set(templateName, value);
       }
     }
-    for (const name of this.appliedInputs) {
+    for (const name of this.appliedInputs.keys()) {
       if (!next.has(name)) {
         this.ref.setInput(name, undefined);
       }
     }
     for (const [name, value] of next) {
-      this.ref.setInput(name, value);
+      if (!this.appliedInputs.has(name) || !Object.is(this.appliedInputs.get(name), value)) {
+        this.ref.setInput(name, value);
+      }
     }
-    this.appliedInputs = new Set(next.keys());
+    this.appliedInputs = next;
   }
 
   private destroyComponent(): void {
     this.container.clear();
     this.ref = undefined;
     this.inputNames = new Map();
-    this.appliedInputs = new Set();
+    this.appliedInputs.clear();
   }
 }
 
@@ -155,12 +157,19 @@ function withoutModel(inputs: DynamicOutletInputs): DynamicOutletInputs {
   return rest;
 }
 
+const INPUT_NAMES_CACHE = new WeakMap<Type<unknown>, ReadonlyMap<string, string>>();
+
 /** Both the property and the template name of every input map to the name `setInput` expects. */
-function inputNamesOf(type: Type<unknown>): Map<string, string> {
+function inputNamesOf(type: Type<unknown>): ReadonlyMap<string, string> {
+  const cached = INPUT_NAMES_CACHE.get(type);
+  if (cached !== undefined) {
+    return cached;
+  }
   const names = new Map<string, string>();
   for (const { propName, templateName } of reflectComponentType(type)?.inputs ?? []) {
     names.set(propName, templateName);
     names.set(templateName, templateName);
   }
+  INPUT_NAMES_CACHE.set(type, names);
   return names;
 }
