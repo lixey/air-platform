@@ -59,6 +59,8 @@ public class RuleContext<TInput>
 public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TProp> getter)
 {
   private readonly List<Func<TProp, RuleContext<TInput>, CancellationToken, Task>> _validators = [];
+  private string? _lastErrorMessage;
+  private string? _lastErrorCode;
 
   public RuleBuilder<TInput, TProp> Custom(Action<TProp, RuleContext<TInput>> action)
   {
@@ -69,6 +71,32 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
   public RuleBuilder<TInput, TProp> CustomAsync(Func<TProp, RuleContext<TInput>, CancellationToken, Task> func)
   {
     _validators.Add(func);
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> Matches(string pattern)
+  {
+    var regex = new System.Text.RegularExpressions.Regex(pattern);
+    _validators.Add((val, ctx, ct) =>
+    {
+      if (val is string str && !string.IsNullOrEmpty(str) && !regex.IsMatch(str))
+      {
+        ctx.AddFailure(_lastErrorMessage ?? "Value does not match required pattern.");
+      }
+      return Task.CompletedTask;
+    });
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> WithMessage(string message)
+  {
+    _lastErrorMessage = message;
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> WithErrorCode(string code)
+  {
+    _lastErrorCode = code;
     return this;
   }
 

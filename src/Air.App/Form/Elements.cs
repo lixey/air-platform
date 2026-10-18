@@ -254,6 +254,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsPhone(string? mask = null) => this;
   public FormElement<TEntity, TProp> InputOnly() => this;
   public FormElement<TEntity, TProp> Unique(string? message = null) => this;
+  public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys) => this;
   public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
   {
     dto.Type = "checkbox-set";

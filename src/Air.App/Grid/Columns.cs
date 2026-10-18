@@ -106,8 +106,11 @@ public class Columns
 
 public class Columns<TRow> : Columns where TRow : class
 {
-  public GridColumn<TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression) =>
-    Add<TRow, TProp>(expression);
+  public GridColumn<TRow, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
+  {
+    var baseCol = base.Add<TRow, TProp>(expression);
+    return new GridColumn<TRow, TProp>(baseCol.Dto, this);
+  }
 
   public void UseStatusOf(Screens.IRecordStatuses<TRow> statuses) =>
     base.UseStatusOf(statuses);
@@ -135,6 +138,8 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     owner.FormServiceType = typeof(TFormService);
     return this;
   }
+
+  public GridColumn<TProp> AsCover<TFileGrid>() => this;
 
   public GridColumn<TProp> AsCheckbox()
   {
@@ -285,7 +290,12 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Min(double min) { base.Min(min); return this; }
   public new GridColumn<TEntity, TProp> Max(double max) { base.Max(max); return this; }
   public new GridColumn<TEntity, TProp> Editable(bool isEditable = true) { base.Editable(isEditable); return this; }
-  public new GridColumn<TEntity, TProp> AsReference<TGridService>() { base.AsReference<TGridService>(); return this; }
+  public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() { base.AsCover<TFileGrid>(); return this; }
+  public new GridReferenceColumn<TEntity, TProp, TProp> AsReference<TGridService>()
+  {
+    base.AsReference<TGridService>();
+    return new GridReferenceColumn<TEntity, TProp, TProp>(Dto, owner);
+  }
   public new GridReferenceColumn<TEntity, TSource, TProp> AsReference<TGridService, TSource>()
   {
     base.AsReference<TGridService, TSource>();
@@ -305,4 +315,6 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
   {
     return this;
   }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector) => this;
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => this;
 }
