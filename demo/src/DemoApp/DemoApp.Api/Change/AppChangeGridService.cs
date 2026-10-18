@@ -1,0 +1,13 @@
+using Air.App.Changes;
+using Air.App.Modules;
+using DemoApp.Data;
+
+namespace DemoApp.Change;
+
+/// <summary>
+/// The change journal of the active tenant, read only.
+/// </summary>
+public sealed class AppChangeGridService(AppDbContext db) : ChangeGridService(db)
+{
+  public override Feature Feature => App.Change;
+}

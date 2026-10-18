@@ -1,4 +1,4 @@
-using Air.App.Modules;
+using DemoApp.Change;
 using DemoApp.Color;
 using DemoApp.Language;
 using DemoApp.Role;
@@ -19,6 +19,7 @@ public sealed class App : ModuleDefinition<App>
   public static readonly Feature Session = Feature<AppSessionGridService>().ReadOnly();
   public static readonly Feature Color = Feature<AppColorGridService>().ReadOnly();
   public static readonly Feature UserGroup = Feature<AppUserGroupGridService>();
+  public static readonly Feature Change = Feature<AppChangeGridService>().ReadOnly();
 
   public static readonly Feature TenantForm = Feature<AppTenantFormService>();
   public static readonly Feature UserForm = Feature<AppUserFormService>();

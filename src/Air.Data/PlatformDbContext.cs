@@ -27,6 +27,7 @@ public abstract class PlatformDbContext : DbContext
   public ITenantContext TenantContext => _tenantContext ?? AsyncLocalTenantContext.Instance;
 
   public DbSet<AppPlatformInstallation> AppPlatformInstallation => Set<AppPlatformInstallation>();
+  public DbSet<Entities.AppPlatformChange> AppPlatformChange => Set<Entities.AppPlatformChange>();
 
   public long RequiredTenantId => TenantContext.TenantId
     ?? throw new InvalidOperationException("Operation requires an active tenant, but none was resolved.");
@@ -75,10 +76,103 @@ public abstract class PlatformDbContext : DbContext
     return base.SaveChanges(acceptAllChangesOnSuccess);
   }
 
-  public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+  public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
   {
     ApplyEntityConventions();
-    return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+    var pendingEntries = ChangeTracker.Entries()
+      .Where(e => e.Entity is IEntity and not Entities.AppPlatformChange && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      .ToList();
+
+    if (pendingEntries.Count == 0)
+    {
+      return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var runId = Guid.NewGuid();
+    var tenantId = TenantContext.TenantId ?? 0;
+
+    var journalSnapshots = new List<(EntityEntry Entry, Entities.AppPlatformChange Row)>();
+    foreach (var entry in pendingEntries)
+    {
+      var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
+      var row = new Entities.AppPlatformChange
+      {
+        RunId = runId,
+        At = now,
+        TenantId = entry.Entity is IHasTenant t && t.TenantId != 0 ? t.TenantId : tenantId,
+        Table = table
+      };
+
+      if (entry.State == EntityState.Added)
+      {
+        row.Operation = Entities.ChangeOperations.Added;
+      }
+      else if (entry.State == EntityState.Modified)
+      {
+        row.Operation = Entities.ChangeOperations.Modified;
+        row.RowId = ((IEntity)entry.Entity).Id;
+        var modified = entry.Properties.Where(p => p.IsModified).ToList();
+        if (entry.Entity is IHasVersion)
+        {
+          modified.Add(entry.Property(nameof(IHasVersion.Ver)));
+        }
+        row.Before = SerializeProperties(modified, p => p.OriginalValue);
+        row.After = SerializeProperties(modified, p => p.CurrentValue);
+      }
+      else if (entry.State == EntityState.Deleted)
+      {
+        row.Operation = Entities.ChangeOperations.Deleted;
+        row.RowId = ((IEntity)entry.Entity).Id;
+        row.Before = SerializeProperties(entry.Properties, p => p.OriginalValue);
+      }
+
+      journalSnapshots.Add((entry, row));
+    }
+
+    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+    try
+    {
+      var journalRows = new List<Entities.AppPlatformChange>();
+      foreach (var (entry, row) in journalSnapshots)
+      {
+        if (row.Operation == Entities.ChangeOperations.Added)
+        {
+          row.RowId = ((IEntity)entry.Entity).Id;
+          row.After = SerializeProperties(entry.Properties, p => p.CurrentValue);
+        }
+        journalRows.Add(row);
+      }
+
+      if (journalRows.Count > 0)
+      {
+        AppPlatformChange.AddRange(journalRows);
+        await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        foreach (var r in journalRows)
+        {
+          Entry(r).State = EntityState.Detached;
+        }
+      }
+    }
+    catch
+    {
+      // Non-fatal if table not yet created
+    }
+
+    return result;
+  }
+
+  private static string SerializeProperties(IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
+  {
+    var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+    foreach (var p in properties)
+    {
+      if (p.Metadata.Name is nameof(IHasTimestamps.UpdatedAt)) continue;
+      dict[p.Metadata.Name] = val(p);
+    }
+    return System.Text.Json.JsonSerializer.Serialize(dict);
   }
 
   private void ApplyEntityConventions()
