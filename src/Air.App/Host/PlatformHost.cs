@@ -1,10 +1,13 @@
+using System.Security.Claims;
 using System.Text.Json;
+using Air.App.Auth;
 using Air.App.Form;
 using Air.App.Grid;
 using Air.App.Localization;
 using Air.App.Modules;
 using Air.App.Screens;
 using Air.App.TypeScript;
+using Air.Data.Entities;
 using Air.Data.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,9 +69,12 @@ public static class PlatformHost
     // 3. User custom module configuration
     module.Configure(builder);
 
-    // 4. Common platform services: JSON, Tenant context, Screen catalog
+    // 4. Common platform services: JSON, Tenant context, User context, Localizer, AppService
     builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
     builder.Services.AddHttpContextAccessor();
+    builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
+    builder.Services.TryAddScoped<IUserContext, UserContext>();
+    builder.Services.TryAddScoped<PlatformAppService>();
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
 
     builder.Services.AddSingleton<IPlatformModule>(module);
@@ -86,10 +92,90 @@ public static class PlatformHost
     return builder;
   }
 
+  public static IApplicationBuilder UsePlatformAuth(this IApplicationBuilder app)
+  {
+    return app.Use(async (context, next) =>
+    {
+      string? token = null;
+      var isCookie = false;
+
+      if (context.Request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
+          !string.IsNullOrWhiteSpace(cookieToken))
+      {
+        token = cookieToken;
+        isCookie = true;
+      }
+      else if (context.Request.Headers.TryGetValue("Authorization", out var authHeader) &&
+               authHeader.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+      {
+        token = authHeader.ToString()["Bearer ".Length..].Trim();
+      }
+
+      if (!string.IsNullOrWhiteSpace(token) &&
+          SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _))
+      {
+        var authStore = context.RequestServices.GetService<IAuthStore>();
+        if (authStore != null)
+        {
+          var session = await authStore.FindSessionAsync(sessionId, context.RequestAborted);
+          if (session != null && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
+          {
+            var user = await authStore.FindUserByIdAsync(userId, context.RequestAborted);
+            if (user != null && user.IsActive)
+            {
+              var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
+
+              var claims = new List<Claim>
+              {
+                new(AuthClaims.Sub, user.Id.ToString()),
+                new(AuthClaims.Login, user.Login),
+                new(AuthClaims.SessionId, session.Id.ToString()),
+                new(AuthClaims.Version, user.TokenVersion.ToString())
+              };
+
+              if (user.MustChangePassword)
+              {
+                claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
+              }
+
+              var tenantId = session.TenantId ?? (user as IHasTenant)?.TenantId;
+              if (tenantId is > 0)
+              {
+                claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));
+              }
+
+              foreach (var p in securityInfo.Permissions)
+              {
+                claims.Add(new Claim(AuthClaims.Permission, p));
+              }
+
+              var identity = new ClaimsIdentity(claims, "PlatformAuth");
+              context.User = new ClaimsPrincipal(identity);
+
+              if (isCookie)
+              {
+                context.Items[AuthClaims.ViaCookieItem] = true;
+              }
+
+              using (AsyncLocalTenantContext.Use(tenantId, securityInfo.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase)))
+              {
+                await next();
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      await next();
+    });
+  }
+
   public static void MapPlatform(this WebApplication app)
   {
     var catalog = app.Services.GetRequiredService<ModuleCatalog>();
     ModuleCatalog.Instance = catalog;
+    app.UsePlatformAuth();
     app.MapPlatformEndpoints();
   }
 
@@ -136,9 +222,15 @@ public static class PlatformHost
 
     builder.Services.AddSingleton(catalog);
     builder.Services.AddScoped<ScreenCatalog>();
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
+    builder.Services.TryAddScoped<IUserContext, UserContext>();
+    builder.Services.TryAddScoped<PlatformAppService>();
+    builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
 
     var app = builder.Build();
 
+    app.UsePlatformAuth();
     app.MapPlatformEndpoints();
     pipeline?.Invoke(app);
 

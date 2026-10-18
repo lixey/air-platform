@@ -217,7 +217,7 @@ public static class UiTexts
   }.ToFrozenDictionary();
 }
 
-public sealed class Localizer
+public sealed class Localizer : ILocalizer
 {
   public static readonly Localizer Instance = new();
 

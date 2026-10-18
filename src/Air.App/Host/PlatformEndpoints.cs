@@ -23,7 +23,7 @@ public static class PlatformEndpoints
     var api = app.MapGroup("/api");
 
     // 1. Metadata (both GET and POST for convenience)
-    var getMetadataHandler = (ModuleCatalog catalog, HttpContext httpContext) =>
+    var getMetadataHandler = (ModuleCatalog catalog, HttpContext httpContext, IUserContext userContext) =>
     {
       var culture = ResolveRequestCulture(httpContext.Request);
       var prevCulture = System.Globalization.CultureInfo.CurrentCulture;
@@ -61,12 +61,21 @@ public static class PlatformEndpoints
 
         foreach (var module in catalog.Modules)
         {
+          var visibleNodes = module.Menu.Nodes
+            .Select(n => ToMenuItem(module.Handle, n, userContext))
+            .Where(n => n != null)
+            .Select(n => n!)
+            .ToList();
+
+          var trimmedNodes = TrimSeparators(visibleNodes);
+          if (trimmedNodes.Count == 0) continue;
+
           var rootItem = new MenuItemDto
           {
             Handle = module.Handle,
             Name = Localizer.Instance[module.Name],
             Path = module.Handle.ToLowerInvariant(),
-            Items = module.Menu.Nodes.Select(n => ToMenuItem(module.Handle, n)).ToList()
+            Items = trimmedNodes
           };
           metadata.Menu.Add(rootItem);
           metadata.Routes.AddRange(Flatten(rootItem));
@@ -74,6 +83,11 @@ public static class PlatformEndpoints
 
         foreach (var feat in catalog.AllFeatures)
         {
+          if (userContext.IsAuthenticated && !userContext.Can(feat.View))
+          {
+            continue;
+          }
+
           var screen = feat.ServiceType != null ? ServicePathResolver.Resolve(feat.ServiceType) : feat.Path;
           if (metadata.Routes.All(r => r.Screen != screen && r.Path != feat.Path))
           {
@@ -112,66 +126,205 @@ public static class PlatformEndpoints
     api.MapPost("/metadata/get-data", getMetadataHandler);
 
     // 2. Auth Endpoints
-    api.MapPost("/auth/get-profile", (HttpRequest req) =>
+    api.MapPost("/auth/get-login-screen", (HttpContext ctx) =>
     {
-      var culture = ResolveRequestCulture(req);
-      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
-      var user = new UserProfileDto
+      var culture = ResolveRequestCulture(ctx.Request);
+      return Results.Ok(new LoginScreenDto
       {
-        Id = 1,
-        Login = "admin",
-        Name = "Demo Administrator",
-        Email = "admin@air.platform",
+        Title = Localizer.Instance["SignIn"],
+        Login = Localizer.Instance["Login"],
+        Password = Localizer.Instance["Password"],
+        Submit = Localizer.Instance["SignIn"],
+        InvalidCredentials = Localizer.Instance["InvalidCredentials"],
+        TooManyAttempts = Localizer.Instance["TooManyAttempts"],
+        Unavailable = Localizer.Instance["Unavailable"],
+        ChangePasswordTitle = Localizer.Instance["ChangePasswordTitle"],
+        CurrentPassword = Localizer.Instance["PasswordCurrent"],
+        NewPassword = Localizer.Instance["PasswordNew"],
+        RepeatPassword = Localizer.Instance["PasswordRepeat"],
+        ChangePasswordSubmit = Localizer.Instance["ChangePasswordSubmit"],
+        PasswordsDiffer = Localizer.Instance["PasswordsDiffer"],
+        SignOut = Localizer.Instance["SignOut"],
+        Culture = culture.Name
+      });
+    });
+
+    api.MapPost("/auth/get-profile", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
+    {
+      if (!userContext.IsAuthenticated || userContext.UserId is null)
+      {
+        return Results.Unauthorized();
+      }
+
+      var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
+      if (user == null || !user.IsActive)
+      {
+        return Results.Unauthorized();
+      }
+
+      var culture = ResolveRequestCulture(ctx.Request);
+      var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
+      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+
+      var profile = new UserProfileDto
+      {
+        Id = user.Id,
+        Login = user.Login,
+        Name = user.Name ?? user.Login,
+        Email = user.Email ?? $"{user.Login}@demo.invalid",
         Language = isUk ? "uk" : "en",
-        TimeZone = "UTC",
-        Permissions = ["*"]
+        TimeZone = user.TimeZone ?? "UTC",
+        MustChangePassword = user.MustChangePassword,
+        Permissions = securityInfo.Permissions.ToList()
       };
-      return Results.Ok(user);
+
+      return Results.Ok(profile);
     });
 
-    api.MapPost("/auth/login", (LoginRequest? req, HttpRequest httpReq) =>
+    api.MapPost("/auth/login", async (LoginRequest? req, HttpContext ctx, IAuthStore authStore, CancellationToken ct) =>
     {
-      var culture = ResolveRequestCulture(httpReq);
+      var culture = ResolveRequestCulture(ctx.Request);
       var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
-      var login = req?.Login ?? "admin";
-      var session = new SessionDto
+      var login = req?.Login?.Trim() ?? "";
+
+      if (string.IsNullOrWhiteSpace(login))
+      {
+        return Results.Unauthorized();
+      }
+
+      var user = await authStore.FindUserByLoginAsync(login, ct);
+      if (user == null || !user.IsActive)
+      {
+        return Results.Unauthorized();
+      }
+
+      var tenantId = (user as IHasTenant)?.TenantId;
+      var session = authStore.CreateSession(
+        user.Id,
+        tenantId,
+        Guid.NewGuid(),
+        SessionTokenService.HashRefreshToken(SessionTokenService.CreateRefreshToken()),
+        DateTimeOffset.UtcNow.AddDays(30),
+        ctx.Request.Headers.UserAgent.ToString(),
+        ctx.Connection.RemoteIpAddress?.ToString()
+      );
+      await authStore.SaveChangesAsync(ct);
+
+      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
+      var refreshToken = SessionTokenService.CreateRefreshToken();
+
+      ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
+      {
+        Path = "/",
+        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        SameSite = SameSiteMode.Lax,
+        HttpOnly = false
+      });
+
+      ctx.Response.Cookies.Append(AuthClaims.RefreshCookie, refreshToken, new CookieOptions
+      {
+        Path = "/api/auth",
+        Expires = DateTimeOffset.UtcNow.AddDays(30),
+        SameSite = SameSiteMode.Lax,
+        HttpOnly = true
+      });
+
+      var sessionDto = new SessionDto
       {
         User = new UserProfileDto
         {
-          Id = 1,
-          Login = login,
-          Name = "Demo Administrator",
-          Email = $"{login}@air.platform",
+          Id = user.Id,
+          Login = user.Login,
+          Name = user.Name ?? user.Login,
+          Email = user.Email ?? $"{user.Login}@demo.invalid",
           Language = isUk ? "uk" : "en",
-          TimeZone = "UTC",
-          Permissions = ["*"]
+          TimeZone = user.TimeZone ?? "UTC",
+          MustChangePassword = user.MustChangePassword,
+          Permissions = securityInfo.Permissions.ToList()
         },
-        ExpiresIn = 86400
+        ExpiresIn = 1800
       };
-      return Results.Ok(session);
+
+      return Results.Ok(sessionDto);
     });
 
-    api.MapPost("/auth/refresh", (HttpRequest httpReq) =>
+    api.MapPost("/auth/refresh", async (RefreshRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
-      var culture = ResolveRequestCulture(httpReq);
+      long? sessionId = userContext.SessionId;
+      if (sessionId == null && ctx.Request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
+          SessionTokenService.TryValidateAccessToken(cookieToken, out var sId, out _, out _))
+      {
+        sessionId = sId;
+      }
+
+      if (sessionId == null)
+      {
+        return Results.Unauthorized();
+      }
+
+      var session = await authStore.FindSessionAsync(sessionId.Value, ct);
+      if (session == null || session.RevokedAt != null || session.ExpiresAt <= DateTimeOffset.UtcNow)
+      {
+        return Results.Unauthorized();
+      }
+
+      var user = await authStore.FindUserByIdAsync(session.UserId, ct);
+      if (user == null || !user.IsActive)
+      {
+        return Results.Unauthorized();
+      }
+
+      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      var culture = ResolveRequestCulture(ctx.Request);
       var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
-      var session = new SessionDto
+
+      var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30));
+      ctx.Response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
+      {
+        Path = "/",
+        Expires = DateTimeOffset.UtcNow.AddMinutes(30),
+        SameSite = SameSiteMode.Lax,
+        HttpOnly = false
+      });
+
+      var sessionDto = new SessionDto
       {
         User = new UserProfileDto
         {
-          Id = 1,
-          Login = "admin",
-          Name = "Demo Administrator",
+          Id = user.Id,
+          Login = user.Login,
+          Name = user.Name ?? user.Login,
+          Email = user.Email ?? $"{user.Login}@demo.invalid",
           Language = isUk ? "uk" : "en",
-          TimeZone = "UTC",
-          Permissions = ["*"]
+          TimeZone = user.TimeZone ?? "UTC",
+          MustChangePassword = user.MustChangePassword,
+          Permissions = securityInfo.Permissions.ToList()
         },
-        ExpiresIn = 86400
+        ExpiresIn = 1800
       };
-      return Results.Ok(session);
+
+      return Results.Ok(sessionDto);
     });
 
-    api.MapPost("/auth/logout", () => Results.Ok(new { }));
+    api.MapPost("/auth/logout", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
+    {
+      if (userContext.SessionId is { } sid)
+      {
+        var session = await authStore.FindSessionAsync(sid, ct);
+        if (session != null)
+        {
+          session.RevokedAt = DateTimeOffset.UtcNow;
+          session.RevokedReason = "self";
+          await authStore.SaveChangesAsync(ct);
+        }
+      }
+
+      ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions { Path = "/" });
+      ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions { Path = "/api/auth" });
+
+      return Results.Ok(new { });
+    });
 
     var switchLanguageHandler = (SwitchRequest req, HttpContext ctx) =>
     {
@@ -726,25 +879,72 @@ public static class PlatformEndpoints
     return ids;
   }
 
-  private static MenuItemDto ToMenuItem(string moduleHandle, ModuleMenuNode node)
+  private static MenuItemDto? ToMenuItem(string moduleHandle, ModuleMenuNode node, IUserContext user)
   {
-    var modLower = moduleHandle.ToLowerInvariant();
-    var fullPath = node.Feature?.Path;
-    if (fullPath is not null && !fullPath.StartsWith(modLower + "/", StringComparison.OrdinalIgnoreCase))
+    if (node.IsSeparator)
     {
-      fullPath = $"{modLower}/{fullPath.TrimStart('/')}";
+      return new MenuItemDto { IsSeparator = true };
     }
+
+    if (node.Feature is { } feature)
+    {
+      if (node.IsHidden) return null;
+      if (user.IsAuthenticated && (!user.Can(feature.View) || !user.Can(feature.MenuView)))
+      {
+        return null;
+      }
+
+      var modLower = moduleHandle.ToLowerInvariant();
+      var fullPath = feature.Path;
+      if (fullPath is not null && !fullPath.StartsWith(modLower + "/", StringComparison.OrdinalIgnoreCase))
+      {
+        fullPath = $"{modLower}/{fullPath.TrimStart('/')}";
+      }
+
+      return new MenuItemDto
+      {
+        Path = fullPath,
+        Handle = node.Handle,
+        Name = node.Title != null ? Localizer.Instance[node.Title] : null,
+        Icon = node.Icon,
+        Screen = feature.ServiceType != null ? ServicePathResolver.Resolve(feature.ServiceType) : feature.Path
+      };
+    }
+
+    var visibleChildren = node.Children
+      .Select(c => ToMenuItem(moduleHandle, c, user))
+      .Where(c => c != null)
+      .Select(c => c!)
+      .ToList();
+
+    var trimmedChildren = TrimSeparators(visibleChildren);
+    if (trimmedChildren.Count == 0) return null;
 
     return new MenuItemDto
     {
-      Path = fullPath,
       Handle = node.Handle,
       Name = node.Title != null ? Localizer.Instance[node.Title] : null,
       Icon = node.Icon,
-      Screen = node.Feature?.ServiceType != null ? ServicePathResolver.Resolve(node.Feature.ServiceType) : node.Feature?.Path,
-      IsSeparator = node.IsSeparator,
-      Items = node.Children.Where(c => !c.IsHidden).Select(c => ToMenuItem(moduleHandle, c)).ToList()
+      Items = trimmedChildren
     };
+  }
+
+  private static List<MenuItemDto> TrimSeparators(List<MenuItemDto> items)
+  {
+    var trimmed = new List<MenuItemDto>();
+    foreach (var item in items)
+    {
+      if (item.IsSeparator && (trimmed.Count == 0 || trimmed[^1].IsSeparator))
+      {
+        continue;
+      }
+      trimmed.Add(item);
+    }
+    if (trimmed.Count > 0 && trimmed[^1].IsSeparator)
+    {
+      trimmed.RemoveAt(trimmed.Count - 1);
+    }
+    return trimmed;
   }
 
   private static IEnumerable<MenuItemDto> Flatten(MenuItemDto item)

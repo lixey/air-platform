@@ -85,6 +85,7 @@ public class Feature
   public string Key => $"{Module}.{CleanName}";
 
   public Right View => Action("View");
+  public Right MenuView => Action("MenuView");
   public Right Edit => Action("Edit");
   public Right Delete => Action("Delete");
   public Right Export => Action("Export");

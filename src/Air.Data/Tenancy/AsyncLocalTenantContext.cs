@@ -5,21 +5,32 @@ namespace Air.Data.Tenancy;
 /// </summary>
 public class AsyncLocalTenantContext : ITenantContext
 {
-  private static readonly AsyncLocal<long?> _currentTenantId = new();
+  private sealed class TenantBox
+  {
+    public long? TenantId;
+    public IReadOnlySet<string>? Rights;
+  }
+
+  private static readonly AsyncLocal<TenantBox?> _box = new();
 
   public static AsyncLocalTenantContext Instance { get; } = new();
 
-  public long? TenantId => _currentTenantId.Value;
+  public long? TenantId => _box.Value?.TenantId;
+  public IReadOnlySet<string>? Rights => _box.Value?.Rights;
 
-  public static IDisposable Use(long? tenantId)
+  public static IDisposable Use(long? tenantId, IReadOnlySet<string>? rights = null)
   {
-    var previous = _currentTenantId.Value;
-    _currentTenantId.Value = tenantId;
+    var previous = _box.Value;
+    _box.Value = new TenantBox
+    {
+      TenantId = tenantId,
+      Rights = rights ?? previous?.Rights
+    };
     return new Scope(previous);
   }
 
-  private sealed class Scope(long? previous) : IDisposable
+  private sealed class Scope(TenantBox? previous) : IDisposable
   {
-    public void Dispose() => _currentTenantId.Value = previous;
+    public void Dispose() => _box.Value = previous;
   }
 }

@@ -110,11 +110,13 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
   }
 }
 
-public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IFormService
+public abstract class FormService<TEntity, TInput>(PlatformDbContext db, PlatformAppService? app = null) : IFormService
   where TEntity : class, IEntity, new()
   where TInput : class, new()
 {
   public PlatformDbContext DbContext => db;
+  protected PlatformAppService? PlatformApp => app;
+  protected Air.App.Auth.IUserContext? User => app?.User;
 
   public sealed class Elements : Elements<TInput> { }
 
@@ -1202,5 +1204,5 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db) : IForm
   }
 }
 
-public abstract class FormService<TEntity>(PlatformDbContext db) : FormService<TEntity, TEntity>(db)
+public abstract class FormService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : FormService<TEntity, TEntity>(db, app)
   where TEntity : class, IEntity, new();

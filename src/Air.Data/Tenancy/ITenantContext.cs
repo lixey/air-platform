@@ -6,4 +6,5 @@ namespace Air.Data.Tenancy;
 public interface ITenantContext
 {
   long? TenantId { get; }
+  IReadOnlySet<string>? Rights => null;
 }

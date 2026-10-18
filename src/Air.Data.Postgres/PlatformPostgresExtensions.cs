@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
@@ -51,6 +52,8 @@ public static class PlatformPostgresExtensions
 
     builder.Services.AddDbContext<TContext>(options =>
       options.UsePlatformPostgres(connectionString, npgsql));
+
+    builder.Services.TryAddScoped<PlatformDbContext>(sp => sp.GetRequiredService<TContext>());
 
     return builder;
   }

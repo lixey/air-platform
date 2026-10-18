@@ -32,10 +32,12 @@ public interface IGridService
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
 }
 
-public abstract class GridService<TEntity, TRow>(PlatformDbContext db) : IGridService
+public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformAppService? app = null) : IGridService
   where TEntity : class, IEntity, new()
   where TRow : class
 {
+  protected PlatformAppService? PlatformApp => app;
+  protected Air.App.Auth.IUserContext? User => app?.User;
   protected Localizer L => Localizer.Instance;
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
