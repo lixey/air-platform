@@ -1,0 +1,78 @@
+using System.Linq.Expressions;
+using System.Reflection;
+using Air.App.Internal;
+using Air.Data.Contracts;
+
+namespace Air.App.Form;
+
+public sealed class FormRefusedException(
+  string outcome,
+  string title,
+  IReadOnlyList<MessageDto> messages) : Exception(title)
+{
+  public string Outcome { get; } = outcome;
+  public string Title { get; } = title;
+  public IReadOnlyList<MessageDto> Messages { get; } = messages;
+}
+
+public class FormLoadContext<TEntity, TInput>
+{
+  public required TEntity Entity { get; init; }
+  public required TInput Input { get; init; }
+  public bool IsNew { get; init; }
+}
+
+public class FormSaveContext<TEntity, TInput>
+{
+  public required TEntity Entity { get; init; }
+  public required TInput Input { get; init; }
+  public bool IsNew { get; init; }
+  internal IReadOnlyDictionary<string, object?>? OriginalValues { get; init; }
+  public List<MessageDto> Errors { get; } = [];
+
+  public void AddError(string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void AddError(string code, string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void Refuse(string detail, string? path = null) =>
+    AddError(detail, path);
+
+  public bool Changed(params Expression<Func<TInput, object?>>[] properties)
+  {
+    if (IsNew || OriginalValues is null) return true;
+    if (properties.Length == 0) return true;
+
+    foreach (var propExpr in properties)
+    {
+      var body = propExpr.Body is UnaryExpression ue ? ue.Operand : propExpr.Body;
+      if (body is MemberExpression me && me.Member is PropertyInfo pi)
+      {
+        var currentVal = PropertyAccessorCache.GetValue(Input, pi.Name);
+        OriginalValues.TryGetValue(pi.Name, out var origVal);
+        if (!Equals(currentVal, origVal))
+        {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+}
+
+public class FormDeleteContext<TEntity>
+{
+  public required TEntity Entity { get; init; }
+  public List<MessageDto> Errors { get; } = [];
+
+  public void AddError(string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void AddError(string code, string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void Refuse(string detail, string? path = null) =>
+    AddError(detail, path);
+}
