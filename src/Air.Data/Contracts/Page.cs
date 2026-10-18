@@ -17,4 +17,13 @@ public class Page<TRow>
   public required int Size { get; init; }
 
   public required bool HasMore { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<TRow>? TopRows { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<TRow>? BottomRows { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public Dictionary<string, object?>? Forms { get; init; }
 }

@@ -138,13 +138,9 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       return this;
     }
 
-    public Query SortBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
-    public Query SortByDescending<TProp>(Expression<Func<TRow, TProp>> expr) => this;
-    public Query ThenBy<TProp>(Expression<Func<TRow, TProp>> expr) => this;
-    public Query ThenByDescending<TProp>(Expression<Func<TRow, TProp>> expr) => this;
-    public Query SearchBy(params Expression<Func<TRow, object?>>[] exprs) => this;
-    public InitialFilterBuilder<TProp> InitialFilter<TProp>(Expression<Func<TRow, TProp>> expr) => new(this);
-
+    internal List<SortRule> DefaultSort { get; } = [];
+    internal List<string>? SearchFields { get; private set; }
+    internal List<FilterRule> InitialFilters { get; } = [];
     internal List<string>? ReferenceLabelPaths { get; private set; }
     public Func<IReadOnlyList<TRow>, CancellationToken, Task>? ComputeAction { get; private set; }
 
@@ -153,6 +149,60 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       if (expr is UnaryExpression ue) expr = ue.Operand;
       return expr is MemberExpression me ? me.Member.Name : null;
     }
+
+    private static string? GetMemberPath(Expression expr)
+    {
+      if (expr is UnaryExpression ue) expr = ue.Operand;
+      var parts = new List<string>();
+      while (expr is MemberExpression me)
+      {
+        parts.Insert(0, char.ToLowerInvariant(me.Member.Name[0]) + me.Member.Name[1..]);
+        expr = me.Expression!;
+      }
+      return parts.Count > 0 ? string.Join('.', parts) : null;
+    }
+
+    public Query SortBy<TProp>(Expression<Func<TRow, TProp>> expr)
+    {
+      DefaultSort.Clear();
+      var path = GetMemberPath(expr.Body);
+      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Asc(path));
+      return this;
+    }
+
+    public Query SortByDescending<TProp>(Expression<Func<TRow, TProp>> expr)
+    {
+      DefaultSort.Clear();
+      var path = GetMemberPath(expr.Body);
+      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Desc(path));
+      return this;
+    }
+
+    public Query ThenBy<TProp>(Expression<Func<TRow, TProp>> expr)
+    {
+      var path = GetMemberPath(expr.Body);
+      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Asc(path));
+      return this;
+    }
+
+    public Query ThenByDescending<TProp>(Expression<Func<TRow, TProp>> expr)
+    {
+      var path = GetMemberPath(expr.Body);
+      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Desc(path));
+      return this;
+    }
+
+    public Query SearchBy(params Expression<Func<TRow, object?>>[] exprs)
+    {
+      SearchFields = exprs
+        .Select(e => GetMemberPath(e.Body) ?? "")
+        .Where(s => !string.IsNullOrEmpty(s))
+        .ToList();
+      return this;
+    }
+
+    public InitialFilterBuilder<TProp> InitialFilter<TProp>(Expression<Func<TRow, TProp>> expr) =>
+      new(this, GetMemberPath(expr.Body) ?? "");
 
     public Query ReferenceLabel(params Expression<Func<TRow, object?>>[] label)
     {
@@ -184,9 +234,16 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       return new GridNamedFilterBuilder(filter);
     }
 
-    public sealed class InitialFilterBuilder<TProp>(Query query)
+    public sealed class InitialFilterBuilder<TProp>(Query query, string field)
     {
-      public Query In(params TProp[] values) => query;
+      public Query In(params TProp[] values)
+      {
+        if (!string.IsNullOrEmpty(field) && values.Length > 0)
+        {
+          query.InitialFilters.Add(FilterNode.Rule(field, FilterOperator.In, values.Cast<object?>().ToList()));
+        }
+        return query;
+      }
     }
   }
 
@@ -284,17 +341,18 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     {
       var b = new ButtonBuilder();
       look?.Invoke(b);
+      var rawLabel = b.LabelText ?? method.Method.Name;
       var action = new GridNavActionModel
       {
         Service = servicePath,
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
-        Label = b.LabelText ?? method.Method.Name,
+        Label = Localizer.Instance[rawLabel],
         Icon = b.IconHandle,
         Color = b.ColorHandle ?? UiColor.Blue,
         Variant = b.VariantHandle ?? ButtonVariant.Soft,
         NeedsSelection = needsSelection,
-        Confirm = confirm != null ? new OverlayConfirmModel { Message = confirm, Color = UiColor.Red } : null
+        Confirm = confirm != null ? new OverlayConfirmModel { Message = Localizer.Instance[confirm], Color = UiColor.Red } : null
       };
       var entry = new NavActionEntry
       {
@@ -314,7 +372,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       {
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
-        Label = label,
+        Label = label != null ? Localizer.Instance[label] : null,
         ReferenceService = ServicePathResolver.Resolve(typeof(TSource)),
         MinLength = 2
       };
@@ -546,7 +604,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       navElements.Add(new GridNavNamedFilterModel
       {
         Key = item.Key,
-        Label = item.Label,
+        Label = Localizer.Instance[item.Label],
         Badge = badgeValue,
         IsRemembered = item.IsRemembered,
         IsSelected = false
@@ -619,33 +677,53 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     var actionElements = new List<NavElementModel>();
     if (columns.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && !isGridReadOnly)
     {
+      string? statusMemberName = null;
+      if (statusFlow.StatusMember.Body is MemberExpression memberExpr)
+      {
+        statusMemberName = memberExpr.Member.Name;
+      }
+      else if (statusFlow.StatusMember.Body is UnaryExpression { Operand: MemberExpression ueMember })
+      {
+        statusMemberName = ueMember.Member.Name;
+      }
+      var statusPath = !string.IsNullOrEmpty(statusMemberName)
+        ? char.ToLowerInvariant(statusMemberName[0]) + statusMemberName[1..]
+        : "docStatusId";
+
       var statusMoves = statusFlow.Transitions
         .Where(t => User == null || !User.IsAuthenticated || User.Can(Feature.Action(t.Name)) || User.Can(Feature.Edit) || User.Can(Feature.All))
         .Select(t =>
         {
           var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
+          var verbLabel = Localizer.Instance.TextOr($"Ecom: {t.Name}", Localizer.Instance[t.Name]);
+          var targetLabel = target != null ? Localizer.Instance[target.Name] : verbLabel;
+          var confirmMessage = t.Confirm != null ? Localizer.Instance[t.Confirm] : null;
           return new GridNavStatusMoveDto
           {
             From = [.. t.From],
             Action = new GridNavActionModel
             {
               Key = $"status.{t.Name.ToLowerInvariant()}",
-              Label = target?.Name ?? t.Name,
+              Label = verbLabel != t.Name ? verbLabel : targetLabel,
               Color = target?.Color,
               Service = servicePath,
               Method = $"move-status/{t.Name.ToLowerInvariant()}",
               NeedsSelection = true,
-              Confirm = t.Ask is not null || t.Confirm is null
+              Confirm = t.Ask is not null || confirmMessage is null
                 ? null
-                : new OverlayConfirmModel { Message = t.Confirm, Color = target?.Color },
+                : new OverlayConfirmModel { Message = confirmMessage, Color = target?.Color },
               Ask = t.Ask is null
                 ? null
                 : new FormAskModel
                 {
-                  Title = target?.Name ?? t.Name,
-                  Message = t.Confirm,
+                  Title = verbLabel != t.Name ? verbLabel : targetLabel,
+                  Message = confirmMessage,
                   Color = target?.Color,
-                  Elements = [.. t.Ask.BuildElements()]
+                  Elements = [.. t.Ask.BuildElements().Select(e =>
+                  {
+                    if (!string.IsNullOrEmpty(e.Label)) e.Label = Localizer.Instance[e.Label];
+                    return e;
+                  })]
                 }
             }
           };
@@ -657,7 +735,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
         {
           Key = "status",
           Label = Localizer.Instance["Status"],
-          Path = "docStatusId",
+          Path = statusPath,
           Moves = statusMoves
         };
         actionElements.Add(statusButton);
@@ -809,6 +887,23 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       cols.RetainOnly(preserved);
     }
 
+    if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
+    {
+      request.Sort = queryDeclaration.DefaultSort.ToList();
+    }
+
+    if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
+    {
+      request.SearchFields = queryDeclaration.SearchFields.ToList();
+    }
+
+    if (!isSelect && request.Filter is null && request.ColumnFilter is null && (gridReq?.NamedFilters is not { Count: > 0 }) && queryDeclaration.InitialFilters.Count > 0)
+    {
+      request.Filter = queryDeclaration.InitialFilters.Count == 1
+        ? queryDeclaration.InitialFilters[0]
+        : FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()]);
+    }
+
     if (queryDeclaration.Selector != null)
     {
       var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
@@ -820,9 +915,12 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       }
       var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
       await PopulateCoversAsync(shapedRows, cols.List, ct);
+      await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
+      var bottomRows = !isSelect ? await ComputeSumRowsAsync(dataProvider.Filter(request).Select(queryDeclaration.Selector), cols.List, ct) : null;
       return new Page<object>
       {
         Rows = shapedRows,
+        BottomRows = bottomRows,
         Total = page.Total,
         Number = page.Number,
         Size = page.Size,
@@ -835,10 +933,12 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
+    var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), cols.List, ct) : null;
 
     return new Page<object>
     {
       Rows = defaultShapedRows,
+      BottomRows = defaultBottomRows,
       Total = defaultPage.Total,
       Number = defaultPage.Number,
       Size = defaultPage.Size,
@@ -913,6 +1013,127 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     }
   }
 
+  private async Task PopulateProjectedColorsAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    if (typeof(TRow) == typeof(TEntity) || shapedRows.Count == 0) return;
+
+    var colorCols = columns.Where(c => c.ColorEvaluator != null && !string.IsNullOrEmpty(c.Path)).ToList();
+    if (colorCols.Count == 0) return;
+
+    var rowIds = new List<long>();
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+      {
+        if (long.TryParse(idVal.ToString(), out var parsedId))
+        {
+          rowIds.Add(parsedId);
+        }
+      }
+    }
+    if (rowIds.Count == 0) return;
+
+    var entityQuery = IncludeColumnNavigations(db.Set<TEntity>().AsNoTracking(), colorCols)
+      .Where(e => rowIds.Contains(e.Id));
+    var entitiesById = await entityQuery.ToDictionaryAsync(e => e.Id, ct);
+
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null) continue;
+      if (!long.TryParse(idVal.ToString(), out var parsedId) || !entitiesById.TryGetValue(parsedId, out var entity)) continue;
+
+      foreach (var col in colorCols)
+      {
+        var hue = col.ColorEvaluator!(entity);
+        if (string.IsNullOrEmpty(hue) || string.IsNullOrEmpty(col.Path)) continue;
+
+        var key = ToCamel(col.Path.Split('.')[0]);
+        if (dict.TryGetValue(key, out var val))
+        {
+          if (val is Reference r)
+          {
+            dict[key] = new Dictionary<string, object?>
+            {
+              ["id"] = r.Id,
+              ["name"] = r.Name,
+              ["color"] = hue
+            };
+          }
+          else if (val is Dictionary<string, object?> dictVal)
+          {
+            dictVal["color"] = hue;
+          }
+          else
+          {
+            dict[$"{col.Path}Color"] = hue;
+          }
+        }
+      }
+    }
+  }
+
+  private static async Task<List<object>?> ComputeSumRowsAsync<TSource>(IQueryable<TSource> filteredQuery, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    var sumCols = columns.Where(c => c.IsSummed && !string.IsNullOrEmpty(c.Path)).ToList();
+    if (sumCols.Count == 0) return null;
+
+    var sumRow = new Dictionary<string, object?>(StringComparer.Ordinal);
+    var rowParam = Expression.Parameter(typeof(TSource), "r");
+
+    foreach (var col in sumCols)
+    {
+      if (string.IsNullOrEmpty(col.Path)) continue;
+
+      Expression? current = rowParam;
+      Type currentType = typeof(TSource);
+      foreach (var seg in col.Path.Split('.'))
+      {
+        var prop = currentType.GetProperty(seg, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (prop == null)
+        {
+          current = null;
+          break;
+        }
+        current = Expression.Property(current, prop);
+        currentType = prop.PropertyType;
+      }
+
+      if (current == null) continue;
+      var underlying = Nullable.GetUnderlyingType(currentType) ?? currentType;
+
+      try
+      {
+        if (underlying == typeof(decimal))
+        {
+          var expr = Expression.Lambda<Func<TSource, decimal?>>(
+            currentType == typeof(decimal?) ? current : Expression.Convert(current, typeof(decimal?)),
+            rowParam);
+          var total = await filteredQuery.SumAsync(expr, ct) ?? 0m;
+          PutValue(sumRow, col.Path.Split('.'), total);
+        }
+        else if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short))
+        {
+          var expr = Expression.Lambda<Func<TSource, long?>>(
+            currentType == typeof(long?) ? current : Expression.Convert(current, typeof(long?)),
+            rowParam);
+          var total = await filteredQuery.SumAsync(expr, ct) ?? 0L;
+          PutValue(sumRow, col.Path.Split('.'), total);
+        }
+        else if (underlying == typeof(double) || underlying == typeof(float))
+        {
+          var expr = Expression.Lambda<Func<TSource, double?>>(
+            currentType == typeof(double?) ? current : Expression.Convert(current, typeof(double?)),
+            rowParam);
+          var total = await filteredQuery.SumAsync(expr, ct) ?? 0d;
+          PutValue(sumRow, col.Path.Split('.'), total);
+        }
+      }
+      catch { }
+    }
+
+    return sumRow.Count > 0 ? [sumRow] : null;
+  }
+
   private static IQueryable<TEntity> IncludeColumnNavigations(IQueryable<TEntity> query, IEnumerable<GridColumnDto> columns)
   {
     var entityType = typeof(TEntity);
@@ -954,10 +1175,24 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
       if (!string.IsNullOrEmpty(col.ColorNavPath))
       {
-        var prop = entityType.GetProperty(col.ColorNavPath, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        if (prop != null)
+        var navParts = col.ColorNavPath.Split('.');
+        var currentType = entityType;
+        var validNavProps = new List<string>();
+        foreach (var navPart in navParts)
         {
-          try { query = query.Include(prop.Name); } catch { }
+          var prop = currentType.GetProperty(navPart, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+          if (prop == null)
+          {
+            validNavProps.Clear();
+            break;
+          }
+          validNavProps.Add(prop.Name);
+          currentType = prop.PropertyType;
+        }
+        if (validNavProps.Count > 0)
+        {
+          var actualColorNavPath = string.Join('.', validNavProps);
+          try { query = query.Include(actualColorNavPath); } catch { }
         }
       }
     }
@@ -1036,6 +1271,8 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
 
+    var cols = CreateColumns();
+
     var query = BaseQuery(db);
     foreach (var filter in queryDeclaration.Filters)
     {
@@ -1059,7 +1296,25 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       }
     }
 
-    var total = await query.CountAsync(ct);
+    if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
+    {
+      request.SearchFields = queryDeclaration.SearchFields.ToList();
+    }
+
+    int total;
+    if (queryDeclaration.Selector != null)
+    {
+      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
+      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
+      total = await dataProvider.Filter(request).CountAsync(ct);
+    }
+    else
+    {
+      var defaultQueryMap = BuildDefaultQueryMap(cols.List);
+      var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+      total = await defaultDataProvider.Filter(request).CountAsync(ct);
+    }
+
     Dictionary<string, int>? badges = null;
     foreach (var item in queryDeclaration.NamedFilters)
     {
@@ -1119,6 +1374,16 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
     query = IncludeColumnNavigations(query, exportColumns);
 
+    if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
+    {
+      request.Sort = queryDeclaration.DefaultSort.ToList();
+    }
+
+    if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
+    {
+      request.SearchFields = queryDeclaration.SearchFields.ToList();
+    }
+
     const int limit = 100_000;
     IAsyncEnumerable<object> rowStream;
 
@@ -1126,21 +1391,25 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     {
       var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
       var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
-      var page = await dataProvider.GetPageAsync(new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields }, ct);
-      if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
+      if (queryDeclaration.ComputeAction != null)
       {
-        await queryDeclaration.ComputeAction(page.Rows, ct);
+        var page = await dataProvider.GetPageAsync(new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields }, ct);
+        if (page.Rows.Count > 0)
+        {
+          await queryDeclaration.ComputeAction(page.Rows, ct);
+        }
+        rowStream = ToAsyncEnumerable(page.Rows.Select(r => ShapeRow(r, cols.List)));
       }
-      var shaped = page.Rows.Select(r => ShapeRow(r, cols.List));
-      rowStream = ToAsyncEnumerable(shaped);
+      else
+      {
+        rowStream = ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
+      }
     }
     else
     {
       var defaultQueryMap = BuildDefaultQueryMap(cols.List);
       var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
-      var defaultPage = await defaultDataProvider.GetPageAsync(new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields }, ct);
-      var shaped = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List));
-      rowStream = ToAsyncEnumerable(shaped);
+      rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
     }
 
     var tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
@@ -1165,6 +1434,22 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
     fileStream.Position = 0;
     return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
+  }
+
+  private async IAsyncEnumerable<object> ShapeStreamAsync(IAsyncEnumerable<TRow> source, IReadOnlyList<GridColumnDto> columns, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+  {
+    await foreach (var item in source.WithCancellation(ct))
+    {
+      yield return ShapeRow(item, columns);
+    }
+  }
+
+  private async IAsyncEnumerable<object> ShapeEntityStreamAsync(IAsyncEnumerable<TEntity> source, IReadOnlyList<GridColumnDto> columns, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+  {
+    await foreach (var item in source.WithCancellation(ct))
+    {
+      yield return ShapeRow((item as TRow)!, columns);
+    }
   }
 
   private static async IAsyncEnumerable<object> ToAsyncEnumerable(IEnumerable<object> source)
@@ -1200,20 +1485,59 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
 
       if (column.Options is { Count: > 0 } options)
       {
-        if (value is not null)
+        if (value is not null and not Reference)
         {
           var id = Convert.ToInt64(value, CultureInfo.InvariantCulture);
-          var name = options.FirstOrDefault(o => o.Id == id)?.Name ?? id.ToString(CultureInfo.InvariantCulture);
-          value = new Reference { Id = id, Name = name };
+          var opt = options.FirstOrDefault(o => o.Id == id);
+          var name = opt != null ? Localizer.Instance[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
+          if (!string.IsNullOrEmpty(opt?.Color))
+          {
+            value = new Dictionary<string, object?>
+            {
+              ["id"] = id,
+              ["name"] = name,
+              ["color"] = opt.Color
+            };
+          }
+          else
+          {
+            value = new Reference { Id = id, Name = name };
+          }
         }
+        else if (value is Reference optRef)
+        {
+          var opt = options.FirstOrDefault(o => o.Id == optRef.Id);
+          var name = Localizer.Instance[optRef.Name];
+          if (!string.IsNullOrEmpty(opt?.Color))
+          {
+            value = new Dictionary<string, object?>
+            {
+              ["id"] = optRef.Id,
+              ["name"] = name,
+              ["color"] = opt.Color
+            };
+          }
+          else
+          {
+            value = new Reference { Id = optRef.Id, Name = name };
+          }
+        }
+      }
+      else if (value is Reference existingRef)
+      {
+        value = new Reference
+        {
+          Id = existingRef.Id,
+          Name = Localizer.Instance[existingRef.Name]
+        };
       }
       else if (column.ReferenceService is not null && value is not null and not Reference)
       {
         if (value is IEntity refEntity)
         {
           var nameProp = value.GetType().GetProperty("Name", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-          var name = nameProp?.GetValue(value)?.ToString() ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
-          value = new Reference { Id = refEntity.Id, Name = name };
+          var rawName = nameProp?.GetValue(value)?.ToString() ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
+          value = new Reference { Id = refEntity.Id, Name = Localizer.Instance[rawName] };
         }
       }
 
@@ -1227,7 +1551,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
             value = new Dictionary<string, object?>
             {
               ["id"] = r.Id,
-              ["name"] = r.Name,
+              ["name"] = Localizer.Instance[r.Name],
               ["color"] = hue
             };
           }
@@ -1354,8 +1678,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
 
-    var cols = new Columns<TRow>();
-    SetColumns(cols);
+    var cols = CreateColumns();
 
     var query = BaseQuery(db).Where(e => e.Id == id);
     if (ParentId.HasValue && parent.FilterFunc != null)
@@ -1368,7 +1691,14 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     if (queryDeclaration.Selector != null)
     {
       var row = await query.Select(queryDeclaration.Selector).FirstOrDefaultAsync(ct);
-      return row is null ? null : ShapeRow(row, cols.List);
+      if (row is null) return null;
+      if (queryDeclaration.ComputeAction != null)
+      {
+        await queryDeclaration.ComputeAction([row], ct);
+      }
+      var shaped = ShapeRow(row, cols.List);
+      await PopulateProjectedColorsAsync([shaped], cols.List, ct);
+      return shaped;
     }
 
     var entity = await query.FirstOrDefaultAsync(ct);
@@ -1383,8 +1713,7 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
       throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
     }
 
-    var cols = new Columns<TRow>();
-    SetColumns(cols);
+    var cols = CreateColumns();
 
     var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase));
     if (col == null || !col.IsEditable)
@@ -1411,6 +1740,10 @@ public abstract class GridService<TEntity, TRow>(PlatformDbContext db, PlatformA
     if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
     {
       var form = (IFormService)services.GetRequiredService(formType);
+      if (_app != null)
+      {
+        form.AttachPlatformApp(_app);
+      }
       var formReq = new FormRequest
       {
         Id = request.Id,

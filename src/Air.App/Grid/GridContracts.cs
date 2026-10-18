@@ -137,7 +137,7 @@ public sealed class GridColumnDto
   public GridNumberEditDto? NumberEdit { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<Reference>? Options { get; set; }
+  public List<OptionDto>? Options { get; set; }
 
   public CellModel Cell { get; set; } = new GridCellTextModel();
 
@@ -148,7 +148,16 @@ public sealed class GridColumnDto
   internal Func<object, string?>? ColorEvaluator { get; set; }
 
   [JsonIgnore]
+  internal System.Linq.Expressions.LambdaExpression? ColorExpression { get; set; }
+
+  [JsonIgnore]
   internal string? ColorNavPath { get; set; }
+
+  [JsonIgnore]
+  internal bool IsSummed { get; set; }
+
+  [JsonIgnore]
+  internal Type? MemberType { get; set; }
 }
 
 // Concrete Cell Models

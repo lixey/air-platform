@@ -34,6 +34,16 @@ public interface IFormService
   void AttachPlatformApp(PlatformAppService app);
 }
 
+public sealed class FormRefusedException(
+  string outcome,
+  string title,
+  IReadOnlyList<MessageDto> messages) : Exception(title)
+{
+  public string Outcome { get; } = outcome;
+  public string Title { get; } = title;
+  public IReadOnlyList<MessageDto> Messages { get; } = messages;
+}
+
 public class FormLoadContext<TEntity, TInput>
 {
   public required TEntity Entity { get; init; }
@@ -46,18 +56,61 @@ public class FormSaveContext<TEntity, TInput>
   public required TEntity Entity { get; init; }
   public required TInput Input { get; init; }
   public bool IsNew { get; init; }
-  public bool Changed(params Expression<Func<TInput, object?>>[] properties) => true;
+  internal IReadOnlyDictionary<string, object?>? OriginalValues { get; init; }
+  public List<MessageDto> Errors { get; } = [];
+
+  public void AddError(string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public bool Changed(params Expression<Func<TInput, object?>>[] properties)
+  {
+    if (IsNew || OriginalValues is null) return true;
+    if (properties.Length == 0) return true;
+
+    foreach (var propExpr in properties)
+    {
+      var body = propExpr.Body is UnaryExpression ue ? ue.Operand : propExpr.Body;
+      if (body is MemberExpression me && me.Member is PropertyInfo pi)
+      {
+        var currentVal = pi.GetValue(Input);
+        OriginalValues.TryGetValue(pi.Name, out var origVal);
+        if (!Equals(currentVal, origVal))
+        {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+}
+
+public class FormDeleteContext<TEntity>
+{
+  public required TEntity Entity { get; init; }
+  public List<MessageDto> Errors { get; } = [];
+
+  public void AddError(string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
 }
 
 public class RuleContext<TInput>
 {
   public required object? Target { get; init; }
   public required FormSaveContext<object, TInput> SaveContext { get; init; }
-  public List<string> Failures { get; } = [];
-  public void AddFailure(string message) => Failures.Add(message);
+  public List<MessageDto> Failures { get; } = [];
+  internal string? CurrentPath { get; set; }
+
+  public void AddFailure(string message, string? path = null) =>
+    Failures.Add(new MessageDto
+    {
+      Detail = message,
+      Path = path ?? CurrentPath,
+      Type = MessageType.Error
+    });
 }
 
-public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TProp> getter)
+public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TProp> getter, string? path = null)
 {
   private readonly List<Func<TProp, RuleContext<TInput>, CancellationToken, Task>> _validators = [];
   private string? _lastErrorMessage;
@@ -82,7 +135,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     {
       if (val is string str && !string.IsNullOrEmpty(str) && !regex.IsMatch(str))
       {
-        ctx.AddFailure(_lastErrorMessage ?? "Value does not match required pattern.");
+        ctx.AddFailure(_lastErrorMessage ?? "Value does not match required pattern.", path);
       }
       return Task.CompletedTask;
     });
@@ -103,10 +156,19 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
 
   internal async Task ValidateAsync(FormSaveContext<object, TInput> ctx, RuleContext<TInput> ruleCtx, CancellationToken ct)
   {
-    var val = getter(ctx);
-    foreach (var v in _validators)
+    var prevPath = ruleCtx.CurrentPath;
+    ruleCtx.CurrentPath = path;
+    try
     {
-      await v(val, ruleCtx, ct);
+      var val = getter(ctx);
+      foreach (var v in _validators)
+      {
+        await v(val, ruleCtx, ct);
+      }
+    }
+    finally
+    {
+      ruleCtx.CurrentPath = prevPath;
     }
   }
 }
@@ -193,6 +255,8 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     internal List<Action<FormSaveContext<TEntity, TInput>>> BeforeValidateActions { get; } = [];
     internal List<Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task>> BeforeSaveActions { get; } = [];
     internal List<Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task>> AfterSaveActions { get; } = [];
+    internal List<Func<FormDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
+    internal List<Func<FormDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
 
     public void AfterLoad(Func<FormLoadContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterLoadActions.Add(handler);
     public void AfterLoad(Action<FormLoadContext<TEntity, TInput>> handler) =>
@@ -207,6 +271,16 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     public void AfterSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterSaveActions.Add(handler);
     public void AfterSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
       AfterSaveActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+
+    public void BeforeDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
+    public void BeforeDelete(Action<FormDeleteContext<TEntity>> handler) =>
+      BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+    public void ValidateDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
+    public void ValidateDelete(Action<FormDeleteContext<TEntity>> handler) => BeforeDelete(handler);
+
+    public void AfterDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
+    public void AfterDelete(Action<FormDeleteContext<TEntity>> handler) =>
+      AfterDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
   }
 
   public sealed class Rules
@@ -216,7 +290,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     public RuleBuilder<TInput, TProp> For<TProp>(Expression<Func<TInput, TProp>> member)
     {
       var compiled = member.Compile();
-      var builder = new RuleBuilder<TInput, TProp>(ctx => compiled(ctx.Input));
+      string? path = null;
+      var expr = member.Body is UnaryExpression ue ? ue.Operand : member.Body;
+      if (expr is MemberExpression me)
+      {
+        path = char.ToLowerInvariant(me.Member.Name[0]) + me.Member.Name[1..];
+      }
+      var builder = new RuleBuilder<TInput, TProp>(ctx => compiled(ctx.Input), path);
       Validators.Add((ctx, rCtx, ct) => builder.ValidateAsync(ctx, rCtx, ct));
       return builder;
     }
@@ -227,7 +307,8 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     {
       Entity = (TEntity)context.SaveContext.Entity,
       Input = context.SaveContext.Input,
-      IsNew = context.SaveContext.IsNew
+      IsNew = context.SaveContext.IsNew,
+      OriginalValues = context.SaveContext.OriginalValues
     };
 
   protected virtual void SetElements(Elements elements) { }
@@ -342,7 +423,9 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     {
       Service = servicePath,
       Elements = elements.List.ToList(),
-      Tabs = elements.Tabs.Count > 0 ? elements.Tabs.ToList() : null,
+      Tabs = elements.Tabs.Count > 0
+        ? elements.Tabs.Select(t => new FormTabDto { Key = t.Key, Label = L[t.Label] }).ToList()
+        : null,
       IsReadOnly = IsReadOnly,
       DirtyDialog = new OverlayDirtyModel
       {
@@ -581,30 +664,37 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
         }
       }
 
-      if (entity != null && id.HasValue && id.Value > 0)
+      if (entity != null && id.HasValue && id.Value > 0 && !IsReadOnly)
       {
         var currentStatus = statusFlow.StatusMember.Compile()(entity);
         foreach (var transition in statusFlow.Transitions)
         {
+          if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+          {
+            continue;
+          }
           if (transition.From.Contains(currentStatus))
           {
             var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
+            var verbLabel = L.TextOr($"Ecom: {transition.Name}", L[transition.Name]);
+            var targetLabel = targetStatus != null ? L[targetStatus.Name] : verbLabel;
+            var confirmMessage = transition.Confirm != null ? L[transition.Confirm] : null;
             var action = new FormNavActionModel
             {
               Key = $"status.{transition.Name.ToLowerInvariant()}",
-              Label = targetStatus?.Name ?? transition.Name,
+              Label = verbLabel != transition.Name ? verbLabel : targetLabel,
               Color = targetStatus?.Color,
               Service = servicePath,
               Method = $"move-status/{transition.Name.ToLowerInvariant()}",
-              Confirm = transition.Ask is not null || transition.Confirm is null
+              Confirm = transition.Ask is not null || confirmMessage is null
                 ? null
-                : new OverlayConfirmModel { Message = transition.Confirm, Color = targetStatus?.Color },
+                : new OverlayConfirmModel { Message = confirmMessage, Color = targetStatus?.Color },
               Ask = transition.Ask is null
                 ? null
                 : new FormAskModel
                 {
-                  Title = targetStatus?.Name ?? transition.Name,
-                  Message = transition.Confirm,
+                  Title = verbLabel != transition.Name ? verbLabel : targetLabel,
+                  Message = confirmMessage,
                   Color = targetStatus?.Color,
                   Elements = transition.Ask.BuildElements().Select(e =>
                   {
@@ -767,7 +857,6 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       await h(loadCtx, ct);
     }
 
-    CopyMatchingProperties(entity!, input);
     return input;
   }
 
@@ -776,6 +865,14 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
 
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
+    if (IsReadOnly)
+    {
+      throw new FormRefusedException(
+        MutationOutcome.Refused,
+        L["MutationRefused"],
+        [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]);
+    }
+
     var entityJson = json.ValueKind == JsonValueKind.Object && (json.TryGetProperty("value", out var val) || json.TryGetProperty("entity", out val))
       ? val
       : json;
@@ -783,12 +880,12 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     var input = JsonSerializer.Deserialize<TInput>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
       ?? new TInput();
 
-    long? id = null;
-    if (input is IEntity inpEntity && inpEntity.Id > 0)
+    long? id = request?.Id;
+    if ((id is null or <= 0) && input is IEntity inpEntity && inpEntity.Id > 0)
     {
       id = inpEntity.Id;
     }
-    else if (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("id", out var idProp))
+    else if ((id is null or <= 0) && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("id", out var idProp))
     {
       if (idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var rootId) && rootId > 0)
       {
@@ -800,8 +897,19 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       }
     }
 
+    int? clientVer = request?.Ver;
+    if (clientVer is null && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var rootVer))
+    {
+      clientVer = rootVer;
+    }
+    else if (clientVer is null && input is IHasVersion verEntity && verEntity.Ver > 0)
+    {
+      clientVer = verEntity.Ver;
+    }
+
     request ??= new FormRequest();
     request.Id = id;
+    request.Ver = clientVer;
     if (!request.ParentId.HasValue && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var jsonPid))
     {
       request.ParentId = jsonPid;
@@ -824,6 +932,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     SetHooks(hooks);
 
     TEntity entity;
+    Dictionary<string, object?>? originalValues = null;
     if (IsNew)
     {
       entity = new TEntity();
@@ -834,11 +943,24 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
         else if (parent.BoundProperty.PropertyType == typeof(long?))
           parent.BoundProperty.SetValue(entity, (long?)Request.ParentId.Value);
       }
+      if (elements.StatusFlow is Screens.IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
+      {
+        statusFlow.Initialize(entity);
+      }
     }
     else
     {
       entity = await db.Set<TEntity>().FindAsync([id!.Value], ct)
         ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+
+      if (clientVer.HasValue && entity is IHasVersion versionedEntity && versionedEntity.Ver != clientVer.Value)
+      {
+        throw new FormRefusedException(
+          MutationOutcome.Conflict,
+          L["MutationConflict"],
+          [new MessageDto { Detail = L["FormConcurrentEdit"], Type = MessageType.Error }]);
+      }
+
       if (parent.BoundProperty != null)
       {
         var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
@@ -847,9 +969,12 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
           Request.ParentId = storedParentId.Value;
         }
       }
+
+      originalValues = SnapshotValues(entity);
     }
 
-    CopyMatchingProperties(input, entity);
+    var protectedPaths = BuildProtectedPaths(elements);
+    CopyMatchingProperties(input, entity, protectedPaths);
     if (id.HasValue && id.Value > 0)
     {
       entity.Id = id.Value;
@@ -866,7 +991,8 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     {
       Entity = entity,
       Input = input,
-      IsNew = IsNew
+      IsNew = IsNew,
+      OriginalValues = originalValues
     };
 
     foreach (var h in hooks.BeforeValidateActions)
@@ -880,7 +1006,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     var ruleCtx = new RuleContext<TInput>
     {
       Target = input,
-      SaveContext = new FormSaveContext<object, TInput> { Entity = entity, Input = input, IsNew = IsNew }
+      SaveContext = new FormSaveContext<object, TInput>
+      {
+        Entity = entity,
+        Input = input,
+        IsNew = IsNew,
+        OriginalValues = originalValues
+      }
     };
 
     foreach (var r in rules.Validators)
@@ -890,12 +1022,17 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
 
     if (ruleCtx.Failures.Count > 0)
     {
-      throw new InvalidOperationException(string.Join("; ", ruleCtx.Failures));
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormValidationFailed"], ruleCtx.Failures);
     }
 
     foreach (var h in hooks.BeforeSaveActions)
     {
       await h(saveCtx, ct);
+    }
+
+    if (saveCtx.Errors.Count > 0)
+    {
+      throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], saveCtx.Errors);
     }
 
     if (IsNew)
@@ -927,6 +1064,15 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     Func<CancellationToken, Task<object?>> readRow,
     CancellationToken ct = default)
   {
+    if (IsReadOnly)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = path, Type = MessageType.Error }]
+      };
+    }
+
     Request = request;
     IsNew = false;
 
@@ -936,6 +1082,15 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
+    if (request.Ver.HasValue && entity is IHasVersion versionedEntity && versionedEntity.Ver != request.Ver.Value)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Conflict,
+        Warnings = [new MessageDto { Detail = L["FormConcurrentEdit"], Path = path, Type = MessageType.Error }]
+      };
+    }
+
     if (parent.BoundProperty != null)
     {
       var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
@@ -944,6 +1099,8 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
         Request.ParentId = storedParentId.Value;
       }
     }
+
+    var originalValues = SnapshotValues(entity);
 
     var input = new TInput();
     CopyMatchingProperties(entity, input);
@@ -970,7 +1127,8 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     {
       Entity = entity,
       Input = input,
-      IsNew = false
+      IsNew = false,
+      OriginalValues = originalValues
     };
 
     foreach (var h in hooks.BeforeValidateActions)
@@ -984,7 +1142,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     var ruleCtx = new RuleContext<TInput>
     {
       Target = input,
-      SaveContext = new FormSaveContext<object, TInput> { Entity = entity, Input = input, IsNew = false }
+      SaveContext = new FormSaveContext<object, TInput>
+      {
+        Entity = entity,
+        Input = input,
+        IsNew = false,
+        OriginalValues = originalValues
+      }
     };
 
     foreach (var r in rules.Validators)
@@ -997,13 +1161,27 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = ruleCtx.Failures.Select(f => new MessageDto { Detail = f, Path = path, Type = MessageType.Error }).ToList()
+        Warnings = ruleCtx.Failures.Select(f => new MessageDto
+        {
+          Detail = f.Detail,
+          Path = f.Path ?? path,
+          Type = MessageType.Error
+        }).ToList()
       };
     }
 
     foreach (var h in hooks.BeforeSaveActions)
     {
       await h(saveCtx, ct);
+    }
+
+    if (saveCtx.Errors.Count > 0)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = saveCtx.Errors
+      };
     }
 
     db.Set<TEntity>().Update(entity);
@@ -1121,9 +1299,38 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
 
   public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
   {
+    if (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All))
+    {
+      throw new FormRefusedException(
+        MutationOutcome.Refused,
+        L["MutationRefused"],
+        [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]);
+    }
+
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+
+    var hooks = new Hooks();
+    SetHooks(hooks);
+
+    var deleteCtx = new FormDeleteContext<TEntity> { Entity = entity };
+    foreach (var h in hooks.BeforeDeleteActions)
+    {
+      await h(deleteCtx, ct);
+    }
+
+    if (deleteCtx.Errors.Count > 0)
+    {
+      throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], deleteCtx.Errors);
+    }
+
     db.Set<TEntity>().Remove(entity);
+    await db.SaveChangesAsync(ct);
+
+    foreach (var h in hooks.AfterDeleteActions)
+    {
+      await h(deleteCtx, ct);
+    }
     await db.SaveChangesAsync(ct);
   }
 
@@ -1154,6 +1361,15 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       throw new InvalidOperationException($"Transition '{transitionName}' not found in '{statusFlow.GetType().Name}'.");
     }
 
+    if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+    {
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
     object? input = transition.Ask?.Read(body);
 
     var context = new Mutations.MutationContext(db);
@@ -1163,7 +1379,7 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     {
       return new FormActionDto
       {
-        Outcome = "refused",
+        Outcome = MutationOutcome.Refused,
         Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
       };
     }
@@ -1174,7 +1390,60 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     };
   }
 
-  private static void CopyMatchingProperties(object source, object target)
+  private static Dictionary<string, object?> SnapshotValues(object entity)
+  {
+    var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+    foreach (var prop in entity.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+    {
+      if (!prop.CanRead) continue;
+      if (typeof(IEntity).IsAssignableFrom(prop.PropertyType)) continue;
+      if (typeof(System.Collections.IEnumerable).IsAssignableFrom(prop.PropertyType) &&
+          prop.PropertyType != typeof(string) &&
+          prop.PropertyType != typeof(byte[]))
+      {
+        continue;
+      }
+      try
+      {
+        dict[prop.Name] = prop.GetValue(entity);
+      }
+      catch { }
+    }
+    return dict;
+  }
+
+  private static HashSet<string> BuildProtectedPaths(Elements elements)
+  {
+    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+      "Id",
+      "Ver",
+      "CreatedAt",
+      "CreatedBy",
+      "UpdatedAt",
+      "UpdatedBy"
+    };
+
+    foreach (var el in elements.List)
+    {
+      if ((el.IsServerOwned || el.IsInputOnly) && !string.IsNullOrEmpty(el.Path))
+      {
+        set.Add(el.Path);
+      }
+    }
+
+    foreach (var prop in typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+    {
+      if (prop.GetCustomAttribute<Air.Data.Entities.SensitiveAttribute>() != null)
+      {
+        set.Add(prop.Name);
+      }
+    }
+
+    return set;
+  }
+
+  private static void CopyMatchingProperties(object source, object target, HashSet<string>? protectedPaths = null)
   {
     var srcProps = source.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
     var tgtProps = target.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -1183,6 +1452,11 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
 
     foreach (var sp in srcProps)
     {
+      if (protectedPaths != null && protectedPaths.Contains(sp.Name))
+      {
+        continue;
+      }
+
       if (sp.CanRead && tgtProps.TryGetValue(sp.Name, out var tp) && tp.PropertyType.IsAssignableFrom(sp.PropertyType))
       {
         if (typeof(IEntity).IsAssignableFrom(tp.PropertyType))

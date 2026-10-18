@@ -1,5 +1,8 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using Air.App.Components;
+using Air.App.Localization;
+using Air.Data;
 using Air.Data.Contracts;
 using Air.Data.Internal;
 
@@ -18,13 +21,18 @@ public class Elements
 
   public void AddTab(string label, string? key = null)
   {
-    var tabKey = key ?? label.ToLowerInvariant();
+    var tabKey = key ?? label.ToLowerInvariant().Replace(' ', '-');
     _currentTab = tabKey;
     _tabs.Add(new FormTabDto { Key = tabKey, Label = label });
   }
 
-  public void AddSeparator(string label)
+  public void AddSeparator(string? label = null)
   {
+    if (_elements.Count > 0)
+    {
+      _elements[^1].HasSeparatorAfter = true;
+      _elements[^1].SeparatorLabel = label;
+    }
   }
 
   public ChildGridBuilder AddChild<TChildGridService>()
@@ -56,7 +64,7 @@ public class Elements
     var el = new FormElementDto
     {
       Path = path,
-      Label = PathToLabel(path),
+      Label = PathToLabel(path, typeof(TEntity)),
       Type = ResolveFieldType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
@@ -71,7 +79,7 @@ public class Elements
     var el = new FormElementDto
     {
       Path = path,
-      Label = PathToLabel(path),
+      Label = PathToLabel(path, null),
       Type = ResolveFieldType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
@@ -81,7 +89,7 @@ public class Elements
     return new FormElement<object, TProp>(el);
   }
 
-  private static string ToCamelPath(string path)
+  internal static string ToCamelPath(string path)
   {
     var parts = path.Split('.');
     for (int i = 0; i < parts.Length; i++)
@@ -94,18 +102,22 @@ public class Elements
     return string.Join('.', parts);
   }
 
-  private static string PathToLabel(string path)
+  internal static string PathToLabel(string path, Type? ownerType = null)
   {
     var last = path.Split('.').Last();
     if (last.EndsWith("Id", StringComparison.Ordinal) && last.Length > 2)
     {
-      last = last[..^2];
+      var navCandidate = last[..^2];
+      if (ownerType?.GetProperty(navCandidate, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase) != null)
+      {
+        last = navCandidate;
+      }
     }
     if (last.Length > 0)
     {
       last = char.ToUpperInvariant(last[0]) + last[1..];
     }
-    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z])([A-Z])", "$1 $2");
+    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
   }
 
   private static string ResolveFieldType(Type type)
@@ -142,9 +154,15 @@ public class FormElement<TProp>(FormElementDto dto) : FormElement<object, TProp>
 
 public class FormElement<TEntity, TProp>(FormElementDto dto)
 {
+  private bool _hasExplicitLabel;
   public FormElementDto Dto => dto;
 
-  public FormElement<TEntity, TProp> Label(string label) { dto.Label = label; return this; }
+  public FormElement<TEntity, TProp> Label(string label)
+  {
+    _hasExplicitLabel = true;
+    dto.Label = label;
+    return this;
+  }
   public FormElement<TEntity, TProp> Span(int cols) { dto.Span = cols; return this; }
   public FormElement<TEntity, TProp> Required(bool required = true) { dto.IsRequired = required; return this; }
   public FormElement<TEntity, TProp> Disabled(bool disabled = true) { dto.IsDisabled = disabled; return this; }
@@ -180,7 +198,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsMoney(string? currency = null)
   {
     dto.Type = UiFieldType.Number;
-    dto.Model = new FormNumberModel();
+    dto.Model = new FormMoneyModel { Currency = currency };
     return this;
   }
 
@@ -213,20 +231,31 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
   public FormElement<TEntity, TProp> AsSelect(IEnumerable<OptionDto> options)
   {
-    dto.Model = new FormSelectModel { Options = options.ToList() };
+    StripDefaultIdLabel();
+    dto.Type = UiFieldType.Text;
+    dto.Model = new FormSelectModel
+    {
+      Options = options.Select(o => new OptionDto
+      {
+        Id = o.Id,
+        Name = Localizer.Instance[o.Name],
+        Color = o.Color
+      }).ToList()
+    };
     return this;
   }
 
   public FormElement<TEntity, TProp> AsPassword()
   {
-    dto.Type = UiFieldType.Text;
+    dto.Type = FormFieldType.Password;
+    dto.IsSecret = true;
     dto.Model = new FormInputModel();
     return this;
   }
 
   public FormElement<TEntity, TProp> AsEmail()
   {
-    dto.Type = UiFieldType.Text;
+    dto.Type = FormFieldType.Email;
     dto.Model = new FormInputModel();
     return this;
   }
@@ -234,7 +263,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsTimeZone()
   {
     dto.Type = UiFieldType.Text;
-    dto.Model = new FormInputModel();
+    dto.Model = new FormTimeZoneModel
+    {
+      Zones = [.. TimeZones.Offered],
+      Inherit = Localizer.Instance["TimeZoneAsOrganisation"]
+    };
     return this;
   }
 
@@ -250,9 +283,30 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsInfo() => Disabled();
-  public FormElement<TEntity, TProp> AsPhone(string? mask = null) => this;
-  public FormElement<TEntity, TProp> InputOnly() => this;
+  public FormElement<TEntity, TProp> AsInfo()
+  {
+    dto.IsDisabled = true;
+    dto.IsServerOwned = true;
+    dto.Model = new FormInfoModel();
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> AsPhone(string? mask = null)
+  {
+    dto.Type = UiFieldType.Text;
+    dto.Model = new FormPhoneModel
+    {
+      Masks = mask != null ? [mask] : ["+380 (##) ###-##-##", "+1 (###) ###-####"]
+    };
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> InputOnly()
+  {
+    dto.IsInputOnly = true;
+    return this;
+  }
+
   public FormElement<TEntity, TProp> Unique(string? message = null) => this;
   public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys) => this;
   public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
@@ -300,8 +354,17 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   internal static string ToCamel(string str) =>
     string.IsNullOrEmpty(str) ? str : char.ToLowerInvariant(str[0]) + str[1..];
 
+  private void StripDefaultIdLabel()
+  {
+    if (!_hasExplicitLabel && dto.Label is { } lbl && lbl.EndsWith(" Id", StringComparison.Ordinal) && lbl.Length > 3)
+    {
+      dto.Label = lbl[..^3];
+    }
+  }
+
   public FormReferenceElement<TEntity, TProp, object> AsReference<TGridService>()
   {
+    StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
@@ -314,6 +377,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
   public FormReferenceElement<TEntity, TProp, TSource> AsReference<TGridService, TSource>()
   {
+    StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
@@ -349,6 +413,17 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     Expression<Func<TSource, TSourceVal>> sourceMember,
     Expression<Func<TEntity, TDraftVal>> draftMember)
   {
+    if (dto.Model is FormSelectModel selectModel)
+    {
+      var sourcePath = Elements.ToCamelPath(MemberPath.Of(sourceMember));
+      var draftPath = Elements.ToCamelPath(MemberPath.Of(draftMember));
+      selectModel.ReferenceDraftRules ??= [];
+      selectModel.ReferenceDraftRules.Add(new ReferenceDraftRuleDto
+      {
+        SourceField = sourcePath,
+        DraftField = draftPath
+      });
+    }
     return this;
   }
 
@@ -356,7 +431,24 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     Expression<Func<TSource, TVal>> sourceMember,
     TVal value)
   {
+    if (dto.Model is FormSelectModel selectModel)
+    {
+      var sourcePath = Elements.ToCamelPath(MemberPath.Of(sourceMember));
+      var rule = FilterNode.Rule(sourcePath, FilterOperator.Equals, value);
+      selectModel.ReferenceFilter = CombineFilter(selectModel.ReferenceFilter, rule);
+    }
     return this;
+  }
+
+  private static FilterNode CombineFilter(FilterNode? existing, FilterNode addition)
+  {
+    if (existing is null) return addition;
+    if (existing is FilterGroup { Logic: FilterLogic.And } group)
+    {
+      group.Items.Add(addition);
+      return group;
+    }
+    return FilterNode.All(existing, addition);
   }
 
   public new FormReferenceElement<TEntity, TProp, TSource> Required(bool required = true)

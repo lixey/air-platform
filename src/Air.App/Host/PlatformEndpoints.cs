@@ -758,8 +758,13 @@ public static class PlatformEndpoints
           if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
           if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
 
-          var screen = await grid.BuildScreenAsync(serviceName, req, ct);
           var page = await grid.GetDataAsync(req, ct);
+          if (req.IsDataOnly)
+          {
+            return Results.Ok(new ScreenDto { Data = page });
+          }
+
+          var screen = await grid.BuildScreenAsync(serviceName, req, ct);
           screen.Data = page;
           return Results.Ok(screen);
         }
@@ -801,7 +806,7 @@ public static class PlatformEndpoints
           }
 
           var result = await grid.DeleteAsync(req, ct);
-          return Results.Ok(result);
+          return ToMutationResult(result);
         }
 
         if (method == "save-cell")
@@ -817,7 +822,7 @@ public static class PlatformEndpoints
           if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
 
           var result = await grid.SaveCellAsync(req, services, ct);
-          return Results.Ok(result);
+          return ToMutationResult(result);
         }
 
         if (method == "move-status")
@@ -836,7 +841,7 @@ public static class PlatformEndpoints
           }
           req ??= new GridRequest();
           var actionResult = await grid.MoveStatusAsync(req, subMethod ?? "", bodyElement, ct);
-          return Results.Ok(actionResult);
+          return ToMutationResult(actionResult);
         }
 
         if (string.Equals(method, "export", StringComparison.OrdinalIgnoreCase))
@@ -872,13 +877,13 @@ public static class PlatformEndpoints
             var taskObj = uploadMethod.Invoke(grid, [uploadReq, formCollection.Files, ct]);
             if (taskObj is Task<GridActionDto> typedTask)
             {
-              return Results.Ok(await typedTask);
+              return ToMutationResult(await typedTask);
             }
             if (taskObj is Task task)
             {
               await task.ConfigureAwait(false);
               var resProp = task.GetType().GetProperty("Result");
-              return Results.Ok(resProp?.GetValue(task));
+              return ToMutationResult(resProp?.GetValue(task));
             }
           }
         }
@@ -909,10 +914,10 @@ public static class PlatformEndpoints
 
             if (!permitted)
             {
-              return Results.Ok(new GridActionDto
+              return Results.UnprocessableEntity(new
               {
-                Outcome = MutationOutcome.Refused,
-                Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
+                outcome = MutationOutcome.Refused,
+                messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error } }
               });
             }
           }
@@ -952,10 +957,10 @@ public static class PlatformEndpoints
             var resultProp = task.GetType().GetProperty("Result");
             var result = resultProp?.GetValue(task);
             if (result is IResult r) return r;
-            return Results.Ok(result ?? new GridActionDto { Outcome = MutationOutcome.Committed });
+            return ToMutationResult(result ?? new GridActionDto { Outcome = MutationOutcome.Committed });
           }
           if (resultTask is IResult immediateResult) return immediateResult;
-          return Results.Ok(resultTask ?? new GridActionDto { Outcome = MutationOutcome.Committed });
+          return ToMutationResult(resultTask ?? new GridActionDto { Outcome = MutationOutcome.Committed });
         }
       }
       else if (typeof(IFormService).IsAssignableFrom(serviceType))
@@ -1045,6 +1050,10 @@ public static class PlatformEndpoints
             {
               req.Id = bodyId;
             }
+            if (doc.RootElement.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var bodyVer))
+            {
+              req.Ver = bodyVer;
+            }
             if (doc.RootElement.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid))
             {
               req.ParentId = bodyPid;
@@ -1055,7 +1064,27 @@ public static class PlatformEndpoints
             }
           }
 
-          var entity = await form.SaveAsync(doc.RootElement, req, ct);
+          object entity;
+          try
+          {
+            entity = await form.SaveAsync(doc.RootElement, req, ct);
+          }
+          catch (Form.FormRefusedException ex)
+          {
+            return ex.Outcome == MutationOutcome.Conflict
+              ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
+              : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
+          }
+          catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException)
+          {
+            return Results.Conflict(new
+            {
+              outcome = MutationOutcome.Conflict,
+              title = Localizer.Instance["MutationConflict"],
+              messages = new[] { new MessageDto { Detail = Localizer.Instance["FormConcurrentEdit"], Type = MessageType.Error } }
+            });
+          }
+
           var entityId = (entity as Air.Data.Entities.IEntity)?.Id;
           var ver = (entity as Air.Data.Entities.IHasVersion)?.Ver;
 
@@ -1106,9 +1135,11 @@ public static class PlatformEndpoints
           var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ct);
           jsonDoc?.Dispose();
 
-          if (result.Outcome == "refused")
+          if (result.Outcome != MutationOutcome.Committed)
           {
-            return Results.UnprocessableEntity(new { messages = result.Warnings });
+            return result.Outcome == MutationOutcome.Conflict
+              ? Results.Conflict(new { outcome = result.Outcome, messages = result.Warnings })
+              : Results.UnprocessableEntity(new { outcome = result.Outcome, messages = result.Warnings });
           }
 
           return Results.Ok(result);
@@ -1118,10 +1149,19 @@ public static class PlatformEndpoints
         {
           var ids = await ExtractIdsAsync(httpRequest, ct);
           int deleted = 0;
-          foreach (var id in ids)
+          try
           {
-            await form.DeleteAsync(id, ct);
-            deleted++;
+            foreach (var id in ids)
+            {
+              await form.DeleteAsync(id, ct);
+              deleted++;
+            }
+          }
+          catch (Form.FormRefusedException ex)
+          {
+            return ex.Outcome == MutationOutcome.Conflict
+              ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
+              : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
           }
           return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
         }
@@ -1144,6 +1184,27 @@ public static class PlatformEndpoints
         System.Globalization.CultureInfo.CurrentUICulture = prevUiCulture;
       }
     });
+  }
+
+  private static IResult ToMutationResult(object? result)
+  {
+    switch (result)
+    {
+      case GridDeleteDto del when del.Outcome != MutationOutcome.Committed:
+        return del.Outcome == MutationOutcome.Conflict
+          ? Results.Conflict(new { outcome = del.Outcome, messages = del.Warnings })
+          : Results.UnprocessableEntity(new { outcome = del.Outcome, messages = del.Warnings });
+      case GridCellDto cell when cell.Outcome != MutationOutcome.Committed:
+        return cell.Outcome == MutationOutcome.Conflict
+          ? Results.Conflict(new { outcome = cell.Outcome, messages = cell.Warnings })
+          : Results.UnprocessableEntity(new { outcome = cell.Outcome, messages = cell.Warnings });
+      case GridActionDto act when act.Outcome != MutationOutcome.Committed:
+        return act.Outcome == MutationOutcome.Conflict
+          ? Results.Conflict(new { outcome = act.Outcome, messages = act.Warnings })
+          : Results.UnprocessableEntity(new { outcome = act.Outcome, messages = act.Warnings });
+      default:
+        return Results.Ok(result);
+    }
   }
 
   private static System.Globalization.CultureInfo ResolveRequestCulture(HttpRequest req)

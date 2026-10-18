@@ -166,6 +166,9 @@ public sealed class FormElementDto
   public bool IsServerOwned { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool IsInputOnly { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsSecret { get; set; }
 
   public string ValueKind { get; set; } = "scalar";

@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using Air.App.Components;
+using Air.App.Localization;
 using Air.Data.Contracts;
 using Air.Data.Internal;
 
@@ -37,9 +39,10 @@ public class Columns
     {
       Path = path,
       FilterPath = path,
-      Label = PathToLabel(path),
+      Label = PathToLabel(path, typeof(TRow)),
       Type = ResolveFieldType(typeof(TProp)),
-      Cell = ResolveDefaultCell(typeof(TProp))
+      Cell = ResolveDefaultCell(typeof(TProp)),
+      MemberType = typeof(TProp)
     };
     _columns.Add(col);
     return new GridColumn<TProp>(col, this);
@@ -51,15 +54,16 @@ public class Columns
     {
       Path = path,
       FilterPath = path,
-      Label = PathToLabel(path),
+      Label = PathToLabel(path, null),
       Type = ResolveFieldType(typeof(TProp)),
-      Cell = ResolveDefaultCell(typeof(TProp))
+      Cell = ResolveDefaultCell(typeof(TProp)),
+      MemberType = typeof(TProp)
     };
     _columns.Add(col);
     return new GridColumn<TProp>(col, this);
   }
 
-  private static string ToCamelPath(string path)
+  internal static string ToCamelPath(string path)
   {
     var parts = path.Split('.');
     for (int i = 0; i < parts.Length; i++)
@@ -72,18 +76,22 @@ public class Columns
     return string.Join('.', parts);
   }
 
-  private static string PathToLabel(string path)
+  internal static string PathToLabel(string path, Type? ownerType = null)
   {
     var last = path.Split('.').Last();
     if (last.EndsWith("Id", StringComparison.Ordinal) && last.Length > 2)
     {
-      last = last[..^2];
+      var navCandidate = last[..^2];
+      if (ownerType?.GetProperty(navCandidate, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase) != null)
+      {
+        last = navCandidate;
+      }
     }
     if (last.Length > 0)
     {
       last = char.ToUpperInvariant(last[0]) + last[1..];
     }
-    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z])([A-Z])", "$1 $2");
+    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
   }
 
   private static string ResolveFieldType(Type type)
@@ -119,9 +127,15 @@ public class Columns<TRow> : Columns where TRow : class
 
 public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 {
+  private bool _hasExplicitLabel;
   public GridColumnDto Dto => dto;
 
-  public GridColumn<TProp> Label(string label) { dto.Label = label; return this; }
+  public GridColumn<TProp> Label(string label)
+  {
+    _hasExplicitLabel = true;
+    dto.Label = label;
+    return this;
+  }
   public GridColumn<TProp> Width(int px) { dto.Width = px; return this; }
   public GridColumn<TProp> Width(string width)
   {
@@ -133,6 +147,14 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   public GridColumn<TProp> Computed() { dto.IsSortable = false; dto.IsFilterable = false; return this; }
   public GridColumn<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
   public GridColumn<TProp> Cell(CellModel cell) { dto.Cell = cell; return this; }
+
+  private void StripDefaultIdLabel()
+  {
+    if (!_hasExplicitLabel && dto.Label is { } lbl && lbl.EndsWith(" Id", StringComparison.Ordinal) && lbl.Length > 3)
+    {
+      dto.Label = lbl[..^3];
+    }
+  }
 
   public GridColumn<TProp> AsOpenForm<TFormService>() where TFormService : class
   {
@@ -165,9 +187,15 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> AsSelect(IEnumerable<OptionDto> options)
   {
+    StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellSelectModel();
-    dto.Options = options.Select(o => new Reference { Id = o.Id, Name = o.Name }).ToList();
+    dto.Options = options.Select(o => new OptionDto
+    {
+      Id = o.Id,
+      Name = Localizer.Instance[o.Name],
+      Color = o.Color
+    }).ToList();
     return this;
   }
 
@@ -208,6 +236,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> Sum()
   {
+    dto.IsSummed = true;
     return this;
   }
 
@@ -251,6 +280,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> AsReference<TGridService>()
   {
+    StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
@@ -260,6 +290,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> AsReference<TGridService, TSource>()
   {
+    StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
@@ -269,7 +300,21 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value)
   {
+    var path = Columns.ToCamelPath(MemberPath.Of(sourceMember));
+    var rule = FilterNode.Rule(path, FilterOperator.Equals, value);
+    dto.ReferenceFilter = CombineFilter(dto.ReferenceFilter, rule);
     return this;
+  }
+
+  internal static FilterNode CombineFilter(FilterNode? existing, FilterNode addition)
+  {
+    if (existing is null) return addition;
+    if (existing is FilterGroup { Logic: FilterLogic.And } group)
+    {
+      group.Items.Add(addition);
+      return group;
+    }
+    return FilterNode.All(existing, addition);
   }
 
   public GridColumn<TProp> AsPhone()
@@ -293,14 +338,71 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
-  public GridColumn<TProp> Hue(Func<object, string?> selector) => this;
-  public GridColumn<TProp> Hue<TRow>(Func<TRow, string?> selector) => this;
+  public GridColumn<TProp> Hue(Func<object, string?> selector)
+  {
+    dto.ColorEvaluator = selector;
+    ApplyColorPath();
+    return this;
+  }
+
+  public GridColumn<TProp> Hue<TRow>(Func<TRow, string?> selector)
+  {
+    dto.ColorEvaluator = obj => obj is TRow row ? selector(row) : null;
+    ApplyColorPath();
+    return this;
+  }
 
   public GridColumn<TProp> Color(Func<TProp, string> colorSelector)
   {
+    dto.ColorEvaluator = obj => obj is TProp val ? colorSelector(val) : null;
+    ApplyColorPath();
     return this;
   }
-  public GridColumn<TProp> Color<TEntity>(Expression<Func<TEntity, string?>> colorSelector) => this;
+
+  public GridColumn<TProp> Color<TEntity>(Expression<Func<TEntity, string?>> colorSelector)
+  {
+    ApplyColorSelector(colorSelector);
+    return this;
+  }
+
+  internal void ApplyColorSelector<TEntity>(Expression<Func<TEntity, string?>> colorSelector)
+  {
+    var compiled = colorSelector.Compile();
+    dto.ColorExpression = colorSelector;
+    dto.ColorEvaluator = obj =>
+    {
+      if (obj is TEntity entity)
+      {
+        try { return compiled(entity); } catch { return null; }
+      }
+      return null;
+    };
+    dto.ColorNavPath = ExtractNavigationPath(colorSelector.Body);
+    ApplyColorPath();
+  }
+
+  private void ApplyColorPath()
+  {
+    var isRef = dto.Cell is GridCellReferenceModel || dto.ReferenceService != null || typeof(Reference).IsAssignableFrom(dto.MemberType);
+    dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : $"{dto.Path}Color";
+  }
+
+  internal static string? ExtractNavigationPath(Expression expr)
+  {
+    var parts = new List<string>();
+    var current = expr;
+    while (current is MemberExpression me)
+    {
+      parts.Add(me.Member.Name);
+      current = me.Expression;
+    }
+    if (parts.Count > 1)
+    {
+      parts.Reverse();
+      return string.Join('.', parts.Take(parts.Count - 1));
+    }
+    return null;
+  }
 }
 
 public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : GridColumn<TProp>(dto, owner)
@@ -343,40 +445,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value) { base.Where(sourceMember, value); return this; }
   public GridColumn<TEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
   {
-    var compiled = colorSelector.Compile();
-    Dto.ColorEvaluator = obj =>
-    {
-      if (obj is TEntity entity)
-      {
-        try { return compiled(entity); } catch { return null; }
-      }
-      return null;
-    };
-    Dto.ColorNavPath = ExtractNavigationPath(colorSelector.Body);
-    var isRef = Dto.Cell is GridCellReferenceModel || Dto.ReferenceService != null;
-    var colorPath = isRef ? $"{Dto.Path}.color" : $"{Dto.Path}Color";
-    Dto.Cell.ColorPath = colorPath;
+    ApplyColorSelector(colorSelector);
     return this;
   }
 
   public GridColumn<TEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => Color(hueSelector);
-
-  private static string? ExtractNavigationPath(Expression expr)
-  {
-    var parts = new List<string>();
-    var current = expr;
-    while (current is MemberExpression me)
-    {
-      parts.Add(me.Member.Name);
-      current = me.Expression;
-    }
-    if (parts.Count > 1)
-    {
-      parts.Reverse();
-      return string.Join('.', parts.Take(parts.Count - 1));
-    }
-    return null;
-  }
 }
 
 public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dto, Columns owner)
@@ -386,6 +459,7 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
     Expression<Func<TSourceEntity, TVal>> sourceMember,
     TVal value)
   {
+    base.Where(sourceMember, value);
     return this;
   }
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
