@@ -1,4 +1,7 @@
+using System.Collections;
+using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Text.Json;
 using Air.App.Components;
 using Air.App.Grid;
@@ -11,6 +14,7 @@ using Air.App.Panels;
 using Air.App.Screens;
 using Air.Data.Contracts;
 using Air.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Air.App.Form;
 
@@ -134,6 +138,8 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void LocalizeAndResolveSelectElements(Elements elements)
   {
+    ApplyElementConstraints(elements);
+
     foreach (var el in elements.List)
     {
       if (!string.IsNullOrEmpty(el.SeparatorLabel))
@@ -168,6 +174,113 @@ public abstract partial class FormService<TEntity, TInput>
             }
             catch { }
           }
+        }
+      }
+    }
+  }
+
+  internal void ApplyElementConstraints(Elements elements)
+  {
+    var efEntityType = db.Model.FindEntityType(typeof(TEntity));
+
+    foreach (var el in elements.List)
+    {
+      if (string.IsNullOrEmpty(el.Path)) continue;
+
+      var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
+      var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
+      var propType = inputProp?.PropertyType ?? entityProp?.PropertyType;
+      var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
+
+      if (efProp != null)
+      {
+        el.Constraints.AllowsNull ??= efProp.IsNullable;
+        if (efProp.GetMaxLength() is { } storageMax && storageMax >= 0)
+        {
+          el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
+            ? Math.Min(el.Constraints.MaxLength.Value, storageMax)
+            : storageMax;
+          el.Constraints.LengthUnit ??= propType == typeof(byte[]) ? FormLengthUnit.Bytes : FormLengthUnit.Utf16;
+        }
+
+        if (propType != null && (Nullable.GetUnderlyingType(propType) ?? propType) == typeof(decimal))
+        {
+          el.Constraints.Precision ??= efProp.GetPrecision();
+          el.Constraints.Scale ??= efProp.GetScale();
+        }
+
+        if (!efProp.IsNullable && el.ExplicitRequired != false && !el.IsServerOwned)
+        {
+          if (propType == typeof(string) || efProp.IsForeignKey())
+          {
+            el.IsRequired = true;
+          }
+        }
+      }
+
+      var annotations = new[] { inputProp, entityProp }
+        .OfType<PropertyInfo>()
+        .Distinct()
+        .SelectMany(p => p.GetCustomAttributes<ValidationAttribute>());
+
+      foreach (var attr in annotations)
+      {
+        switch (attr)
+        {
+          case RequiredAttribute req:
+            if (el.ExplicitRequired != false && !el.IsServerOwned)
+            {
+              el.IsRequired = true;
+              el.Constraints.AllowsNull = false;
+              if (propType == typeof(string) && !req.AllowEmptyStrings)
+              {
+                el.Constraints.RejectsBlank = true;
+              }
+            }
+            break;
+          case StringLengthAttribute strLen:
+            el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
+              ? Math.Min(el.Constraints.MaxLength.Value, strLen.MaximumLength)
+              : strLen.MaximumLength;
+            if (strLen.MinimumLength > 0)
+            {
+              el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, strLen.MinimumLength);
+            }
+            el.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
+            break;
+          case MaxLengthAttribute maxLen when maxLen.Length >= 0:
+            el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
+              ? Math.Min(el.Constraints.MaxLength.Value, maxLen.Length)
+              : maxLen.Length;
+            el.Constraints.LengthUnit ??= propType == typeof(byte[])
+              ? FormLengthUnit.Bytes
+              : (propType != null && typeof(ICollection).IsAssignableFrom(propType) ? FormLengthUnit.Items : FormLengthUnit.Utf16);
+            break;
+          case MinLengthAttribute minLen when minLen.Length > 0:
+            el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, minLen.Length);
+            el.Constraints.LengthUnit ??= propType == typeof(byte[])
+              ? FormLengthUnit.Bytes
+              : (propType != null && typeof(ICollection).IsAssignableFrom(propType) ? FormLengthUnit.Items : FormLengthUnit.Utf16);
+            break;
+        }
+      }
+
+      if (propType != null && propType.IsValueType && Nullable.GetUnderlyingType(propType) == null)
+      {
+        el.Constraints.AllowsNull = false;
+      }
+
+      if (el.IsRequired)
+      {
+        el.Constraints.AllowsNull = false;
+        if (propType == typeof(string))
+        {
+          el.Constraints.RejectsBlank = true;
+        }
+        else if (propType != null && typeof(ICollection).IsAssignableFrom(propType))
+        {
+          el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, 1);
+          el.Constraints.LengthUnit ??= FormLengthUnit.Items;
         }
       }
     }

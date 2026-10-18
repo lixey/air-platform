@@ -1,4 +1,9 @@
+using System.Collections;
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq.Expressions;
+using System.Numerics;
+using System.Reflection;
 using System.Text.Json;
 using Air.App.Components;
 using Air.App.Internal;
@@ -28,11 +33,16 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
+    ApplyElementConstraints(elements);
 
     TEntity entity;
     if (IsNew)
     {
       entity = new TEntity();
+      if (entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
+      {
+        tenantEntity.TenantId = tid;
+      }
       ApplyBoundParentId(entity, parent, request.ParentId);
       if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
       {
@@ -60,8 +70,11 @@ public abstract partial class FormService<TEntity, TInput>
       RestoreBoundParentId(entity, parent);
     }
 
-    var input = new TInput();
-    CopyMatchingProperties(entity, input);
+    var input = entity is TInput same ? same : new TInput();
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
 
     var hooks = new Hooks();
     SetHooks(hooks);
@@ -90,8 +103,8 @@ public abstract partial class FormService<TEntity, TInput>
     {
       throw new FormRefusedException(
         MutationOutcome.Refused,
-        L["MutationRefused"],
-        [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]);
+        L["FormReadOnly"],
+        [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
     }
 
     var entityJson = json.ValueKind == JsonValueKind.Object && (json.TryGetProperty("value", out var val) || json.TryGetProperty("entity", out val))
@@ -148,6 +161,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
+    ApplyElementConstraints(elements);
 
     var hooks = new Hooks();
     SetHooks(hooks);
@@ -157,6 +171,10 @@ public abstract partial class FormService<TEntity, TInput>
     if (IsNew)
     {
       entity = new TEntity();
+      if (entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
+      {
+        tenantEntity.TenantId = tid;
+      }
       ApplyBoundParentId(entity, parent, Request.ParentId);
       if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
       {
@@ -173,13 +191,14 @@ public abstract partial class FormService<TEntity, TInput>
         throw new FormRefusedException(
           MutationOutcome.Conflict,
           L["MutationConflict"],
-          [new MessageDto { Detail = L["FormConcurrentEdit"], Type = MessageType.Error }]);
+          [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]);
       }
 
       RestoreBoundParentId(entity, parent);
       originalValues = SnapshotValues(entity);
     }
 
+    NormalizeNullableStrings(elements, input);
     var protectedPaths = BuildProtectedPaths(elements);
     CopyMatchingProperties(input, entity, protectedPaths);
     if (id.HasValue && id.Value > 0)
@@ -187,11 +206,15 @@ public abstract partial class FormService<TEntity, TInput>
       entity.Id = id.Value;
     }
     ApplyBoundParentId(entity, parent, Request.ParentId);
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
 
     var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, input, originalValues, ct);
     if (ruleCtx.Failures.Count > 0)
     {
-      throw new FormRefusedException(MutationOutcome.Refused, L["FormValidationFailed"], ruleCtx.Failures);
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
     }
 
     foreach (var h in hooks.BeforeSaveActions)
@@ -201,7 +224,17 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (saveCtx.Errors.Count > 0)
     {
-      throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], saveCtx.Errors);
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+    }
+
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
+    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
+    if (ruleCtx.Failures.Count > 0)
+    {
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
     }
 
     if (IsNew)
@@ -220,7 +253,10 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     await db.SaveChangesAsync(ct);
-    CopyMatchingProperties(entity, input);
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
     return input;
   }
 
@@ -237,7 +273,7 @@ public abstract partial class FormService<TEntity, TInput>
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = path, Type = MessageType.Error }]
+        Warnings = [new MessageDto { Detail = L["FormReadOnly"], Path = path, Type = MessageType.Error }]
       };
     }
 
@@ -249,6 +285,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
+    ApplyElementConstraints(elements);
 
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
@@ -258,15 +295,18 @@ public abstract partial class FormService<TEntity, TInput>
       return new GridCellDto
       {
         Outcome = MutationOutcome.Conflict,
-        Warnings = [new MessageDto { Detail = L["FormConcurrentEdit"], Path = path, Type = MessageType.Error }]
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Path = path, Type = MessageType.Error }]
       };
     }
 
     RestoreBoundParentId(entity, parent);
     var originalValues = SnapshotValues(entity);
 
-    var input = new TInput();
-    CopyMatchingProperties(entity, input);
+    var input = entity is TInput same ? same : new TInput();
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
 
     var hooks = new Hooks();
     SetHooks(hooks);
@@ -284,7 +324,15 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     SetPropertyValue(input, path, value);
-    SetPropertyValue(entity, path, value);
+    if (!ReferenceEquals(entity, input))
+    {
+      SetPropertyValue(entity, path, value);
+    }
+    NormalizeNullableStrings(elements, input);
+    if (!ReferenceEquals(entity, input))
+    {
+      NormalizeNullableStrings(elements, entity);
+    }
 
     var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, input, originalValues, ct);
     if (ruleCtx.Failures.Count > 0)
@@ -296,6 +344,7 @@ public abstract partial class FormService<TEntity, TInput>
         {
           Detail = f.Detail,
           Path = f.Path ?? path,
+          Code = f.Code,
           Type = MessageType.Error
         }).ToList()
       };
@@ -439,6 +488,11 @@ public abstract partial class FormService<TEntity, TInput>
       h(saveCtx);
     }
 
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
+
     var rules = new Rules();
     SetRules(rules);
 
@@ -454,6 +508,8 @@ public abstract partial class FormService<TEntity, TInput>
       }
     };
 
+    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: true);
+
     foreach (var r in rules.Validators)
     {
       await r(ruleCtx.SaveContext, ruleCtx, ct);
@@ -462,6 +518,274 @@ public abstract partial class FormService<TEntity, TInput>
     await ValidateUniqueElementsAsync(elements, entity, ruleCtx, ct);
     return (saveCtx, ruleCtx);
   }
+
+  private void NormalizeNullableStrings(Elements elements, object target)
+  {
+    var targetType = target.GetType();
+    foreach (var el in elements.List)
+    {
+      if (string.IsNullOrEmpty(el.Path)) continue;
+      if (el.Constraints.AllowsNull == true && el.Constraints.RejectsBlank != true)
+      {
+        var prop = PropertyAccessorCache.GetProperty(targetType, el.Path);
+        if (prop != null && prop.PropertyType == typeof(string) && prop.CanRead && prop.CanWrite)
+        {
+          if (PropertyAccessorCache.GetValue(target, prop.Name) is string str && string.IsNullOrWhiteSpace(str))
+          {
+            prop.SetValue(target, null);
+          }
+        }
+      }
+    }
+  }
+
+  private void ValidateElementConstraints(
+    Elements elements,
+    TEntity entity,
+    TInput input,
+    RuleContext<TInput> ruleCtx,
+    bool onlyAcceptingInput)
+  {
+    var efEntityType = db.Model.FindEntityType(typeof(TEntity));
+
+    foreach (var el in elements.List)
+    {
+      if (string.IsNullOrEmpty(el.Path)) continue;
+
+      var acceptsInput = !el.IsDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
+      if (onlyAcceptingInput)
+      {
+        if (!acceptsInput) continue;
+      }
+      else
+      {
+        if (acceptsInput || el.IsInputOnly || !el.IsRequired) continue;
+      }
+
+      var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
+      var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
+      if (inputProp == null && entityProp == null) continue;
+
+      var val = inputProp != null
+        ? PropertyAccessorCache.GetValue(input, inputProp.Name)
+        : PropertyAccessorCache.GetValue(entity, entityProp!.Name);
+
+      var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
+      var isFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || (efProp?.IsForeignKey() ?? false);
+
+      if (el.IsRequired && !AnswersRequirement(val, isFk))
+      {
+        if (!ruleCtx.Failures.Any(f => string.Equals(f.Path, el.Path, StringComparison.OrdinalIgnoreCase) && f.Code == "form.validation.required"))
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["Required"],
+            Code = "form.validation.required",
+            Type = MessageType.Error
+          });
+        }
+        continue;
+      }
+
+      if (!onlyAcceptingInput) continue;
+
+      if (val is null)
+      {
+        if (el.Constraints.AllowsNull == false && !el.IsRequired)
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["FormValidationNull"],
+            Code = "form.validation.null",
+            Type = MessageType.Error
+          });
+        }
+        continue;
+      }
+
+      if (val is string text)
+      {
+        if (text.Length > 0)
+        {
+          if (el.Constraints.MaxLength is { } maxLen && text.Length > maxLen)
+          {
+            ruleCtx.Failures.Add(new MessageDto
+            {
+              Path = el.Path,
+              Detail = L["FormValidationMaxLength"],
+              Code = "form.validation.maxLength",
+              Type = MessageType.Error
+            });
+          }
+          if (el.Constraints.MinLength is { } minLen && text.Length < minLen)
+          {
+            ruleCtx.Failures.Add(new MessageDto
+            {
+              Path = el.Path,
+              Detail = L["FormValidationMinLength"],
+              Code = "form.validation.minLength",
+              Type = MessageType.Error
+            });
+          }
+
+          if (el.Type == FormFieldType.Email && !IsValidEmail(text))
+          {
+            ruleCtx.Failures.Add(new MessageDto
+            {
+              Path = el.Path,
+              Detail = L["FormValidationEmail"],
+              Code = "form.validation.email",
+              Type = MessageType.Error
+            });
+          }
+          else if (el.Model is FormPhoneModel && !IsValidPhone(text))
+          {
+            ruleCtx.Failures.Add(new MessageDto
+            {
+              Path = el.Path,
+              Detail = L["FormValidationPhone"],
+              Code = "form.validation.phone",
+              Type = MessageType.Error
+            });
+          }
+          else if (el.Type == FormFieldType.Url && !IsValidSite(text))
+          {
+            ruleCtx.Failures.Add(new MessageDto
+            {
+              Path = el.Path,
+              Detail = L["FormValidationUrl"],
+              Code = "form.validation.url",
+              Type = MessageType.Error
+            });
+          }
+        }
+      }
+
+      if ((el.Constraints.Min.HasValue || el.Constraints.Max.HasValue) && TryConvertToDecimal(val, out var decVal))
+      {
+        var outOfRange = false;
+        if (el.Constraints.Min is { ValueKind: JsonValueKind.Number } minEl && minEl.TryGetDecimal(out var minDec) && decVal < minDec)
+        {
+          outOfRange = true;
+        }
+        if (el.Constraints.Max is { ValueKind: JsonValueKind.Number } maxEl && maxEl.TryGetDecimal(out var maxDec) && decVal > maxDec)
+        {
+          outOfRange = true;
+        }
+        if (outOfRange)
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["FormValidationRange"],
+            Code = "form.validation.range",
+            Type = MessageType.Error
+          });
+        }
+      }
+
+      if (val is decimal decNumber && (el.Constraints.Precision.HasValue || el.Constraints.Scale.HasValue))
+      {
+        if (!FitsDecimal(decNumber, el.Constraints.Precision, el.Constraints.Scale))
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["FormValidationDecimal"],
+            Code = "form.validation.decimal",
+            Type = MessageType.Error
+          });
+        }
+      }
+
+      if (el.Model is FormSelectModel { Options: { } options } && val is long optId && optId > 0 && !options.Any(o => o.Id == optId))
+      {
+        ruleCtx.Failures.Add(new MessageDto
+        {
+          Path = el.Path,
+          Detail = L["FormValidationOption"],
+          Code = "form.validation.option",
+          Type = MessageType.Error
+        });
+      }
+      else if (el.Model is FormTimeZoneModel { Zones: { } zones } && val is string zone && !string.IsNullOrEmpty(zone) && !zones.Contains(zone, StringComparer.Ordinal))
+      {
+        ruleCtx.Failures.Add(new MessageDto
+        {
+          Path = el.Path,
+          Detail = L["FormValidationOption"],
+          Code = "form.validation.option",
+          Type = MessageType.Error
+        });
+      }
+    }
+  }
+
+  private static bool AnswersRequirement(object? value, bool foreignKey) => value switch
+  {
+    null => false,
+    string text => !string.IsNullOrWhiteSpace(text),
+    ICollection collection => collection.Count > 0,
+    Guid guid => guid != Guid.Empty,
+    int key when foreignKey => key > 0,
+    long key when foreignKey => key > 0,
+    _ => true
+  };
+
+  private static bool TryConvertToDecimal(object value, out decimal result)
+  {
+    switch (value)
+    {
+      case decimal d: result = d; return true;
+      case int i: result = i; return true;
+      case long l: result = l; return true;
+      case short s: result = s; return true;
+      case byte b: result = b; return true;
+      case double dbVal and not double.NaN and not double.PositiveInfinity and not double.NegativeInfinity:
+        result = (decimal)dbVal; return true;
+      case float flVal and not float.NaN and not float.PositiveInfinity and not float.NegativeInfinity:
+        result = (decimal)flVal; return true;
+      default:
+        result = 0; return false;
+    }
+  }
+
+  private static bool FitsDecimal(decimal value, int? precision, int? scale)
+  {
+    var bits = decimal.GetBits(value);
+    var fractional = (bits[3] >> 16) & 0xff;
+    var magnitude = (BigInteger)(uint)bits[0] | ((BigInteger)(uint)bits[1] << 32) | ((BigInteger)(uint)bits[2] << 64);
+    while (fractional > 0 && magnitude % 10 == 0)
+    {
+      magnitude /= 10;
+      fractional--;
+    }
+
+    var digits = magnitude.IsZero ? 0 : magnitude.ToString(CultureInfo.InvariantCulture).Length;
+    var integerDigits = Math.Max(0, digits - fractional);
+    return (scale is null || fractional <= scale) &&
+           (precision is null || (scale is { } s ? integerDigits <= precision - s : Math.Max(digits, fractional) <= precision));
+  }
+
+  private static bool IsValidEmail(string value)
+  {
+    var at = value.IndexOf('@');
+    return at > 0 && at < value.Length - 1 && at == value.LastIndexOf('@');
+  }
+
+  private static bool IsValidPhone(string value) =>
+    value is ['+', .. var digits] && digits.Length is >= 7 and <= 15 && digits.All(char.IsAsciiDigit);
+
+  private static bool IsValidSite(string value) =>
+    IsWebAddress(value, prefixed: false) || IsWebAddress("https://" + value, prefixed: true);
+
+  private static bool IsWebAddress(string value, bool prefixed) =>
+    Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+    (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) &&
+    uri.Host.Contains('.', StringComparison.Ordinal) && !uri.Host.StartsWith('.') && !uri.Host.EndsWith('.') &&
+    !(prefixed && uri.UserInfo.Length > 0);
 
   private async Task ValidateUniqueElementsAsync(Elements elements, TEntity entity, RuleContext<TInput> ruleCtx, CancellationToken ct)
   {

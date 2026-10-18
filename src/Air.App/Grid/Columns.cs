@@ -41,6 +41,7 @@ public class Columns
       FilterPath = path,
       Label = PathToLabel(path, typeof(TRow)),
       Type = ResolveFieldType(typeof(TProp)),
+      TemporalType = Form.Elements.ResolveTemporalType(typeof(TProp)),
       Cell = ResolveDefaultCell(typeof(TProp)),
       MemberType = typeof(TProp)
     };
@@ -56,6 +57,7 @@ public class Columns
       FilterPath = path,
       Label = PathToLabel(path, null),
       Type = ResolveFieldType(typeof(TProp)),
+      TemporalType = Form.Elements.ResolveTemporalType(typeof(TProp)),
       Cell = ResolveDefaultCell(typeof(TProp)),
       MemberType = typeof(TProp)
     };
@@ -98,8 +100,11 @@ public class Columns
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
     if (underlying == typeof(bool)) return UiFieldType.Checkbox;
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly)) return UiFieldType.Date;
-    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(decimal) || underlying == typeof(double)) return UiFieldType.Number;
+    if (underlying == typeof(DateOnly)) return UiFieldType.Date;
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return UiFieldType.Datetime;
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return UiFieldType.Time;
+    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte) ||
+        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float)) return UiFieldType.Number;
     return UiFieldType.Text;
   }
 
@@ -107,8 +112,13 @@ public class Columns
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
     if (underlying == typeof(bool)) return new GridCellCheckboxModel();
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly)) return new GridCellDateModel();
-    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(decimal) || underlying == typeof(double)) return new GridCellNumberModel();
+    if (underlying == typeof(DateOnly)) return new GridCellDateModel();
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return new GridCellDatetimeModel();
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return new GridCellTimeModel();
+    if (underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+      return new GridCellNumberModel { Decimals = 2, IsGrouped = true };
+    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte))
+      return new GridCellNumberModel { Decimals = 0, IsGrouped = true };
     return new GridCellTextModel();
   }
 }

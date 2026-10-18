@@ -270,6 +270,17 @@ public abstract partial class GridService<TEntity, TRow>
       {
         col.Operators = GridFilterOperators.ForField(col.Type, col.ReferenceService != null, col.TemporalType != null);
       }
+      if (col.IsFilterable && col.Header == null)
+      {
+        if (col.Type is UiFieldType.Date or UiFieldType.Datetime)
+        {
+          col.Header = new GridHeaderDateModel();
+        }
+        else if (col.Type == UiFieldType.Checkbox)
+        {
+          col.Header = new GridHeaderCheckboxModel();
+        }
+      }
     }
   }
 

@@ -133,14 +133,26 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    db.Set<TEntity>().RemoveRange(entities);
-    await db.SaveChangesAsync(ct);
-
-    foreach (var h in hooks.AfterDeleteActions)
+    try
     {
-      await h(ctx, ct);
+      db.Set<TEntity>().RemoveRange(entities);
+      await db.SaveChangesAsync(ct);
+
+      foreach (var h in hooks.AfterDeleteActions)
+      {
+        await h(ctx, ct);
+      }
+      await db.SaveChangesAsync(ct);
     }
-    await db.SaveChangesAsync(ct);
+    catch (DbUpdateException)
+    {
+      return new GridDeleteDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Deleted = 0,
+        Warnings = [new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error }]
+      };
+    }
 
     return new GridDeleteDto
     {

@@ -20,7 +20,7 @@ const TIME_LENGTH = 5;
  * day; the untouched wire value stays in the form service.
  */
 export function temporalText(value: unknown, element: Pick<FormElementDto, 'type' | 'temporalType'>, zone: string): string {
-  if (typeof value !== 'string') {
+  if (typeof value !== 'string' || value.startsWith('0001-01-01')) {
     return '';
   }
   if (element.type === 'time') {

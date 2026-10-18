@@ -211,6 +211,9 @@ public sealed class FormElementDto
 
   [JsonIgnore]
   internal List<string>? UniqueWithin { get; set; }
+
+  [JsonIgnore]
+  internal bool? ExplicitRequired { get; set; }
 }
 
 

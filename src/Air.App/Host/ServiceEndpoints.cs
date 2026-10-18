@@ -276,7 +276,16 @@ internal static class ServiceEndpoints
           {
             outcome = MutationOutcome.Conflict,
             title = Localizer.Instance["MutationConflict"],
-            messages = new[] { new MessageDto { Detail = Localizer.Instance["FormConcurrentEdit"], Type = MessageType.Error } }
+            messages = new[] { new MessageDto { Detail = Localizer.Instance["FormRecordChanged"], Type = MessageType.Error } }
+          });
+        }
+        catch (DbUpdateException)
+        {
+          return Results.UnprocessableEntity(new
+          {
+            outcome = MutationOutcome.Refused,
+            title = Localizer.Instance["MutationRefused"],
+            messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationConstraint"], Type = MessageType.Error } }
           });
         }
 
@@ -353,6 +362,15 @@ internal static class ServiceEndpoints
           return ex.Outcome == MutationOutcome.Conflict
             ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
             : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
+        }
+        catch (DbUpdateException)
+        {
+          return Results.UnprocessableEntity(new
+          {
+            outcome = MutationOutcome.Refused,
+            title = Localizer.Instance["DeleteRefused"],
+            messages = new[] { new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error } }
+          });
         }
         return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
       }

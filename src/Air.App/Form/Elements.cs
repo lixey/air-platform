@@ -66,6 +66,7 @@ public class Elements
       Path = path,
       Label = PathToLabel(path, typeof(TEntity)),
       Type = ResolveFieldType(typeof(TProp)),
+      TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
       IsDisabled = _disabled
@@ -81,6 +82,7 @@ public class Elements
       Path = path,
       Label = PathToLabel(path, null),
       Type = ResolveFieldType(typeof(TProp)),
+      TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
       IsDisabled = _disabled
@@ -124,17 +126,34 @@ public class Elements
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
     if (underlying == typeof(bool)) return UiFieldType.Checkbox;
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly)) return UiFieldType.Date;
-    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(decimal) || underlying == typeof(double)) return UiFieldType.Number;
+    if (underlying == typeof(DateOnly)) return UiFieldType.Date;
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return UiFieldType.Datetime;
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return UiFieldType.Time;
+    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte) ||
+        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float)) return UiFieldType.Number;
     return UiFieldType.Text;
+  }
+
+  internal static string? ResolveTemporalType(Type type)
+  {
+    var underlying = Nullable.GetUnderlyingType(type) ?? type;
+    if (underlying == typeof(DateOnly)) return UiTemporalType.DateOnly;
+    if (underlying == typeof(DateTime)) return UiTemporalType.DateTime;
+    if (underlying == typeof(DateTimeOffset)) return UiTemporalType.DateTimeOffset;
+    return null;
   }
 
   private static FormElementModel ResolveDefaultModel(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
     if (underlying == typeof(bool)) return new FormCheckboxModel();
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly)) return new FormDateModel();
-    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(decimal) || underlying == typeof(double)) return new FormNumberModel();
+    if (underlying == typeof(DateOnly)) return new FormDateModel();
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return new FormDatetimeModel();
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return new FormTimeModel();
+    if (underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+      return new FormNumberModel { Step = 0.01 };
+    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte))
+      return new FormNumberModel { Step = 1.0 };
     return new FormInputModel();
   }
 }
@@ -155,6 +174,7 @@ public class FormElement<TProp>(FormElementDto dto) : FormElement<object, TProp>
 public class FormElement<TEntity, TProp>(FormElementDto dto)
 {
   private bool _hasExplicitLabel;
+  private bool _hasSpan;
   public FormElementDto Dto => dto;
 
   public FormElement<TEntity, TProp> Label(string label)
@@ -163,8 +183,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Label = label;
     return this;
   }
-  public FormElement<TEntity, TProp> Span(int cols) { dto.Span = cols; return this; }
-  public FormElement<TEntity, TProp> Required(bool required = true) { dto.IsRequired = required; return this; }
+  public FormElement<TEntity, TProp> Span(int cols) { _hasSpan = true; dto.Span = cols; return this; }
+  public FormElement<TEntity, TProp> Required(bool required = true) { dto.ExplicitRequired = required; dto.IsRequired = required; return this; }
   public FormElement<TEntity, TProp> Disabled(bool disabled = true) { dto.IsDisabled = disabled; return this; }
   public FormElement<TEntity, TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
   public FormElement<TEntity, TProp> Placeholder(string placeholder) { dto.Placeholder = placeholder; return this; }
@@ -205,6 +225,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsTextarea()
   {
     dto.Model = new FormTextareaModel();
+    if (!_hasSpan) dto.Span = 12;
     return this;
   }
 
@@ -276,6 +297,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsRightsTree(Air.App.Modules.ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
   {
     dto.Type = "rights-tree";
+    dto.ValueKind = FormValueKind.List;
+    if (!_hasSpan) dto.Span = 12;
     catalog ??= Air.App.Modules.ModuleCatalog.Instance;
     var nodes = Air.App.Auth.RightsTree.Build(catalog, held);
     dto.Model = new FormCheckboxTreeModel { Nodes = nodes };
@@ -331,6 +354,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
   {
     dto.Type = "checkbox-set";
+    dto.ValueKind = FormValueKind.List;
+    if (!_hasSpan) dto.Span = 12;
     dto.Model = new FormCheckboxSetModel { Options = options?.ToList() ?? [] };
     return this;
   }
@@ -385,6 +410,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   {
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
+    dto.ValueKind = FormValueKind.Reference;
+    if (dto.ExplicitRequired == null && typeof(TProp).IsValueType && Nullable.GetUnderlyingType(typeof(TProp)) == null && !dto.IsServerOwned)
+    {
+      dto.IsRequired = true;
+    }
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
@@ -398,6 +428,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   {
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
+    dto.ValueKind = FormValueKind.Reference;
+    if (dto.ExplicitRequired == null && typeof(TProp).IsValueType && Nullable.GetUnderlyingType(typeof(TProp)) == null && !dto.IsServerOwned)
+    {
+      dto.IsRequired = true;
+    }
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
