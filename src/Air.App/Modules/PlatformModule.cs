@@ -66,32 +66,16 @@ public sealed class ModuleCatalog
   {
     _modules.Add(module);
 
-    var featuresProp = module.GetType().GetProperty("Features");
-    if (featuresProp?.GetValue(module) is IReadOnlyList<Feature> features)
+    foreach (var feat in module.Features)
     {
-      foreach (var feat in features)
-      {
-        _featuresByPath[feat.Path] = feat;
-        _featuresByPath[feat.Name] = feat;
-        if (feat.ServiceType != null)
-        {
-          _servicesByPath[feat.Path] = feat.ServiceType;
-          _servicesByPath[feat.Name] = feat.ServiceType;
-        }
-      }
+      RegisterFeature(feat);
     }
 
     foreach (var node in Flatten(module.Menu.Nodes))
     {
       if (node.Feature is not null)
       {
-        _featuresByPath[node.Feature.Path] = node.Feature;
-        _featuresByPath[node.Feature.Name] = node.Feature;
-        if (node.Feature.ServiceType != null)
-        {
-          _servicesByPath[node.Feature.Path] = node.Feature.ServiceType;
-          _servicesByPath[node.Feature.Name] = node.Feature.ServiceType;
-        }
+        RegisterFeature(node.Feature);
       }
     }
 
@@ -131,11 +115,41 @@ public sealed class ModuleCatalog
     }
   }
 
-  public Feature? FindFeature(string path) =>
-    _featuresByPath.GetValueOrDefault(path);
+  private void RegisterFeature(Feature feat)
+  {
+    _featuresByPath[feat.Path] = feat;
+    _featuresByPath[feat.Path.Replace("-", "")] = feat;
+    _featuresByPath[feat.Name] = feat;
+    _featuresByPath[feat.CleanName] = feat;
+    if (feat.ServiceType != null)
+    {
+      var servicePath = ServicePathResolver.Resolve(feat.ServiceType);
+      _featuresByPath[servicePath] = feat;
+      _servicesByPath[feat.Path] = feat.ServiceType;
+      _servicesByPath[feat.Path.Replace("-", "")] = feat.ServiceType;
+      _servicesByPath[feat.Name] = feat.ServiceType;
+    }
+  }
 
-  public Type? FindServiceType(string path) =>
-    _servicesByPath.GetValueOrDefault(path);
+  public Feature? FindFeature(string path)
+  {
+    if (string.IsNullOrWhiteSpace(path)) return null;
+    return _featuresByPath.GetValueOrDefault(path)
+      ?? _featuresByPath.GetValueOrDefault(path.Replace('/', '-'))
+      ?? _featuresByPath.GetValueOrDefault(path.Replace('-', '/'))
+      ?? _featuresByPath.GetValueOrDefault(path.Replace("demo/", ""))
+      ?? _featuresByPath.GetValueOrDefault(path.Replace("-", ""));
+  }
+
+  public Type? FindServiceType(string path)
+  {
+    if (string.IsNullOrWhiteSpace(path)) return null;
+    return _servicesByPath.GetValueOrDefault(path)
+      ?? _servicesByPath.GetValueOrDefault(path.Replace('/', '-'))
+      ?? _servicesByPath.GetValueOrDefault(path.Replace('-', '/'))
+      ?? _servicesByPath.GetValueOrDefault(path.Replace("demo/", ""))
+      ?? _servicesByPath.GetValueOrDefault(path.Replace("-", ""));
+  }
 
   public static IEnumerable<ModuleMenuNode> Flatten(IEnumerable<ModuleMenuNode> nodes)
   {

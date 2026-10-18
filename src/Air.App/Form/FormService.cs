@@ -31,6 +31,7 @@ public interface IFormService
   Task DeleteAsync(long id, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
+  Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
   void AttachPlatformApp(PlatformAppService app);
 }
 
@@ -1620,6 +1621,132 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
         catch { }
       }
     }
+  }
+
+  public virtual async Task PopulateReferencesAsync(
+    Dictionary<string, object?> dict,
+    object? entity,
+    ScreenDto screen,
+    CancellationToken ct = default)
+  {
+    if (entity == null || screen.Layout?.Root == null) return;
+
+    var formModel = FindFormModel(screen.Layout.Root);
+    if (formModel == null) return;
+
+    var entityProps = entity.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+      .ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+    foreach (var el in formModel.Elements)
+    {
+      if (string.IsNullOrEmpty(el.ReferencePath)) continue;
+
+      long? key = null;
+      if (dict.TryGetValue(el.Path, out var rawVal) && rawVal != null)
+      {
+        if (rawVal is JsonElement je)
+        {
+          if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var jeId)) key = jeId;
+          else if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out var jeParsed)) key = jeParsed;
+        }
+        else if (rawVal is long l) key = l;
+        else if (rawVal is int i) key = i;
+        else if (long.TryParse(rawVal.ToString(), out var parsedId)) key = parsedId;
+      }
+
+      if (key == null || key <= 0)
+      {
+        dict[el.ReferencePath] = null;
+        continue;
+      }
+
+      object? navObj = null;
+      if (entityProps.TryGetValue(el.ReferencePath, out var navProp))
+      {
+        navObj = navProp.GetValue(entity);
+      }
+      else
+      {
+        var candidateName = el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
+          ? el.Path[..^2]
+          : el.Path;
+        if (entityProps.TryGetValue(candidateName, out navProp))
+        {
+          navObj = navProp.GetValue(entity);
+        }
+      }
+
+      string? refName = ReadDisplayCaption(navObj);
+
+      if (string.IsNullOrEmpty(refName) && el.Model is FormSelectModel selectModel && !string.IsNullOrEmpty(selectModel.ReferenceService))
+      {
+        var refServiceType = ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
+          ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
+
+        if (refServiceType != null)
+        {
+          var refEntityType = ResolveServiceEntityType(refServiceType);
+          if (refEntityType != null)
+          {
+            try
+            {
+              var loaded = await db.FindAsync(refEntityType, [key.Value], ct);
+              refName = ReadDisplayCaption(loaded);
+            }
+            catch { }
+          }
+        }
+      }
+
+      dict[el.ReferencePath] = new Reference
+      {
+        Id = key.Value,
+        Name = !string.IsNullOrEmpty(refName) ? L[refName] : $"#{key.Value}"
+      };
+    }
+  }
+
+  private static string? ReadDisplayCaption(object? target)
+  {
+    if (target == null) return null;
+    var type = target.GetType();
+    var prop = type.GetProperty("Name")
+      ?? type.GetProperty("Title")
+      ?? type.GetProperty("Number")
+      ?? type.GetProperty("Login");
+    return prop?.GetValue(target)?.ToString();
+  }
+
+  private static Type? ResolveServiceEntityType(Type serviceType)
+  {
+    var cur = serviceType;
+    while (cur != null && cur != typeof(object))
+    {
+      if (cur.IsGenericType)
+      {
+        var def = cur.GetGenericTypeDefinition();
+        if (def == typeof(GridService<,>) || def == typeof(FormService<,>))
+        {
+          return cur.GetGenericArguments()[0];
+        }
+      }
+      cur = cur.BaseType;
+    }
+    return null;
+  }
+
+  private static FormModel? FindFormModel(PanelNodeDto node)
+  {
+    if (node.Model is FormModel fm) return fm;
+    if (node.Children != null)
+    {
+      foreach (var child in node.Children)
+      {
+        var res = FindFormModel(child);
+        if (res != null) return res;
+      }
+    }
+    return null;
   }
 }
 
