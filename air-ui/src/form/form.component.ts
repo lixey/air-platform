@@ -13,7 +13,7 @@ import {
   type WritableSignal,
 } from '@angular/core';
 import { DynamicOutletDirective } from '../core/dynamic-component/dynamic-outlet.directive';
-import type { FormElementDto, FormModel, MessageDto } from '../core/generated/contracts';
+import type { FormElementDto, FormFilesModel, FormModel, MessageDto } from '../core/generated/contracts';
 import { PanelsContext } from '../panels/panels-context';
 import { PANELS } from '../panels/panels-tokens';
 import { FormCloseGuard } from './form-close-guard';
@@ -38,7 +38,7 @@ import { FormService, isFormData } from './form.service';
  */
 @Component({
   selector: 'ui-form',
-  imports: [FormElementOutletComponent, FormOutcomeComponent],
+  imports: [DynamicOutletDirective, FormElementOutletComponent, FormOutcomeComponent],
   providers: [FormService, FormCloseGuard],
   template: `
     <ui-form-outcome />
@@ -64,6 +64,11 @@ import { FormService, isFormData } from './form.service';
             </div>
           }
         }
+        @for (files of files(); track files.key) {
+          <div class="col-span-full min-w-0" [hidden]="!isTabShown(files.tab)" [attr.data-tab]="files.tab || null" data-form-files>
+            <ng-container [uiDynamicOutlet]="files.kind" [uiDynamicOutletInputs]="{ model: files }" />
+          </div>
+        }
       </div>
     </div>
   `,
@@ -86,6 +91,9 @@ export class FormComponent {
 
   /** The tab whose elements show: the one chosen, or the record tab while nothing has been chosen. */
   private readonly showing = computed(() => this.tab() || RECORD_TAB);
+
+  /** The record's files drawn in the body, in declared order. */
+  protected readonly files = computed<readonly FormFilesModel[]>(() => this.model()?.files ?? []);
 
   constructor() {
     const published = this.context?.of(FORM);
