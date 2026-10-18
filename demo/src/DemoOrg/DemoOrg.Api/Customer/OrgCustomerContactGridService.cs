@@ -12,9 +12,10 @@ public sealed class OrgCustomerContactGridService(OrgDbContext db, OrgService? o
     columns.Add(r => r.Id).AsOpenForm<OrgCustomerContactFormService>();
     columns.Add(r => r.Name);
     columns.Add(r => r.Position);
-    columns.Add(r => r.Phone);
-    columns.Add(r => r.Email);
+    columns.Add(r => r.Phone).AsPhone();
+    columns.Add(r => r.Email).AsEmail();
     columns.Add(r => r.IsPrimary).AsCheckbox();
+
   }
 
   protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);

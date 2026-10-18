@@ -13,8 +13,9 @@ public sealed class OrgCustomerContactFormService(OrgDbContext db, OrgService? o
   {
     elements.Add(e => e.Name).Span(6);
     elements.Add(e => e.Position).Span(6);
-    elements.Add(e => e.Phone).Span(6);
-    elements.Add(e => e.Email).Span(6);
+    elements.Add(e => e.Phone).AsPhone("+380 (##) ###-##-##").Span(6);
+    elements.Add(e => e.Email).AsEmail().Span(6);
+
     elements.Add(e => e.IsPrimary).AsCheckbox();
     elements.Add(e => e.Note).AsTextarea();
   }

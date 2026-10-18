@@ -22,15 +22,17 @@ public sealed class EcomSalesInvoiceFormService(EcomDbContext db, EcomSalesInvoi
     elements.Add(e => e.Date).Span(3);
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
     elements.Add(e => e.CustomerId).AsReference<OrgCustomerGridService>().Required().Span(3);
-    elements.Add(e => e.ContactId).AsReference<OrgCustomerContactGridService, OrgCustomerContact>().Span(3);
-    elements.Add(e => e.WarehouseId).AsReference<OrgWarehouseGridService, OrgWarehouse>().Required().Span(3);
+    elements.Add(e => e.ContactId).AsReference<OrgCustomerContactGridService, OrgCustomerContact>()
+      .Where(c => c.CustomerId, e => e.CustomerId).Span(3);
+    elements.Add(e => e.WarehouseId).AsReference<OrgWarehouseGridService, OrgWarehouse>()
+      .Where(w => w.OrganizationId, e => e.OrganizationId).Required().Span(3);
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(3);
     elements.AddSeparator("Delivery and payment");
     elements.Add(e => e.DeliveryTypeId).AsReference<OrgDeliveryTypeGridService>().Span(4);
     elements.Add(e => e.PaymentMethodId).AsReference<OrgPaymentMethodGridService>().Span(4);
     elements.Add(e => e.PaymentTermId).AsReference<OrgPaymentTermGridService>().Span(4);
     elements.Add(e => e.RecipientName).Span(6);
-    elements.Add(e => e.RecipientPhone).Span(6);
+    elements.Add(e => e.RecipientPhone).AsPhone("+380 (##) ###-##-##").Span(6);
     elements.Add(e => e.DeliveryAddress).Span(8);
     elements.Add(e => e.TrackingNumber).Disabled(false).Span(4);
     elements.Add(e => e.CounterpartyId).AsReference<OrgCounterpartyGridService>().Span(12);

@@ -35,4 +35,12 @@ public sealed class EcomSupplierInvoiceFormService(EcomDbContext db, EcomSupplie
     elements.AddChild<EcomSupplierInvoiceFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomSupplierInvoiceHistoryGridService>().Key("history").Label("History");
   }
+
+  protected override void SetRules(Rules rules)
+  {
+    var texts = EcomDocTexts.Of(L);
+    rules.For(e => e.CounterpartyId)
+      .MustAsync((doc, supplier, cancellationToken) => EcomDocRules.SupplierOfLinesAsync(db, doc.Id, supplier, cancellationToken))
+      .WithMessage(texts.ForeignLines);
+  }
 }

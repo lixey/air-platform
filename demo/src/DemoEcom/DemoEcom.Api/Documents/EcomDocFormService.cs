@@ -51,7 +51,8 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
       {
         c.Entity.DocStatusId = status.Id;
       }
-      return EcomDocActions.SaveAsync(db, c, null, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
+      return EcomDocActions.SaveAsync(db, c, User?.UserId, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
     });
   }
 }
+

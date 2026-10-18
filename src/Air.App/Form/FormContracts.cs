@@ -187,7 +187,14 @@ public sealed class FormElementDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<SelectPatchDto>? SelectPatches { get; set; }
+
+  [JsonIgnore]
+  internal string? UniqueMessage { get; set; }
+
+  [JsonIgnore]
+  internal List<string>? UniqueWithin { get; set; }
 }
+
 
 [UiContract]
 public sealed class FormActionDto

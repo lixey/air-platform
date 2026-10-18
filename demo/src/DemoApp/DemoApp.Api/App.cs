@@ -20,11 +20,5 @@ public sealed class App : ModuleDefinition<App>
   public static readonly Feature Color = Feature<AppColorGridService>().ReadOnly();
   public static readonly Feature UserGroup = Feature<AppUserGroupGridService>();
   public static readonly Feature Change = Feature<AppChangeGridService>("Changes").ReadOnly();
-
-  public static readonly Feature TenantForm = Feature<AppTenantFormService>();
-  public static readonly Feature UserForm = Feature<AppUserFormService>();
-  public static readonly Feature RoleForm = Feature<AppRoleFormService>();
-  public static readonly Feature UserGroupForm = Feature<AppUserGroupFormService>();
-  public static readonly Feature LanguageForm = Feature<AppLanguageFormService>().ReadOnly();
-  public static readonly Feature ColorForm = Feature<AppColorFormService>().ReadOnly();
 }
+

@@ -31,19 +31,5 @@ public sealed class Org : ModuleDefinition<Org>
   public static readonly Feature PaymentTerm = Feature<OrgPaymentTermGridService>().ReadOnly();
   public static readonly Feature Currency = Feature<OrgCurrencyGridService>().ReadOnly();
   public static readonly Feature Unit = Feature<OrgUnitGridService>().ReadOnly();
-
-  public static readonly Feature OrganizationForm = Feature<OrgOrganizationFormService>();
-  public static readonly Feature WarehouseForm = Feature<OrgWarehouseFormService>();
-  public static readonly Feature MoneyAccountForm = Feature<OrgMoneyAccountFormService>();
-  public static readonly Feature CustomerForm = Feature<OrgCustomerFormService>();
-  public static readonly Feature CustomerContactForm = Feature<OrgCustomerContactFormService>();
-  public static readonly Feature CounterpartyForm = Feature<OrgCounterpartyFormService>();
-  public static readonly Feature ProductForm = Feature<OrgProductFormService>();
-  public static readonly Feature BrandForm = Feature<OrgBrandFormService>();
-  public static readonly Feature ProductCategoryForm = Feature<OrgProductCategoryFormService>();
-  public static readonly Feature DeliveryTypeForm = Feature<OrgDeliveryTypeFormService>();
-  public static readonly Feature PaymentMethodForm = Feature<OrgPaymentMethodFormService>();
-  public static readonly Feature PaymentTermForm = Feature<OrgPaymentTermFormService>().ReadOnly();
-  public static readonly Feature CurrencyForm = Feature<OrgCurrencyFormService>().ReadOnly();
-  public static readonly Feature UnitForm = Feature<OrgUnitFormService>().ReadOnly();
 }
+

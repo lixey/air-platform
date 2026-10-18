@@ -29,6 +29,9 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
 
   public void AddError(MutationError error) => _errors.Add(error);
 
+  public void Refuse(string message, long? recordId = null, string? path = null) =>
+    AddError("refused", message, recordId, path);
+
   public Task FlushAsync(CancellationToken cancellationToken) =>
     _flusher != null ? _flusher(cancellationToken) : Task.CompletedTask;
 

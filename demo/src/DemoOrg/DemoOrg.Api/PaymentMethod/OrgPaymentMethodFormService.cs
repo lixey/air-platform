@@ -9,10 +9,11 @@ public sealed class OrgPaymentMethodFormService(OrgDbContext db, OrgService? org
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name);
-    elements.Add(e => e.IsCash).AsCheckbox();
-    elements.Add(e => e.IsCashOnDelivery).AsCheckbox();
-    elements.Add(e => e.SortOrder);
-    elements.Add(e => e.IsActive).AsCheckbox();
+    elements.Add(e => e.Name).Unique("This name is already in use.");
+    elements.Add(e => e.IsCash).AsCheckbox().Span(6);
+    elements.Add(e => e.IsCashOnDelivery).AsCheckbox().Span(6);
+    elements.Add(e => e.IsActive).AsCheckbox().Span(6);
+    elements.Add(e => e.SortOrder).Span(6);
   }
 }
+

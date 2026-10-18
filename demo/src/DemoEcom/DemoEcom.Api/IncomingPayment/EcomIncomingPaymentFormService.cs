@@ -24,7 +24,7 @@ public sealed class EcomIncomingPaymentFormService(
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
     elements.Add(e => e.MoneyAccountId).AsReference<OrgMoneyAccountGridService, OrgMoneyAccount>()
       .Where(a => a.OrganizationId, e => e.OrganizationId).Required().Span(3);
-    elements.Add(e => e.Amount).AsMoney().Span(3);
+    elements.Add(e => e.Amount).AsMoney().Min(0.01m).Span(3);
     elements.Add(e => e.PaymentMethodId).AsReference<OrgPaymentMethodGridService>().Span(3);
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(3);
     elements.Add(e => e.CustomerId).AsReference<OrgCustomerGridService>().Span(4);

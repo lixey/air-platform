@@ -4,15 +4,15 @@ public sealed class OrgSupplierGridService(OrgDbContext db, OrgService? org = nu
   : OrgGridService<OrgCounterparty>(db, org)
 {
   public override Feature Feature => Org.Counterparty;
+  protected override bool IsReadOnly => true;
 
   protected override void SetColumns(Columns<OrgCounterparty> columns)
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgCounterpartyFormService>();
+    columns.Add(r => r.Id);
     columns.Add(r => r.Name);
-    columns.Add(r => r.TaxId);
-    columns.Add(r => r.IsActive).AsCheckbox();
   }
 
   protected override void SetQuery(Query query) =>
-    query.Where(c => c.IsSupplier).RecordLabel(c => c.Name);
+    query.Where(counterparty => counterparty.IsSupplier && counterparty.IsActive).RecordLabel(c => c.Name);
 }
+

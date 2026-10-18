@@ -13,6 +13,7 @@ public static class EcomDocLines
   public static Expression<Func<EcomDocLine, EcomDocLineRow>> Row { get; } = line => new EcomDocLineRow
   {
     Id = line.Id,
+    Ver = line.Ver,
     SortOrder = line.SortOrder,
     Product = new Reference { Id = line.Product.Id, Name = line.Product.Name },
     Article = line.Product.Article,
@@ -23,6 +24,7 @@ public static class EcomDocLines
     DiscountPercent = line.DiscountPercent,
     Amount = line.Amount
   };
+
 
   public static void Load(EcomDocLine entity, EcomDocLine input, bool isNew)
   {

@@ -291,12 +291,19 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsPhone(string? mask = null)
+  public FormElement<TEntity, TProp> AsUrl()
+  {
+    dto.Type = FormFieldType.Url;
+    dto.Model = new FormInputModel();
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> AsPhone(params string[] masks)
   {
     dto.Type = UiFieldType.Text;
     dto.Model = new FormPhoneModel
     {
-      Masks = mask != null ? [mask] : ["+380 (##) ###-##-##", "+1 (###) ###-####"]
+      Masks = masks.Length > 0 ? [.. masks] : ["+380 (##) ###-##-##", "+1 (###) ###-####"]
     };
     return this;
   }
@@ -307,8 +314,20 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
-  public FormElement<TEntity, TProp> Unique(string? message = null) => this;
-  public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys) => this;
+  public FormElement<TEntity, TProp> Unique(string? message = null)
+  {
+    dto.UniqueMessage = message ?? "FormValidationUnique";
+    dto.UniqueWithin = [];
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys)
+  {
+    dto.UniqueMessage = message ?? "FormValidationUnique";
+    dto.UniqueWithin = withKeys.Select(k => GetMemberName(k.Body)).Where(n => n != null).Select(n => n!).ToList();
+    return this;
+  }
+
   public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
   {
     dto.Type = "checkbox-set";

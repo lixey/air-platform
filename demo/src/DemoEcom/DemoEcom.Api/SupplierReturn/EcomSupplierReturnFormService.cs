@@ -31,4 +31,12 @@ public sealed class EcomSupplierReturnFormService(EcomDbContext db, EcomSupplier
     elements.AddChild<EcomSupplierReturnBasisGridService>().Key("basis").Label("Entered on");
     elements.AddChild<EcomSupplierReturnHistoryGridService>().Key("history").Label("History");
   }
+
+  protected override void SetRules(Rules rules)
+  {
+    var texts = EcomDocTexts.Of(L);
+    rules.For(e => e.CounterpartyId)
+      .MustAsync((doc, supplier, cancellationToken) => EcomDocRules.SupplierOfLinesAsync(db, doc.Id, supplier, cancellationToken))
+      .WithMessage(texts.ForeignLines);
+  }
 }

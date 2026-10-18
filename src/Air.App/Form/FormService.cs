@@ -62,6 +62,12 @@ public class FormSaveContext<TEntity, TInput>
   public void AddError(string detail, string? path = null) =>
     Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
 
+  public void AddError(string code, string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void Refuse(string detail, string? path = null) =>
+    AddError(detail, path);
+
   public bool Changed(params Expression<Func<TInput, object?>>[] properties)
   {
     if (IsNew || OriginalValues is null) return true;
@@ -92,6 +98,12 @@ public class FormDeleteContext<TEntity>
 
   public void AddError(string detail, string? path = null) =>
     Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void AddError(string code, string detail, string? path = null) =>
+    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
+
+  public void Refuse(string detail, string? path = null) =>
+    AddError(detail, path);
 }
 
 public class RuleContext<TInput>
@@ -125,6 +137,56 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
   public RuleBuilder<TInput, TProp> CustomAsync(Func<TProp, RuleContext<TInput>, CancellationToken, Task> func)
   {
     _validators.Add(func);
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> Must(Func<TProp, bool> predicate)
+  {
+    _validators.Add((val, ctx, ct) =>
+    {
+      if (!predicate(val))
+      {
+        ctx.AddFailure(_lastErrorMessage ?? "Invalid value.", path);
+      }
+      return Task.CompletedTask;
+    });
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> Must(Func<TInput, TProp, bool> predicate)
+  {
+    _validators.Add((val, ctx, ct) =>
+    {
+      if (!predicate(ctx.SaveContext.Input, val))
+      {
+        ctx.AddFailure(_lastErrorMessage ?? "Invalid value.", path);
+      }
+      return Task.CompletedTask;
+    });
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> MustAsync(Func<TProp, CancellationToken, Task<bool>> predicate)
+  {
+    _validators.Add(async (val, ctx, ct) =>
+    {
+      if (!await predicate(val, ct))
+      {
+        ctx.AddFailure(_lastErrorMessage ?? "Invalid value.", path);
+      }
+    });
+    return this;
+  }
+
+  public RuleBuilder<TInput, TProp> MustAsync(Func<TInput, TProp, CancellationToken, Task<bool>> predicate)
+  {
+    _validators.Add(async (val, ctx, ct) =>
+    {
+      if (!await predicate(ctx.SaveContext.Input, val, ct))
+      {
+        ctx.AddFailure(_lastErrorMessage ?? "Invalid value.", path);
+      }
+    });
     return this;
   }
 
@@ -1022,10 +1084,13 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       await r(ruleCtx.SaveContext, ruleCtx, ct);
     }
 
+    await ValidateUniqueElementsAsync(elements, entity, ruleCtx, ct);
+
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormValidationFailed"], ruleCtx.Failures);
     }
+
 
     foreach (var h in hooks.BeforeSaveActions)
     {
@@ -1426,13 +1491,15 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
       "UpdatedBy"
     };
 
+    var isSeparateInput = typeof(TInput) != typeof(TEntity);
     foreach (var el in elements.List)
     {
-      if ((el.IsServerOwned || el.IsInputOnly) && !string.IsNullOrEmpty(el.Path))
+      if ((el.IsServerOwned || (isSeparateInput && el.IsInputOnly)) && !string.IsNullOrEmpty(el.Path))
       {
         set.Add(el.Path);
       }
     }
+
 
     foreach (var prop in typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance))
     {
@@ -1445,7 +1512,77 @@ public abstract class FormService<TEntity, TInput>(PlatformDbContext db, Platfor
     return set;
   }
 
+  private async Task ValidateUniqueElementsAsync(Elements elements, TEntity entity, RuleContext<TInput> ruleCtx, CancellationToken ct)
+  {
+    foreach (var el in elements.List)
+    {
+      if (el.UniqueWithin == null || string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
+
+      var prop = typeof(TEntity).GetProperty(el.Path, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+      if (prop == null || !prop.CanRead)
+      {
+        continue;
+      }
+
+      var val = prop.GetValue(entity);
+      if (val is null || (val is string str && string.IsNullOrWhiteSpace(str)))
+      {
+        continue;
+      }
+
+      var param = Expression.Parameter(typeof(TEntity), "e");
+      Expression cond = Expression.Equal(Expression.Property(param, prop), Expression.Constant(val, prop.PropertyType));
+      var skip = false;
+
+      foreach (var withinName in el.UniqueWithin)
+      {
+        var withinProp = typeof(TEntity).GetProperty(withinName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (withinProp == null || !withinProp.CanRead)
+        {
+          skip = true;
+          break;
+        }
+
+        var withinVal = withinProp.GetValue(entity);
+        if (withinVal is null)
+        {
+          skip = true;
+          break;
+        }
+
+        cond = Expression.AndAlso(cond, Expression.Equal(Expression.Property(param, withinProp), Expression.Constant(withinVal, withinProp.PropertyType)));
+      }
+
+      if (skip)
+      {
+        continue;
+      }
+
+      if (!IsNew && entity.Id > 0)
+      {
+        var idProp = typeof(TEntity).GetProperty(nameof(IEntity.Id))!;
+        cond = Expression.AndAlso(cond, Expression.NotEqual(Expression.Property(param, idProp), Expression.Constant(entity.Id, typeof(long))));
+      }
+
+      var exists = await db.Set<TEntity>().AsNoTracking().AnyAsync(Expression.Lambda<Func<TEntity, bool>>(cond, param), ct);
+      if (exists)
+      {
+        ruleCtx.Failures.Add(new MessageDto
+        {
+          Path = el.Path,
+          Detail = L[el.UniqueMessage ?? "FormValidationUnique"],
+          Code = "form.validation.unique",
+          Type = MessageType.Error
+        });
+      }
+    }
+  }
+
   private static void CopyMatchingProperties(object source, object target, HashSet<string>? protectedPaths = null)
+
   {
     var srcProps = source.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
     var tgtProps = target.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)

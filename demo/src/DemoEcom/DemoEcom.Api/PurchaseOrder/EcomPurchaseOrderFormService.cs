@@ -23,7 +23,8 @@ public sealed class EcomPurchaseOrderFormService(EcomDbContext db, EcomPurchaseO
     elements.Add(e => e.Date).Span(3);
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
     elements.Add(e => e.CounterpartyId).Label("Supplier").AsReference<OrgSupplierGridService>().Required().Span(4);
-    elements.Add(e => e.WarehouseId).AsReference<OrgWarehouseGridService, OrgWarehouse>().Required().Span(4);
+    elements.Add(e => e.WarehouseId).AsReference<OrgWarehouseGridService, OrgWarehouse>()
+      .Where(w => w.OrganizationId, e => e.OrganizationId).Required().Span(4);
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(4);
     elements.Add(e => e.PaymentTermId).AsReference<OrgPaymentTermGridService>().Span(4);
     elements.Add(e => e.DueDate).Span(4);
@@ -34,5 +35,13 @@ public sealed class EcomPurchaseOrderFormService(EcomDbContext db, EcomPurchaseO
     elements.AddChild<EcomPurchaseOrderBasisGridService>().Key("basis").Label("Entered on");
     elements.AddChild<EcomPurchaseOrderFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomPurchaseOrderHistoryGridService>().Key("history").Label("History");
+  }
+
+  protected override void SetRules(Rules rules)
+  {
+    var texts = EcomDocTexts.Of(L);
+    rules.For(e => e.CounterpartyId)
+      .MustAsync((doc, supplier, cancellationToken) => EcomDocRules.SupplierOfLinesAsync(db, doc.Id, supplier, cancellationToken))
+      .WithMessage(texts.ForeignLines);
   }
 }
