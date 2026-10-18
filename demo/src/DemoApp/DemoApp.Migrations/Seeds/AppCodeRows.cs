@@ -28,6 +28,12 @@ public static class AppCodeRows
     )
   ];
 
+  public static AppLanguage[] Languages() =>
+  [
+    new() { Id = AppData.Language.EnglishId, Handle = AppData.Language.English, Name = "English", IsActive = true },
+    new() { Id = AppData.Language.UkrainianId, Handle = AppData.Language.Ukrainian, Name = "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430", IsActive = true }
+  ];
+
   public static AppColor[] Colors() =>
     Hues.Select((hue, i) => new AppColor { Id = i + 1, Handle = hue, Name = char.ToUpperInvariant(hue[0]) + hue[1..], IsActive = true })
       .ToArray();
@@ -35,6 +41,7 @@ public static class AppCodeRows
   public static async Task SyncAsync(AppDbContext db, IReadOnlyList<AppSeedTenant> tenants, CancellationToken cancellationToken = default)
   {
     await CodeRows.SyncAsync(db, tenants.Select(t => t.Row).ToArray(), cancellationToken);
+    await CodeRows.SyncAsync(db, Languages(), cancellationToken);
     await CodeRows.SyncAsync(db, Colors(), cancellationToken);
   }
 }
