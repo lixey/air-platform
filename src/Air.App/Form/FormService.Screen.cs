@@ -37,7 +37,7 @@ public abstract partial class FormService<TEntity, TInput>
     TEntity? entity = null;
     if (id is not null && id > 0)
     {
-      entity = await db.Set<TEntity>().FindAsync([id.Value], ct);
+      entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct);
       if (entity != null)
       {
         RestoreBoundParentId(entity, parent);
@@ -47,6 +47,7 @@ public abstract partial class FormService<TEntity, TInput>
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     LocalizeAndResolveSelectElements(elements);
+    await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
     _lastElements = elements;
 
     var formModel = new FormModel
@@ -205,28 +206,103 @@ public abstract partial class FormService<TEntity, TInput>
       {
         el.Help = L[el.Help];
       }
-      if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))
+      if (el.Model is FormSelectModel select)
       {
-        if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || (select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name"))
+        if (select.Options is { Count: > 0 })
         {
-          var targetServiceType = ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
-          if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
+          select.Options = select.Options
+            .Select(opt => string.IsNullOrEmpty(opt.Name)
+              ? opt
+              : new OptionDto { Id = opt.Id, Name = L[opt.Name], Color = opt.Color })
+            .ToList();
+        }
+
+        if (!string.IsNullOrEmpty(select.ReferenceService))
+        {
+          if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || (select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name"))
           {
-            try
+            var targetServiceType = ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
+            if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
             {
-              if (ModuleCatalog.Instance.CreateServiceInstance(targetServiceType, db, _app) is IGridService gridInst)
+              try
               {
-                var customPaths = gridInst.GetReferenceLabelPaths();
-                if (customPaths is { Count: > 0 })
+                if (ModuleCatalog.Instance.CreateServiceInstance(targetServiceType, db, _app) is IGridService gridInst)
                 {
-                  select.ReferenceLabelPaths = [.. customPaths];
+                  var customPaths = gridInst.GetReferenceLabelPaths();
+                  if (customPaths is { Count: > 0 })
+                  {
+                    select.ReferenceLabelPaths = [.. customPaths];
+                  }
                 }
               }
+              catch { }
             }
-            catch { }
           }
         }
       }
+    }
+  }
+
+  private async Task ResolveTimeZoneInheritLabelsAsync(Elements elements, TEntity? entity, CancellationToken ct)
+  {
+    var tzModels = elements.List.Select(e => e.Model).OfType<FormTimeZoneModel>().ToList();
+    if (tzModels.Count == 0) return;
+
+    var isTenantForm = typeof(BaseAppTenant).IsAssignableFrom(typeof(TEntity));
+    long? startTenantId;
+    if (isTenantForm)
+    {
+      startTenantId = entity is BaseAppTenant tenantEntity ? tenantEntity.ParentId : ParentId;
+    }
+    else
+    {
+      startTenantId = entity is IHasTenant hasTenant && hasTenant.TenantId > 0
+        ? hasTenant.TenantId
+        : db.TenantContext.TenantId;
+    }
+
+    string? resolvedZone = null;
+    if (startTenantId is > 0)
+    {
+      var tenantClrType = db.Model.GetEntityTypes()
+        .Select(t => t.ClrType)
+        .FirstOrDefault(t => typeof(BaseAppTenant).IsAssignableFrom(t) && !t.IsAbstract);
+
+      if (tenantClrType != null)
+      {
+        var setMethod = typeof(DbContext).GetMethod(nameof(DbContext.Set), Type.EmptyTypes)!.MakeGenericMethod(tenantClrType);
+        if (setMethod.Invoke(db, null) is IQueryable<BaseAppTenant> tenantQuery)
+        {
+          var currentId = startTenantId;
+          var visited = new HashSet<long>();
+          while (currentId is > 0 && visited.Add(currentId.Value))
+          {
+            var row = await tenantQuery.IgnoreQueryFilters()
+              .AsNoTracking()
+              .Where(t => t.Id == currentId.Value)
+              .Select(t => new { t.ParentId, t.TimeZone })
+              .FirstOrDefaultAsync(ct);
+            if (row == null) break;
+            if (!string.IsNullOrWhiteSpace(row.TimeZone))
+            {
+              resolvedZone = row.TimeZone;
+              break;
+            }
+            currentId = row.ParentId;
+          }
+        }
+      }
+    }
+
+    var inheritLabel = !string.IsNullOrWhiteSpace(resolvedZone)
+      ? (isTenantForm
+          ? L["TimeZoneAsParentOrganisation", resolvedZone]
+          : L["TimeZoneAsOrganisation", resolvedZone])
+      : L["TimeZoneByBrowser"];
+
+    foreach (var tz in tzModels)
+    {
+      tz.Inherit = inheritLabel;
     }
   }
 

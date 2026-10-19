@@ -40,7 +40,19 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
       throw new InvalidOperationException("Parent customer order id is required.");
     }
 
-    var order = await db.EcomDoc.FirstOrDefaultAsync(d => d.Id == parentId, cancellationToken)
+    ParentId = parentId;
+    if (IsReadOnly)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = EcomDocTexts.Of(L).NotEditable, Code = EcomDocActions.NotEditable, Type = MessageType.Error }]
+      };
+    }
+
+    var order = await db.EcomDoc.FirstOrDefaultAsync(
+      d => d.Id == parentId && d.DocTypeId == DemoEcom.Data.EcomData.DocType.CustomerOrderId,
+      cancellationToken)
       ?? throw new KeyNotFoundException($"Order {parentId} not found.");
 
     var product = await db.OrgProduct.FirstOrDefaultAsync(p => p.Id == request.PickedId, cancellationToken)

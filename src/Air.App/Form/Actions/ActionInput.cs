@@ -19,12 +19,16 @@ public sealed class ActionInput<TInput> where TInput : class
       propName = char.ToLowerInvariant(pi.Name[0]) + pi.Name[1..];
     }
 
+    var label = Air.App.Form.Elements.PathToLabel(propName);
+    var fieldType = Air.App.Form.Elements.ResolveFieldType(typeof(TProp));
+    var temporalType = Air.App.Form.Elements.ResolveTemporalType(typeof(TProp));
     var dto = new FormElementDto
     {
       Path = propName,
-      Label = propName,
-      Type = typeof(TProp) == typeof(bool) ? UiFieldType.Checkbox : UiFieldType.Text,
-      Model = new FormInputModel(),
+      Label = label,
+      Type = fieldType,
+      TemporalType = temporalType,
+      Model = Air.App.Form.Elements.ResolveDefaultModel(typeof(TProp)),
       Span = 12
     };
 

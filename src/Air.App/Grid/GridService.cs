@@ -31,6 +31,7 @@ public interface IGridService
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
+  string? GetRecordLabel(object? entity) => null;
   void AttachPlatformApp(PlatformAppService app);
   Feature Feature { get; }
 }
@@ -293,6 +294,22 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     var q = new Query();
     SetQuery(q);
     return q.ReferenceLabelPaths;
+  }
+
+  public virtual string? GetRecordLabel(object? entity)
+  {
+    if (entity is not TEntity typed) return null;
+    var q = new Query();
+    SetQuery(q);
+    if (q.LabelSelector == null) return null;
+    try
+    {
+      return q.LabelSelector.Compile().DynamicInvoke(typed)?.ToString();
+    }
+    catch
+    {
+      return null;
+    }
   }
 
   protected virtual void SetQuery(Query query) { }

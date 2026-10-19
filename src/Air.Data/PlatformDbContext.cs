@@ -163,6 +163,14 @@ public abstract class PlatformDbContext : DbContext
     return result;
   }
 
+  private readonly HashSet<object> _restoredEntities = new(ReferenceEqualityComparer.Instance);
+
+  public void MarkRestored(object entity)
+  {
+    ArgumentNullException.ThrowIfNull(entity);
+    _restoredEntities.Add(entity);
+  }
+
   private List<(EntityEntry Entry, Entities.AppPlatformChange Row)> CaptureJournalSnapshots()
   {
     var pendingEntries = ChangeTracker.Entries()
@@ -171,6 +179,7 @@ public abstract class PlatformDbContext : DbContext
 
     if (pendingEntries.Count == 0)
     {
+      _restoredEntities.Clear();
       return [];
     }
 
@@ -183,6 +192,7 @@ public abstract class PlatformDbContext : DbContext
     var journalSnapshots = new List<(EntityEntry Entry, Entities.AppPlatformChange Row)>(pendingEntries.Count);
     foreach (var entry in pendingEntries)
     {
+      var isRestored = _restoredEntities.Remove(entry.Entity);
       var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
       var row = new Entities.AppPlatformChange
       {
@@ -196,13 +206,14 @@ public abstract class PlatformDbContext : DbContext
 
       if (entry.State == EntityState.Added)
       {
-        row.Operation = Entities.ChangeOperations.Added;
+        row.Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Added;
       }
       else if (entry.State == EntityState.Modified)
       {
-        row.Operation = Entities.ChangeOperations.Modified;
+        var modified = entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)).ToList();
+        if (modified.Count == 0) continue;
+        row.Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Modified;
         row.RowId = ((IEntity)entry.Entity).Id;
-        var modified = entry.Properties.Where(p => p.IsModified).ToList();
         row.Before = SerializeProperties(modified, p => p.OriginalValue);
         row.After = SerializeProperties(modified, p => p.CurrentValue);
       }
@@ -216,6 +227,7 @@ public abstract class PlatformDbContext : DbContext
       journalSnapshots.Add((entry, row));
     }
 
+    _restoredEntities.Clear();
     return journalSnapshots;
   }
 
@@ -224,7 +236,7 @@ public abstract class PlatformDbContext : DbContext
     var rows = new List<Entities.AppPlatformChange>(snapshots.Count);
     foreach (var (entry, row) in snapshots)
     {
-      if (row.Operation == Entities.ChangeOperations.Added)
+      if (row.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored && row.RowId == 0)
       {
         row.RowId = ((IEntity)entry.Entity).Id;
         row.After = SerializeProperties(entry.Properties, p => p.CurrentValue);
@@ -246,13 +258,13 @@ public abstract class PlatformDbContext : DbContext
     entry.Entity is IEntity and not Entities.AppPlatformChange and not BaseAppAuthSession &&
     !ChangesLoginCountersOnly(entry) &&
     (entry.State != EntityState.Modified ||
-     entry.Properties.Any(p => p.IsModified && p.Metadata.Name is not nameof(IHasTimestamps.UpdatedAt) and not nameof(IHasVersion.Ver)));
+     entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue) && p.Metadata.Name is not nameof(IHasTimestamps.UpdatedAt) and not nameof(IHasVersion.Ver)));
 
   private static bool ChangesLoginCountersOnly(EntityEntry entry) =>
     entry.Entity is BaseAppUser &&
     entry.State == EntityState.Modified &&
-    entry.Properties.Any(p => p.IsModified) &&
-    entry.Properties.Where(p => p.IsModified).All(p => BaseAppUser.LoginCounters.Contains(p.Metadata.Name));
+    entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)) &&
+    entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)).All(p => BaseAppUser.LoginCounters.Contains(p.Metadata.Name));
 
   private static string SerializeProperties(IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
   {

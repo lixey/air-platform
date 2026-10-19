@@ -49,7 +49,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
     else
     {
-      IQueryable<TEntity> query = db.Set<TEntity>();
+      IQueryable<TEntity> query = Reachable(asTracking: true);
       var efModel = db.Model.FindEntityType(typeof(TEntity));
       if (efModel != null)
       {
@@ -70,7 +70,7 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       entity = await query.FirstOrDefaultAsync(e => e.Id == id!.Value, ct)
-        ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+        ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
       RestoreBoundParentId(entity, parent);
     }
@@ -190,8 +190,8 @@ public abstract partial class FormService<TEntity, TInput>
     }
     else
     {
-      entity = await db.Set<TEntity>().FindAsync([id!.Value], ct)
-        ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
+      entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id!.Value, ct)
+        ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
       if (clientVer.HasValue && entity is IHasVersion versionedEntity && versionedEntity.Ver != clientVer.Value)
       {
@@ -368,7 +368,7 @@ public abstract partial class FormService<TEntity, TInput>
     var parent = new Parent();
     SetParent(parent);
 
-    var entity = await db.Set<TEntity>().FindAsync([id], ct)
+    var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
     if (request.Ver.HasValue && entity is IHasVersion versionedEntity && versionedEntity.Ver != request.Ver.Value)
@@ -536,15 +536,19 @@ public abstract partial class FormService<TEntity, TInput>
         [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]);
     }
 
-    var entity = await db.Set<TEntity>().FindAsync([id], ct)
-      ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
-
     Request = new FormRequest { Id = id };
     IsNew = false;
 
     var parent = new Parent();
     SetParent(parent);
+
+    var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
+      ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
     RestoreBoundParentId(entity, parent);
+
+    var elements = new Elements();
+    await SetElementsAsync(elements, ct);
 
     if (IsReadOnly)
     {
@@ -608,15 +612,20 @@ public abstract partial class FormService<TEntity, TInput>
     Request = new FormRequest { Id = id, Ver = ver };
     IsNew = false;
 
+    var parent = new Parent();
+    SetParent(parent);
+
+    var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
+      ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
+    RestoreBoundParentId(entity, parent);
+
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     if (elements.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
     {
       throw new InvalidOperationException($"Form '{GetType().Name}' does not use a status flow.");
     }
-
-    var entity = await db.Set<TEntity>().FindAsync([id], ct)
-      ?? throw new InvalidOperationException($"Record #{id} not found.");
 
     if (ver.HasValue && ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != ver.Value)
     {

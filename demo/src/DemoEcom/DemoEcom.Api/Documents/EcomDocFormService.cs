@@ -24,6 +24,12 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
   protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 
+  protected override void SetQuery(Query query)
+  {
+    query.From(db.EcomDoc.Include(doc => doc.DocStatus));
+    query.Where(doc => doc.DocTypeId == Type);
+  }
+
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
     if (Flow != null)
@@ -31,7 +37,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
       elements.UseStatusOf(Flow);
     }
     Statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
-    Doc = IsNew ? null : await db.EcomDoc.Include(doc => doc.DocStatus).FirstOrDefaultAsync(doc => doc.Id == Request.Id, cancellationToken);
+    Doc = IsNew ? null : await Reachable().FirstOrDefaultAsync(doc => doc.Id == Request.Id, cancellationToken);
     Status = IsNew ? (Statuses.Count > 0 ? Statuses[0] : null) : Doc?.DocStatus;
     await base.SetElementsAsync(elements, cancellationToken);
   }
@@ -52,6 +58,14 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
         c.Entity.DocStatusId = status.Id;
       }
       return EcomDocActions.SaveAsync(db, c, User?.UserId, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
+    });
+    hooks.BeforeDelete((c, _) =>
+    {
+      if (Status is not { IsEditable: true })
+      {
+        c.AddError(EcomDocActions.NotEditable, EcomDocTexts.Of(L).NotEditable, null);
+      }
+      return Task.CompletedTask;
     });
   }
 }

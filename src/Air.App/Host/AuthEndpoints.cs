@@ -113,70 +113,86 @@ internal static class AuthEndpoints
     });
 
     api.MapPost("/auth/change-password", async (ChangePasswordRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
-    {
-      if (!userContext.IsAuthenticated || userContext.UserId is null)
+      await PlatformEndpoints.WithRequestCultureAsync(ctx.Request, async _ =>
       {
-        return Results.Unauthorized();
-      }
+        if (!userContext.IsAuthenticated || userContext.UserId is null)
+        {
+          return Results.Unauthorized();
+        }
 
-      if (req == null || string.IsNullOrWhiteSpace(req.NewPassword))
-      {
-        return Results.BadRequest(new { error = Localizer.Instance["FormValidationRequired"] });
-      }
+        if (req == null || string.IsNullOrWhiteSpace(req.NewPassword))
+        {
+          return Results.BadRequest(new { error = Localizer.Instance["FormValidationRequired"] });
+        }
 
-      var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
-      if (user == null || !user.IsActive)
-      {
-        return Results.Unauthorized();
-      }
+        if (req.NewPassword.Length < 8)
+        {
+          return Results.BadRequest(new { error = Localizer.Instance["PasswordTooShort", 8] });
+        }
 
-      if (string.IsNullOrEmpty(user.PasswordHash) ||
-          string.IsNullOrEmpty(req.CurrentPassword) ||
-          hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
-      {
-        return Results.BadRequest(new { error = Localizer.Instance["InvalidCredentials"] });
-      }
+        if (req.NewPassword.Length > 128)
+        {
+          return Results.BadRequest(new { error = Localizer.Instance["PasswordTooLong", 128] });
+        }
 
-      user.PasswordHash = hasher.HashPassword(req.NewPassword);
-      user.MustChangePassword = false;
-      user.TokenVersion++;
-      await authStore.RevokeUserSessionsAsync(user.Id, userContext.SessionId, "password-change", ct);
-      await authStore.SaveChangesAsync(ct);
+        var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
+        if (user == null || !user.IsActive)
+        {
+          return Results.Unauthorized();
+        }
 
-      var now = DateTimeOffset.UtcNow;
-      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
-      var session = userContext.SessionId is { } sid ? await authStore.FindSessionAsync(sid, ct) : null;
-      string? newRefreshToken = null;
+        if (string.Equals(req.NewPassword, user.Login, StringComparison.OrdinalIgnoreCase))
+        {
+          return Results.BadRequest(new { error = Localizer.Instance["PasswordIsLogin"] });
+        }
 
-      if (session != null)
-      {
-        session.ExpiresAt = now.AddDays(30);
-        session.LastUsedAt = now;
+        if (string.IsNullOrEmpty(user.PasswordHash) ||
+            string.IsNullOrEmpty(req.CurrentPassword) ||
+            hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
+        {
+          return Results.BadRequest(new { error = Localizer.Instance["InvalidCredentials"] });
+        }
+
+        user.PasswordHash = hasher.HashPassword(req.NewPassword);
+        user.MustChangePassword = false;
+        user.TokenVersion++;
+        await authStore.RevokeUserSessionsAsync(user.Id, userContext.SessionId, "password-change", ct);
         await authStore.SaveChangesAsync(ct);
-      }
-      else
-      {
-        newRefreshToken = SessionTokenService.CreateRefreshToken();
-        session = authStore.CreateSession(
-          user.Id,
-          (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
-          Guid.NewGuid(),
-          SessionTokenService.HashRefreshToken(newRefreshToken),
-          now.AddDays(30),
-          ctx.Request.Headers.UserAgent.ToString(),
-          ctx.Connection.RemoteIpAddress?.ToString()
-        );
-        await authStore.SaveChangesAsync(ct);
-      }
 
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
-      if (newRefreshToken != null)
-      {
-        IssueRefreshCookie(ctx.Response, newRefreshToken, now.AddDays(30));
-      }
+        var now = DateTimeOffset.UtcNow;
+        var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+        var session = userContext.SessionId is { } sid ? await authStore.FindSessionAsync(sid, ct) : null;
+        string? newRefreshToken = null;
 
-      return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
-    });
+        if (session != null)
+        {
+          session.ExpiresAt = now.AddDays(30);
+          session.LastUsedAt = now;
+          await authStore.SaveChangesAsync(ct);
+        }
+        else
+        {
+          newRefreshToken = SessionTokenService.CreateRefreshToken();
+          session = authStore.CreateSession(
+            user.Id,
+            (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
+            Guid.NewGuid(),
+            SessionTokenService.HashRefreshToken(newRefreshToken),
+            now.AddDays(30),
+            ctx.Request.Headers.UserAgent.ToString(),
+            ctx.Connection.RemoteIpAddress?.ToString()
+          );
+          await authStore.SaveChangesAsync(ct);
+        }
+
+        IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
+        if (newRefreshToken != null)
+        {
+          IssueRefreshCookie(ctx.Response, newRefreshToken, now.AddDays(30));
+        }
+
+        return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
+      }));
 
     api.MapPost("/auth/refresh", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {

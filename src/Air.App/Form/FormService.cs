@@ -174,6 +174,39 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       OriginalValues = context.SaveContext.OriginalValues
     };
 
+  public sealed class Query
+  {
+    internal IQueryable<TEntity>? Source { get; private set; }
+    internal List<Expression<Func<TEntity, bool>>> Filters { get; } = [];
+
+    public Query From(IQueryable<TEntity> source)
+    {
+      Source = source;
+      return this;
+    }
+
+    public Query Where(Expression<Func<TEntity, bool>> predicate)
+    {
+      Filters.Add(predicate);
+      return this;
+    }
+  }
+
+  protected virtual void SetQuery(Query query) { }
+
+  protected IQueryable<TEntity> Reachable(bool asTracking = false)
+  {
+    var q = new Query();
+    SetQuery(q);
+    var query = q.Source ?? db.Set<TEntity>();
+    query = asTracking ? query.AsTracking() : query.AsNoTracking();
+    foreach (var filter in q.Filters)
+    {
+      query = query.Where(filter);
+    }
+    return query;
+  }
+
   protected virtual void SetElements(Elements elements) { }
 
   protected virtual Task SetElementsAsync(Elements elements, CancellationToken ct = default)
@@ -215,18 +248,29 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     var title = L[Title];
     if (id is null or 0)
     {
-      var newTitleKey = $"New {Title}";
-      var localizedNew = L[newTitleKey];
-      return localizedNew != newTitleKey ? localizedNew : $"{L["New"]} {title}";
+      return L.TryGetString($"New {Title}", out var named) ? named : L["FormNewRecord", title];
     }
 
-    var label = (PropertyAccessorCache.GetValue(entity, "Number")
+    string? label = null;
+    if (_lastElements?.RecordLabelGridType is { } gridType && entity != null)
+    {
+      try
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, _app) is Grid.IGridService gridInst)
+        {
+          label = gridInst.GetRecordLabel(entity);
+        }
+      }
+      catch { }
+    }
+
+    label ??= (PropertyAccessorCache.GetValue(entity, "Number")
       ?? PropertyAccessorCache.GetValue(entity, "Name")
       ?? PropertyAccessorCache.GetValue(entity, "Title"))?.ToString();
 
     return string.IsNullOrWhiteSpace(label)
-      ? $"{title} #{id}"
-      : $"{title} {label}";
+      ? L["FormRecord", title, id]
+      : L["FormRecordNamed", title, label];
   }
 }
 

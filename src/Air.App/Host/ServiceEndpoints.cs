@@ -227,6 +227,12 @@ internal static class ServiceEndpoints
     }
 
     var actionMethod = serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+      .Where(m => !m.IsSpecialName
+                  && m.DeclaringType != typeof(object)
+                  && m.DeclaringType != typeof(IGridService)
+                  && (!m.DeclaringType!.IsGenericType || (
+                    m.DeclaringType.GetGenericTypeDefinition() != typeof(GridService<,>) &&
+                    m.DeclaringType.GetGenericTypeDefinition() != typeof(GridService<>))))
       .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
     if (actionMethod == null)

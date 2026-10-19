@@ -43,8 +43,12 @@ public class Elements
   }
 
   private bool _disabled;
+  internal Type? RecordLabelGridType { get; private set; }
 
-  public void UseRecordLabelOf<TGridService>() { }
+  public void UseRecordLabelOf<TGridService>()
+  {
+    RecordLabelGridType = typeof(TGridService);
+  }
 
   public void Disable(bool disabled = true)
   {
@@ -122,7 +126,7 @@ public class Elements
     return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
   }
 
-  private static string ResolveFieldType(Type type)
+  internal static string ResolveFieldType(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
     if (underlying == typeof(bool)) return UiFieldType.Checkbox;
@@ -143,7 +147,7 @@ public class Elements
     return null;
   }
 
-  private static FormElementModel ResolveDefaultModel(Type type)
+  internal static FormElementModel ResolveDefaultModel(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
     if (underlying == typeof(bool)) return new FormCheckboxModel();
@@ -287,7 +291,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Model = new FormTimeZoneModel
     {
       Zones = [.. TimeZones.Offered],
-      Inherit = Localizer.Instance["TimeZoneAsOrganisation"]
+      Inherit = Localizer.Instance["TimeZoneByBrowser"]
     };
     return this;
   }

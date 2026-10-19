@@ -2,6 +2,7 @@ using System.Globalization;
 using Air.App.Form;
 using Air.App.Grid;
 using Air.App.Localization;
+using Air.App.Screens;
 using Air.Data.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -33,6 +34,16 @@ public static class PlatformEndpoints
     {
       return action(culture);
     }
+    catch (KeyNotFoundException ex)
+    {
+      var msg = string.IsNullOrWhiteSpace(ex.Message) ? Localizer.Instance["FormNotFound"] : ex.Message;
+      return Results.NotFound(new
+      {
+        outcome = MutationOutcome.Refused,
+        title = msg,
+        messages = new[] { new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error } }
+      });
+    }
     finally
     {
       CultureInfo.CurrentCulture = prevCulture;
@@ -50,6 +61,16 @@ public static class PlatformEndpoints
     try
     {
       return await action(culture);
+    }
+    catch (KeyNotFoundException ex)
+    {
+      var msg = string.IsNullOrWhiteSpace(ex.Message) ? Localizer.Instance["FormNotFound"] : ex.Message;
+      return Results.NotFound(new
+      {
+        outcome = MutationOutcome.Refused,
+        title = msg,
+        messages = new[] { new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error } }
+      });
     }
     finally
     {

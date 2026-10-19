@@ -2,6 +2,7 @@ using Air.App.Components;
 using Air.App.Grid;
 using Air.App.Modules;
 using Air.Data;
+using Air.Data.Contracts;
 using Air.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -28,7 +29,7 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
 
   protected override void SetQuery(Query query)
   {
-    query.SortByDescending(r => r.At);
+    query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
     query.SearchBy(r => r.Table, r => r.Operation, r => r.CorrelationId);
   }
 
@@ -46,7 +47,11 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
         !User.Can(Feature.All) &&
         !User.Can("*"))
     {
-      return new GridActionDto { Outcome = MutationOutcome.Refused };
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      };
     }
 
     var ids = request.SelectedIds ?? [];
@@ -57,57 +62,108 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
       return new GridActionDto { Outcome = MutationOutcome.Committed };
     }
 
-    var changes = await db.Set<AppPlatformChange>()
+    var changes = await RestrictedQuery()
       .Where(c => ids.Contains(c.Id))
       .OrderByDescending(c => c.Id)
       .ToListAsync(cancellationToken);
+
+    if (changes.Count != ids.Distinct().Count())
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["ChangeRestoreUnavailable"], Code = "change.restore.unavailable", Type = MessageType.Error }]
+      };
+    }
 
     var modifiedContexts = new HashSet<PlatformDbContext>();
 
     foreach (var change in changes)
     {
-      var targetDb = GetDbContextForTable(change.Table);
-      var entityType = targetDb.Model.GetEntityTypes().FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table)?.ClrType;
-      if (entityType == null) continue;
+      if (change.Operation is not ChangeOperations.Modified and not ChangeOperations.Deleted || string.IsNullOrEmpty(change.Before))
+      {
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
+        };
+      }
 
-      if (change.Operation == ChangeOperations.Modified && !string.IsNullOrEmpty(change.Before))
+      var targetDb = GetDbContextForTable(change.Table);
+      var entityType = targetDb.Model.GetEntityTypes()
+        .FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table)?.ClrType;
+      if (entityType == null || typeof(BaseAppFile).IsAssignableFrom(entityType))
+      {
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
+        };
+      }
+
+      if (change.Operation == ChangeOperations.Modified)
       {
         var entity = await targetDb.FindAsync(entityType, [change.RowId], cancellationToken);
-        if (entity != null)
+        if (entity == null)
         {
-          var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before);
-          if (beforeDict != null)
+          return new GridActionDto
           {
-            var entry = targetDb.Entry(entity);
-            foreach (var kvp in beforeDict)
+            Outcome = MutationOutcome.Conflict,
+            Warnings = [new MessageDto { Detail = L["ChangeRestoreMissingRow"], Code = "change.restore.missingRow", Type = MessageType.Error }]
+          };
+        }
+
+        var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before);
+        var afterDict = !string.IsNullOrEmpty(change.After)
+          ? JsonSerializer.Deserialize<Dictionary<string, object?>>(change.After)
+          : null;
+        if (beforeDict != null)
+        {
+          var entry = targetDb.Entry(entity);
+          foreach (var kvp in beforeDict)
+          {
+            if (kvp.Key is "Ver" or "UpdatedAt" or "CreatedAt") continue;
+            var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
+            if (prop == null || prop.Metadata.IsPrimaryKey()) continue;
+
+            if (afterDict != null && afterDict.TryGetValue(kvp.Key, out var afterRaw))
             {
-              if (kvp.Key == "Ver") continue;
-              try
+              var expectedAfter = DeserializePropertyValue(afterRaw, prop.Metadata.ClrType);
+              if (!Equals(prop.CurrentValue, expectedAfter))
               {
-                var prop = entry.Property(kvp.Key);
-                if (prop != null && !prop.Metadata.IsPrimaryKey())
+                return new GridActionDto
                 {
-                  var targetType = Nullable.GetUnderlyingType(prop.Metadata.ClrType) ?? prop.Metadata.ClrType;
-                  object? typedVal = null;
-                  if (kvp.Value is JsonElement je)
-                  {
-                    typedVal = JsonSerializer.Deserialize(je.GetRawText(), prop.Metadata.ClrType);
-                  }
-                  else if (kvp.Value != null)
-                  {
-                    typedVal = Convert.ChangeType(kvp.Value, targetType);
-                  }
-                  prop.CurrentValue = typedVal;
-                }
+                  Outcome = MutationOutcome.Conflict,
+                  Warnings = [new MessageDto { Detail = L["ChangeRestoreStale", kvp.Key], Code = "change.restore.stale", Type = MessageType.Error }]
+                };
               }
-              catch { }
             }
-            modifiedContexts.Add(targetDb);
+
+            prop.CurrentValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
           }
+
+          if (entity is BaseAppUser restoredUser)
+          {
+            restoredUser.IsActive = false;
+            restoredUser.IsRoot = false;
+          }
+
+          targetDb.MarkRestored(entity);
+          modifiedContexts.Add(targetDb);
         }
       }
-      else if (change.Operation == ChangeOperations.Deleted && !string.IsNullOrEmpty(change.Before))
+      else if (change.Operation == ChangeOperations.Deleted)
       {
+        var existing = await targetDb.FindAsync(entityType, [change.RowId], cancellationToken);
+        if (existing != null)
+        {
+          return new GridActionDto
+          {
+            Outcome = MutationOutcome.Conflict,
+            Warnings = [new MessageDto { Detail = L["ChangeRestoreExists"], Code = "change.restore.exists", Type = MessageType.Error }]
+          };
+        }
+
         var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before);
         if (beforeDict != null)
         {
@@ -117,27 +173,21 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
             var entry = targetDb.Entry(entity);
             foreach (var kvp in beforeDict)
             {
-              try
+              var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
+              if (prop != null)
               {
-                var prop = entry.Property(kvp.Key);
-                if (prop != null)
-                {
-                  var targetType = Nullable.GetUnderlyingType(prop.Metadata.ClrType) ?? prop.Metadata.ClrType;
-                  object? typedVal = null;
-                  if (kvp.Value is JsonElement je)
-                  {
-                    typedVal = JsonSerializer.Deserialize(je.GetRawText(), prop.Metadata.ClrType);
-                  }
-                  else if (kvp.Value != null)
-                  {
-                    typedVal = Convert.ChangeType(kvp.Value, targetType);
-                  }
-                  prop.CurrentValue = typedVal;
-                }
+                prop.CurrentValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
               }
-              catch { }
             }
+
+            if (entity is BaseAppUser restoredUser)
+            {
+              restoredUser.IsActive = false;
+              restoredUser.IsRoot = false;
+            }
+
             entry.State = EntityState.Added;
+            targetDb.MarkRestored(entity);
             modifiedContexts.Add(targetDb);
           }
         }
@@ -150,6 +200,16 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
     }
 
     return new GridActionDto { Outcome = MutationOutcome.Committed };
+  }
+
+  private static object? DeserializePropertyValue(object? raw, Type clrType)
+  {
+    var targetType = Nullable.GetUnderlyingType(clrType) ?? clrType;
+    if (raw is JsonElement je)
+    {
+      return JsonSerializer.Deserialize(je.GetRawText(), clrType);
+    }
+    return raw != null ? Convert.ChangeType(raw, targetType) : null;
   }
 
   private PlatformDbContext GetDbContextForTable(string table)

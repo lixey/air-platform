@@ -70,8 +70,42 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
           });
         }
       }
+
+      if (val != null && TryConvertToDecimal(val, out var decVal))
+      {
+        var outOfRange =
+          (el.Constraints.Min is { ValueKind: JsonValueKind.Number } minJe && minJe.TryGetDecimal(out var minDec) && decVal < minDec) ||
+          (el.Constraints.Max is { ValueKind: JsonValueKind.Number } maxJe && maxJe.TryGetDecimal(out var maxDec) && decVal > maxDec);
+        if (outOfRange)
+        {
+          errors.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = localizer["FormValidationOutOfRange"],
+            Code = "form.validation.range",
+            Type = MessageType.Error
+          });
+        }
+      }
     }
 
     return errors;
+  }
+
+  private static bool TryConvertToDecimal(object value, out decimal result)
+  {
+    switch (value)
+    {
+      case decimal d: result = d; return true;
+      case int i: result = i; return true;
+      case long l: result = l; return true;
+      case short s: result = s; return true;
+      case byte b: result = b; return true;
+      case double db when !double.IsNaN(db) && !double.IsInfinity(db): result = (decimal)db; return true;
+      case float f when !float.IsNaN(f) && !float.IsInfinity(f): result = (decimal)f; return true;
+      default:
+        result = 0;
+        return false;
+    }
   }
 }

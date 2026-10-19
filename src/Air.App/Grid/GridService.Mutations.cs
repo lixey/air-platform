@@ -21,14 +21,110 @@ public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
   where TRow : class
 {
+  protected IQueryable<TEntity> RestrictedQuery()
+  {
+    var parent = new Parent();
+    SetParent(parent);
+
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+
+    var query = BaseQuery(db);
+    if (ParentId.HasValue && parent.FilterFunc != null)
+    {
+      query = parent.FilterFunc(query, ParentId.Value);
+    }
+
+    foreach (var filter in queryDeclaration.Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    if (queryDeclaration.LabelSelector != null &&
+        ExtractNavigationPath(queryDeclaration.LabelSelector.Body) is { } labelNav &&
+        !string.IsNullOrWhiteSpace(labelNav))
+    {
+      query = query.Include(labelNav);
+    }
+
+    return query;
+  }
+
+  private static string? ExtractNavigationPath(System.Linq.Expressions.Expression expr)
+  {
+    if (expr is System.Linq.Expressions.UnaryExpression ue) expr = ue.Operand;
+    var parts = new List<string>();
+    while (expr is System.Linq.Expressions.MemberExpression me)
+    {
+      parts.Insert(0, me.Member.Name);
+      expr = me.Expression!;
+    }
+    return parts.Count > 1 ? string.Join('.', parts.Take(parts.Count - 1)) : null;
+  }
+
+  private async Task<(List<TEntity> Entities, List<MessageDto> MissingErrors)> LoadSelectedEntitiesAsync(
+    IReadOnlyList<long> ids,
+    CancellationToken ct)
+  {
+    if (ids.Count == 0)
+    {
+      return ([], []);
+    }
+
+    var rows = await RestrictedQuery().Where(e => ids.Contains(e.Id)).ToListAsync(ct);
+    var byId = rows.ToDictionary(e => e.Id);
+    var entities = new List<TEntity>(rows.Count);
+    var missing = new List<MessageDto>();
+    foreach (var id in ids)
+    {
+      if (byId.TryGetValue(id, out var ent))
+      {
+        entities.Add(ent);
+      }
+      else
+      {
+        missing.Add(new MessageDto
+        {
+          Code = "grid.delete.unavailable",
+          Detail = L["GridDeleteUnavailable"],
+          RecordId = id,
+          Type = MessageType.Error
+        });
+      }
+    }
+    return (entities, missing);
+  }
+
   protected async Task<GridActionDto> ExecuteBatchAsync(
     GridRequest request,
     Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
     CancellationToken cancellationToken = default)
   {
     ParentId = request.ParentId;
+    if (IsReadOnly)
+    {
+      var nav = new Nav(localizer: L);
+      SetNav(nav);
+      if (!nav.Actions.Any(a => a.IsAllowedInReadOnly))
+      {
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+        };
+      }
+    }
+
     var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
-    var records = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(cancellationToken);
+    var (records, missing) = await LoadSelectedEntitiesAsync(ids, cancellationToken);
+    if (missing.Count > 0)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = missing
+      };
+    }
 
     if (HasVersionConflict(request, ids, records))
     {
@@ -107,7 +203,16 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    var entities = await db.Set<TEntity>().Where(e => selectedIds.Contains(e.Id)).ToListAsync(ct);
+    var (entities, missing) = await LoadSelectedEntitiesAsync(selectedIds, ct);
+    if (missing.Count > 0)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = missing
+      };
+    }
+
     if (HasVersionConflict(request, selectedIds, entities))
     {
       return new GridActionDto
@@ -161,7 +266,17 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
     }
 
-    var entities = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(ct);
+    var (entities, missing) = await LoadSelectedEntitiesAsync(ids, ct);
+    if (missing.Count > 0)
+    {
+      return new GridDeleteDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Deleted = 0,
+        Warnings = missing
+      };
+    }
+
     if (HasVersionConflict(request, ids, entities))
     {
       return new GridDeleteDto
@@ -253,11 +368,7 @@ public abstract partial class GridService<TEntity, TRow>
     var recordMap = records.ToDictionary(r => r.Id);
     for (int i = 0; i < ids.Count; i++)
     {
-      if (!recordMap.TryGetValue(ids[i], out var rec))
-      {
-        return true;
-      }
-      if (rec is IHasVersion versioned && versions[i] > 0 && versioned.Ver != versions[i])
+      if (recordMap.TryGetValue(ids[i], out var rec) && rec is IHasVersion versioned && versions[i] > 0 && versioned.Ver != versions[i])
       {
         return true;
       }
@@ -294,20 +405,12 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<object?> ReadRowAsync(long id, CancellationToken ct = default)
   {
-    var parent = new Parent();
-    SetParent(parent);
-
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
 
     var cols = CreateColumns();
 
-    var query = BaseQuery(db).Where(e => e.Id == id);
-    if (ParentId.HasValue && parent.FilterFunc != null)
-    {
-      query = parent.FilterFunc(query, ParentId.Value);
-    }
-
+    var query = RestrictedQuery().Where(e => e.Id == id);
     query = IncludeColumnNavigations(query, cols.List);
 
     if (queryDeclaration.Selector != null)
@@ -371,7 +474,7 @@ public abstract partial class GridService<TEntity, TRow>
       return await form.SaveCellAsync(request.Id.Value, request.Path, request.Value, formReq, token => ReadRowAsync(request.Id.Value, token), ct);
     }
 
-    var entity = await db.Set<TEntity>().FindAsync([request.Id.Value], ct)
+    var entity = await RestrictedQuery().FirstOrDefaultAsync(e => e.Id == request.Id.Value, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
     if (entity is IHasVersion verEntity && request.Ver.HasValue && verEntity.Ver != request.Ver.Value)

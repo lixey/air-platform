@@ -85,7 +85,7 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
       (c, token) => EcomDocActions.PurchaseAsync(
         db,
         c,
-        null,
+        User?.UserId,
         date,
         EcomDocTexts.Of(L),
         token
