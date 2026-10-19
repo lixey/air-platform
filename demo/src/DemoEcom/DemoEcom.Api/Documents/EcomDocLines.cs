@@ -26,19 +26,19 @@ public static class EcomDocLines
   };
 
 
-  public static void Load(EcomDocLine entity, EcomDocLine input, bool isNew)
+  public static void Load(EcomDocLine entity, EcomDocLineEdit input, bool isNew)
   {
     ArgumentNullException.ThrowIfNull(entity);
     ArgumentNullException.ThrowIfNull(input);
-    input.Price = isNew ? 0 : entity.Price;
-    input.DiscountPercent = isNew ? 0 : entity.DiscountPercent;
+    input.Price = isNew ? null : entity.Price;
+    input.DiscountPercent = isNew ? null : entity.DiscountPercent;
   }
 
   public static async Task PriceAsync(
     EcomDbContext db,
     EcomDoc doc,
     EcomDocLine entity,
-    EcomDocLine input,
+    EcomDocLineEdit input,
     bool isNew,
     Expression<Func<OrgProduct, decimal>> productPrice,
     CancellationToken cancellationToken)
@@ -49,8 +49,8 @@ public static class EcomDocLines
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(productPrice);
 
-    var price = input.Price > 0 ? input.Price : await ProductPriceAsync(db, entity.ProductId, productPrice, cancellationToken);
-    var discount = input.DiscountPercent > 0 ? input.DiscountPercent : await CustomerDiscountAsync(db, doc, cancellationToken);
+    var price = input.Price ?? await ProductPriceAsync(db, entity.ProductId, productPrice, cancellationToken);
+    var discount = input.DiscountPercent ?? await CustomerDiscountAsync(db, doc, cancellationToken);
     entity.Price = Math.Round(price, 2, MidpointRounding.AwayFromZero);
     entity.DiscountPercent = Math.Round(discount, 2, MidpointRounding.AwayFromZero);
     entity.Amount = EcomDocTotals.LineAmount(entity.Qty, entity.Price, entity.DiscountPercent);
@@ -65,7 +65,6 @@ public static class EcomDocLines
     input.Price = entity.Price;
     input.DiscountPercent = entity.DiscountPercent;
     input.Amount = entity.Amount;
-    input.SortOrder = entity.SortOrder;
   }
 
   private static Task<decimal> ProductPriceAsync(

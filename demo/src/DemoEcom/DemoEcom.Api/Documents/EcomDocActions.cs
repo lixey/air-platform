@@ -46,7 +46,12 @@ public static class EcomDocActions
     if (status.IsEditable)
     {
       await EcomDocDefaults.FromCustomerAsync(db, doc, userId, cancellationToken);
-      await EcomDocTotals.ApplyAsync(db, doc, cancellationToken);
+    }
+
+    await EcomDocTotals.ApplyAsync(db, doc, cancellationToken);
+    if (!context.IsNew)
+    {
+      EcomDocEntering.Follow(doc, await EcomDocEntering.BasisAsync(db, doc, cancellationToken));
     }
   }
 

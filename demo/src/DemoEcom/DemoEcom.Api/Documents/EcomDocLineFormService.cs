@@ -1,14 +1,15 @@
 using DemoEcom.Data;
 using DemoEcom.Data.Documents;
 using DemoEcom.Data.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomService? ecom = null)
-  : EcomFormService<EcomDocLine>(db, ecom)
+  : EcomFormService<EcomDocLine, EcomDocLineEdit>(db, ecom)
   where TDocForm : class
 {
-  protected override bool IsReadOnly => base.IsReadOnly || (ParentRecord<EcomDoc>() is { DocStatus: not null } doc && !doc.DocStatus.IsEditable);
+  protected override bool IsReadOnly => base.IsReadOnly || ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true };
 
   protected override string Title => "Line";
 
@@ -23,6 +24,11 @@ public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomSer
       if (parentDoc != null)
       {
         await EcomDocTotals.ApplyAsync(db, parentDoc, ct);
+        await db.EcomDoc.Where(d => d.Id == parentDoc.Id)
+          .ExecuteUpdateAsync(s => s
+            .SetProperty(d => d.Qty, parentDoc.Qty)
+            .SetProperty(d => d.Amount, parentDoc.Amount), ct);
+        db.Entry(parentDoc).State = EntityState.Unchanged;
       }
     });
   }

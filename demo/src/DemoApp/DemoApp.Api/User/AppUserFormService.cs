@@ -43,7 +43,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       .ToListAsync(cancellationToken);
     var offered = roles
       .Where(r => app == null || app.Covers(r.Grants))
-      .Select(r => new CheckboxOptionDto { Id = r.Id, Label = r.Name })
+      .Select(r => new CheckboxOptionDto { Id = r.Id, Label = L[r.Name] })
       .ToList();
     elements.Add(e => e.RoleIds).InputOnly().AsCheckboxSet(offered);
 

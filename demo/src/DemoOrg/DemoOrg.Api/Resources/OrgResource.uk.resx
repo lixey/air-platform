@@ -355,4 +355,61 @@
   <data name="The currency does not match the organization's currency." xml:space="preserve">
     <value>Валюта не збігається з валютою організації.</value>
   </data>
+  <data name="Hryvnia" xml:space="preserve">
+    <value>Гривня</value>
+  </data>
+  <data name="Ukrainian Hryvnia" xml:space="preserve">
+    <value>Гривня</value>
+  </data>
+  <data name="US Dollar" xml:space="preserve">
+    <value>Долар США</value>
+  </data>
+  <data name="Euro" xml:space="preserve">
+    <value>Євро</value>
+  </data>
+  <data name="Piece" xml:space="preserve">
+    <value>Штука</value>
+  </data>
+  <data name="Pieces" xml:space="preserve">
+    <value>Штука</value>
+  </data>
+  <data name="Set" xml:space="preserve">
+    <value>Комплект</value>
+  </data>
+  <data name="Sets" xml:space="preserve">
+    <value>Комплект</value>
+  </data>
+  <data name="Litre" xml:space="preserve">
+    <value>Літр</value>
+  </data>
+  <data name="Litres" xml:space="preserve">
+    <value>Літр</value>
+  </data>
+  <data name="Kilogram" xml:space="preserve">
+    <value>Кілограм</value>
+  </data>
+  <data name="Kilograms" xml:space="preserve">
+    <value>Кілограм</value>
+  </data>
+  <data name="Metre" xml:space="preserve">
+    <value>Метр</value>
+  </data>
+  <data name="Metres" xml:space="preserve">
+    <value>Метр</value>
+  </data>
+  <data name="Full Prepayment" xml:space="preserve">
+    <value>Повна передоплата</value>
+  </data>
+  <data name="Partial Prepayment" xml:space="preserve">
+    <value>Часткова передоплата</value>
+  </data>
+  <data name="Payment on Delivery" xml:space="preserve">
+    <value>Оплата при отриманні</value>
+  </data>
+  <data name="No payment" xml:space="preserve">
+    <value>Без оплати</value>
+  </data>
+  <data name="No Payment Required" xml:space="preserve">
+    <value>Без оплати</value>
+  </data>
 </root>

@@ -12,7 +12,7 @@ public sealed class EcomDocGridService(EcomDbContext db, EcomService? ecom = nul
   protected override void SetColumns(Columns<EcomDoc> columns)
   {
     columns.Add(r => r.Id);
-    columns.Add(r => r.Number).Width(180);
+    columns.Add(r => r.Number).OpenForm(r => EcomDocForms.Of(r.DocType.Id)).Width(180);
     columns.Add(r => r.Date);
     columns.Add(r => r.DocType).Label("Type").AsReference<EcomDocTypeGridService>();
     columns.Add(r => r.DocStatus).Label("Status").AsReference<EcomDocStatusGridService>().Color(doc => doc.DocStatus.Color.Handle);

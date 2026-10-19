@@ -26,6 +26,23 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
     columns.Add(r => r.PaidAmount).Label("Paid").AsMoney().Sum();
   }
 
+  protected override void SetQuery(Query query)
+  {
+    base.SetQuery(query);
+    if (User?.UserId is { } userId)
+    {
+      query.NamedFilter("mine", "Mine", r => r.ManagerId == userId).Badge();
+    }
+
+    query.InitialFilter(r => r.DocStatusId).In(
+      EcomData.DocStatus.CustomerOrderNewId,
+      EcomData.DocStatus.CustomerOrderInProgressId,
+      EcomData.DocStatus.CustomerOrderConfirmedId,
+      EcomData.DocStatus.CustomerOrderPausedId
+    );
+    query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
+  }
+
   protected override void SetHooks(Hooks hooks)
   {
     hooks.BeforeDelete((context, ct) =>
@@ -34,6 +51,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
 
   protected override void SetNav(Nav nav)
   {
+    base.SetNav(nav);
     _ = EcomDocTexts.Of(L);
     nav.AddAction(CreateSalesInvoice, b => b.Label(L["Create sales invoice"]).Icon(UiIcon.Plus)).InMenu();
     nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon(UiIcon.Plus)).InMenu();

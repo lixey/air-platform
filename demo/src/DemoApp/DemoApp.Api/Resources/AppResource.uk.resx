@@ -115,4 +115,82 @@
   <data name="A role of this name already exists in its tenant." xml:space="preserve">
     <value>Роль з такою назвою вже є в цьому тенанті.</value>
   </data>
+  <data name="Slate" xml:space="preserve">
+    <value>Сланцевий</value>
+  </data>
+  <data name="Red" xml:space="preserve">
+    <value>Червоний</value>
+  </data>
+  <data name="Orange" xml:space="preserve">
+    <value>Помаранчевий</value>
+  </data>
+  <data name="Amber" xml:space="preserve">
+    <value>Бурштиновий</value>
+  </data>
+  <data name="Yellow" xml:space="preserve">
+    <value>Жовтий</value>
+  </data>
+  <data name="Lime" xml:space="preserve">
+    <value>Лаймовий</value>
+  </data>
+  <data name="Green" xml:space="preserve">
+    <value>Зелений</value>
+  </data>
+  <data name="Emerald" xml:space="preserve">
+    <value>Смарагдовий</value>
+  </data>
+  <data name="Teal" xml:space="preserve">
+    <value>Бірюзовий</value>
+  </data>
+  <data name="Cyan" xml:space="preserve">
+    <value>Блакитний</value>
+  </data>
+  <data name="Sky" xml:space="preserve">
+    <value>Небесний</value>
+  </data>
+  <data name="Blue" xml:space="preserve">
+    <value>Синій</value>
+  </data>
+  <data name="Indigo" xml:space="preserve">
+    <value>Індиго</value>
+  </data>
+  <data name="Violet" xml:space="preserve">
+    <value>Фіолетовий</value>
+  </data>
+  <data name="Purple" xml:space="preserve">
+    <value>Пурпуровий</value>
+  </data>
+  <data name="Fuchsia" xml:space="preserve">
+    <value>Фуксія</value>
+  </data>
+  <data name="Pink" xml:space="preserve">
+    <value>Рожевий</value>
+  </data>
+  <data name="Rose" xml:space="preserve">
+    <value>Трояндовий</value>
+  </data>
+  <data name="Administrator" xml:space="preserve">
+    <value>Адміністратор</value>
+  </data>
+  <data name="Editor" xml:space="preserve">
+    <value>Редактор</value>
+  </data>
+  <data name="Viewer" xml:space="preserve">
+    <value>Спостерігач</value>
+  </data>
+  <data name="The password must be at least {0} characters." xml:space="preserve">
+    <value>Пароль має містити щонайменше {0} символів.</value>
+  </data>
+  <data name="The password must be at most {0} characters." xml:space="preserve">
+    <value>Пароль має містити щонайбільше {0} символів.</value>
+  </data>
+  <data name="The password must not equal the login name." xml:space="preserve">
+    <value>Пароль не може збігатися з логіном.</value>
+  </data>
+  <data name="The root user cannot be deleted." xml:space="preserve">
+    <value>Головного користувача не можна видалити.</value>
+  </data>
+  <data name="The root user cannot be deactivated." xml:space="preserve">
+    <value>Головного користувача не можна деактивувати.</value>
+  </data>
 </root>

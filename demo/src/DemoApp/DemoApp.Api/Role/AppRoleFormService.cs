@@ -4,6 +4,7 @@ using Air.App.Modules;
 using Air.App.Overlay;
 using DemoApp.Data;
 using DemoApp.Data.Models;
+using DemoApp.Tenant;
 using Microsoft.EntityFrameworkCore;
 
 namespace DemoApp.Role;
@@ -20,7 +21,7 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
     elements.Add(e => e.Name).Span(4);
-    elements.Add(e => e.TenantId).InputOnly().Span(4);
+    elements.Add(e => e.TenantId).InputOnly().AsReference<AppTenantGridService>().Span(4);
     elements.Add(e => e.SortOrder).Span(2);
     elements.Add(e => e.IsActive).AsCheckbox().Span(2);
     elements.Add(e => e.Description).AsTextarea();

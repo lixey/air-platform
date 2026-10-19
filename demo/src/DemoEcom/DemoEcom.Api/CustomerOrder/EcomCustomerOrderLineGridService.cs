@@ -53,7 +53,7 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
       Qty = 1m
     };
 
-    var input = new EcomDocLine();
+    var input = new EcomDocLineEdit();
     await EcomDocLines.PriceAsync(
       db,
       order,
@@ -68,6 +68,11 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
     await db.SaveChangesAsync(cancellationToken);
 
     await EcomDocTotals.ApplyAsync(db, order, cancellationToken);
+    await db.EcomDoc.Where(d => d.Id == order.Id)
+      .ExecuteUpdateAsync(s => s
+        .SetProperty(d => d.Qty, order.Qty)
+        .SetProperty(d => d.Amount, order.Amount), cancellationToken);
+    db.Entry(order).State = EntityState.Unchanged;
 
     return new GridActionDto { Outcome = MutationOutcome.Committed };
   }

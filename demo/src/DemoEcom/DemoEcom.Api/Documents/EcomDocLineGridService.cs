@@ -1,6 +1,7 @@
 using DemoEcom.Data;
 using DemoEcom.Data.Documents;
 using DemoEcom.Data.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace DemoEcom.Documents;
 
@@ -8,7 +9,7 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
   : EcomGridService<EcomDocLine, EcomDocLineRow>(db, ecom)
   where TDocForm : class
 {
-  protected override bool IsReadOnly => base.IsReadOnly || (ParentRecord<EcomDoc>() is { DocStatus: not null } doc && !doc.DocStatus.IsEditable);
+  protected override bool IsReadOnly => base.IsReadOnly || ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true };
 
   protected override void SetParent(Parent parent) => parent.Bind<TDocForm>(l => l.DocId);
 
@@ -23,7 +24,7 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
     base.SetHooks(hooks);
     hooks.ValidateDelete(ctx =>
     {
-      if (ParentRecord<EcomDoc>() is { DocStatus: { IsEditable: false } })
+      if (ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true })
       {
         ctx.Refuse(EcomDocTexts.Of(L).NotEditable);
       }
@@ -34,6 +35,11 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
       if (parentDoc != null)
       {
         await EcomDocTotals.ApplyAsync(db, parentDoc, ct);
+        await db.EcomDoc.Where(d => d.Id == parentDoc.Id)
+          .ExecuteUpdateAsync(s => s
+            .SetProperty(d => d.Qty, parentDoc.Qty)
+            .SetProperty(d => d.Amount, parentDoc.Amount), ct);
+        db.Entry(parentDoc).State = EntityState.Unchanged;
       }
     });
   }

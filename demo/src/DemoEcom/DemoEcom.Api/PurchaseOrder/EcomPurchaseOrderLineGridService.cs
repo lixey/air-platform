@@ -1,3 +1,4 @@
+using DemoEcom.Data.Documents;
 using DemoEcom.Documents;
 
 namespace DemoEcom.PurchaseOrder;
@@ -12,8 +13,20 @@ public sealed class EcomPurchaseOrderLineGridService(EcomDbContext db, EcomServi
     columns.Add(r => r.Id).AsOpenForm<EcomPurchaseOrderLineFormService>();
     columns.Add(r => r.SortOrder);
     columns.Add(r => r.Product).AsReference<OrgProductGridService>();
+    columns.Add(r => r.Article);
     columns.Add(r => r.Qty).Label("Quantity").Sum().Editable();
+    columns.Add(r => r.QtyDone).Label("Received").Sum();
     columns.Add(r => r.Price).AsMoney().Editable();
     columns.Add(r => r.Amount).AsMoney().Sum();
+  }
+
+  protected override void SetHooks(Hooks hooks)
+  {
+    base.SetHooks(hooks);
+    hooks.BeforeDelete((c, cancellationToken) =>
+    {
+      long[] gone = [.. c.Records.Select(line => line.Id)];
+      return EcomDocEntering.PurchasedAsync(db, gone, gone, cancellationToken);
+    });
   }
 }
