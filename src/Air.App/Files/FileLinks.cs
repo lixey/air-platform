@@ -14,7 +14,6 @@ public sealed class FileLinks
   private const int MaxTokenLength = 4096;
   private const int MacBytes = 32;
 
-  private static readonly byte[] Key = SHA256.HashData(Encoding.UTF8.GetBytes("AirPlatform_RecordFiles_Secret_Key_2026"));
   private readonly string _prefix = $"/api/{Segment}/";
   private readonly TimeSpan _lifetime = TimeSpan.FromHours(24);
 
@@ -83,7 +82,8 @@ public sealed class FileLinks
       : null;
   }
 
-  private static byte[] Mac(string payload) => HMACSHA256.HashData(Key, Encoding.ASCII.GetBytes(payload));
+  private static byte[] Mac(string payload) =>
+    HMACSHA256.HashData(Auth.SessionTokenService.DeriveSubKey("AirPlatform.FileLinks"), Encoding.ASCII.GetBytes(payload));
 
   private static bool CanSign(string? key, string? contentType, string? name) =>
     FileKeys.IsValid(key) && contentType is not null && FileTypeTable.IsKnown(contentType) &&

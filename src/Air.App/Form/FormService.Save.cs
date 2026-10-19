@@ -211,6 +211,18 @@ public abstract partial class FormService<TEntity, TInput>
       {
         statusFlow.Initialize(entity);
       }
+      var newLoadInput = new TInput();
+      CopyMatchingProperties(entity, newLoadInput);
+      var newLoadCtx = new FormLoadContext<TEntity, TInput>
+      {
+        Entity = entity,
+        Input = newLoadInput,
+        IsNew = true
+      };
+      foreach (var h in hooks.AfterLoadActions)
+      {
+        await h(newLoadCtx, ct);
+      }
     }
     else
     {
@@ -230,7 +242,8 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     NormalizeNullableStrings(elements, input);
-    var protectedPaths = BuildProtectedPaths(elements);
+    var protectedPaths = BuildProtectedPaths(elements, entityJson, IsNew);
+    var inputOnlyPaths = BuildInputOnlyPaths(elements);
     CopyMatchingProperties(input, entity, protectedPaths);
     if (id.HasValue && id.Value > 0)
     {
@@ -256,7 +269,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
     if (!ReferenceEquals(entity, input))
     {
-      CopyMatchingProperties(entity, input);
+      CopyMatchingProperties(entity, input, inputOnlyPaths);
     }
 
     var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, input, originalValues, ct);
@@ -277,7 +290,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (!ReferenceEquals(entity, input))
     {
-      CopyMatchingProperties(entity, input);
+      CopyMatchingProperties(entity, input, inputOnlyPaths);
     }
     ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
     if (ruleCtx.Failures.Count > 0)

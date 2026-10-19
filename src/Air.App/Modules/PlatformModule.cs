@@ -156,12 +156,18 @@ public sealed class ModuleCatalog
     var ctor = serviceType.GetConstructors().FirstOrDefault();
     if (ctor is null) return null;
 
+    var serviceProvider = availableServices.OfType<IServiceProvider>().FirstOrDefault()
+      ?? availableServices.OfType<PlatformAppService>().FirstOrDefault()?.Services;
+    var appService = availableServices.OfType<PlatformAppService>().FirstOrDefault()
+      ?? serviceProvider?.GetService(typeof(PlatformAppService)) as PlatformAppService;
+
     var parameters = ctor.GetParameters();
     var args = new object?[parameters.Length];
     for (var i = 0; i < parameters.Length; i++)
     {
       var param = parameters[i];
-      var match = availableServices.FirstOrDefault(s => s is not null && param.ParameterType.IsInstanceOfType(s));
+      var match = availableServices.FirstOrDefault(s => s is not null && param.ParameterType.IsInstanceOfType(s))
+        ?? serviceProvider?.GetService(param.ParameterType);
       if (match is not null)
       {
         args[i] = match;
@@ -176,7 +182,13 @@ public sealed class ModuleCatalog
       }
     }
 
-    return ctor.Invoke(args);
+    var instance = ctor.Invoke(args);
+    if (appService is not null)
+    {
+      if (instance is Grid.IGridService grid) grid.AttachPlatformApp(appService);
+      else if (instance is Form.IFormService form) form.AttachPlatformApp(appService);
+    }
+    return instance;
   }
 
   public static IEnumerable<ModuleMenuNode> Flatten(IEnumerable<ModuleMenuNode> nodes)

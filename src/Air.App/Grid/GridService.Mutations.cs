@@ -53,7 +53,10 @@ public abstract partial class GridService<TEntity, TRow>
           Warnings = FormatErrors(ctx.Errors, records, MessageType.Error)
         };
       }
-      await db.SaveChangesAsync(cancellationToken);
+      if (db.ChangeTracker.HasChanges())
+      {
+        await db.SaveChangesAsync(cancellationToken);
+      }
       await tx.CommitAsync(cancellationToken);
       return new GridActionDto
       {
@@ -335,7 +338,7 @@ public abstract partial class GridService<TEntity, TRow>
     var cols = CreateColumns();
 
     var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase));
-    if (col == null || !col.IsEditable)
+    if (IsReadOnly || col == null || !col.IsEditable)
     {
       return new GridCellDto
       {
@@ -364,6 +367,15 @@ public abstract partial class GridService<TEntity, TRow>
 
     var entity = await db.Set<TEntity>().FindAsync([request.Id.Value], ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
+    if (entity is IHasVersion verEntity && request.Ver.HasValue && verEntity.Ver != request.Ver.Value)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Conflict,
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Path = request.Path, Type = MessageType.Error }]
+      };
+    }
 
     FormService<TEntity, TEntity>.SetPropertyValue(entity, request.Path, request.Value);
     if (db.Entry(entity).State == EntityState.Detached)
@@ -455,7 +467,7 @@ public abstract partial class GridService<TEntity, TRow>
       L,
       TimeZoneInfo.Utc,
       limit,
-      $"Export truncated to {limit} rows.",
+      L["ExportTruncated", limit],
       ct
     );
 

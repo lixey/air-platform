@@ -36,6 +36,10 @@ public static class RightsTree
         }
         rights.Add(Node(feat.MenuView.Key, L["Menu view"]));
         rights.Add(Node(feat.Export.Key, L["Export"]));
+        if (feat.ServiceType != null && typeof(Changes.ChangeGridService).IsAssignableFrom(feat.ServiceType))
+        {
+          rights.Add(Node(feat.Action("Restore").Key, L["Restore"]));
+        }
 
         foreach (var accessRight in GetContainerRights(feat))
         {

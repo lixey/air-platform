@@ -16,10 +16,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Air.App.Files;
 
-public abstract class FileGridService<TFile>(PlatformDbContext db)
-  : GridService<TFile, TFile>(db), IFormFilesSource, IFileCoverSource
+public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppService? app = null)
+  : GridService<TFile, TFile>(db, app), IFormFilesSource, IFileCoverSource
   where TFile : BaseAppFile, new()
 {
+  private const int OrderStep = 1024;
   private static readonly bool HasCovers = typeof(IHasCoverFile).IsAssignableFrom(typeof(TFile));
 
   bool IFileCoverSource.HasCovers => HasCovers;
@@ -38,7 +39,9 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
 
   protected FileLinks Links => new();
 
-  protected IFileStores Stores => new DefaultFileStores(new LocalFileStorage());
+  protected IFileStores Stores => PlatformApp?.Services.GetService<IFileStores>() ?? new DefaultFileStores(new LocalFileStorage());
+
+  protected override void SetQuery(Query query) => query.SortBy(r => r.SortOrder).ThenByDescending(r => r.Id);
 
   protected override void SetColumns(Columns columns)
   {
@@ -110,6 +113,35 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
       ThumbnailMaxBytes = FileTypeTable.ThumbnailMaxBytes
     };
 
+  private static int? Between(long? previous, long? next)
+  {
+    long? order = (previous, next) switch
+    {
+      (null, null) => 0,
+      (null, { } after) => after - OrderStep,
+      ({ } before, null) => before + OrderStep,
+      ({ } before, { } after) when after - before >= 2 => (before + after) / 2,
+      _ => null
+    };
+    return order is >= int.MinValue and <= int.MaxValue ? (int)order.Value : null;
+  }
+
+  private static void Renumber(List<TFile> ordered)
+  {
+    for (var i = 0; i < ordered.Count; i++)
+    {
+      ordered[i].SortOrder = i * OrderStep;
+    }
+  }
+
+  private static Expression<Func<TFile, bool>> BuildParentFilter(System.Reflection.PropertyInfo boundProp, object parentVal)
+  {
+    var param = Expression.Parameter(typeof(TFile), "f");
+    var propExpr = Expression.Property(param, boundProp);
+    var valExpr = Expression.Constant(parentVal, boundProp.PropertyType);
+    return Expression.Lambda<Func<TFile, bool>>(Expression.Equal(propExpr, valExpr), param);
+  }
+
   public virtual async Task<GridActionDto> Upload(
     GridUploadRequest request,
     IFormFileCollection files,
@@ -118,6 +150,11 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
   {
     ArgumentNullException.ThrowIfNull(request);
     ArgumentNullException.ThrowIfNull(files);
+
+    if (IsReadOnly)
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused };
+    }
 
     var file = files["file"] ?? files.FirstOrDefault();
     if (file == null || file.Length == 0)
@@ -178,20 +215,32 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
       {
         parent.BoundProperty.SetValue(entity, (long?)parentId.Value);
       }
-    }
 
-    if (entity is IHasCoverFile coverFile && rules.Cover == FileCover.Auto && parentId.HasValue && parent.BoundProperty != null)
-    {
-      var param = Expression.Parameter(typeof(TFile), "f");
-      var propExpr = Expression.Property(param, parent.BoundProperty);
-      var idExpr = Expression.Constant(parentId.Value, parent.BoundProperty.PropertyType);
-      var eqExpr = Expression.Equal(propExpr, idExpr);
-      var coverPropExpr = Expression.Property(param, nameof(IHasCoverFile.IsCover));
-      var andExpr = Expression.AndAlso(eqExpr, coverPropExpr);
-      var lambda = Expression.Lambda<Func<TFile, bool>>(andExpr, param);
+      var parentFilter = BuildParentFilter(parent.BoundProperty, parent.BoundProperty.GetValue(entity)!);
+      var siblings = await db.Set<TFile>()
+        .Where(parentFilter)
+        .OrderBy(f => f.SortOrder)
+        .ThenByDescending(f => f.Id)
+        .ToListAsync(cancellationToken);
 
-      var hasCover = await db.Set<TFile>().AnyAsync(lambda, cancellationToken);
-      coverFile.IsCover = !hasCover;
+      var place = request.AfterId is { } afterId && siblings.FindIndex(f => f.Id == afterId) is >= 0 and var idx
+        ? idx + 1
+        : siblings.Count;
+
+      if (Between(place > 0 ? siblings[place - 1].SortOrder : null, place < siblings.Count ? siblings[place].SortOrder : null) is { } order)
+      {
+        entity.SortOrder = order;
+      }
+      else
+      {
+        siblings.Insert(place, entity);
+        Renumber(siblings);
+      }
+
+      if (entity is IHasCoverFile coverFile && rules.Cover == FileCover.Auto)
+      {
+        coverFile.IsCover = !siblings.OfType<IHasCoverFile>().Any(s => !ReferenceEquals(s, entity) && s.IsCover);
+      }
     }
 
     await db.Set<TFile>().AddAsync(entity, cancellationToken);
@@ -210,6 +259,11 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
   public override async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
+    if (IsReadOnly)
+    {
+      return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
+    }
+
     var ids = request.SelectedIds ?? [];
     if (ids.Count == 0 && request.Id.HasValue) ids = [request.Id.Value];
 
@@ -253,12 +307,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
     {
       foreach (var parentVal in parentsLosingCover)
       {
-        var param = Expression.Parameter(typeof(TFile), "f");
-        var propExpr = Expression.Property(param, parent.BoundProperty);
-        var valExpr = Expression.Constant(parentVal, parent.BoundProperty.PropertyType);
-        var eqExpr = Expression.Equal(propExpr, valExpr);
-        var lambda = Expression.Lambda<Func<TFile, bool>>(eqExpr, param);
-
+        var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
         var nextCover = await db.Set<TFile>()
           .Where(lambda)
           .OrderBy(f => f.SortOrder)
@@ -283,15 +332,15 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
   public virtual async Task<GridActionDto> SetCover(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
-    if (!HasCovers)
+    if (IsReadOnly || !HasCovers)
     {
-      throw new InvalidOperationException("Entity does not support covers.");
+      return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
 
     var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
     if (!targetId.HasValue)
     {
-      throw new InvalidOperationException("No file selected.");
+      return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
 
     var target = await db.Set<TFile>().FindAsync([targetId.Value], cancellationToken);
@@ -308,12 +357,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
       var parentVal = parent.BoundProperty.GetValue(target);
       if (parentVal != null)
       {
-        var param = Expression.Parameter(typeof(TFile), "f");
-        var propExpr = Expression.Property(param, parent.BoundProperty);
-        var valExpr = Expression.Constant(parentVal, parent.BoundProperty.PropertyType);
-        var eqExpr = Expression.Equal(propExpr, valExpr);
-        var lambda = Expression.Lambda<Func<TFile, bool>>(eqExpr, param);
-
+        var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
         var siblings = await db.Set<TFile>().Where(lambda).ToListAsync(cancellationToken);
         foreach (var sibling in siblings)
         {
@@ -336,6 +380,11 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
   public virtual async Task<GridActionDto> Move(FileMoveRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
+    if (IsReadOnly)
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused };
+    }
+
     var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
     if (!targetId.HasValue)
     {
@@ -348,17 +397,37 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
       return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
 
-    if (request.BeforeId.HasValue)
+    if (request.BeforeId == target.Id)
     {
-      var before = await db.Set<TFile>().FindAsync([request.BeforeId.Value], cancellationToken);
-      if (before != null)
-      {
-        target.SortOrder = before.SortOrder - 1;
-      }
+      return new GridActionDto { Outcome = MutationOutcome.Committed };
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+
+    IQueryable<TFile> siblingsQuery = db.Set<TFile>().Where(f => f.Id != target.Id);
+    if (parent.BoundProperty != null && parent.BoundProperty.GetValue(target) is { } parentVal)
+    {
+      siblingsQuery = siblingsQuery.Where(BuildParentFilter(parent.BoundProperty, parentVal));
+    }
+
+    var others = await siblingsQuery
+      .OrderBy(f => f.SortOrder)
+      .ThenByDescending(f => f.Id)
+      .ToListAsync(cancellationToken);
+
+    var place = request.BeforeId is { } beforeId && others.FindIndex(f => f.Id == beforeId) is >= 0 and var idx
+      ? idx
+      : others.Count;
+
+    if (Between(place > 0 ? others[place - 1].SortOrder : null, place < others.Count ? others[place].SortOrder : null) is { } order)
+    {
+      target.SortOrder = order;
     }
     else
     {
-      target.SortOrder += 1024;
+      others.Insert(place, target);
+      Renumber(others);
     }
 
     await db.SaveChangesAsync(cancellationToken);
@@ -389,6 +458,11 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
   public virtual async Task<GridActionDto> SetInfo(FileInfoRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
+    if (IsReadOnly)
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused };
+    }
+
     var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
       ?? throw new InvalidOperationException("File ID required.");
 

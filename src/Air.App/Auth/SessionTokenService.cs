@@ -18,6 +18,9 @@ public static class SessionTokenService
     }
   }
 
+  internal static byte[] DeriveSubKey(string purpose) =>
+    HMACSHA256.HashData(_secretKey, Encoding.UTF8.GetBytes(purpose));
+
   private static byte[] DeriveDefaultKey()
   {
     var envSecret = Environment.GetEnvironmentVariable("AIR_TOKEN_SECRET");

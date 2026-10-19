@@ -130,8 +130,33 @@ public abstract partial class FormService<TEntity, TInput>
     return dict;
   }
 
-  private static HashSet<string> BuildProtectedPaths(Elements elements)
+  private static HashSet<string> BuildProtectedPaths(Elements elements, JsonElement? clientJson = null, bool isNew = true)
   {
+    HashSet<string>? presentInJson = null;
+    if (!isNew && clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
+    {
+      presentInJson = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var jProp in jsonObj.EnumerateObject())
+      {
+        presentInJson.Add(jProp.Name);
+      }
+    }
+
+    var editablePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var isSeparateInput = typeof(TInput) != typeof(TEntity);
+    foreach (var el in elements.List)
+    {
+      if (string.IsNullOrEmpty(el.Path)) continue;
+      var acceptsInput = !el.IsDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
+      if (acceptsInput && !(isSeparateInput && el.IsInputOnly))
+      {
+        if (presentInJson == null || presentInJson.Contains(el.Path))
+        {
+          editablePaths.Add(el.Path);
+        }
+      }
+    }
+
     var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
       "Id",
@@ -142,23 +167,27 @@ public abstract partial class FormService<TEntity, TInput>
       "UpdatedBy"
     };
 
-    var isSeparateInput = typeof(TInput) != typeof(TEntity);
-    foreach (var el in elements.List)
-    {
-      if ((el.IsServerOwned || (isSeparateInput && el.IsInputOnly)) && !string.IsNullOrEmpty(el.Path))
-      {
-        set.Add(el.Path);
-      }
-    }
-
     foreach (var prop in PropertyAccessorCache.GetProperties(typeof(TEntity)))
     {
-      if (prop.GetCustomAttribute<SensitiveAttribute>() != null)
+      if (!editablePaths.Contains(prop.Name) || prop.GetCustomAttribute<SensitiveAttribute>() != null)
       {
         set.Add(prop.Name);
       }
     }
 
+    return set;
+  }
+
+  private static HashSet<string> BuildInputOnlyPaths(Elements elements)
+  {
+    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var el in elements.List)
+    {
+      if (el.IsInputOnly && !string.IsNullOrEmpty(el.Path))
+      {
+        set.Add(el.Path);
+      }
+    }
     return set;
   }
 

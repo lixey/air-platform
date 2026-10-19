@@ -680,7 +680,10 @@ public abstract partial class FormService<TEntity, TInput>
           {
             try
             {
-              var loaded = await db.FindAsync(refEntityType, [key.Value], ct);
+              var targetDb = db.Model.FindEntityType(refEntityType) != null
+                ? db
+                : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, _app) as IGridService)?.DbContext ?? db;
+              var loaded = await targetDb.FindAsync(refEntityType, [key.Value], ct);
               refName = ReadDisplayCaption(loaded, labelPaths);
             }
             catch { }

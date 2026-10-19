@@ -12,7 +12,7 @@ namespace Air.App.Changes;
 /// The change journal (AppPlatformChange) of the tenant: a grid an application routes with a sealed
 /// service of its own and a read-only feature.
 /// </summary>
-public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null) : GridService<AppPlatformChange>(db)
+public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null, PlatformAppService? app = null) : GridService<AppPlatformChange>(db, app)
 {
   protected override void SetColumns(Columns<AppPlatformChange> columns)
   {
@@ -40,6 +40,15 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
 
   public virtual async Task<GridActionDto> Restore(GridRequest request, CancellationToken cancellationToken)
   {
+    if (User != null && User.IsAuthenticated &&
+        !User.Can(Feature.Action(nameof(Restore))) &&
+        !User.Can(Feature.Edit) &&
+        !User.Can(Feature.All) &&
+        !User.Can("*"))
+    {
+      return new GridActionDto { Outcome = MutationOutcome.Refused };
+    }
+
     var ids = request.SelectedIds ?? [];
     if (ids.Count == 0 && request.Id.HasValue) ids = [request.Id.Value];
 
@@ -149,7 +158,8 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
     {
       return db;
     }
-    if (services != null)
+    var sp = services ?? PlatformApp?.Services;
+    if (sp != null)
     {
       var dbTypes = AppDomain.CurrentDomain.GetAssemblies()
         .SelectMany(a => { try { return a.GetTypes(); } catch { return Type.EmptyTypes; } })
@@ -157,7 +167,7 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
 
       foreach (var dbType in dbTypes)
       {
-        if (services.GetService(dbType) is PlatformDbContext otherDb)
+        if (sp.GetService(dbType) is PlatformDbContext otherDb)
         {
           if (otherDb.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
           {

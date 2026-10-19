@@ -20,6 +20,7 @@ namespace Air.App.Grid;
 
 public interface IGridService
 {
+  PlatformDbContext DbContext { get; }
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
   Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
@@ -41,13 +42,14 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   private PlatformAppService? _app = app;
   public void AttachPlatformApp(PlatformAppService service) => _app ??= service;
 
+  public PlatformDbContext DbContext => db;
   public PlatformAppService? PlatformApp => _app;
   protected Auth.IUserContext? User => _app?.User;
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
 
-  protected virtual bool IsReadOnly => Feature.IsReadOnly;
+  protected virtual bool IsReadOnly => Feature.IsReadOnly || (User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*"));
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
 

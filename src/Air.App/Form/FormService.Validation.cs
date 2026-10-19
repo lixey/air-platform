@@ -38,7 +38,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (!ReferenceEquals(entity, input))
     {
-      CopyMatchingProperties(entity, input);
+      CopyMatchingProperties(entity, input, BuildInputOnlyPaths(elements));
     }
 
     var rules = new Rules();

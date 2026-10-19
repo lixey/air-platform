@@ -201,6 +201,16 @@ internal static class ServiceEndpoints
         var uploadMethod = serviceType.GetMethod("Upload");
         if (uploadMethod != null && httpRequest.HasFormContentType)
         {
+          if (!IsCustomActionPermitted(uploadMethod, feat, userContext))
+          {
+            return Results.UnprocessableEntity(new
+            {
+              outcome = MutationOutcome.Refused,
+              title = Localizer.Instance["MutationRefused"],
+              messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error } }
+            });
+          }
+
           var formCollection = await httpRequest.ReadFormAsync(ct);
           var uploadReq = new Files.Contracts.GridUploadRequest();
           if (formCollection.TryGetValue("parentService", out var psVal)) uploadReq.ParentService = psVal;
@@ -462,6 +472,19 @@ internal static class ServiceEndpoints
     if (userContext == null || !userContext.IsAuthenticated)
     {
       return true;
+    }
+
+    if (actionMethod.Name is "GetInfo" or "FileMetadata" or "DownloadAll")
+    {
+      return CanView(feat, userContext);
+    }
+
+    if (actionMethod.Name == "Restore" && feat != null)
+    {
+      return userContext.Can(feat.Action("Restore")) ||
+             userContext.Can(feat.Edit) ||
+             userContext.Can(feat.All) ||
+             userContext.Can("*");
     }
 
     var reqAttr = actionMethod.GetCustomAttribute<Security.RequireRightAttribute>();

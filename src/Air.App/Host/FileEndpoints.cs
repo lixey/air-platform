@@ -38,6 +38,7 @@ internal static class FileEndpoints
         var read = await stream.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, httpContext.RequestAborted);
         if (Files.Internal.FileTypeTable.ThumbnailTypeOf(head.AsSpan(0, read)) is not { } thumbnail)
         {
+          await stream.DisposeAsync();
           return Results.NotFound();
         }
         stream.Seek(0, SeekOrigin.Begin);
