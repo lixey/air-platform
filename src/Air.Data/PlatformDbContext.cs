@@ -88,9 +88,18 @@ public abstract class PlatformDbContext : DbContext
         modelBuilder.Entity(clrType).Property(nameof(IInheritedByChildTenants.TenantId)).IsConcurrencyToken();
       }
 
-        if (typeof(IHasVersion).IsAssignableFrom(clrType))
+      if (typeof(IHasVersion).IsAssignableFrom(clrType))
       {
         modelBuilder.Entity(clrType).Property(nameof(IHasVersion.Ver)).IsConcurrencyToken();
+      }
+
+      foreach (var prop in entityType.GetProperties())
+      {
+        if (((MemberInfo?)prop.PropertyInfo ?? prop.FieldInfo) is { } member &&
+            Attribute.IsDefined(member, typeof(KeepsVersionAttribute), inherit: true))
+        {
+          prop.IsConcurrencyToken = true;
+        }
       }
     }
   }
@@ -266,6 +275,13 @@ public abstract class PlatformDbContext : DbContext
     entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)) &&
     entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)).All(p => BaseAppUser.LoginCounters.Contains(p.Metadata.Name));
 
+  private static bool ChangesKeepsVersionOnly(EntityEntry entry) =>
+    entry.State == EntityState.Modified &&
+    entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)) &&
+    entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue))
+      .All(p => ((MemberInfo?)p.Metadata.PropertyInfo ?? p.Metadata.FieldInfo) is { } m &&
+                Attribute.IsDefined(m, typeof(KeepsVersionAttribute), inherit: true));
+
   private static string SerializeProperties(IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
   {
     var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -289,6 +305,28 @@ public abstract class PlatformDbContext : DbContext
 
     foreach (var entry in ChangeTracker.Entries())
     {
+      if (entry.Entity is Entities.AppPlatformChange && entry.State is EntityState.Modified or EntityState.Deleted)
+      {
+        throw new InvalidOperationException("AppPlatformChange rows are immutable and cannot be modified or deleted.");
+      }
+
+      if (entry.State is EntityState.Modified or EntityState.Deleted)
+      {
+        if (entry.Entity is IHasTenant existingTenant && tenantId.HasValue && existingTenant.TenantId != 0 && existingTenant.TenantId != tenantId.Value)
+        {
+          throw new InvalidOperationException(
+            $"Cannot modify or delete {entry.Metadata.ClrType.Name} belonging to another tenant."
+          );
+        }
+
+        if (entry.Entity is IInheritedByChildTenants existingInherited && existingInherited.TenantId is { } ownerTid && tenantId.HasValue && ownerTid != tenantId.Value)
+        {
+          throw new InvalidOperationException(
+            $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant."
+          );
+        }
+      }
+
       if (entry.State == EntityState.Added)
       {
         if (entry.Entity is IHasTimestamps timestamps)
@@ -315,7 +353,7 @@ public abstract class PlatformDbContext : DbContext
       }
       else if (entry.State == EntityState.Modified)
       {
-        var keepsVersion = ChangesLoginCountersOnly(entry);
+        var keepsVersion = ChangesLoginCountersOnly(entry) || ChangesKeepsVersionOnly(entry);
 
         if (entry.Entity is IHasTimestamps timestamps)
         {

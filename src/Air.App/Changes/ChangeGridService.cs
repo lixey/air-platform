@@ -126,6 +126,16 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
             var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
             if (prop == null || prop.Metadata.IsPrimaryKey()) continue;
 
+            if (((System.Reflection.MemberInfo?)prop.Metadata.PropertyInfo ?? prop.Metadata.FieldInfo) is { } member &&
+                Attribute.IsDefined(member, typeof(KeepsVersionAttribute), inherit: true))
+            {
+              return new GridActionDto
+              {
+                Outcome = MutationOutcome.Refused,
+                Warnings = [new MessageDto { Detail = L["ChangeRestoreKeepsVersion"], Code = "change.restore.keepsVersion", Type = MessageType.Error }]
+              };
+            }
+
             if (afterDict != null && afterDict.TryGetValue(kvp.Key, out var afterRaw))
             {
               var expectedAfter = DeserializePropertyValue(afterRaw, prop.Metadata.ClrType);

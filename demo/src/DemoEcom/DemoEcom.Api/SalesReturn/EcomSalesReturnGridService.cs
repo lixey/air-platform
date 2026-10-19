@@ -22,19 +22,20 @@ public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturn
     columns.Add(r => r.Number);
     columns.Add(r => r.Date);
     AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>();
+    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
     columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
     columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
     columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Amount).AsMoney().Sum();
-    columns.Add(r => r.PaidAmount).Label("Refunded").AsMoney().Sum();
+    columns.Add(r => r.Qty).Label("Quantity");
+    columns.Add(r => r.Amount).AsMoney();
+    columns.Add(r => r.PaidAmount).Label("Refunded").AsMoney();
   }
 
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus")).InMenu();
+    _ = EcomDocTexts.Of(L);
+    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon(UiIcon.Plus)).InMenu();
   }
 
   [RequireRight<EcomOutgoingPaymentGridService>(EndpointAction.Edit)]

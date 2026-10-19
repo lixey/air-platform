@@ -11,7 +11,10 @@ public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
   where TRow : class
 {
-  protected virtual object ShapeRow(TRow row, IReadOnlyList<GridColumnDto> columns)
+  protected virtual object ShapeRow(
+    TRow row,
+    IReadOnlyList<GridColumnDto> columns,
+    IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null)
   {
     if (row is null || columns.Count == 0) return row!;
 
@@ -23,6 +26,27 @@ public abstract partial class GridService<TEntity, TRow>
     if (PropertyAccessorCache.GetValue(row, "Ver") is { } verVal)
     {
       shaped["ver"] = verVal;
+    }
+
+    if (rowFlags is { Count: > 0 })
+    {
+      List<string>? matchedFlags = null;
+      foreach (var (flagName, predicate) in rowFlags)
+      {
+        try
+        {
+          if (predicate(row))
+          {
+            matchedFlags ??= [];
+            matchedFlags.Add(flagName);
+          }
+        }
+        catch { }
+      }
+      if (matchedFlags is { Count: > 0 })
+      {
+        shaped["flags"] = matchedFlags;
+      }
     }
 
     foreach (var column in columns)
@@ -38,17 +62,12 @@ public abstract partial class GridService<TEntity, TRow>
           var id = Convert.ToInt64(value, CultureInfo.InvariantCulture);
           var opt = options.FirstOrDefault(o => o.Id == id);
           var name = opt != null ? L[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
-          value = !string.IsNullOrEmpty(opt?.Color)
-            ? new Dictionary<string, object?> { ["id"] = id, ["name"] = name, ["color"] = opt.Color }
-            : new Reference { Id = id, Name = name };
+          value = new Reference { Id = id, Name = name };
         }
         else if (value is Reference optRef)
         {
-          var opt = options.FirstOrDefault(o => o.Id == optRef.Id);
           var name = L[optRef.Name];
-          value = !string.IsNullOrEmpty(opt?.Color)
-            ? new Dictionary<string, object?> { ["id"] = optRef.Id, ["name"] = name, ["color"] = opt.Color }
-            : new Reference { Id = optRef.Id, Name = name };
+          value = new Reference { Id = optRef.Id, Name = name };
         }
       }
       else if (value is Reference existingRef)

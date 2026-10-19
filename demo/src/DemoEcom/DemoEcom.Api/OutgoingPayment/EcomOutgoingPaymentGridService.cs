@@ -23,10 +23,10 @@ public sealed class EcomOutgoingPaymentGridService(
     columns.Add(r => r.Number);
     columns.Add(r => r.Date);
     AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>();
+    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
     columns.Add(r => r.MoneyAccount).AsReference<OrgMoneyAccountGridService>();
     columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
     columns.Add(r => r.Counterparty).AsReference<OrgCounterpartyGridService>();
-    columns.Add(r => r.Amount).AsMoney().Sum();
+    columns.Add(r => r.Amount).AsMoney();
   }
 }

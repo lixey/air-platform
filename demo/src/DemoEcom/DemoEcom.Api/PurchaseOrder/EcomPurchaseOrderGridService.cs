@@ -19,27 +19,47 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
 
   public override Feature Feature => Ecom.PurchaseOrder;
 
+  protected override void SetQuery(Query query)
+  {
+    base.SetQuery(query);
+    var me = User?.UserId;
+    query.NamedFilter("status", L["Status"])
+      .Item(
+        "open",
+        L["In work"],
+        doc => doc.DocStatusId == EcomData.DocStatus.PurchaseOrderNewId || doc.DocStatusId == EcomData.DocStatus.PurchaseOrderSentId
+      ).Color(UiColor.Amber).Default()
+      .Item(
+        "closed",
+        L["Finished"],
+        doc => doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCompletedId || doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCanceledId
+      ).Color(UiColor.Emerald)
+      .All(L["All"]);
+    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).Badge().Remember();
+  }
+
   protected override void SetColumns(Columns<EcomDoc> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomPurchaseOrderFormService>();
     columns.Add(r => r.Number);
     columns.Add(r => r.Date);
     AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>();
+    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
     columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
     columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
     columns.Add(r => r.DueDate);
     columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Amount).AsMoney().Sum();
-    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney().Sum();
+    columns.Add(r => r.Qty).Label("Quantity");
+    columns.Add(r => r.Amount).AsMoney();
+    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateSupplierInvoice, b => b.Label(L["Create supplier invoice"]).Icon("plus")).InMenu();
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus")).InMenu();
+    _ = EcomDocTexts.Of(L);
+    nav.AddAction(CreateSupplierInvoice, b => b.Label(L["Create supplier invoice"]).Icon(UiIcon.Plus)).InMenu();
+    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon(UiIcon.Plus)).InMenu();
   }
 
   protected override void SetHooks(Hooks hooks)

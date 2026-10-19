@@ -217,6 +217,9 @@ public sealed class FormElementDto
 
   [JsonIgnore]
   internal Type? ReferenceServiceType { get; set; }
+
+  [JsonIgnore]
+  internal bool IsRightsTree { get; set; }
 }
 
 
@@ -269,6 +272,9 @@ public sealed record FormNumberModel : FormElementModel
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool HasStepper { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public bool? IsGrouped { get; set; }
 }
 
 [UiContract]

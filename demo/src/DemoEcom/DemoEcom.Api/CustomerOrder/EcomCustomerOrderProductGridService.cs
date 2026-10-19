@@ -41,6 +41,7 @@ public sealed class EcomCustomerOrderProductGridService(EcomDbContext db, EcomSe
     });
     query.SortBy(r => r.Article);
     query.PickBy(r => r.Article, ArticleKey);
+    query.FlagRows("unpriced", product => product.Price == 0);
     query.Compute(FillFreeAsync);
   }
 

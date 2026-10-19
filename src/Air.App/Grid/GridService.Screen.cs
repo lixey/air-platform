@@ -71,14 +71,19 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var entry in nav.Actions)
     {
       var methodInfo = entry.Method.Method;
-      var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>();
+      var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true);
+      var reqAction = methodInfo.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true);
       var hasRight = true;
       if (reqAttr != null && User != null && User.IsAuthenticated)
       {
         if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
         {
-          hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(Feature.All);
+          hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(targetFeat.All) || User.Can(Feature.All);
         }
+      }
+      else if (reqAction != null && User != null && User.IsAuthenticated)
+      {
+        hasRight = User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
       }
       else if (!entry.IsAllowedInReadOnly && isUserReadOnly)
       {
@@ -116,6 +121,45 @@ public abstract partial class GridService<TEntity, TRow>
 
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
+    foreach (var group in queryDeclaration.NamedFilterGroups)
+    {
+      var chosenKey = request?.NamedFilters?.FirstOrDefault(k =>
+          group.Items.Any(i => string.Equals(i.Key, k, StringComparison.OrdinalIgnoreCase)))
+        ?? group.Items.FirstOrDefault(i => i.IsDefault)?.Key;
+      var groupItems = new List<GridNavNamedFilterModel>();
+      foreach (var item in group.Items)
+      {
+        string? badgeVal = null;
+        if (item.HasBadge)
+        {
+          try
+          {
+            var baseQ = BaseQuery(db);
+            foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
+            if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+            if (item.Predicate != null) baseQ = baseQ.Where(item.Predicate);
+            badgeVal = (await baseQ.CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
+          }
+          catch { }
+        }
+        groupItems.Add(new GridNavNamedFilterModel
+        {
+          Key = item.Key,
+          Label = L[item.Label],
+          Color = item.Color,
+          Badge = badgeVal,
+          IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
+        });
+      }
+      navElements.Add(new GridNavNamedFilterGroupModel
+      {
+        Key = group.Key,
+        Label = group.Label != null ? L[group.Label] : null,
+        IsRemembered = group.IsRemembered,
+        Items = groupItems
+      });
+    }
+
     foreach (var item in queryDeclaration.NamedFilters)
     {
       string? badgeValue = null;
@@ -126,7 +170,8 @@ public abstract partial class GridService<TEntity, TRow>
           var baseQ = BaseQuery(db);
           foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
           if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-          badgeValue = (await baseQ.Where(item.Predicate).CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
+          if (item.Predicate != null) baseQ = baseQ.Where(item.Predicate);
+          badgeValue = (await baseQ.CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
         }
         catch { }
       }
@@ -135,6 +180,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         Key = item.Key,
         Label = L[item.Label],
+        Color = item.Color,
         Badge = badgeValue,
         IsRemembered = item.IsRemembered,
         IsSelected = request?.NamedFilters?.Any(k => string.Equals(k, item.Key, StringComparison.OrdinalIgnoreCase)) == true
@@ -186,7 +232,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var actionEnd = new List<NavElementModel>();
-    if (!isGridReadOnly && Feature.HasDelete && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All)))
+    if (CanDelete())
     {
       actionEnd.Add(new GridNavActionModel
       {

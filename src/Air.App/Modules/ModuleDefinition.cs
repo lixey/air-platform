@@ -101,6 +101,14 @@ public class Feature
     Path = source.Path;
     IsReadOnly = source.IsReadOnly;
     HasDelete = source.HasDelete;
+    foreach (var kv in source._rights)
+    {
+      _rights[kv.Key] = new Right(kv.Value.Key, kv.Value.Action, this, kv.Value.IsPattern);
+    }
+    if (ServiceType != null)
+    {
+      FeaturesByServiceType[ServiceType] = this;
+    }
   }
 
   public string Module { get; }
@@ -118,6 +126,10 @@ public class Feature
   public Right Delete => Action("Delete");
   public Right Export => Action("Export");
   public Right All => Action("*");
+
+  public IReadOnlyDictionary<string, Right> Rights => _rights;
+
+  public bool HasAction(string action) => _rights.ContainsKey(action);
 
   public Right Action(string action) =>
     _rights.GetOrAdd(action, act => new Right($"{Key}.{act}", act, this, act == "*"));
@@ -210,7 +222,7 @@ public abstract class ModuleDefinition<TSelf> : ModuleDefinition where TSelf : M
   public static Right All => new($"{ModuleHandle}.*", "*", null, isPattern: true);
 
   public sealed override string GetHandle() => ModuleAttr.Handle;
-  public sealed override string GetName() => ModuleAttr.Name ?? ModuleAttr.Handle;
+  public sealed override string GetName() => ModuleAttr.Name ?? (ModuleAttr.Handle.Length > 0 ? char.ToUpperInvariant(ModuleAttr.Handle[0]) + ModuleAttr.Handle[1..] : ModuleAttr.Handle);
   public sealed override string GetIcon() => ModuleAttr.Icon ?? "folder";
   public sealed override IReadOnlyList<Feature> GetFeatures() => LazyFeatures.Value;
 

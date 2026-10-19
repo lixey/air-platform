@@ -232,7 +232,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       return (null, null);
     }
 
-    return elements.Children.Count > 0 ? (PanelSize.Fill, PanelSize.Fill) : (PanelSize.Px(720), null);
+    return elements.Children.Any(c => !c.IsFiles) ? (PanelSize.Fill, PanelSize.Fill) : (PanelSize.Px(720), null);
   }
 
   protected virtual bool FillsOverlay(Elements elements)

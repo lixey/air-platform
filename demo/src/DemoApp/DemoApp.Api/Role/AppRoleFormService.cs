@@ -54,6 +54,7 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
     {
       if (c.IsNew)
       {
+        c.Input.TenantId = db.TenantContext.TenantId;
         return;
       }
 

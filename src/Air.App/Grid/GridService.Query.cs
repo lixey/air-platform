@@ -12,7 +12,7 @@ public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
   where TRow : class
 {
-  private IQueryable<TEntity> BuildFilteredEntityQuery(GridRequest? gridReq, out Parent parent, out Query queryDeclaration)
+  private IQueryable<TEntity> BuildBaseEntityQuery(GridRequest? gridReq, out Parent parent, out Query queryDeclaration)
   {
     parent = new Parent();
     SetParent(parent);
@@ -33,19 +33,60 @@ public abstract partial class GridService<TEntity, TRow>
       query = parent.FilterFunc(query, ParentId.Value);
     }
 
-    if (gridReq?.NamedFilters is { Count: > 0 } nfs)
+    return query;
+  }
+
+  private static IQueryable<TEntity> ApplyActiveNamedFilters(
+    IQueryable<TEntity> query,
+    GridRequest? gridReq,
+    Query queryDeclaration,
+    NamedFilterItem? overrideToggle = null,
+    NamedFilterGroup? overrideGroup = null,
+    NamedFilterItem? overrideGroupItem = null)
+  {
+    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
+    if (isSelect) return query;
+
+    var nfs = gridReq?.NamedFilters ?? [];
+
+    foreach (var group in queryDeclaration.NamedFilterGroups)
     {
-      foreach (var nfKey in nfs)
+      NamedFilterItem? chosen;
+      if (ReferenceEquals(group, overrideGroup))
       {
-        var matched = queryDeclaration.NamedFilters.FirstOrDefault(f => string.Equals(f.Key, nfKey, StringComparison.OrdinalIgnoreCase));
-        if (matched != null)
-        {
-          query = query.Where(matched.Predicate);
-        }
+        chosen = overrideGroupItem;
+      }
+      else
+      {
+        var reqKey = nfs.FirstOrDefault(k => group.Items.Any(i => string.Equals(i.Key, k, StringComparison.OrdinalIgnoreCase)));
+        chosen = reqKey != null
+          ? group.Items.FirstOrDefault(i => string.Equals(i.Key, reqKey, StringComparison.OrdinalIgnoreCase))
+          : group.Items.FirstOrDefault(i => i.IsDefault);
+      }
+
+      if (chosen?.Predicate != null)
+      {
+        query = query.Where(chosen.Predicate);
+      }
+    }
+
+    foreach (var nf in queryDeclaration.NamedFilters)
+    {
+      var isActive = ReferenceEquals(nf, overrideToggle)
+        || nfs.Any(k => string.Equals(k, nf.Key, StringComparison.OrdinalIgnoreCase));
+      if (isActive && nf.Predicate != null)
+      {
+        query = query.Where(nf.Predicate);
       }
     }
 
     return query;
+  }
+
+  private IQueryable<TEntity> BuildFilteredEntityQuery(GridRequest? gridReq, out Parent parent, out Query queryDeclaration)
+  {
+    var query = BuildBaseEntityQuery(gridReq, out parent, out queryDeclaration);
+    return ApplyActiveNamedFilters(query, gridReq, queryDeclaration);
   }
 
   public virtual async Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
@@ -98,11 +139,12 @@ public abstract partial class GridService<TEntity, TRow>
       {
         await queryDeclaration.ComputeAction(page.Rows, ct);
       }
-      var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
+      var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List, queryDeclaration.RowFlags)).ToList();
       await PopulateCoversAsync(shapedRows, cols.List, ct);
       await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
       await PopulateRowAvailabilityAsync(shapedRows, cols, ct);
-      var bottomRows = !isSelect ? await ComputeSumRowsAsync(dataProvider.Filter(request).Select(queryDeclaration.Selector), cols.List, ct) : null;
+      var filteredEntities = dataProvider.Filter(request);
+      var bottomRows = !isSelect ? await ComputeSumRowsAsync(filteredEntities.Select(queryDeclaration.Selector), cols.List, ct) : null;
       return new Page<object>
       {
         Rows = shapedRows,
@@ -117,7 +159,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     var defaultDataProvider = DataProvider.Create(query, queryMap);
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
-    var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
+    var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
     var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), cols.List, ct) : null;
@@ -136,7 +178,8 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
   {
-    var query = BuildFilteredEntityQuery(request, out var parent, out var queryDeclaration);
+    var baseEntityQuery = BuildBaseEntityQuery(request, out _, out var queryDeclaration);
+    var query = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration);
     var cols = CreateColumns();
 
     if (!string.IsNullOrWhiteSpace(request.Search) && queryDeclaration.PickKeySelector != null)
@@ -151,28 +194,34 @@ public abstract partial class GridService<TEntity, TRow>
 
     var queryMap = BuildQueryMap(queryDeclaration, cols.List);
 
-    int total;
-    if (queryDeclaration.Selector != null)
-    {
-      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
-      total = await dataProvider.Filter(request).CountAsync(ct);
-    }
-    else
-    {
-      var defaultDataProvider = DataProvider.Create(query, queryMap);
-      total = await defaultDataProvider.Filter(request).CountAsync(ct);
-    }
+    Task<int> CountWithAsync(IQueryable<TEntity> q, CancellationToken token) =>
+      queryDeclaration.Selector != null
+        ? DataProvider.Create(q, queryMap, queryDeclaration.Selector).Filter(request).CountAsync(token)
+        : DataProvider.Create(q, queryMap).Filter(request).CountAsync(token);
+
+    var total = await CountWithAsync(query, ct);
 
     Dictionary<string, int>? badges = null;
+    foreach (var group in queryDeclaration.NamedFilterGroups)
+    {
+      foreach (var item in group.Items)
+      {
+        if (item.HasBadge)
+        {
+          badges ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+          var badgeQuery = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration, overrideGroup: group, overrideGroupItem: item);
+          badges[item.Key] = await CountWithAsync(badgeQuery, ct);
+        }
+      }
+    }
+
     foreach (var item in queryDeclaration.NamedFilters)
     {
       if (item.HasBadge)
       {
         badges ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var baseQ = BaseQuery(db);
-        foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
-        if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-        badges[item.Key] = await baseQ.Where(item.Predicate).CountAsync(ct);
+        var badgeQuery = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration, overrideToggle: item);
+        badges[item.Key] = await CountWithAsync(badgeQuery, ct);
       }
     }
 

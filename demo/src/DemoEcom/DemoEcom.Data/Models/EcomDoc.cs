@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Air.Data.Entities;
 using DemoApp.Data.Models;
 using DemoOrg.Data.Models;
 
@@ -17,6 +18,7 @@ public sealed class EcomDoc : AppBaseModel
   public long DocTypeId { get; set; }
   public EcomDocType DocType { get; set; } = null!;
 
+  [KeepsVersion]
   public long DocStatusId { get; set; }
   public EcomDocStatus DocStatus { get; set; } = null!;
 

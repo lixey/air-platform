@@ -158,7 +158,7 @@ internal static class ServiceEndpoints
       case "delete":
       {
         var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-        return PlatformEndpoints.ToMutationResult(await grid.DeleteAsync(req, ct));
+        return PlatformEndpoints.ToMutationResult(await grid.Delete(req, ct));
       }
 
       case "save-cell":
@@ -408,7 +408,7 @@ internal static class ServiceEndpoints
 
         if (id == null)
         {
-          return Results.BadRequest(new { error = "Record id is required for move-status." });
+          return Results.BadRequest(new { detail = "Record id is required for move-status." });
         }
 
         var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ver, ct);
@@ -484,6 +484,13 @@ internal static class ServiceEndpoints
       return true;
     }
 
+    if (actionMethod.Name == "FileMetadata" && feat != null && feat.HasAction("FileMetadata"))
+    {
+      return userContext.Can(feat.Action("FileMetadata")) ||
+             userContext.Can(feat.All) ||
+             userContext.Can("*");
+    }
+
     if (actionMethod.Name is "GetInfo" or "FileMetadata" or "DownloadAll")
     {
       return CanView(feat, userContext);
@@ -497,12 +504,20 @@ internal static class ServiceEndpoints
              userContext.Can("*");
     }
 
-    var reqAttr = actionMethod.GetCustomAttribute<Security.RequireRightAttribute>();
+    var reqAttr = actionMethod.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true);
     if (reqAttr != null)
     {
       return !Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat) ||
              userContext.Can(targetFeat.Action(reqAttr.Action.ToString())) ||
              userContext.Can(targetFeat.All) ||
+             userContext.Can("*");
+    }
+
+    var reqAction = actionMethod.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true);
+    if (reqAction != null && feat != null)
+    {
+      return userContext.Can(feat.Action(reqAction.Action.ToString())) ||
+             userContext.Can(feat.All) ||
              userContext.Can("*");
     }
 

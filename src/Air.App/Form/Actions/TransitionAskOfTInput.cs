@@ -81,7 +81,7 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
           errors.Add(new MessageDto
           {
             Path = el.Path,
-            Detail = localizer["FormValidationOutOfRange"],
+            Detail = localizer["FormValidationRange"],
             Code = "form.validation.range",
             Type = MessageType.Error
           });

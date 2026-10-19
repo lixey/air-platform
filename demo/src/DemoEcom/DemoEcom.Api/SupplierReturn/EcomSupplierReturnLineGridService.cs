@@ -13,8 +13,8 @@ public sealed class EcomSupplierReturnLineGridService(EcomDbContext db, EcomServ
     columns.Add(r => r.SortOrder);
     columns.Add(r => r.Product).AsReference<OrgProductGridService>();
     columns.Add(r => r.Article);
-    columns.Add(r => r.Qty).Label("Quantity").Sum().Editable();
-    columns.Add(r => r.Price).AsMoney().Editable();
+    columns.Add(r => r.Qty).Label("Quantity").Sum();
+    columns.Add(r => r.Price).AsMoney();
     columns.Add(r => r.Amount).AsMoney().Sum();
   }
 }

@@ -262,8 +262,16 @@ public abstract partial class FormService<TEntity, TInput>
       }
       else if (el.Model is FormCheckboxTreeModel { Nodes: { } treeNodes } && val is IEnumerable<string> treeKeys)
       {
+        var keyList = treeKeys.ToList();
         var allowedKeys = Air.App.Auth.RightsTree.FlattenKeys(treeNodes);
-        if (treeKeys.Any(k => !allowedKeys.Contains(k)))
+        var disabledKeys = Air.App.Auth.RightsTree.FlattenDisabledKeys(treeNodes);
+        var origTreeSet = ruleCtx.SaveContext.OriginalValues != null
+          && ruleCtx.SaveContext.OriginalValues.TryGetValue(el.Path, out var origTreeVal)
+          && origTreeVal is IEnumerable<string> origTreeEnum
+            ? origTreeEnum.ToHashSet(StringComparer.Ordinal)
+            : [];
+
+        if (keyList.Any(k => !allowedKeys.Contains(k) || (disabledKeys.Contains(k) && !origTreeSet.Contains(k))))
         {
           ruleCtx.Failures.Add(new MessageDto
           {
@@ -272,6 +280,18 @@ public abstract partial class FormService<TEntity, TInput>
             Code = "form.validation.option",
             Type = MessageType.Error
           });
+        }
+        else
+        {
+          var normalized = Air.App.Auth.RightsTree.Normalize(treeNodes, keyList);
+          if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
+          {
+            inputProp.SetValue(input, normalized);
+          }
+          if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
+          {
+            entityProp.SetValue(entity, normalized);
+          }
         }
       }
     }
@@ -376,7 +396,7 @@ public abstract partial class FormService<TEntity, TInput>
         }
 
         var withinVal = PropertyAccessorCache.GetValue(entity, withinProp.Name);
-        if (withinVal is null && withinProp.PropertyType.IsValueType && Nullable.GetUnderlyingType(withinProp.PropertyType) == null)
+        if (withinVal is null)
         {
           skip = true;
           break;
@@ -448,9 +468,32 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
+      var draftRulesChanged = false;
+      if (!IsNew && originalValues != null && el.Model is FormSelectModel { ReferenceDraftRules: { Count: > 0 } draftRulesForCheck })
+      {
+        foreach (var dr in draftRulesForCheck)
+        {
+          var dp = PropertyAccessorCache.GetProperty(typeof(TInput), dr.DraftField)
+            ?? PropertyAccessorCache.GetProperty(typeof(TEntity), dr.DraftField);
+          if (dp != null)
+          {
+            var curDraft = PropertyAccessorCache.GetProperty(typeof(TInput), dr.DraftField) != null
+              ? PropertyAccessorCache.GetValue(input, dp.Name)
+              : PropertyAccessorCache.GetValue(entity, dp.Name);
+            originalValues.TryGetValue(dp.Name, out var origDraft);
+            if (!Equals(curDraft, origDraft))
+            {
+              draftRulesChanged = true;
+              break;
+            }
+          }
+        }
+      }
+
       if (!IsNew &&
+          !draftRulesChanged &&
           originalValues != null &&
-          originalValues.TryGetValue(el.Path, out var origVal) &&
+          originalValues.TryGetValue((inputProp ?? entityProp!).Name, out var origVal) &&
           origVal is long origId &&
           origId == refId)
       {
@@ -492,6 +535,10 @@ public abstract partial class FormService<TEntity, TInput>
               if (draftVal != null)
               {
                 filterItems.Add(Air.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Air.Data.Contracts.FilterOperator.Equals, draftVal));
+              }
+              else
+              {
+                filterItems.Add(Air.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Air.Data.Contracts.FilterOperator.IsNull, null));
               }
             }
           }

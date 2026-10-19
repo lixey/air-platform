@@ -1,6 +1,7 @@
 using Air.App.Components;
 using Air.App.Grid;
 using Air.App.Modules;
+using Air.App.Panels;
 using DemoApp.Color;
 using DemoApp.Data;
 using DemoApp.Data.Models;
@@ -15,6 +16,8 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
   : AppGridService<AppUser>(db, app)
 {
   public override Feature Feature => App.User;
+
+  protected override string FiltersWidth => PanelSize.Px(960);
 
   protected override void SetColumns(Columns<AppUser> columns)
   {

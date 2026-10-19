@@ -8,8 +8,8 @@ public sealed class OrgCurrencyGridService(OrgDbContext db, OrgService? org = nu
   protected override void SetColumns(Columns<OrgCurrency> columns)
   {
     columns.Add(r => r.Id).AsOpenForm<OrgCurrencyFormService>();
-    columns.Add(r => r.Name);
     columns.Add(r => r.Handle);
+    columns.Add(r => r.Name);
     columns.Add(r => r.Symbol);
   }
 

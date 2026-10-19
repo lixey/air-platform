@@ -12,9 +12,17 @@ public static class ServicePathResolver
       name = name[..^"Service".Length];
     }
 
-    foreach (var prefix in new[] { "App", "Org", "Ecom", "Doc" })
+    var prefixes = ModuleCatalog.Instance.Modules
+      .Select(m => m.Handle)
+      .Concat(["App", "Org", "Ecom", "Doc"])
+      .Where(p => !string.IsNullOrWhiteSpace(p))
+      .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var prefix in prefixes)
     {
-      if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && name.Length > prefix.Length)
+      if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+          name.Length > prefix.Length &&
+          char.IsUpper(name[prefix.Length]))
       {
         var rest = name[prefix.Length..];
         return $"{prefix.ToLowerInvariant()}/{rest.ToKebabCase()}";

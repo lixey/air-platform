@@ -1,3 +1,4 @@
+using Air.App.Components;
 using Air.Data.Contracts;
 
 namespace Air.App.Metadata;
@@ -10,6 +11,7 @@ public class MenuItemDto
   public string? Name { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(UiIcon))]
   public string? Icon { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

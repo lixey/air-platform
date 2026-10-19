@@ -23,11 +23,11 @@ public sealed class EcomSupplierReturnGridService(
     columns.Add(r => r.Number);
     columns.Add(r => r.Date);
     AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>();
+    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
     columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
     columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
     columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Amount).AsMoney().Sum();
+    columns.Add(r => r.Qty).Label("Quantity");
+    columns.Add(r => r.Amount).AsMoney();
   }
 }

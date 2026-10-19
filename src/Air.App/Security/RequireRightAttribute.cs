@@ -23,3 +23,9 @@ public abstract class RequireRightAttribute : Attribute
 
 public sealed class RequireRightAttribute<TService>(EndpointAction action) : RequireRightAttribute(typeof(TService), action)
   where TService : class;
+
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+public sealed class RequireActionAttribute(EndpointAction action) : Attribute
+{
+  public EndpointAction Action { get; } = action;
+}

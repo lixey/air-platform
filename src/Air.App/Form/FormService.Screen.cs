@@ -46,6 +46,18 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
+    if (parent.BoundProperty != null && request.ParentId is > 0)
+    {
+      var boundCamel = Elements.ToCamelPath(parent.BoundProperty.Name);
+      foreach (var el in elements.List)
+      {
+        if (string.Equals(el.Path, boundCamel, StringComparison.OrdinalIgnoreCase))
+        {
+          el.IsDisabled = true;
+          el.IsServerOwned = true;
+        }
+      }
+    }
     LocalizeAndResolveSelectElements(elements);
     await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
     _lastElements = elements;
@@ -83,12 +95,12 @@ public abstract partial class FormService<TEntity, TInput>
     var pageChildren = elements.Children.Where(c => !c.IsFiles).ToList();
     var hasPages = pageChildren.Count > 0 && id.HasValue && id.Value > 0;
 
-    if (filesChildren.Count > 0)
+    if (filesChildren.Count > 0 && id.HasValue && id.Value > 0)
     {
       formModel.Files = BuildFilesModels(servicePath, id, filesChildren);
     }
 
-    var nav = BuildFormNavigation(servicePath, caption, elements, hasPages);
+    var nav = BuildFormNavigation(servicePath, caption, elements, hasPages, pageChildren);
     var actionStart = new List<NavElementModel>();
     var actionElements = new List<NavElementModel>();
 
@@ -239,6 +251,11 @@ public abstract partial class FormService<TEntity, TInput>
             }
           }
         }
+      }
+      else if (el.IsRightsTree && el.Model is FormCheckboxTreeModel treeModel)
+      {
+        var held = User is { IsAuthenticated: true } ? User.Permissions : null;
+        treeModel.Nodes = Air.App.Auth.RightsTree.Build(ModuleCatalog.Instance, held);
       }
     }
   }
@@ -453,26 +470,39 @@ public abstract partial class FormService<TEntity, TInput>
         }
         : new Files.Contracts.FileUploadLimitsDto();
 
+      var childFeat = child.ServiceType != null
+        ? ModuleCatalog.Instance.FindFeature(child.ServicePath)
+        : null;
+      var canEditFiles = !IsReadOnly && (User == null || !User.IsAuthenticated || User.Can(Feature.Edit) || User.Can(Feature.All));
+      var canReadMeta = childFeat != null && childFeat.Rights.Any(r => r.Key.EndsWith(".FileMetadata", StringComparison.OrdinalIgnoreCase))
+        && (User == null || !User.IsAuthenticated || User.Can(childFeat.Action("FileMetadata")) || User.Can(childFeat.All));
+
       filesModels.Add(new Contracts.FormFilesModel
       {
         Key = !string.IsNullOrEmpty(child.DeclaredKey) ? child.DeclaredKey : "files",
         Label = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : null,
+        Tab = child.Tab,
         Service = child.ServicePath,
         ParentService = servicePath,
         ParentId = id.HasValue && id.Value > 0 ? id.Value : null,
         Look = child.Look,
         Limits = limits,
-        CanUpload = !IsReadOnly,
-        CanDelete = !IsReadOnly,
-        CanSetCover = hasCoverFile && !IsReadOnly,
-        CanReadMetadata = true
+        CanUpload = canEditFiles,
+        CanDelete = canEditFiles,
+        CanSetCover = hasCoverFile && canEditFiles,
+        CanReadMetadata = canReadMeta
       });
     }
 
     return filesModels;
   }
 
-  private NavModel BuildFormNavigation(string servicePath, string caption, Elements elements, bool hasPages)
+  private NavModel BuildFormNavigation(
+    string servicePath,
+    string caption,
+    Elements elements,
+    bool hasPages,
+    List<ChildGridBuilder> pageChildren)
   {
     var navStart = new List<NavElementModel>();
     var navElements = new List<NavElementModel>();
@@ -495,6 +525,22 @@ public abstract partial class FormService<TEntity, TInput>
         Color = UiColor.Green,
         Variant = ButtonVariant.Soft
       });
+
+      if (IsNew && pageChildren.Count > 0)
+      {
+        foreach (var child in pageChildren)
+        {
+          var childLabel = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : child.DeclaredKey;
+          navElements.Add(new FormNavSaveOpenModel
+          {
+            Key = child.DeclaredKey,
+            Label = childLabel,
+            Color = UiColor.Indigo,
+            Variant = ButtonVariant.Soft,
+            Path = child.DeclaredKey
+          });
+        }
+      }
 
       navElements.Add(new NavCloseModel
       {

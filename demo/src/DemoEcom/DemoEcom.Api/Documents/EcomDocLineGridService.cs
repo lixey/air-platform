@@ -1,3 +1,5 @@
+using Air.App.Grid;
+using Air.App.Security;
 using DemoEcom.Data;
 using DemoEcom.Data.Documents;
 using DemoEcom.Data.Models;
@@ -18,6 +20,10 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
     query.Select(EcomDocLines.Row);
     query.SortBy(r => r.SortOrder);
   }
+
+  [RequireAction(EndpointAction.Edit)]
+  public override Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
+    base.Delete(request, cancellationToken);
 
   protected override void SetHooks(Hooks hooks)
   {

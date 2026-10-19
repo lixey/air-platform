@@ -10,7 +10,6 @@ public sealed class OrgPaymentTermGridService(OrgDbContext db, OrgService? org =
     columns.Add(r => r.Id).AsOpenForm<OrgPaymentTermFormService>();
     columns.Add(r => r.Name);
     columns.Add(r => r.Handle);
-    columns.Add(r => r.IsActive).AsCheckbox();
   }
 
   protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);

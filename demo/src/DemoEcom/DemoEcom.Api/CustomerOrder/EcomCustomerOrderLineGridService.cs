@@ -1,5 +1,6 @@
 using Air.App.Contracts;
 using Air.App.Grid;
+using Air.App.Security;
 using DemoEcom.Data.Documents;
 using DemoEcom.Data.Models;
 using DemoEcom.Documents;
@@ -30,9 +31,10 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddPicker<EcomCustomerOrderProductGridService>(AddProduct, "Add by article").MinLength(3);
+    nav.AddPicker<EcomCustomerOrderProductGridService>(AddProduct, L["Add by article"]).MinLength(3);
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public async Task<GridActionDto> AddProduct(GridPickRequest request, CancellationToken cancellationToken = default)
   {
     if (request.ParentId is not { } parentId || parentId <= 0)

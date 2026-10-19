@@ -1,6 +1,6 @@
 namespace DemoEcom;
 
-[Module(EcomData.ModuleHandle, Name = "E-Commerce")]
+[Module(EcomData.ModuleHandle)]
 public sealed class Ecom : ModuleDefinition<Ecom>
 {
   public static readonly Feature CustomerOrder = Feature<EcomCustomerOrderGridService>();

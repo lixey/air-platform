@@ -383,6 +383,7 @@ internal static partial class GridExcelWriter
       {
         null or DBNull => null,
         Reference reference => TextCell(at, reference.Name, PlainStyle),
+        IDictionary<string, object?> dict when dict.TryGetValue("name", out var n) => TextCell(at, n?.ToString() ?? string.Empty, PlainStyle),
         bool flag => TextCell(at, flag ? _yes : _no, PlainStyle),
         DateOnly date => NumberCell(at, date.ToDateTime(TimeOnly.MinValue).ToOADate(), DateStyle),
         DateTime stamp => StampCell(at, _columns[column], stamp),

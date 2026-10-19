@@ -122,17 +122,17 @@ internal static class AuthEndpoints
 
         if (req == null || string.IsNullOrWhiteSpace(req.NewPassword))
         {
-          return Results.BadRequest(new { error = Localizer.Instance["FormValidationRequired"] });
+          return Results.BadRequest(new { detail = Localizer.Instance["FormValidationRequired"] });
         }
 
         if (req.NewPassword.Length < 8)
         {
-          return Results.BadRequest(new { error = Localizer.Instance["PasswordTooShort", 8] });
+          return Results.BadRequest(new { detail = Localizer.Instance["PasswordTooShort", 8] });
         }
 
         if (req.NewPassword.Length > 128)
         {
-          return Results.BadRequest(new { error = Localizer.Instance["PasswordTooLong", 128] });
+          return Results.BadRequest(new { detail = Localizer.Instance["PasswordTooLong", 128] });
         }
 
         var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
@@ -143,14 +143,14 @@ internal static class AuthEndpoints
 
         if (string.Equals(req.NewPassword, user.Login, StringComparison.OrdinalIgnoreCase))
         {
-          return Results.BadRequest(new { error = Localizer.Instance["PasswordIsLogin"] });
+          return Results.BadRequest(new { detail = Localizer.Instance["PasswordIsLogin"] });
         }
 
         if (string.IsNullOrEmpty(user.PasswordHash) ||
             string.IsNullOrEmpty(req.CurrentPassword) ||
             hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
         {
-          return Results.BadRequest(new { error = Localizer.Instance["InvalidCredentials"] });
+          return Results.Json(new { detail = Localizer.Instance["InvalidCredentials"] }, statusCode: StatusCodes.Status401Unauthorized);
         }
 
         user.PasswordHash = hasher.HashPassword(req.NewPassword);
@@ -327,7 +327,7 @@ internal static class AuthEndpoints
     {
       if (req == null)
       {
-        return Results.BadRequest(new { error = "Tenant id is required." });
+        return Results.BadRequest(new { detail = "Tenant id is required." });
       }
 
       if (!userContext.IsAuthenticated || userContext.UserId is null)
@@ -356,7 +356,7 @@ internal static class AuthEndpoints
       var targetTenant = await authStore.FindTenantByIdAsync(req.Id, ct);
       if (targetTenant == null || !targetTenant.IsActive)
       {
-        return Results.BadRequest(new { error = "Select an active tenant." });
+        return Results.BadRequest(new { detail = "Select an active tenant." });
       }
 
       SecurityInfo securityInfo;

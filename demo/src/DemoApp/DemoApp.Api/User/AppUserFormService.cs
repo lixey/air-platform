@@ -14,6 +14,8 @@ namespace DemoApp.User;
 public class AppUserFormService(AppDbContext db, AppService? app = null)
   : AppFormService<AppUser, AppUserEdit>(db, app)
 {
+  private HashSet<long> _offered = [];
+
   public override Feature Feature => App.User;
 
   protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
@@ -45,6 +47,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       .Where(r => app == null || app.Covers(r.Grants))
       .Select(r => new CheckboxOptionDto { Id = r.Id, Label = L[r.Name] })
       .ToList();
+    _offered = [.. offered.Select(r => r.Id)];
     elements.Add(e => e.RoleIds).InputOnly().AsCheckboxSet(offered);
 
     elements.AddChild<AppSessionGridService>().Key("sessions").Label("Sessions");
@@ -101,7 +104,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       c.Input.RoleIds = c.IsNew
         ? []
         : await db.Set<AppAuthAssignment>()
-            .Where(r => r.UserId == c.Entity.Id && r.IsActive)
+            .Where(r => r.UserId == c.Entity.Id && r.IsActive && _offered.Contains(r.AuthRoleId))
             .Select(r => r.AuthRoleId)
             .ToArrayAsync(cancellationToken);
     });
@@ -135,8 +138,10 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
     hooks.AfterSave(async (c, cancellationToken) =>
     {
-      var assignments = await db.Set<AppAuthAssignment>().Where(r => r.UserId == c.Entity.Id).ToListAsync(cancellationToken);
-      var roles = (c.Input.RoleIds ?? []).ToHashSet();
+      var assignments = await db.Set<AppAuthAssignment>()
+        .Where(r => r.UserId == c.Entity.Id && _offered.Contains(r.AuthRoleId))
+        .ToListAsync(cancellationToken);
+      var roles = (c.Input.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
       foreach (var assignment in assignments)
       {
         assignment.IsActive = roles.Contains(assignment.AuthRoleId);

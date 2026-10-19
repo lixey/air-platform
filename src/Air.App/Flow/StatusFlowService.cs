@@ -52,20 +52,29 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
     }
   }
 
+  private readonly List<Transition<TEntity>> _publicTransitions = [];
+
   public IReadOnlyList<RecordTransition> Transitions
   {
     get
     {
       EnsureDeclared();
-      return _transitionsByName.Values.Select(t => new RecordTransition
-      {
-        Name = t.Name,
-        From = t.From,
-        To = t.To,
-        Confirm = t.Question,
-        Ask = t.Asked,
-        Offers = t.Availability
-      }).ToList();
+      return _publicTransitions
+        .OrderBy(t =>
+        {
+          var idx = _statuses.FindIndex(s => s.Id == t.To);
+          return idx >= 0 ? idx : int.MaxValue;
+        })
+        .Select(t => new RecordTransition
+        {
+          Name = t.Name,
+          From = t.From,
+          To = t.To,
+          Confirm = t.Question,
+          Ask = t.Asked,
+          Offers = t.Availability
+        })
+        .ToList();
     }
   }
 
@@ -87,7 +96,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
   protected virtual Task OnMovedAsync(Move<TEntity> move, CancellationToken cancellationToken) => Task.CompletedTask;
 
   protected virtual ValueTask<string> RefusalAsync(Transition<TEntity> transition, long status, CancellationToken cancellationToken) =>
-    new($"The document cannot change its status to {NameOf(transition.To)}.");
+    new(L["StatusRefusesMove", L[NameOf(status)], L[NameOf(transition.To)]]);
 
   protected virtual Task LockAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken cancellationToken) =>
     Task.CompletedTask;
@@ -118,11 +127,10 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
 
     await LockAsync(context, records, cancellationToken);
 
-    var note = transition.NoteOf(input);
-
+    var statusReader = _statusMember!.Compile();
     foreach (var record in records)
     {
-      var currentStatus = _statusMember!.Compile()(record);
+      var currentStatus = statusReader(record);
       if (!transition.From.Contains(currentStatus))
       {
         var refusal = await RefusalAsync(transition, currentStatus, cancellationToken);
@@ -142,7 +150,14 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
           }
         }
       }
+    }
 
+    var note = transition.NoteOf(input);
+    var userId = Db.TenantContext.UserId;
+
+    foreach (var record in records)
+    {
+      var currentStatus = statusReader(record);
       var move = new Move<TEntity>
       {
         Record = record,
@@ -150,6 +165,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
         To = transition.To,
         Transition = transition.Name,
         Note = note,
+        UserId = userId,
         Context = context,
         Input = input
       };
@@ -168,11 +184,13 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
       _statusSetter?.Invoke(record, transition.To);
 
       // Execute effects
+      var errorsBefore = context.Errors.Count;
       foreach (var effect in transition.Effects)
       {
         await effect(move, cancellationToken);
-        if (context.Errors.Count > 0)
+        if (context.Errors.Count > errorsBefore)
         {
+          _statusSetter?.Invoke(record, currentStatus);
           return;
         }
       }
@@ -219,6 +237,10 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
       if (p.GetValue(this) is Transition<TEntity> t)
       {
         _transitionsByName[t.Name] = t;
+        if (p.GetMethod?.IsPublic == true)
+        {
+          _publicTransitions.Add(t);
+        }
       }
     }
   }

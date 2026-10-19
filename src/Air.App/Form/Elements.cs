@@ -37,7 +37,7 @@ public class Elements
 
   public ChildGridBuilder AddChild<TChildGridService>()
   {
-    var child = new ChildGridBuilder(Air.App.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService));
+    var child = new ChildGridBuilder(Air.App.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService), _currentTab);
     _children.Add(child);
     return child;
   }
@@ -300,8 +300,9 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
   public FormElement<TEntity, TProp> AsRightsTree(Air.App.Modules.ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
   {
-    dto.Type = "rights-tree";
+    dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
+    dto.IsRightsTree = held == null;
     if (!_hasSpan) dto.Span = 12;
     catalog ??= Air.App.Modules.ModuleCatalog.Instance;
     var nodes = Air.App.Auth.RightsTree.Build(catalog, held);
@@ -315,6 +316,25 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.IsDisabled = true;
     dto.IsServerOwned = true;
     dto.Model = new FormInfoModel();
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Help(string help)
+  {
+    dto.Help = help;
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Grouped(bool isGrouped = true)
+  {
+    if (dto.Model is FormNumberModel num)
+    {
+      num.IsGrouped = isGrouped;
+    }
+    else if (dto.Model is FormInfoModel info)
+    {
+      info.IsGrouped = isGrouped;
+    }
     return this;
   }
 
@@ -357,7 +377,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
   public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
   {
-    dto.Type = "checkbox-set";
+    dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
     if (!_hasSpan) dto.Span = 12;
     dto.Model = new FormCheckboxSetModel { Options = options?.ToList() ?? [] };
@@ -372,6 +392,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> ServerOwned(bool serverOwned = true)
   {
     dto.IsServerOwned = serverOwned;
+    dto.IsDisabled |= serverOwned;
     return this;
   }
 
@@ -536,11 +557,12 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   }
 }
 
-public sealed class ChildGridBuilder(string servicePath, Type? serviceType = null)
+public sealed class ChildGridBuilder(string servicePath, Type? serviceType = null, string? tab = null)
 {
-  public string ServicePath => servicePath;
+  public string ServicePath { get; } = servicePath;
   public Type? ServiceType => serviceType;
-  public string DeclaredKey { get; private set; } = string.Empty;
+  public string? Tab => tab;
+  public string DeclaredKey { get; private set; } = servicePath;
   public string DeclaredLabel { get; private set; } = string.Empty;
   public bool IsFiles { get; private set; }
   public string Look { get; private set; } = Contracts.FilesLook.Tiles;

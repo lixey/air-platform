@@ -21,19 +21,14 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
     columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
     columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
     columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Amount).AsMoney().Sum();
-    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney().Sum();
+    columns.Add(r => r.Qty).Label("Quantity");
+    columns.Add(r => r.Amount).AsMoney();
+    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
   protected override void SetQuery(Query query)
   {
     base.SetQuery(query);
-    if (User?.UserId is { } userId)
-    {
-      query.NamedFilter("mine", "Mine", r => r.ManagerId == userId).Badge();
-    }
-
     query.InitialFilter(r => r.DocStatusId).In(
       EcomData.DocStatus.CustomerOrderNewId,
       EcomData.DocStatus.CustomerOrderInProgressId,
@@ -41,12 +36,6 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
       EcomData.DocStatus.CustomerOrderPausedId
     );
     query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
-  }
-
-  protected override void SetHooks(Hooks hooks)
-  {
-    hooks.BeforeDelete((context, ct) =>
-      EcomDocActions.RefuseDeleteAsync(db, context, Type, EcomDocTexts.Of(L), ct));
   }
 
   protected override void SetNav(Nav nav)

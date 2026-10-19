@@ -269,6 +269,7 @@ export interface FileInfoRequest {
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[] | null;
+  formDraft?: Record<string, unknown> | null;
   page?: number;
   pageSize?: number;
   sort?: SortRule[] | null;
@@ -307,6 +308,7 @@ export interface FileMoveRequest {
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[] | null;
+  formDraft?: Record<string, unknown> | null;
   page?: number;
   pageSize?: number;
   sort?: SortRule[] | null;
@@ -543,6 +545,7 @@ export interface FormNumberModel {
   kind: 'FormNumber';
   step?: number | null;
   hasStepper?: boolean;
+  isGrouped?: boolean | null;
 }
 
 export interface FormPercentModel {
@@ -648,7 +651,7 @@ export interface GridCellMoneyModel {
 export interface GridCellNumberModel {
   kind: 'GridCellNumber';
   decimals?: number | null;
-  isGrouped?: boolean;
+  isGrouped?: boolean | null;
   colorPath?: string | null;
 }
 
@@ -688,6 +691,7 @@ export interface GridCellRequest {
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[] | null;
+  formDraft?: Record<string, unknown> | null;
   page?: number;
   pageSize?: number;
   sort?: SortRule[] | null;
@@ -964,6 +968,7 @@ export interface GridPickRequest {
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[] | null;
+  formDraft?: Record<string, unknown> | null;
   page?: number;
   pageSize?: number;
   sort?: SortRule[] | null;
@@ -985,6 +990,7 @@ export interface GridRequest {
   isReferencePicker?: boolean;
   includesInactive?: boolean;
   namedFilters?: string[] | null;
+  formDraft?: Record<string, unknown> | null;
   page?: number;
   pageSize?: number;
   sort?: SortRule[] | null;
@@ -1038,7 +1044,7 @@ export interface MenuItemDto {
   path?: string | null;
   handle?: string | null;
   name?: string | null;
-  icon?: string | null;
+  icon?: UiIcon | null;
   screen?: string | null;
   isSeparator?: boolean;
   badge?: string | null;

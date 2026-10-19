@@ -11,6 +11,5 @@ public sealed class OrgPaymentTermFormService(OrgDbContext db, OrgService? org =
   {
     elements.Add(e => e.Name);
     elements.Add(e => e.Handle);
-    elements.Add(e => e.IsActive).AsCheckbox();
   }
 }

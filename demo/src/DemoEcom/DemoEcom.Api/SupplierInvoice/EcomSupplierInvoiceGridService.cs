@@ -25,21 +25,22 @@ public sealed class EcomSupplierInvoiceGridService(
     columns.Add(r => r.Number);
     columns.Add(r => r.Date);
     AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>();
+    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
     columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
     columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
     columns.Add(r => r.ExternalNumber);
     columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Amount).AsMoney().Sum();
-    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney().Sum();
+    columns.Add(r => r.Qty).Label("Quantity");
+    columns.Add(r => r.Amount).AsMoney();
+    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(CreateSupplierReturn, b => b.Label(L["Create supplier return"]).Icon("plus")).InMenu();
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon("plus")).InMenu();
+    _ = EcomDocTexts.Of(L);
+    nav.AddAction(CreateSupplierReturn, b => b.Label(L["Create supplier return"]).Icon(UiIcon.Plus)).InMenu();
+    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon(UiIcon.Plus)).InMenu();
   }
 
   [RequireRight<EcomSupplierReturnGridService>(EndpointAction.Edit)]

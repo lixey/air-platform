@@ -27,6 +27,7 @@ public interface IGridService
   Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
   Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
+  Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) => DeleteAsync(request, cancellationToken);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
@@ -238,9 +239,19 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return this;
     }
 
-    public Query FlagRows(string flagName, Func<TRow, bool> predicate) => this;
+    internal List<(string Name, Func<TRow, bool> Predicate)> RowFlags { get; } = [];
+
+    public Query FlagRows(string flagName, Func<TRow, bool> predicate)
+    {
+      if (!string.IsNullOrWhiteSpace(flagName) && predicate != null)
+      {
+        RowFlags.Add((flagName, predicate));
+      }
+      return this;
+    }
 
     internal List<NamedFilterItem> NamedFilters { get; } = [];
+    internal List<NamedFilterGroup> NamedFilterGroups { get; } = [];
 
     public GridNamedFilterBuilder NamedFilter(
       string key,
@@ -250,6 +261,13 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       var filter = new NamedFilterItem(key, label, predicate);
       NamedFilters.Add(filter);
       return new GridNamedFilterBuilder(filter);
+    }
+
+    public GridNamedFilterGroupBuilder NamedFilter(string key, string? label = null)
+    {
+      var group = new NamedFilterGroup(key, label);
+      NamedFilterGroups.Add(group);
+      return new GridNamedFilterGroupBuilder(group);
     }
 
     public sealed class InitialFilterBuilder<TProp>(Query query, string field)
@@ -280,14 +298,100 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
   }
 
-  public sealed class NamedFilterItem(string key, string label, Expression<Func<TEntity, bool>> predicate)
+  public sealed class GridNamedFilterGroupBuilder(NamedFilterGroup group)
+  {
+    public GridNamedFilterGroupBuilder Item(string key, string label, Expression<Func<TEntity, bool>> predicate)
+    {
+      group.Items.Add(new NamedFilterItem($"{group.Key}.{key}", label, predicate));
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder All(string label)
+    {
+      group.Items.Add(new NamedFilterItem($"{group.Key}.all", label, null));
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder Default()
+    {
+      if (group.Items.Count > 0)
+      {
+        group.Items[^1].IsDefault = true;
+      }
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder Color(string color)
+    {
+      if (group.Items.Count > 0)
+      {
+        group.Items[^1].Color = color;
+      }
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder Badge(bool badge = true)
+    {
+      if (group.Items.Count > 0)
+      {
+        group.Items[^1].HasBadge = badge;
+      }
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder Remember(bool remember = true)
+    {
+      group.IsRemembered = remember;
+      return this;
+    }
+  }
+
+  public sealed class NamedFilterItem(string key, string label, Expression<Func<TEntity, bool>>? predicate)
   {
     public string Key { get; } = key;
     public string Label { get; } = label;
-    public Expression<Func<TEntity, bool>> Predicate { get; } = predicate;
+    public Expression<Func<TEntity, bool>>? Predicate { get; } = predicate;
     public bool HasBadge { get; set; }
     public bool IsRemembered { get; set; }
+    public bool IsDefault { get; set; }
+    public string? Color { get; set; }
   }
+
+  public sealed class NamedFilterGroup(string key, string? label)
+  {
+    public string Key { get; } = key;
+    public string? Label { get; } = label;
+    public bool IsRemembered { get; set; }
+    public List<NamedFilterItem> Items { get; } = [];
+  }
+
+  public virtual bool CanDelete()
+  {
+    if (IsReadOnly) return false;
+
+    var deleteMethod = GetType().GetMethod(nameof(Delete), BindingFlags.Public | BindingFlags.Instance)
+      ?? GetType().GetMethod(nameof(DeleteAsync), BindingFlags.Public | BindingFlags.Instance);
+
+    if (deleteMethod != null)
+    {
+      if (deleteMethod.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true) is { } reqRight)
+      {
+        if (Feature.FeaturesByServiceType.TryGetValue(reqRight.Service, out var targetFeat))
+        {
+          return User == null || !User.IsAuthenticated || User.Can(targetFeat.Action(reqRight.Action.ToString())) || User.Can(targetFeat.All);
+        }
+      }
+      if (deleteMethod.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true) is { } reqAction)
+      {
+        return User == null || !User.IsAuthenticated || User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
+      }
+    }
+
+    return Feature.HasDelete && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All));
+  }
+
+  public virtual Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
+    DeleteAsync(request, cancellationToken);
 
   public virtual IReadOnlyList<string>? GetReferenceLabelPaths()
   {
@@ -301,15 +405,20 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     if (entity is not TEntity typed) return null;
     var q = new Query();
     SetQuery(q);
-    if (q.LabelSelector == null) return null;
-    try
+    if (q.LabelSelector != null)
     {
-      return q.LabelSelector.Compile().DynamicInvoke(typed)?.ToString();
+      try
+      {
+        return q.LabelSelector.Compile().DynamicInvoke(typed)?.ToString();
+      }
+      catch
+      {
+        return null;
+      }
     }
-    catch
-    {
-      return null;
-    }
+    return (Air.App.Internal.PropertyAccessorCache.GetValue(typed, "Name")
+      ?? Air.App.Internal.PropertyAccessorCache.GetValue(typed, "Number")
+      ?? Air.App.Internal.PropertyAccessorCache.GetValue(typed, "Title"))?.ToString();
   }
 
   protected virtual void SetQuery(Query query) { }

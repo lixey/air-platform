@@ -13,10 +13,10 @@ public sealed class EcomSalesInvoiceLineGridService(EcomDbContext db, EcomServic
     columns.Add(r => r.SortOrder);
     columns.Add(r => r.Product).AsReference<OrgProductGridService>();
     columns.Add(r => r.Article);
-    columns.Add(r => r.Qty).Label("Quantity").Sum().Editable();
+    columns.Add(r => r.Qty).Label("Quantity").Sum();
     columns.Add(r => r.QtyDone).Label("Returned").Sum();
-    columns.Add(r => r.Price).AsMoney().Editable();
-    columns.Add(r => r.DiscountPercent).Label("Discount").AsPercent().Editable();
+    columns.Add(r => r.Price).AsMoney();
+    columns.Add(r => r.DiscountPercent).Label("Discount").AsPercent();
     columns.Add(r => r.Amount).AsMoney().Sum();
   }
 }

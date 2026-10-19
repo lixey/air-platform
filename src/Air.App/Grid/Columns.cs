@@ -156,7 +156,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   }
   public GridColumn<TProp> Sortable(bool sortable = true) { dto.IsSortable = sortable; return this; }
   public GridColumn<TProp> Filterable(bool filterable = true) { dto.IsFilterable = filterable; return this; }
-  public GridColumn<TProp> Computed() { dto.IsSortable = false; dto.IsFilterable = false; return this; }
+  public GridColumn<TProp> Computed() { dto.IsComputed = true; dto.IsSortable = false; dto.IsFilterable = false; return this; }
   public GridColumn<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
   public GridColumn<TProp> Cell(CellModel cell) { dto.Cell = cell; return this; }
 

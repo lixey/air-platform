@@ -246,7 +246,7 @@ public abstract partial class GridService<TEntity, TRow>
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
     ParentId = request.ParentId;
-    if (IsReadOnly || !Feature.HasDelete || (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All)))
+    if (!CanDelete())
     {
       return new GridDeleteDto
       {
@@ -421,7 +421,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         await queryDeclaration.ComputeAction([row], ct);
       }
-      var shaped = ShapeRow(row, cols.List);
+      var shaped = ShapeRow(row, cols.List, queryDeclaration.RowFlags);
       await PopulateCoversAsync([shaped], cols.List, ct);
       await PopulateProjectedColorsAsync([shaped], cols.List, ct);
       await PopulateRowAvailabilityAsync([shaped], cols, ct);
@@ -430,7 +430,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     var entity = await query.FirstOrDefaultAsync(ct);
     if (entity is null) return null;
-    var shapedEntity = ShapeRow((entity as TRow)!, cols.List);
+    var shapedEntity = ShapeRow((entity as TRow)!, cols.List, queryDeclaration.RowFlags);
     await PopulateCoversAsync([shapedEntity], cols.List, ct);
     await PopulateRowAvailabilityAsync([shapedEntity], cols, ct);
     return shapedEntity;
@@ -506,7 +506,7 @@ public abstract partial class GridService<TEntity, TRow>
     var query = BuildFilteredEntityQuery(request, out _, out var queryDeclaration);
     var cols = CreateColumns();
     LocalizeAndConfigureColumns(cols.List);
-    var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.IsSortable).ToList();
+    var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && !c.IsComputed && c.Cell is not AddOns.Covers.Contracts.GridCellCoverModel).ToList();
 
     if (request.SelectedIds is { Count: > 0 } selectedIds)
     {

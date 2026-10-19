@@ -163,6 +163,9 @@ public sealed class GridColumnDto
   internal bool IsSummed { get; set; }
 
   [JsonIgnore]
+  internal bool IsComputed { get; set; }
+
+  [JsonIgnore]
   internal Type? MemberType { get; set; }
 
   [JsonIgnore]
@@ -179,8 +182,8 @@ public sealed record GridCellNumberModel : CellModel
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public int? Decimals { get; set; }
 
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-  public bool IsGrouped { get; set; }
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public bool? IsGrouped { get; set; }
 }
 
 [UiContract]

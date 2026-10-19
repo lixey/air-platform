@@ -107,6 +107,46 @@ public static class RightsTree
     return set;
   }
 
+  public static HashSet<string> FlattenDisabledKeys(IEnumerable<CheckboxTreeNodeDto> nodes)
+  {
+    var set = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var node in nodes)
+    {
+      if (node.IsDisabled)
+      {
+        set.Add(node.Key);
+      }
+      foreach (var childKey in FlattenDisabledKeys(node.Children))
+      {
+        set.Add(childKey);
+      }
+    }
+    return set;
+  }
+
+  public static List<string> Normalize(IEnumerable<CheckboxTreeNodeDto> nodes, IEnumerable<string> selectedKeys)
+  {
+    var selected = selectedKeys.ToHashSet(StringComparer.Ordinal);
+    var result = new List<string>();
+    CollectNormalized(nodes, selected, result);
+    return result;
+
+    static void CollectNormalized(IEnumerable<CheckboxTreeNodeDto> currentNodes, HashSet<string> sel, List<string> acc)
+    {
+      foreach (var node in currentNodes)
+      {
+        if (sel.Contains(node.Key))
+        {
+          acc.Add(node.Key);
+        }
+        else if (node.Children.Count > 0)
+        {
+          CollectNormalized(node.Children, sel, acc);
+        }
+      }
+    }
+  }
+
   public static bool Covers(IReadOnlySet<string> held, string key) =>
     HeldRights.Covers(held, key);
 }

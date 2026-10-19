@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Air.Data.Entities;
 
 namespace DemoApp.User;
 
@@ -17,6 +18,9 @@ public sealed class AppUserEdit
   public long? LanguageId { get; set; }
   public string? TimeZone { get; set; }
   public long? UserGroupId { get; set; }
+
+  [Sensitive]
   public string? Password { get; set; }
+
   public long[]? RoleIds { get; set; } = [];
 }

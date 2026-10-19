@@ -24,4 +24,7 @@ public class GridRequest : ListRequest
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<string>? NamedFilters { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public Dictionary<string, JsonElement>? FormDraft { get; set; }
 }
