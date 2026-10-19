@@ -319,12 +319,18 @@ public abstract partial class GridService<TEntity, TRow>
         await queryDeclaration.ComputeAction([row], ct);
       }
       var shaped = ShapeRow(row, cols.List);
+      await PopulateCoversAsync([shaped], cols.List, ct);
       await PopulateProjectedColorsAsync([shaped], cols.List, ct);
+      await PopulateRowAvailabilityAsync([shaped], cols, ct);
       return shaped;
     }
 
     var entity = await query.FirstOrDefaultAsync(ct);
-    return entity is null ? null : ShapeRow((entity as TRow)!, cols.List);
+    if (entity is null) return null;
+    var shapedEntity = ShapeRow((entity as TRow)!, cols.List);
+    await PopulateCoversAsync([shapedEntity], cols.List, ct);
+    await PopulateRowAvailabilityAsync([shapedEntity], cols, ct);
+    return shapedEntity;
   }
 
   public virtual async Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default)
@@ -396,6 +402,7 @@ public abstract partial class GridService<TEntity, TRow>
   {
     var query = BuildFilteredEntityQuery(request, out _, out var queryDeclaration);
     var cols = CreateColumns();
+    LocalizeAndConfigureColumns(cols.List);
     var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.IsSortable).ToList();
 
     if (request.SelectedIds is { Count: > 0 } selectedIds)
@@ -408,6 +415,11 @@ public abstract partial class GridService<TEntity, TRow>
     if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
     {
       request.Sort = queryDeclaration.DefaultSort.ToList();
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.Search) && queryDeclaration.PickKeySelector != null)
+    {
+      request.Search = queryDeclaration.PickKeySelector(request.Search);
     }
 
     if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })

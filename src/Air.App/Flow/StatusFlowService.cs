@@ -23,7 +23,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
 
   public virtual Feature Feature => new("", GetType().Name.Replace("FlowService", "").ToLowerInvariant(), GetType());
 
-  protected Localizer L => Localizer.Instance;
+  protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   public Expression<Func<TEntity, long>> StatusMember
   {
@@ -128,6 +128,19 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
         var refusal = await RefusalAsync(transition, currentStatus, cancellationToken);
         context.AddError("status.transition", refusal, record.Id);
         return;
+      }
+
+      foreach (var offer in transition.Availability)
+      {
+        if (offer.Condition is Expression<Func<TEntity, bool>> cond)
+        {
+          var passes = await Db.Set<TEntity>().Where(e => e.Id == record.Id).AnyAsync(cond, cancellationToken);
+          if (!passes)
+          {
+            context.AddError("status.availability", L[offer.Reason], record.Id);
+            return;
+          }
+        }
       }
 
       var move = new Move<TEntity>

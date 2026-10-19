@@ -557,12 +557,50 @@ public abstract partial class FormService<TEntity, TInput>
                   }
                   return e;
                 }).ToList()
-              }
+              },
+            UnavailableReasons = transition.Offers.Count == 0
+              ? null
+              : [.. transition.Offers.Select(o => L[o.Reason])]
           };
           actionStart.Add(action);
         }
       }
     }
+  }
+
+  public virtual async Task<Dictionary<string, int>?> EvaluateUnavailableAsync(long? id, CancellationToken ct = default)
+  {
+    if (id is not > 0) return null;
+    if (_lastElements == null)
+    {
+      var elements = new Elements();
+      await SetElementsAsync(elements, ct);
+      LocalizeAndResolveSelectElements(elements);
+      _lastElements = elements;
+    }
+
+    if (_lastElements.StatusFlow is not IRecordStatuses<TEntity> statusFlow) return null;
+
+    Dictionary<string, int>? unavailable = null;
+    foreach (var transition in statusFlow.Transitions)
+    {
+      if (transition.Offers.Count == 0) continue;
+      for (int i = 0; i < transition.Offers.Count; i++)
+      {
+        if (transition.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
+        {
+          var passes = await db.Set<TEntity>().Where(e => e.Id == id.Value).AnyAsync(cond, ct);
+          if (!passes)
+          {
+            unavailable ??= new Dictionary<string, int>(StringComparer.Ordinal);
+            unavailable[$"status.{transition.Name.ToLowerInvariant()}"] = i;
+            break;
+          }
+        }
+      }
+    }
+
+    return unavailable;
   }
 
   private void BuildChildPagePanels(PanelLayoutBuilder layout, string servicePath, long id, List<ChildGridBuilder> pageChildren)

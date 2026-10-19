@@ -303,12 +303,14 @@ internal static class ServiceEndpoints
           }
         }
         await form.PopulateReferencesAsync(dict, entity, screen, ct);
+        var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
 
         screen.Data = new FormDataDto
         {
           Id = entityId > 0 ? entityId : null,
           Ver = entityId > 0 ? ver : null,
-          Value = dict
+          Value = dict,
+          Unavailable = unavailable
         };
 
         return Results.Ok(screen);
@@ -355,13 +357,15 @@ internal static class ServiceEndpoints
         var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
         var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
         await form.PopulateReferencesAsync(dict, entity, ct);
+        var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
 
         return Results.Ok(new FormDataDto
         {
           Id = entityId,
           Ver = ver,
           Value = dict,
-          Outcome = MutationOutcome.Committed
+          Outcome = MutationOutcome.Committed,
+          Unavailable = unavailable
         });
       }
 

@@ -168,18 +168,22 @@ public abstract partial class GridService<TEntity, TRow>
       actionElements.Add(entry.Model);
     }
 
-    actionElements.Add(new GridNavActionModel
+    var canExport = User == null || !User.IsAuthenticated || User.Can(Feature.Export) || User.Can(Feature.All);
+    if (canExport)
     {
-      Key = "export",
-      Service = servicePath,
-      Method = "export",
-      NeedsSelection = true,
-      IsDownload = true,
-      Color = UiColor.Green,
-      Variant = ButtonVariant.Soft,
-      Icon = UiIcon.Excel,
-      Label = L["Export"]
-    });
+      actionElements.Add(new GridNavActionModel
+      {
+        Key = "export",
+        Service = servicePath,
+        Method = "export",
+        NeedsSelection = true,
+        IsDownload = true,
+        Color = UiColor.Green,
+        Variant = ButtonVariant.Soft,
+        Icon = UiIcon.Excel,
+        Label = L["Export"]
+      });
+    }
 
     var actionEnd = new List<NavElementModel>();
     if (!isGridReadOnly && Feature.HasDelete && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All)))
@@ -258,19 +262,21 @@ public abstract partial class GridService<TEntity, TRow>
         Start = navStart,
         Elements = navElements,
         End = [],
-        More = [
-          new GridNavActionModel
-          {
-            Key = "export",
-            Service = servicePath,
-            Method = "export",
-            NeedsSelection = false,
-            IsDownload = true,
-            Color = UiColor.Green,
-            Icon = UiIcon.Excel,
-            Label = L["Export"]
-          }
-        ]
+        More = canExport
+          ? [
+              new GridNavActionModel
+              {
+                Key = "export",
+                Service = servicePath,
+                Method = "export",
+                NeedsSelection = false,
+                IsDownload = true,
+                Color = UiColor.Green,
+                Icon = UiIcon.Excel,
+                Label = L["Export"]
+              }
+            ]
+          : []
       },
       ActionNav = new NavModel
       {
@@ -445,7 +451,10 @@ public abstract partial class GridService<TEntity, TRow>
                   if (!string.IsNullOrEmpty(e.Label)) e.Label = L[e.Label];
                   return e;
                 })]
-              }
+              },
+            UnavailableReasons = t.Offers.Count == 0
+              ? null
+              : [.. t.Offers.Select(o => L[o.Reason])]
           }
         };
       }).ToList();

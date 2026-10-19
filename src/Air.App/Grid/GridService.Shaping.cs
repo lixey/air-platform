@@ -37,7 +37,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           var id = Convert.ToInt64(value, CultureInfo.InvariantCulture);
           var opt = options.FirstOrDefault(o => o.Id == id);
-          var name = opt != null ? Localizer.Instance[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
+          var name = opt != null ? L[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
           value = !string.IsNullOrEmpty(opt?.Color)
             ? new Dictionary<string, object?> { ["id"] = id, ["name"] = name, ["color"] = opt.Color }
             : new Reference { Id = id, Name = name };
@@ -45,7 +45,7 @@ public abstract partial class GridService<TEntity, TRow>
         else if (value is Reference optRef)
         {
           var opt = options.FirstOrDefault(o => o.Id == optRef.Id);
-          var name = Localizer.Instance[optRef.Name];
+          var name = L[optRef.Name];
           value = !string.IsNullOrEmpty(opt?.Color)
             ? new Dictionary<string, object?> { ["id"] = optRef.Id, ["name"] = name, ["color"] = opt.Color }
             : new Reference { Id = optRef.Id, Name = name };
@@ -56,7 +56,7 @@ public abstract partial class GridService<TEntity, TRow>
         value = new Reference
         {
           Id = existingRef.Id,
-          Name = Localizer.Instance[existingRef.Name]
+          Name = L[existingRef.Name]
         };
       }
       else if (column.ReferenceService is not null && value is IEntity refEntity)

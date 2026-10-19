@@ -141,7 +141,12 @@ public static class PlatformHost
             var user = await authStore.FindUserByIdAsync(userId, context.RequestAborted);
             if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
             {
-              var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
+              var sessionTenantId = session.TenantId ?? (user as IHasTenant)?.TenantId;
+              SecurityInfo securityInfo;
+              using (AsyncLocalTenantContext.Use(sessionTenantId, null, user.Id, context.TraceIdentifier))
+              {
+                securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
+              }
 
               var claims = new List<Claim>
               {
@@ -156,7 +161,7 @@ public static class PlatformHost
                 claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
               }
 
-              var tenantId = session.TenantId ?? (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId;
+              var tenantId = sessionTenantId ?? securityInfo.HomeTenantId;
               if (tenantId is > 0)
               {
                 claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));

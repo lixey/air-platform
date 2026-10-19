@@ -101,6 +101,7 @@ public abstract partial class GridService<TEntity, TRow>
       var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List)).ToList();
       await PopulateCoversAsync(shapedRows, cols.List, ct);
       await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
+      await PopulateRowAvailabilityAsync(shapedRows, cols, ct);
       var bottomRows = !isSelect ? await ComputeSumRowsAsync(dataProvider.Filter(request).Select(queryDeclaration.Selector), cols.List, ct) : null;
       return new Page<object>
       {
@@ -118,6 +119,7 @@ public abstract partial class GridService<TEntity, TRow>
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
+    await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
     var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), cols.List, ct) : null;
 
     return new Page<object>
@@ -175,6 +177,46 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     return new GridCountDto { Total = total, NamedFilterBadges = badges };
+  }
+
+  private async Task PopulateRowAvailabilityAsync(List<object> shapedRows, Columns columns, CancellationToken ct)
+  {
+    if (shapedRows.Count == 0 || columns.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow) return;
+    var transitionsWithOffers = statusFlow.Transitions.Where(t => t.Offers.Count > 0).ToList();
+    if (transitionsWithOffers.Count == 0) return;
+
+    var rowIds = ExtractRowIds(shapedRows);
+    if (rowIds.Count == 0) return;
+
+    foreach (var transition in transitionsWithOffers)
+    {
+      var actionKey = $"status.{transition.Name.ToLowerInvariant()}";
+      for (int i = 0; i < transition.Offers.Count; i++)
+      {
+        if (transition.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond) continue;
+
+        var passedIds = (await db.Set<TEntity>()
+          .Where(e => rowIds.Contains(e.Id))
+          .Where(cond)
+          .Select(e => e.Id)
+          .ToListAsync(ct)).ToHashSet();
+
+        foreach (var rowObj in shapedRows)
+        {
+          if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null) continue;
+          if (!long.TryParse(idVal.ToString(), out var parsedId)) continue;
+          if (!passedIds.Contains(parsedId))
+          {
+            if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
+            {
+              unav = new Dictionary<string, int>(StringComparer.Ordinal);
+              dict["unavailable"] = unav;
+            }
+            unav.TryAdd(actionKey, i);
+          }
+        }
+      }
+    }
   }
 
   private async Task PopulateCoversAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)

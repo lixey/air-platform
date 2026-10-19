@@ -48,13 +48,26 @@ public static class GrantedRights
       return new SecurityInfo([]);
     }
 
-    var roleIds = activeRoles.Select(r => r.Id).ToList();
     var isGlobal = activeRoles.Any(r => r.TenantId == null);
     var homeTenantId = activeRoles.FirstOrDefault(r => r.TenantId != null)?.TenantId;
     var allowedTenantIds = activeRoles
       .Where(r => r.TenantId != null)
       .Select(r => r.TenantId!.Value)
       .ToHashSet();
+
+    var effectiveTenantId = (db as Air.Data.PlatformDbContext)?.TenantContext.TenantId
+      ?? Air.Data.Tenancy.AsyncLocalTenantContext.Instance.TenantId
+      ?? homeTenantId;
+
+    var roleIds = activeRoles
+      .Where(r => effectiveTenantId == null || r.TenantId == null || r.TenantId == effectiveTenantId)
+      .Select(r => r.Id)
+      .ToList();
+
+    if (roleIds.Count == 0)
+    {
+      return new SecurityInfo([], isGlobal, homeTenantId, allowedTenantIds);
+    }
 
     var permissions = await db.Set<TGrant>()
       .AsNoTracking()

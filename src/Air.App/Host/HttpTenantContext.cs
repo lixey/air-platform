@@ -26,12 +26,6 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
           return claimTid;
         }
 
-        if (httpContext.Request.Headers.TryGetValue("X-Tenant-Id", out var headerVal) &&
-            long.TryParse(headerVal, out var tid))
-        {
-          return tid;
-        }
-
         return 1;
       }
 
