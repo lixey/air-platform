@@ -104,21 +104,74 @@ public abstract class PlatformDbContext : DbContext
 
   public override int SaveChanges(bool acceptAllChangesOnSuccess)
   {
+    ChangeTracker.DetectChanges();
     ApplyEntityConventions();
-    return base.SaveChanges(acceptAllChangesOnSuccess);
+
+    var journalSnapshots = CaptureJournalSnapshots();
+    var result = base.SaveChanges(acceptAllChangesOnSuccess);
+    if (journalSnapshots.Count > 0)
+    {
+      var journalRows = CompleteJournalRows(journalSnapshots);
+      try
+      {
+        AppPlatformChange.AddRange(journalRows);
+        base.SaveChanges(acceptAllChangesOnSuccess);
+      }
+      catch
+      {
+        // Non-fatal if table not yet created
+      }
+      finally
+      {
+        DetachJournalRows(journalRows);
+      }
+    }
+
+    return result;
   }
 
   public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
   {
+    ChangeTracker.DetectChanges();
     ApplyEntityConventions();
 
+    var journalSnapshots = CaptureJournalSnapshots();
+    if (journalSnapshots.Count == 0)
+    {
+      return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    var journalRows = CompleteJournalRows(journalSnapshots);
+    try
+    {
+      if (journalRows.Count > 0)
+      {
+        AppPlatformChange.AddRange(journalRows);
+        await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+      }
+    }
+    catch
+    {
+      // Non-fatal if table not yet created
+    }
+    finally
+    {
+      DetachJournalRows(journalRows);
+    }
+
+    return result;
+  }
+
+  private List<(EntityEntry Entry, Entities.AppPlatformChange Row)> CaptureJournalSnapshots()
+  {
     var pendingEntries = ChangeTracker.Entries()
       .Where(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
       .ToList();
 
     if (pendingEntries.Count == 0)
     {
-      return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+      return [];
     }
 
     var now = DateTimeOffset.UtcNow;
@@ -127,7 +180,7 @@ public abstract class PlatformDbContext : DbContext
     var userId = TenantContext.UserId;
     var correlationId = TenantContext.CorrelationId;
 
-    var journalSnapshots = new List<(EntityEntry Entry, Entities.AppPlatformChange Row)>();
+    var journalSnapshots = new List<(EntityEntry Entry, Entities.AppPlatformChange Row)>(pendingEntries.Count);
     foreach (var entry in pendingEntries)
     {
       var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
@@ -163,45 +216,37 @@ public abstract class PlatformDbContext : DbContext
       journalSnapshots.Add((entry, row));
     }
 
-    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    return journalSnapshots;
+  }
 
-    var journalRows = new List<Entities.AppPlatformChange>(journalSnapshots.Count);
-    try
+  private static List<Entities.AppPlatformChange> CompleteJournalRows(List<(EntityEntry Entry, Entities.AppPlatformChange Row)> snapshots)
+  {
+    var rows = new List<Entities.AppPlatformChange>(snapshots.Count);
+    foreach (var (entry, row) in snapshots)
     {
-      foreach (var (entry, row) in journalSnapshots)
+      if (row.Operation == Entities.ChangeOperations.Added)
       {
-        if (row.Operation == Entities.ChangeOperations.Added)
-        {
-          row.RowId = ((IEntity)entry.Entity).Id;
-          row.After = SerializeProperties(entry.Properties, p => p.CurrentValue);
-        }
-        journalRows.Add(row);
+        row.RowId = ((IEntity)entry.Entity).Id;
+        row.After = SerializeProperties(entry.Properties, p => p.CurrentValue);
       }
+      rows.Add(row);
+    }
+    return rows;
+  }
 
-      if (journalRows.Count > 0)
-      {
-        AppPlatformChange.AddRange(journalRows);
-        await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-      }
-    }
-    catch
+  private void DetachJournalRows(List<Entities.AppPlatformChange> rows)
+  {
+    foreach (var r in rows)
     {
-      // Non-fatal if table not yet created
+      Entry(r).State = EntityState.Detached;
     }
-    finally
-    {
-      foreach (var r in journalRows)
-      {
-        Entry(r).State = EntityState.Detached;
-      }
-    }
-
-    return result;
   }
 
   private static bool IsJournaled(EntityEntry entry) =>
     entry.Entity is IEntity and not Entities.AppPlatformChange and not BaseAppAuthSession &&
-    !ChangesLoginCountersOnly(entry);
+    !ChangesLoginCountersOnly(entry) &&
+    (entry.State != EntityState.Modified ||
+     entry.Properties.Any(p => p.IsModified && p.Metadata.Name is not nameof(IHasTimestamps.UpdatedAt) and not nameof(IHasVersion.Ver)));
 
   private static bool ChangesLoginCountersOnly(EntityEntry entry) =>
     entry.Entity is BaseAppUser &&

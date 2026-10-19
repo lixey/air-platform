@@ -181,7 +181,7 @@ public abstract partial class GridService<TEntity, TRow>
     });
 
     var actionEnd = new List<NavElementModel>();
-    if (!isGridReadOnly && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All)))
+    if (!isGridReadOnly && Feature.HasDelete && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All)))
     {
       actionEnd.Add(new GridNavActionModel
       {

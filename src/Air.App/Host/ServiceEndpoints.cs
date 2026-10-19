@@ -70,7 +70,7 @@ internal static class ServiceEndpoints
 
         if (typeof(IFormService).IsAssignableFrom(serviceType))
         {
-          return await DispatchFormAsync(serviceType, serviceName, method, subMethod, httpRequest, services, ct);
+          return await DispatchFormAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
         }
 
         if (typeof(IScreenService).IsAssignableFrom(serviceType))
@@ -78,6 +78,10 @@ internal static class ServiceEndpoints
           var screenService = (IScreenService)services.GetRequiredService(serviceType);
           if (method == "get-data")
           {
+            if (!CanView(feat, services.GetService<IUserContext>()))
+            {
+              return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
             return Results.Ok(await screenService.BuildScreenAsync(serviceName, ct));
           }
         }
@@ -102,12 +106,18 @@ internal static class ServiceEndpoints
     {
       grid.AttachPlatformApp(appInstance);
     }
+    var userContext = services.GetService<IUserContext>();
 
     switch (method.ToLowerInvariant())
     {
       case "get-data":
       {
         var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+        var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
+        if (!isPicker && !CanView(feat, userContext))
+        {
+          return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
         var page = await grid.GetDataAsync(req, ct);
         if (req.IsDataOnly)
         {
@@ -122,12 +132,21 @@ internal static class ServiceEndpoints
       case "get-count":
       {
         var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+        var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
+        if (!isPicker && !CanView(feat, userContext))
+        {
+          return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
         return Results.Ok(await grid.GetCountAsync(req, ct));
       }
 
       case "get-one":
       {
         var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+        if (!CanView(feat, userContext))
+        {
+          return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
         if (req.Id is not > 0)
         {
           return Results.NotFound();
@@ -169,6 +188,10 @@ internal static class ServiceEndpoints
 
       case "export":
       {
+        if (!CanExport(feat, userContext))
+        {
+          return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
         var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
         return await grid.ExportAsync(req, ct);
       }
@@ -201,7 +224,7 @@ internal static class ServiceEndpoints
       return Results.NotFound();
     }
 
-    if (!IsCustomActionPermitted(actionMethod, feat, services.GetService<IUserContext>()))
+    if (!IsCustomActionPermitted(actionMethod, feat, userContext))
     {
       return Results.UnprocessableEntity(new
       {
@@ -232,20 +255,27 @@ internal static class ServiceEndpoints
     string serviceName,
     string method,
     string? subMethod,
+    Feature? feat,
     HttpRequest httpRequest,
     IServiceProvider services,
     CancellationToken ct)
   {
     var form = (IFormService)services.GetRequiredService(serviceType);
+    feat ??= form.Feature;
     if (services.GetService<PlatformAppService>() is { } appInstance)
     {
       form.AttachPlatformApp(appInstance);
     }
+    var userContext = services.GetService<IUserContext>();
 
     switch (method.ToLowerInvariant())
     {
       case "get-data":
       {
+        if (!CanView(feat, userContext))
+        {
+          return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
         var req = await ReadFormRequestAsync(httpRequest, ct);
         var screen = await form.BuildScreenAsync(serviceName, req, ct);
         var entity = await form.GetModelAsync(req, ct);
@@ -398,6 +428,33 @@ internal static class ServiceEndpoints
       default:
         return Results.NotFound();
     }
+  }
+
+  private static bool CanView(Feature? feat, IUserContext? userContext)
+  {
+    if (userContext == null || !userContext.IsAuthenticated || feat == null || string.IsNullOrEmpty(feat.Module))
+    {
+      return true;
+    }
+
+    return userContext.Can(feat.View) ||
+           userContext.Can(feat.MenuView) ||
+           userContext.Can(feat.Edit) ||
+           userContext.Can(feat.All) ||
+           userContext.Can("*");
+  }
+
+  private static bool CanExport(Feature? feat, IUserContext? userContext)
+  {
+    if (userContext == null || !userContext.IsAuthenticated || feat == null || string.IsNullOrEmpty(feat.Module))
+    {
+      return true;
+    }
+
+    return userContext.Can(feat.Export) ||
+           userContext.Can(feat.View) ||
+           userContext.Can(feat.All) ||
+           userContext.Can("*");
   }
 
   private static bool IsCustomActionPermitted(MethodInfo actionMethod, Feature? feat, IUserContext? userContext)

@@ -213,4 +213,44 @@ public abstract partial class FormService<TEntity, TInput>
     }
     return false;
   }
+
+  private static void NormalizeNullableStrings(Elements elements, object target)
+  {
+    var targetType = target.GetType();
+    foreach (var el in elements.List)
+    {
+      if (string.IsNullOrEmpty(el.Path)) continue;
+      if (el.Constraints.AllowsNull == true && el.Constraints.RejectsBlank != true)
+      {
+        var prop = PropertyAccessorCache.GetProperty(targetType, el.Path);
+        if (prop != null && prop.PropertyType == typeof(string) && prop.CanRead && prop.CanWrite)
+        {
+          if (PropertyAccessorCache.GetValue(target, prop.Name) is string str && string.IsNullOrWhiteSpace(str))
+          {
+            prop.SetValue(target, null);
+          }
+        }
+      }
+    }
+  }
+
+  private static void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
+  {
+    if (!parentId.HasValue || parent.BoundProperty == null) return;
+
+    if (parent.BoundProperty.PropertyType == typeof(long))
+      parent.BoundProperty.SetValue(entity, parentId.Value);
+    else if (parent.BoundProperty.PropertyType == typeof(long?))
+      parent.BoundProperty.SetValue(entity, (long?)parentId.Value);
+  }
+
+  private void RestoreBoundParentId(TEntity entity, Parent parent)
+  {
+    if (parent.BoundProperty == null || Request.ParentId.HasValue) return;
+    var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
+    if (storedParentId.HasValue)
+    {
+      Request.ParentId = storedParentId.Value;
+    }
+  }
 }

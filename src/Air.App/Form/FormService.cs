@@ -31,6 +31,7 @@ public interface IFormService
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default);
   void AttachPlatformApp(PlatformAppService app);
+  Feature Feature { get; }
 }
 
 public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db, PlatformAppService? app = null) : IFormService

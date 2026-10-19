@@ -138,7 +138,7 @@ public abstract partial class GridService<TEntity, TRow>
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
     ParentId = request.ParentId;
-    if (IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All)))
+    if (IsReadOnly || !Feature.HasDelete || (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All)))
     {
       return new GridDeleteDto
       {
@@ -198,21 +198,27 @@ public abstract partial class GridService<TEntity, TRow>
         db.Set<TEntity>().RemoveRange(entities);
         await db.SaveChangesAsync(ct);
 
-        foreach (var h in hooks.AfterDeleteActions)
+        if (hooks.AfterDeleteActions.Count > 0)
         {
-          await h(ctx, ct);
-        }
-        if (ctx.Errors.Count > 0)
-        {
-          await tx.RollbackAsync(ct);
-          return new GridDeleteDto
+          foreach (var h in hooks.AfterDeleteActions)
           {
-            Outcome = MutationOutcome.Refused,
-            Deleted = 0,
-            Warnings = FormatErrors(ctx.Errors, entities)
-          };
+            await h(ctx, ct);
+          }
+          if (ctx.Errors.Count > 0)
+          {
+            await tx.RollbackAsync(ct);
+            return new GridDeleteDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Deleted = 0,
+              Warnings = FormatErrors(ctx.Errors, entities)
+            };
+          }
+          if (db.ChangeTracker.HasChanges())
+          {
+            await db.SaveChangesAsync(ct);
+          }
         }
-        await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
       }
       catch (DbUpdateException)
@@ -357,10 +363,13 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var entity = await db.Set<TEntity>().FindAsync([request.Id.Value], ct)
-      ?? throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
+      ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
     FormService<TEntity, TEntity>.SetPropertyValue(entity, request.Path, request.Value);
-    db.Set<TEntity>().Update(entity);
+    if (db.Entry(entity).State == EntityState.Detached)
+    {
+      db.Set<TEntity>().Update(entity);
+    }
     await db.SaveChangesAsync(ct);
 
     var updatedRow = await ReadRowAsync(request.Id.Value, ct);
