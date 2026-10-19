@@ -628,10 +628,12 @@ public abstract partial class FormService<TEntity, TInput>
     CancellationToken ct)
   {
     var entityType = entity.GetType();
+    var refPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     foreach (var el in elements)
     {
       if (string.IsNullOrEmpty(el.ReferencePath)) continue;
+      refPaths.Add(el.ReferencePath);
 
       long? key = null;
       if (dict.TryGetValue(el.Path, out var rawVal) && rawVal != null)
@@ -696,6 +698,23 @@ public abstract partial class FormService<TEntity, TInput>
         Id = key.Value,
         Name = !string.IsNullOrEmpty(refName) ? L[refName] : $"#{key.Value}"
       };
+    }
+
+    foreach (var prop in entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+    {
+      var key = JsonNamingPolicy.CamelCase.ConvertName(prop.Name);
+      if (Attribute.IsDefined(prop, typeof(SensitiveAttribute)))
+      {
+        dict.Remove(key);
+        continue;
+      }
+
+      var isEntityNav = typeof(IEntity).IsAssignableFrom(prop.PropertyType) ||
+        (typeof(IEnumerable).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string));
+      if (isEntityNav && !refPaths.Contains(key))
+      {
+        dict.Remove(key);
+      }
     }
   }
 

@@ -24,9 +24,14 @@ public abstract partial class FormService<TEntity, TInput>
     var parent = new Parent();
     SetParent(parent);
 
-    var elements = new Elements();
-    await SetElementsAsync(elements, ct);
-    ApplyElementConstraints(elements);
+    var elements = _lastElements;
+    if (elements == null)
+    {
+      elements = new Elements();
+      await SetElementsAsync(elements, ct);
+      LocalizeAndResolveSelectElements(elements);
+      _lastElements = elements;
+    }
 
     TEntity entity;
     if (IsNew)
@@ -48,9 +53,16 @@ public abstract partial class FormService<TEntity, TInput>
       var efModel = db.Model.FindEntityType(typeof(TEntity));
       if (efModel != null)
       {
+        var refNames = elements.List
+          .Where(e => !string.IsNullOrEmpty(e.ReferencePath))
+          .Select(e => e.ReferencePath!)
+          .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        refNames.Add("DocStatus");
+        refNames.Add("Status");
+
         foreach (var nav in efModel.GetNavigations())
         {
-          if (!nav.IsCollection)
+          if (!nav.IsCollection && refNames.Contains(nav.Name))
           {
             query = query.Include(nav.Name);
           }
@@ -372,9 +384,10 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
-    ApplyElementConstraints(elements);
+    LocalizeAndResolveSelectElements(elements);
 
-    if (IsReadOnly)
+    var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase));
+    if (IsReadOnly || targetElement == null || targetElement.IsDisabled || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
     {
       return new GridCellDto
       {
@@ -447,6 +460,22 @@ public abstract partial class FormService<TEntity, TInput>
       };
     }
 
+    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
+    if (ruleCtx.Failures.Count > 0)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = ruleCtx.Failures.Select(f => new MessageDto
+        {
+          Detail = f.Detail,
+          Path = f.Path ?? path,
+          Code = f.Code,
+          Type = MessageType.Error
+        }).ToList()
+      };
+    }
+
     var cellRefused = await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
       await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -510,9 +539,20 @@ public abstract partial class FormService<TEntity, TInput>
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
 
+    Request = new FormRequest { Id = id };
+    IsNew = false;
+
     var parent = new Parent();
     SetParent(parent);
     RestoreBoundParentId(entity, parent);
+
+    if (IsReadOnly)
+    {
+      throw new FormRefusedException(
+        MutationOutcome.Refused,
+        L["MutationRefused"],
+        [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
+    }
 
     var hooks = new Hooks();
     SetHooks(hooks);

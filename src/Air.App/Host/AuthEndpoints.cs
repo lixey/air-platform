@@ -178,8 +178,14 @@ internal static class AuthEndpoints
       return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
     });
 
-    api.MapPost("/auth/refresh", async (RefreshRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
+    api.MapPost("/auth/refresh", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
+      RefreshRequest? req = null;
+      if (ctx.Request.ContentLength > 0)
+      {
+        try { req = await ctx.Request.ReadFromJsonAsync<RefreshRequest>(cancellationToken: ct); } catch { }
+      }
+
       var now = DateTimeOffset.UtcNow;
       BaseAppAuthSession? session = null;
       string? providedHash = null;
@@ -259,15 +265,15 @@ internal static class AuthEndpoints
         }
       }
 
-      ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions { Path = "/" });
-      ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions { Path = "/api/auth" });
+      ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions { Path = "/", SameSite = SameSiteMode.Lax, HttpOnly = true });
+      ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions { Path = "/api/auth", SameSite = SameSiteMode.Lax, HttpOnly = true });
 
       return Results.Ok(new { });
     });
 
     var switchLanguageHandler = async (SwitchRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
-      var isUk = req?.Id == 1;
+      var isUk = req?.Id == 2;
       ctx.Response.Cookies.Append("culture", isUk ? "uk" : "en", new CookieOptions
       {
         Path = "/",
@@ -280,6 +286,11 @@ internal static class AuthEndpoints
         var user = await authStore.FindUserByIdAsync(uid, ct);
         if (user != null && user.IsActive)
         {
+          if (req?.Id is 1 or 2 && user.LanguageId != req.Id)
+          {
+            user.LanguageId = req.Id;
+            await authStore.SaveChangesAsync(ct);
+          }
           var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
           return Results.Ok(BuildUserProfileDto(user, securityInfo, isUk));
         }

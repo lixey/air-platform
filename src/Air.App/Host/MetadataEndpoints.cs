@@ -51,12 +51,12 @@ internal static class MetadataEndpoints
           {
             Label = Localizer.Instance["Language"],
             Current = isUk
-              ? new Reference { Id = 1, Name = Localizer.Instance["Ukrainian"] }
-              : new Reference { Id = 2, Name = Localizer.Instance["English"] },
+              ? new Reference { Id = 2, Name = Localizer.Instance["Ukrainian"] }
+              : new Reference { Id = 1, Name = Localizer.Instance["English"] },
             Options =
             [
-              new Reference { Id = 1, Name = Localizer.Instance["Ukrainian"] },
-              new Reference { Id = 2, Name = Localizer.Instance["English"] }
+              new Reference { Id = 1, Name = Localizer.Instance["English"] },
+              new Reference { Id = 2, Name = Localizer.Instance["Ukrainian"] }
             ],
             Service = "platform-language",
             Method = "switch"
