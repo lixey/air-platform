@@ -183,7 +183,8 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
-    ApplyElementConstraints(elements);
+    LocalizeAndResolveSelectElements(elements);
+    _lastElements = elements;
 
     if (IsReadOnly)
     {
@@ -496,9 +497,10 @@ public abstract partial class FormService<TEntity, TInput>
     long id,
     string transitionName,
     JsonElement? body,
+    int? ver = null,
     CancellationToken ct = default)
   {
-    Request = new FormRequest { Id = id };
+    Request = new FormRequest { Id = id, Ver = ver };
     IsNew = false;
 
     var elements = new Elements();
@@ -510,6 +512,15 @@ public abstract partial class FormService<TEntity, TInput>
 
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new InvalidOperationException($"Record #{id} not found.");
+
+    if (ver.HasValue && ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != ver.Value)
+    {
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Conflict,
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+      };
+    }
 
     var transition = statusFlow.Transitions.FirstOrDefault(t =>
       string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase))
@@ -525,23 +536,41 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     object? input = transition.Ask?.Read(body);
-
-    var context = new MutationContext(db);
-    await statusFlow.MoveAsync(context, [entity], transition.Name, input, ct);
-
-    if (context.Errors.Count > 0)
+    if (transition.Ask != null)
     {
-      return new FormActionDto
+      var askFailures = transition.Ask.Validate(input, L);
+      if (askFailures.Count > 0)
       {
-        Outcome = MutationOutcome.Refused,
-        Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
-      };
+        return new FormActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [.. askFailures]
+        };
+      }
     }
 
-    return new FormActionDto
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
-      Outcome = MutationOutcome.Committed
-    };
+      await using var tx = await db.Database.BeginTransactionAsync(ct);
+      var context = new MutationContext(db);
+      await statusFlow.MoveAsync(context, [entity], transition.Name, input, ct);
+
+      if (context.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        return new FormActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+        };
+      }
+
+      await tx.CommitAsync(ct);
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Committed
+      };
+    });
   }
 
   private async Task<(FormSaveContext<TEntity, TInput> SaveContext, RuleContext<TInput> RuleContext)> RunValidationPipelineAsync(

@@ -1,4 +1,5 @@
 using Air.App.Modules;
+using Air.Data;
 using Air.Data.Entities;
 
 namespace Air.App.Grid.Selection;
@@ -8,8 +9,9 @@ public sealed class GridBatchContext<TEntity> : GridSelectionContext<TEntity> wh
   public GridBatchContext(
     IEnumerable<long> selectedIds,
     IEnumerable<TEntity> records,
-    Func<CancellationToken, Task>? flusher = null)
-    : base(selectedIds, records, flusher)
+    Func<CancellationToken, Task>? flusher = null,
+    PlatformDbContext? db = null)
+    : base(selectedIds, records, flusher, db)
   {
   }
 

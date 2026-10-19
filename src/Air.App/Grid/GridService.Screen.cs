@@ -39,7 +39,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     var formOverlay = ResolveFormOverlay(columns);
 
-    var nav = new Nav(servicePath);
+    var nav = new Nav(servicePath, L);
     SetNav(nav);
 
     LocalizeAndConfigureColumns(columns.List);
@@ -53,7 +53,7 @@ public abstract partial class GridService<TEntity, TRow>
       navStart.Add(new GridNavAddModel
       {
         Key = "add",
-        Label = Localizer.Instance["Add"],
+        Label = L["Add"],
         Variant = ButtonVariant.Soft,
         Color = UiColor.Orange,
         Icon = UiIcon.Plus
@@ -66,10 +66,52 @@ public abstract partial class GridService<TEntity, TRow>
     }
     navStart.AddRange(nav.CustomStart);
 
-    var navElements = new List<NavElementModel>
+    var permittedActions = new List<NavActionEntry>();
+    foreach (var entry in nav.Actions)
     {
-      new GridNavSearchModel { Key = "search", Label = Localizer.Instance["Search"] }
-    };
+      var methodInfo = entry.Method.Method;
+      var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>();
+      var hasRight = true;
+      if (reqAttr != null && User != null && User.IsAuthenticated)
+      {
+        if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
+        {
+          hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(Feature.All);
+        }
+      }
+      else if (!entry.IsAllowedInReadOnly && isUserReadOnly)
+      {
+        hasRight = false;
+      }
+
+      if (hasRight)
+      {
+        permittedActions.Add(entry);
+      }
+    }
+
+    var navElements = new List<NavElementModel>();
+    foreach (var entry in permittedActions.Where(a => !a.Model.NeedsSelection))
+    {
+      navElements.Add(entry.Model);
+    }
+
+    navElements.Add(new GridNavSearchModel { Key = "search", Label = L["Search"] });
+    navElements.Add(new NavOverlayModel
+    {
+      Key = "filters",
+      Label = L["Filters"],
+      Icon = UiIcon.Filter,
+      Color = UiColor.Emerald,
+      Variant = ButtonVariant.Soft,
+      Overlay = OverlayModel.Drawer(
+          $"{servicePath}.filters",
+          PanelLayout.Row($"{servicePath}.filters")
+            .Panel("filters", new GridFiltersOverlayModel())
+            .Build())
+        .Width(FiltersWidth)
+        .Build()
+    });
 
     var queryDeclaration = new Query();
     SetQuery(queryDeclaration);
@@ -98,41 +140,34 @@ public abstract partial class GridService<TEntity, TRow>
       });
     }
 
-    var actionEnd = new List<NavElementModel>();
-    var actionMore = new List<NavElementModel>();
-    foreach (var entry in nav.Actions)
+    var actionElements = new List<NavElementModel>();
+    if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && !isGridReadOnly)
     {
-      var methodInfo = entry.Method.Method;
-      var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>();
-      var hasRight = true;
-      if (reqAttr != null && User != null && User.IsAuthenticated)
+      var statusButton = BuildStatusNavElement(servicePath, statusFlow);
+      if (statusButton != null)
       {
-        if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
-        {
-          hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(Feature.All);
-        }
-      }
-      else if (!entry.IsAllowedInReadOnly && isUserReadOnly)
-      {
-        hasRight = false;
-      }
-
-      if (!hasRight)
-      {
-        continue;
-      }
-
-      if (entry.IsInMenu)
-      {
-        actionMore.Add(entry.Model);
-      }
-      else
-      {
-        actionEnd.Add(entry.Model);
+        actionElements.Add(statusButton);
       }
     }
 
-    actionEnd.Add(new GridNavActionModel
+    var inMenuActions = permittedActions.Where(a => a.Model.NeedsSelection && a.IsInMenu).Select(a => (NavElementModel)a.Model).ToList();
+    if (inMenuActions.Count > 0)
+    {
+      actionElements.Add(new NavMenuModel
+      {
+        Key = "actions",
+        Label = L["Actions"],
+        Variant = ButtonVariant.Soft,
+        Elements = inMenuActions
+      });
+    }
+
+    foreach (var entry in permittedActions.Where(a => a.Model.NeedsSelection && !a.IsInMenu))
+    {
+      actionElements.Add(entry.Model);
+    }
+
+    actionElements.Add(new GridNavActionModel
     {
       Key = "export",
       Service = servicePath,
@@ -142,9 +177,10 @@ public abstract partial class GridService<TEntity, TRow>
       Color = UiColor.Green,
       Variant = ButtonVariant.Soft,
       Icon = UiIcon.Excel,
-      Label = Localizer.Instance["Export"]
+      Label = L["Export"]
     });
 
+    var actionEnd = new List<NavElementModel>();
     if (!isGridReadOnly && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All)))
     {
       actionEnd.Add(new GridNavActionModel
@@ -156,19 +192,9 @@ public abstract partial class GridService<TEntity, TRow>
         Color = UiColor.Red,
         Variant = ButtonVariant.Soft,
         Icon = UiIcon.Trash,
-        Label = Localizer.Instance["Delete"],
-        Confirm = new OverlayConfirmModel { Message = Localizer.Instance["DeleteConfirm"], Color = UiColor.Red }
+        Label = L["Delete"],
+        Confirm = new OverlayConfirmModel { Message = L["DeleteConfirm"], Color = UiColor.Red }
       });
-    }
-
-    var actionElements = new List<NavElementModel>();
-    if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && !isGridReadOnly)
-    {
-      var statusButton = BuildStatusNavElement(servicePath, statusFlow);
-      if (statusButton != null)
-      {
-        actionElements.Add(statusButton);
-      }
     }
 
     foreach (var rule in queryDeclaration.InitialFilters)
@@ -217,13 +243,13 @@ public abstract partial class GridService<TEntity, TRow>
       InitialFilter = initialFilter,
       MutationTexts = new MutationTextsDto
       {
-        ConflictTitle = Localizer.Instance["MutationConflict"],
-        ReloadLabel = Localizer.Instance["MutationReload"],
-        UnknownTitle = Localizer.Instance["MutationUnknown"],
-        UnknownDescription = Localizer.Instance["MutationUnknownDescription"],
-        VerifyLabel = Localizer.Instance["MutationVerify"],
-        CommittedWarningTitle = Localizer.Instance["MutationCommittedWarning"],
-        SelectionCorrectionLabel = Localizer.Instance["MutationSelectionCorrection"]
+        ConflictTitle = L["MutationConflict"],
+        ReloadLabel = L["MutationReload"],
+        UnknownTitle = L["MutationUnknown"],
+        UnknownDescription = L["MutationUnknownDescription"],
+        VerifyLabel = L["MutationVerify"],
+        CommittedWarningTitle = L["MutationCommittedWarning"],
+        SelectionCorrectionLabel = L["MutationSelectionCorrection"]
       },
       Nav = new NavModel
       {
@@ -241,7 +267,7 @@ public abstract partial class GridService<TEntity, TRow>
             IsDownload = true,
             Color = UiColor.Green,
             Icon = UiIcon.Excel,
-            Label = Localizer.Instance["Export"]
+            Label = L["Export"]
           }
         ]
       },
@@ -251,7 +277,7 @@ public abstract partial class GridService<TEntity, TRow>
         Start = [],
         Elements = actionElements,
         End = actionEnd,
-        More = actionMore
+        More = []
       }
     };
 
@@ -289,7 +315,11 @@ public abstract partial class GridService<TEntity, TRow>
       Columns = matching,
       IsReadOnly = true,
       Form = new OverlayModelDto(),
-      Nav = new NavModel { Key = $"{servicePath}.select.nav" },
+      Nav = new NavModel
+      {
+        Key = $"{servicePath}.select.nav",
+        Elements = [new GridNavSearchModel { Key = "search", Label = L["Search"] }]
+      },
       ActionNav = new NavModel { Key = $"{servicePath}.select.actions" }
     };
 
@@ -385,9 +415,9 @@ public abstract partial class GridService<TEntity, TRow>
       .Select(t =>
       {
         var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
-        var verbLabel = Localizer.Instance.TextOr($"Ecom: {t.Name}", Localizer.Instance[t.Name]);
-        var targetLabel = target != null ? Localizer.Instance[target.Name] : verbLabel;
-        var confirmMessage = t.Confirm != null ? Localizer.Instance[t.Confirm] : null;
+        var verbLabel = L.TextOr($"Ecom: {t.Name}", L[t.Name]);
+        var targetLabel = target != null ? L[target.Name] : verbLabel;
+        var confirmMessage = t.Confirm != null ? L[t.Confirm] : null;
         return new GridNavStatusMoveDto
         {
           From = [.. t.From],
@@ -411,7 +441,7 @@ public abstract partial class GridService<TEntity, TRow>
                 Color = target?.Color,
                 Elements = [.. t.Ask.BuildElements().Select(e =>
                 {
-                  if (!string.IsNullOrEmpty(e.Label)) e.Label = Localizer.Instance[e.Label];
+                  if (!string.IsNullOrEmpty(e.Label)) e.Label = L[e.Label];
                   return e;
                 })]
               }
@@ -424,7 +454,8 @@ public abstract partial class GridService<TEntity, TRow>
     return new GridNavStatusModel
     {
       Key = "status",
-      Label = Localizer.Instance["Status"],
+      Label = L["Status"],
+      EmptyTitle = L["StatusNoMove"],
       Path = statusPath,
       Moves = statusMoves
     };

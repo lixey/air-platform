@@ -28,6 +28,7 @@ public interface IGridService
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
+  Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   void AttachPlatformApp(PlatformAppService app);
   Feature Feature { get; }
@@ -339,8 +340,9 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
   }
 
-  public sealed class Nav(string servicePath = "")
+  public sealed class Nav(string servicePath = "", Localizer? localizer = null)
   {
+    private readonly Localizer _l = localizer ?? Localizer.Instance;
     internal List<NavActionEntry> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
     internal List<NavElementModel> CustomStart { get; } = [];
@@ -361,12 +363,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         Service = servicePath,
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
-        Label = Localizer.Instance[rawLabel],
+        Label = _l[rawLabel],
         Icon = b.IconHandle,
         Color = b.ColorHandle ?? UiColor.Blue,
         Variant = b.VariantHandle ?? ButtonVariant.Soft,
         NeedsSelection = needsSelection,
-        Confirm = confirm != null ? new OverlayConfirmModel { Message = Localizer.Instance[confirm], Color = UiColor.Red } : null
+        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = UiColor.Red } : null
       };
       var entry = new NavActionEntry
       {
@@ -388,7 +390,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
-        Label = label != null ? Localizer.Instance[label] : null,
+        Label = label != null ? _l[label] : null,
         ReferenceService = ServicePathResolver.Resolve(typeof(TSource)),
         MinLength = 2,
         ReadsParent = readsParent

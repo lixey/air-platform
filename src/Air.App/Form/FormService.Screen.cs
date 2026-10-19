@@ -46,8 +46,8 @@ public abstract partial class FormService<TEntity, TInput>
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
-
     LocalizeAndResolveSelectElements(elements);
+    _lastElements = elements;
 
     var formModel = new FormModel
     {
@@ -591,6 +591,22 @@ public abstract partial class FormService<TEntity, TInput>
   public virtual async Task PopulateReferencesAsync(
     Dictionary<string, object?> dict,
     object? entity,
+    CancellationToken ct = default)
+  {
+    if (entity == null) return;
+    if (_lastElements == null)
+    {
+      var elements = new Elements();
+      await SetElementsAsync(elements, ct);
+      LocalizeAndResolveSelectElements(elements);
+      _lastElements = elements;
+    }
+    await PopulateReferencesCoreAsync(dict, entity, _lastElements.List, ct);
+  }
+
+  public virtual async Task PopulateReferencesAsync(
+    Dictionary<string, object?> dict,
+    object? entity,
     ScreenDto screen,
     CancellationToken ct = default)
   {
@@ -599,9 +615,18 @@ public abstract partial class FormService<TEntity, TInput>
     var formModel = FindFormModel(screen.Layout.Root);
     if (formModel == null) return;
 
+    await PopulateReferencesCoreAsync(dict, entity, formModel.Elements, ct);
+  }
+
+  private async Task PopulateReferencesCoreAsync(
+    Dictionary<string, object?> dict,
+    object entity,
+    IEnumerable<FormElementDto> elements,
+    CancellationToken ct)
+  {
     var entityType = entity.GetType();
 
-    foreach (var el in formModel.Elements)
+    foreach (var el in elements)
     {
       if (string.IsNullOrEmpty(el.ReferencePath)) continue;
 

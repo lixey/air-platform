@@ -2,6 +2,7 @@ using Air.Data.Entities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 
 namespace Air.App.Host;
@@ -19,7 +20,9 @@ internal static class FileEndpoints
         return Results.NotFound();
       }
 
-      var storage = new Data.Files.LocalFileStorage();
+      var stores = httpContext.RequestServices.GetService<Files.IFileStores>()
+        ?? new Files.DefaultFileStores(new Data.Files.LocalFileStorage());
+      var storage = stores.Of(link.Store);
       var stream = await storage.OpenReadAsync(link.Key, httpContext.RequestAborted);
       if (stream == null)
       {

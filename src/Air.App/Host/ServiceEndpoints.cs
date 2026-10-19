@@ -125,6 +125,17 @@ internal static class ServiceEndpoints
         return Results.Ok(await grid.GetCountAsync(req, ct));
       }
 
+      case "get-one":
+      {
+        var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+        if (req.Id is not > 0)
+        {
+          return Results.NotFound();
+        }
+        var row = await grid.ReadRowAsync(req.Id.Value, ct);
+        return row is null ? Results.NotFound() : Results.Ok(row);
+      }
+
       case "delete":
       {
         var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
@@ -195,6 +206,7 @@ internal static class ServiceEndpoints
       return Results.UnprocessableEntity(new
       {
         outcome = MutationOutcome.Refused,
+        title = Localizer.Instance["MutationRefused"],
         messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error } }
       });
     }
@@ -302,9 +314,7 @@ internal static class ServiceEndpoints
 
         var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
         var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-        req.Id = entityId;
-        var screen = await form.BuildScreenAsync(serviceName, req, ct);
-        await form.PopulateReferencesAsync(dict, entity, screen, ct);
+        await form.PopulateReferencesAsync(dict, entity, ct);
 
         return Results.Ok(new FormDataDto
         {
@@ -318,6 +328,7 @@ internal static class ServiceEndpoints
       case "move-status" when subMethod != null:
       {
         long? id = null;
+        int? ver = null;
         JsonElement? bodyElement = null;
         using var jsonDoc = httpRequest.ContentLength > 0
           ? await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct)
@@ -326,9 +337,13 @@ internal static class ServiceEndpoints
         if (jsonDoc != null)
         {
           bodyElement = jsonDoc.RootElement;
-          if (bodyElement.Value.TryGetProperty("id", out var idProp) && idProp.TryGetInt64(out var parsedId))
+          if (bodyElement.Value.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var parsedId))
           {
             id = parsedId;
+          }
+          if (bodyElement.Value.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var parsedVer))
+          {
+            ver = parsedVer;
           }
         }
 
@@ -336,21 +351,18 @@ internal static class ServiceEndpoints
         {
           id = qId;
         }
+        if (ver == null && httpRequest.Query.TryGetValue("ver", out var qVerStr) && int.TryParse(qVerStr, out var qVer))
+        {
+          ver = qVer;
+        }
 
         if (id == null)
         {
           return Results.BadRequest(new { error = "Record id is required for move-status." });
         }
 
-        var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ct);
-        if (result.Outcome != MutationOutcome.Committed)
-        {
-          return result.Outcome == MutationOutcome.Conflict
-            ? Results.Conflict(new { outcome = result.Outcome, messages = result.Warnings })
-            : Results.UnprocessableEntity(new { outcome = result.Outcome, messages = result.Warnings });
-        }
-
-        return Results.Ok(result);
+        var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ver, ct);
+        return PlatformEndpoints.ToMutationResult(result);
       }
 
       case "delete":

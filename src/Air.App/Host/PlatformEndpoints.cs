@@ -1,5 +1,7 @@
 using System.Globalization;
+using Air.App.Form;
 using Air.App.Grid;
+using Air.App.Localization;
 using Air.Data.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -86,16 +88,20 @@ public static class PlatformEndpoints
     {
       GridDeleteDto del when del.Outcome != MutationOutcome.Committed =>
         del.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = del.Outcome, messages = del.Warnings })
-          : Results.UnprocessableEntity(new { outcome = del.Outcome, messages = del.Warnings }),
+          ? Results.Conflict(new { outcome = del.Outcome, title = Localizer.Instance["MutationConflict"], messages = del.Warnings })
+          : Results.UnprocessableEntity(new { outcome = del.Outcome, title = Localizer.Instance["DeleteRefused"], messages = del.Warnings }),
       GridCellDto cell when cell.Outcome != MutationOutcome.Committed =>
         cell.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = cell.Outcome, messages = cell.Warnings })
-          : Results.UnprocessableEntity(new { outcome = cell.Outcome, messages = cell.Warnings }),
+          ? Results.Conflict(new { outcome = cell.Outcome, title = Localizer.Instance["MutationConflict"], messages = cell.Warnings })
+          : Results.UnprocessableEntity(new { outcome = cell.Outcome, title = Localizer.Instance["MutationRefused"], messages = cell.Warnings }),
       GridActionDto act when act.Outcome != MutationOutcome.Committed =>
         act.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = act.Outcome, messages = act.Warnings })
-          : Results.UnprocessableEntity(new { outcome = act.Outcome, messages = act.Warnings }),
+          ? Results.Conflict(new { outcome = act.Outcome, title = Localizer.Instance["MutationConflict"], messages = act.Warnings })
+          : Results.UnprocessableEntity(new { outcome = act.Outcome, title = Localizer.Instance["MutationRefused"], messages = act.Warnings }),
+      FormActionDto fact when fact.Outcome != MutationOutcome.Committed =>
+        fact.Outcome == MutationOutcome.Conflict
+          ? Results.Conflict(new { outcome = fact.Outcome, title = Localizer.Instance["MutationConflict"], messages = fact.Warnings })
+          : Results.UnprocessableEntity(new { outcome = fact.Outcome, title = Localizer.Instance["MutationRefused"], messages = fact.Warnings }),
       _ => Results.Ok(result)
     };
 }

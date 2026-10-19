@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Air.App.Mutations;
+using Air.Data;
 
 namespace Air.App.Grid.Selection;
 
@@ -7,15 +8,18 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
 {
   private readonly List<MutationError> _errors = [];
   private readonly Func<CancellationToken, Task>? _flusher;
+  private readonly PlatformDbContext? _db;
 
   protected GridSelectionContext(
     IEnumerable<long> selectedIds,
     IEnumerable<TEntity> records,
-    Func<CancellationToken, Task>? flusher = null)
+    Func<CancellationToken, Task>? flusher = null,
+    PlatformDbContext? db = null)
   {
     SelectedIds = selectedIds.Distinct().ToImmutableArray();
     Records = records.ToImmutableArray();
     _flusher = flusher;
+    _db = db;
   }
 
   public ImmutableArray<long> SelectedIds { get; }
@@ -36,8 +40,8 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
     _flusher != null ? _flusher(cancellationToken) : Task.CompletedTask;
 
   public Task LockAsync<TLocked>(CancellationToken cancellationToken, params long[] key) where TLocked : class =>
-    Task.CompletedTask;
+    MutationContext.AcquireLocksAsync(_db, typeof(TLocked), [key], cancellationToken);
 
   public Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
-    Task.CompletedTask;
+    MutationContext.AcquireLocksAsync(_db, typeof(TLocked), keys, cancellationToken);
 }

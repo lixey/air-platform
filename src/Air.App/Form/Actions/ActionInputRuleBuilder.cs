@@ -5,6 +5,14 @@ public sealed class ActionInputRuleBuilder<TProp>(FormElementDto dto)
   public ActionInputRuleBuilder<TProp> MaximumLength(int maxLength)
   {
     dto.Constraints.MaxLength = maxLength;
+    dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
+    return this;
+  }
+
+  public ActionInputRuleBuilder<TProp> MinimumLength(int minLength)
+  {
+    dto.Constraints.MinLength = minLength;
+    dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
     return this;
   }
 }

@@ -204,7 +204,10 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
     };
   }
 
-  public virtual async Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default)
+  public Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
+    DeleteAsync(request, cancellationToken);
+
+  public override async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
     var ids = request.SelectedIds ?? [];
@@ -220,8 +223,19 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
     var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
     var storage = Stores.Of(storeKey);
 
+    var parent = new Parent();
+    SetParent(parent);
+    var parentsLosingCover = new HashSet<object>();
+
     foreach (var item in list)
     {
+      if (HasCovers && rules.Cover == FileCover.Auto && parent.BoundProperty != null &&
+          item is IHasCoverFile { IsCover: true } &&
+          parent.BoundProperty.GetValue(item) is { } parentVal)
+      {
+        parentsLosingCover.Add(parentVal);
+      }
+
       db.Set<TFile>().Remove(item);
       if (!string.IsNullOrEmpty(item.StorageKey))
       {
@@ -234,6 +248,30 @@ public abstract class FileGridService<TFile>(PlatformDbContext db)
     }
 
     await db.SaveChangesAsync(cancellationToken);
+
+    if (parentsLosingCover.Count > 0 && parent.BoundProperty != null)
+    {
+      foreach (var parentVal in parentsLosingCover)
+      {
+        var param = Expression.Parameter(typeof(TFile), "f");
+        var propExpr = Expression.Property(param, parent.BoundProperty);
+        var valExpr = Expression.Constant(parentVal, parent.BoundProperty.PropertyType);
+        var eqExpr = Expression.Equal(propExpr, valExpr);
+        var lambda = Expression.Lambda<Func<TFile, bool>>(eqExpr, param);
+
+        var nextCover = await db.Set<TFile>()
+          .Where(lambda)
+          .OrderBy(f => f.SortOrder)
+          .ThenByDescending(f => f.Id)
+          .FirstOrDefaultAsync(cancellationToken);
+
+        if (nextCover is IHasCoverFile cf)
+        {
+          cf.IsCover = true;
+        }
+      }
+      await db.SaveChangesAsync(cancellationToken);
+    }
 
     return new GridDeleteDto
     {

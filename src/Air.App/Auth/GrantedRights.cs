@@ -25,26 +25,24 @@ public static class GrantedRights
   {
     ArgumentNullException.ThrowIfNull(db);
 
-    var assignments = await db.Set<TAssignment>()
-      .Where(a => a.UserId == userId && a.IsActive)
-      .Select(a => a.AuthRoleId)
-      .ToListAsync(cancellationToken);
+    var activeRoles = await (
+      from a in db.Set<TAssignment>().AsNoTracking()
+      join r in db.Set<TRole>().IgnoreQueryFilters().AsNoTracking() on a.AuthRoleId equals r.Id
+      where a.UserId == userId && a.IsActive && r.IsActive
+      select new { r.Id, r.TenantId }
+    ).ToListAsync(cancellationToken);
 
-    if (assignments.Count == 0)
+    if (activeRoles.Count == 0)
     {
       return new SecurityInfo([]);
     }
 
-    var roles = await db.Set<TRole>()
-      .IgnoreQueryFilters()
-      .Where(r => assignments.Contains(r.Id) && r.IsActive)
-      .ToListAsync(cancellationToken);
-
-    var roleIds = roles.Select(r => r.Id).ToList();
-    var isGlobal = roles.Any(r => r.TenantId == null);
-    var homeTenantId = roles.FirstOrDefault(r => r.TenantId != null)?.TenantId;
+    var roleIds = activeRoles.Select(r => r.Id).ToList();
+    var isGlobal = activeRoles.Any(r => r.TenantId == null);
+    var homeTenantId = activeRoles.FirstOrDefault(r => r.TenantId != null)?.TenantId;
 
     var permissions = await db.Set<TGrant>()
+      .AsNoTracking()
       .Where(g => roleIds.Contains(g.AuthRoleId))
       .Select(g => g.Permission)
       .Distinct()

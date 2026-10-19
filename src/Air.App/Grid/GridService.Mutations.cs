@@ -26,29 +26,47 @@ public abstract partial class GridService<TEntity, TRow>
     Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
     CancellationToken cancellationToken = default)
   {
+    ParentId = request.ParentId;
     var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
     var records = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(cancellationToken);
-    var ctx = new GridBatchContext<TEntity>(ids, records, ct => db.SaveChangesAsync(ct));
-    await handler(ctx, cancellationToken);
-    if (ctx.Errors.Count > 0)
+
+    if (HasVersionConflict(request, ids, records))
     {
       return new GridActionDto
       {
-        Outcome = MutationOutcome.Refused,
-        Warnings = ctx.Errors.Select(e => e.ToMessage("error")).ToList()
+        Outcome = MutationOutcome.Conflict,
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
       };
     }
-    await db.SaveChangesAsync(cancellationToken);
-    return new GridActionDto
+
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
-      Outcome = MutationOutcome.Committed,
-      OpenScreen = ctx.OpenScreen,
-      OpenId = ctx.OpenId
-    };
+      await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+      var ctx = new GridBatchContext<TEntity>(ids, records, ct => db.SaveChangesAsync(ct), db);
+      await handler(ctx, cancellationToken);
+      if (ctx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(cancellationToken);
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = FormatErrors(ctx.Errors, records, MessageType.Error)
+        };
+      }
+      await db.SaveChangesAsync(cancellationToken);
+      await tx.CommitAsync(cancellationToken);
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Committed,
+        OpenScreen = ctx.OpenScreen,
+        OpenId = ctx.OpenId
+      };
+    });
   }
 
   public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default)
   {
+    ParentId = request.ParentId;
     var cols = CreateColumns();
     if (cols.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
     {
@@ -63,7 +81,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
     {
-      return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }] };
+      return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
     }
 
     var selectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
@@ -72,22 +90,49 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
     }
 
-    var entities = await db.Set<TEntity>().Where(e => selectedIds.Contains(e.Id)).ToListAsync(ct);
-    var context = new MutationContext(db);
     object? input = transition.Ask?.Read(body);
+    if (transition.Ask != null)
+    {
+      var askFailures = transition.Ask.Validate(input, L);
+      if (askFailures.Count > 0)
+      {
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [.. askFailures]
+        };
+      }
+    }
 
-    await statusFlow.MoveAsync(context, entities, transition.Name, input, ct);
-
-    if (context.Errors.Count > 0)
+    var entities = await db.Set<TEntity>().Where(e => selectedIds.Contains(e.Id)).ToListAsync(ct);
+    if (HasVersionConflict(request, selectedIds, entities))
     {
       return new GridActionDto
       {
-        Outcome = MutationOutcome.Refused,
-        Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+        Outcome = MutationOutcome.Conflict,
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
       };
     }
 
-    return new GridActionDto { Outcome = MutationOutcome.Committed };
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+      await using var tx = await db.Database.BeginTransactionAsync(ct);
+      var context = new MutationContext(db);
+      await statusFlow.MoveAsync(context, entities, transition.Name, input, ct);
+
+      if (context.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = FormatErrors(context.Errors, entities)
+        };
+      }
+
+      await tx.CommitAsync(ct);
+      return new GridActionDto { Outcome = MutationOutcome.Committed };
+    });
   }
 
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
@@ -99,7 +144,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         Outcome = MutationOutcome.Refused,
         Deleted = 0,
-        Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
       };
     }
 
@@ -114,28 +159,40 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var entities = await db.Set<TEntity>().Where(e => ids.Contains(e.Id)).ToListAsync(ct);
-    var hooks = new Hooks();
-    SetHooks(hooks);
-
-    var ctx = new GridDeleteContext<TEntity>(ids, entities, token => db.SaveChangesAsync(token));
-    foreach (var h in hooks.BeforeDeleteActions)
-    {
-      await h(ctx, ct);
-    }
-
-    if (ctx.Errors.Count > 0)
+    if (HasVersionConflict(request, ids, entities))
     {
       return new GridDeleteDto
       {
-        Outcome = MutationOutcome.Refused,
+        Outcome = MutationOutcome.Conflict,
         Deleted = 0,
-        Warnings = [.. ctx.Errors.Select(e => e.ToMessage())]
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
       };
     }
+
+    var hooks = new Hooks();
+    SetHooks(hooks);
 
     return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
       await using var tx = await db.Database.BeginTransactionAsync(ct);
+      var ctx = new GridDeleteContext<TEntity>(ids, entities, token => db.SaveChangesAsync(token), db);
+
+      foreach (var h in hooks.BeforeDeleteActions)
+      {
+        await h(ctx, ct);
+      }
+
+      if (ctx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        return new GridDeleteDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Deleted = 0,
+          Warnings = FormatErrors(ctx.Errors, entities)
+        };
+      }
+
       try
       {
         db.Set<TEntity>().RemoveRange(entities);
@@ -152,7 +209,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = [.. ctx.Errors.Select(e => e.ToMessage())]
+            Warnings = FormatErrors(ctx.Errors, entities)
           };
         }
         await db.SaveChangesAsync(ct);
@@ -165,7 +222,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           Outcome = MutationOutcome.Refused,
           Deleted = 0,
-          Warnings = [new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error }]
+          Warnings = [new MessageDto { Detail = L["DeleteRefused"], Type = MessageType.Error }]
         };
       }
 
@@ -175,6 +232,55 @@ public abstract partial class GridService<TEntity, TRow>
         Deleted = entities.Count
       };
     });
+  }
+
+  private static bool HasVersionConflict(GridRequest request, IReadOnlyList<long> ids, IReadOnlyList<TEntity> records)
+  {
+    if (request.SelectedVersions is not { Count: > 0 } versions || versions.Count != ids.Count)
+    {
+      return false;
+    }
+
+    var recordMap = records.ToDictionary(r => r.Id);
+    for (int i = 0; i < ids.Count; i++)
+    {
+      if (!recordMap.TryGetValue(ids[i], out var rec))
+      {
+        return true;
+      }
+      if (rec is IHasVersion versioned && versions[i] > 0 && versioned.Ver != versions[i])
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private List<MessageDto> FormatErrors(IEnumerable<MutationError> errors, IReadOnlyList<TEntity> records, string defaultType = MessageType.Warning)
+  {
+    var queryDeclaration = new Query();
+    SetQuery(queryDeclaration);
+    var compiledLabel = queryDeclaration.LabelSelector?.Compile();
+    var byId = records.ToDictionary(r => r.Id);
+
+    return errors.Select(e =>
+    {
+      var msg = e.ToMessage(defaultType);
+      if (e.RecordId.HasValue && string.IsNullOrEmpty(msg.RecordLabel) && byId.TryGetValue(e.RecordId.Value, out var rec))
+      {
+        string? label = null;
+        if (compiledLabel != null)
+        {
+          try { label = compiledLabel.DynamicInvoke(rec)?.ToString(); } catch { }
+        }
+        label ??= (PropertyAccessorCache.GetValue(rec, "Number")
+          ?? PropertyAccessorCache.GetValue(rec, "Name")
+          ?? PropertyAccessorCache.GetValue(rec, "Title"))?.ToString();
+        msg.RecordLabel = !string.IsNullOrWhiteSpace(label) ? label : $"#{e.RecordId.Value}";
+      }
+      return msg;
+    }).ToList();
   }
 
   public virtual async Task<object?> ReadRowAsync(long id, CancellationToken ct = default)

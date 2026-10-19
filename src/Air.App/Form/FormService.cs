@@ -26,9 +26,10 @@ public interface IFormService
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);
   Task DeleteAsync(long id, CancellationToken ct = default);
-  Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, CancellationToken ct = default);
+  Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
+  Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default);
   void AttachPlatformApp(PlatformAppService app);
 }
 
@@ -37,6 +38,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   where TInput : class, new()
 {
   private PlatformAppService? _app = app;
+  private Elements? _lastElements;
   public void AttachPlatformApp(PlatformAppService service) => _app ??= service;
 
   public PlatformDbContext DbContext => db;

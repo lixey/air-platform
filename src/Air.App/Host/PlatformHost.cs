@@ -89,6 +89,7 @@ public static class PlatformHost
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
     builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
+    builder.Services.TryAddSingleton<Files.IFileStores>(_ => new Files.DefaultFileStores(new Data.Files.LocalFileStorage()));
     builder.Services.TryAddScoped<IUserContext, UserContext>();
     builder.Services.TryAddScoped<PlatformAppService>();
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
@@ -134,7 +135,7 @@ public static class PlatformHost
         if (authStore != null)
         {
           var session = await authStore.FindSessionAsync(sessionId, context.RequestAborted);
-          if (session != null && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
+          if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
           {
             var user = await authStore.FindUserByIdAsync(userId, context.RequestAborted);
             if (user != null && user.IsActive)

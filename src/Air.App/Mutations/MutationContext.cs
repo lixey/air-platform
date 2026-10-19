@@ -1,4 +1,9 @@
+using System.Buffers.Binary;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Air.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Air.App.Mutations;
 
@@ -26,13 +31,27 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
     }
   }
 
-  public virtual Task LockAsync<TLocked>(CancellationToken cancellationToken, params long[] key) where TLocked : class
+  public virtual Task LockAsync<TLocked>(CancellationToken cancellationToken, params long[] key) where TLocked : class =>
+    AcquireLocksAsync(db, typeof(TLocked), [key], cancellationToken);
+
+  public virtual Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
+    AcquireLocksAsync(db, typeof(TLocked), keys, cancellationToken);
+
+  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key)
   {
-    return Task.CompletedTask;
+    var numbers = string.Join(':', key.Select(n => n.ToString(CultureInfo.InvariantCulture)));
+    return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"air-lock:{lockedType.Name}:{numbers}")));
   }
 
-  public virtual Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class
+  internal static async Task AcquireLocksAsync(PlatformDbContext? db, Type lockedType, IEnumerable<long[]> keys, CancellationToken ct)
   {
-    return Task.CompletedTask;
+    if (db == null || db.Database.CurrentTransaction == null) return;
+    if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true) return;
+
+    var lockKeys = keys.Select(k => LockKeyOf(lockedType, k)).Distinct().OrderBy(k => k).ToList();
+    foreach (var lockKey in lockKeys)
+    {
+      await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
+    }
   }
 }
