@@ -206,9 +206,8 @@ public abstract partial class GridService<TEntity, TRow>
           }
         }
       }
-      catch (Exception ex)
+      catch
       {
-        Console.WriteLine($"[PopulateCoversAsync error]: {ex}");
       }
     }
   }

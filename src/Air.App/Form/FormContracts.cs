@@ -214,6 +214,9 @@ public sealed class FormElementDto
 
   [JsonIgnore]
   internal bool? ExplicitRequired { get; set; }
+
+  [JsonIgnore]
+  internal Type? ReferenceServiceType { get; set; }
 }
 
 

@@ -13,6 +13,7 @@ using Air.App.Panels;
 using Air.App.Screens;
 using Air.Data.Contracts;
 using Air.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Air.App.Grid;
 
@@ -23,7 +24,7 @@ public abstract partial class GridService<TEntity, TRow>
   public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
     BuildScreenAsync(servicePath, null, ct);
 
-  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
+  public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
   {
     ParentId = request?.ParentId;
     var parent = new Parent();
@@ -34,7 +35,7 @@ public abstract partial class GridService<TEntity, TRow>
     var isSelect = request?.ReferenceLabelPaths is { Count: > 0 } || (request?.IsReferencePicker ?? false);
     if (isSelect)
     {
-      return Task.FromResult(BuildSelectScreen(servicePath, columns, request));
+      return BuildSelectScreen(servicePath, columns, request);
     }
 
     var formOverlay = ResolveFormOverlay(columns);
@@ -125,7 +126,7 @@ public abstract partial class GridService<TEntity, TRow>
           var baseQ = BaseQuery(db);
           foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
           if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-          badgeValue = baseQ.Where(item.Predicate).Count().ToString(CultureInfo.InvariantCulture);
+          badgeValue = (await baseQ.Where(item.Predicate).CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
         }
         catch { }
       }
@@ -285,7 +286,7 @@ public abstract partial class GridService<TEntity, TRow>
       .Panel("main", gridModel)
       .Build();
 
-    return Task.FromResult(new ScreenDto { Layout = layout });
+    return new ScreenDto { Layout = layout };
   }
 
   private ScreenDto BuildSelectScreen(string servicePath, Columns columns, GridRequest? request)

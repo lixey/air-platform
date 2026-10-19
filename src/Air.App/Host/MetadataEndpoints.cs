@@ -27,6 +27,19 @@ internal static class MetadataEndpoints
         var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
 
         var tenants = await authStore.GetActiveTenantsAsync(ct);
+        if (userContext.IsAuthenticated && userContext.UserId is { } uid)
+        {
+          var user = await authStore.FindUserByIdAsync(uid, ct);
+          if (user is { IsRoot: false })
+          {
+            var sec = await authStore.LoadSecurityInfoAsync(uid, ct);
+            var homeTid = (user as Air.Data.Entities.IHasTenant)?.TenantId;
+            if (!sec.Global && !sec.Permissions.Contains("*", StringComparer.OrdinalIgnoreCase))
+            {
+              tenants = tenants.Where(t => sec.CanAccessTenant(t.Id) || t.Id == homeTid).ToList();
+            }
+          }
+        }
         var activeTenantId = AsyncLocalTenantContext.Instance.TenantId
           ?? (userContext.IsAuthenticated && userContext.Claim(AuthClaims.Tenant) is { } tc && long.TryParse(tc, out var tId) ? tId : 1);
         var currentTenant = tenants.FirstOrDefault(t => t.Id == activeTenantId) ?? tenants.FirstOrDefault();
@@ -52,9 +65,9 @@ internal static class MetadataEndpoints
           {
             Label = Localizer.Instance["Tenant"],
             Current = new Reference { Id = currentTenant.Id, Name = currentTenant.Name },
-            Options = tenants.Select(t => new Reference { Id = t.Id, Name = t.Name }).ToList(),
-            Service = "platform-tenant",
-            Method = "switch"
+            Options = tenants.Count > 1 ? tenants.Select(t => new Reference { Id = t.Id, Name = t.Name }).ToList() : null,
+            Service = tenants.Count > 1 ? "platform-tenant" : null,
+            Method = tenants.Count > 1 ? "switch" : null
           } : null,
           DefaultCurrency = "UAH"
         };

@@ -145,6 +145,42 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void LocalizeAndResolveSelectElements(Elements elements)
   {
+    if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
+    {
+      string? statusMemberName = null;
+      if (statusFlow.StatusMember.Body is MemberExpression memberExpr)
+      {
+        statusMemberName = memberExpr.Member.Name;
+      }
+      else if (statusFlow.StatusMember.Body is UnaryExpression { Operand: MemberExpression ueMember })
+      {
+        statusMemberName = ueMember.Member.Name;
+      }
+
+      var statusOptions = statusFlow.Statuses.Select(s => new OptionDto
+      {
+        Id = s.Id,
+        Name = L[s.Name],
+        Color = s.Color
+      }).ToList();
+
+      foreach (var el in elements.List)
+      {
+        if ((statusMemberName != null && string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase))
+            || el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
+            || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase))
+        {
+          el.IsDisabled = true;
+          el.IsServerOwned = true;
+          el.Type = UiFieldType.Text;
+          el.Model = new FormSelectModel
+          {
+            Options = statusOptions
+          };
+        }
+      }
+    }
+
     ApplyElementConstraints(elements);
 
     foreach (var el in elements.List)
@@ -481,39 +517,6 @@ public abstract partial class FormService<TEntity, TInput>
     long? id,
     List<NavElementModel> actionStart)
   {
-    string? statusMemberName = null;
-    if (statusFlow.StatusMember.Body is MemberExpression memberExpr)
-    {
-      statusMemberName = memberExpr.Member.Name;
-    }
-    else if (statusFlow.StatusMember.Body is UnaryExpression { Operand: MemberExpression ueMember })
-    {
-      statusMemberName = ueMember.Member.Name;
-    }
-
-    var statusOptions = statusFlow.Statuses.Select(s => new OptionDto
-    {
-      Id = s.Id,
-      Name = L[s.Name],
-      Color = s.Color
-    }).ToList();
-
-    foreach (var el in formModel.Elements)
-    {
-      if ((statusMemberName != null && string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase))
-          || el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
-          || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase))
-      {
-        el.IsDisabled = true;
-        el.IsServerOwned = true;
-        el.Type = UiFieldType.Text;
-        el.Model = new FormSelectModel
-        {
-          Options = statusOptions
-        };
-      }
-    }
-
     if (entity != null && id.HasValue && id.Value > 0 && !IsReadOnly)
     {
       var currentStatus = statusFlow.StatusMember.Compile()(entity);

@@ -157,6 +157,24 @@ public abstract partial class FormService<TEntity, TInput>
         tenantEntity.TenantId = tid;
       }
       ApplyBoundParentId(entity, parent, Request.ParentId);
+      if (parent.BoundProperty != null && !parent.IsOptional)
+      {
+        var boundParentVal = Internal.PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name)
+          ?? Internal.PropertyAccessorCache.GetValue(input, parent.BoundProperty.Name);
+        if (boundParentVal is not long pid || pid <= 0)
+        {
+          throw new FormRefusedException(
+            MutationOutcome.Refused,
+            L["FormInvalid"],
+            [new MessageDto
+            {
+              Path = Elements.ToCamelPath(parent.BoundProperty.Name),
+              Detail = L["Required"],
+              Code = "form.validation.required",
+              Type = MessageType.Error
+            }]);
+        }
+      }
     }
     else
     {
@@ -219,6 +237,23 @@ public abstract partial class FormService<TEntity, TInput>
       entity.Id = id.Value;
     }
     ApplyBoundParentId(entity, parent, Request.ParentId);
+    if (parent.BoundProperty != null && !parent.IsOptional)
+    {
+      var boundParentVal = Internal.PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name);
+      if (boundParentVal is not long pid || pid <= 0)
+      {
+        throw new FormRefusedException(
+          MutationOutcome.Refused,
+          L["FormInvalid"],
+          [new MessageDto
+          {
+            Path = Elements.ToCamelPath(parent.BoundProperty.Name),
+            Detail = L["Required"],
+            Code = "form.validation.required",
+            Type = MessageType.Error
+          }]);
+      }
+    }
     if (!ReferenceEquals(entity, input))
     {
       CopyMatchingProperties(entity, input);

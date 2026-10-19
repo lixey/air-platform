@@ -6,7 +6,18 @@ namespace Air.App.Auth;
 /// <summary>
 /// What only the application knows about a user: the rights it holds, keys and patterns.
 /// </summary>
-public sealed record SecurityInfo(IReadOnlyList<string> Permissions, bool Global = false, long? HomeTenantId = null);
+public sealed record SecurityInfo(
+  IReadOnlyList<string> Permissions,
+  bool Global = false,
+  long? HomeTenantId = null,
+  IReadOnlySet<long>? AllowedTenantIds = null
+)
+{
+  public bool CanAccessTenant(long tenantId) =>
+    Global ||
+    Permissions.Contains("*", StringComparer.OrdinalIgnoreCase) ||
+    (AllowedTenantIds != null && AllowedTenantIds.Contains(tenantId));
+}
 
 /// <summary>
 /// What a user may do: the grants of the active roles of its active assignments, whose strings are the rights the checks
@@ -40,6 +51,10 @@ public static class GrantedRights
     var roleIds = activeRoles.Select(r => r.Id).ToList();
     var isGlobal = activeRoles.Any(r => r.TenantId == null);
     var homeTenantId = activeRoles.FirstOrDefault(r => r.TenantId != null)?.TenantId;
+    var allowedTenantIds = activeRoles
+      .Where(r => r.TenantId != null)
+      .Select(r => r.TenantId!.Value)
+      .ToHashSet();
 
     var permissions = await db.Set<TGrant>()
       .AsNoTracking()
@@ -48,6 +63,6 @@ public static class GrantedRights
       .Distinct()
       .ToListAsync(cancellationToken);
 
-    return new SecurityInfo(permissions, isGlobal, homeTenantId);
+    return new SecurityInfo(permissions, isGlobal, homeTenantId, allowedTenantIds);
   }
 }

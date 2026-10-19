@@ -85,6 +85,7 @@ public static class PlatformHost
     module.Configure(builder);
 
     // 5. Common platform services: JSON, Tenant context, User context, Localizer, AppService
+    SessionTokenService.ConfigureSecret(builder.Configuration["Auth:TokenSecret"]);
     builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
@@ -129,7 +130,7 @@ public static class PlatformHost
       }
 
       if (!string.IsNullOrWhiteSpace(token) &&
-          SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _))
+          SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _, out var tokenVersion))
       {
         var authStore = context.RequestServices.GetService<IAuthStore>();
         if (authStore != null)
@@ -138,7 +139,7 @@ public static class PlatformHost
           if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
           {
             var user = await authStore.FindUserByIdAsync(userId, context.RequestAborted);
-            if (user != null && user.IsActive)
+            if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
             {
               var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
 

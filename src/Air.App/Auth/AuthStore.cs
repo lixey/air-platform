@@ -30,7 +30,8 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     await db.Set<TSession>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id, ct);
 
   public async Task<BaseAppAuthSession?> FindSessionByHashAsync(string refreshTokenHash, CancellationToken ct = default) =>
-    await db.Set<TSession>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.RefreshTokenHash == refreshTokenHash, ct);
+    await db.Set<TSession>().IgnoreQueryFilters()
+      .FirstOrDefaultAsync(s => s.RefreshTokenHash == refreshTokenHash || s.PreviousRefreshTokenHash == refreshTokenHash, ct);
 
   public async Task<SecurityInfo> LoadSecurityInfoAsync(long userId, CancellationToken ct = default) =>
     await GrantedRights.LoadAsync<TAssignment, TRole, TGrant>(db, userId, ct);
@@ -62,6 +63,20 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     };
     db.Set<TSession>().Add(session);
     return session;
+  }
+
+  public async Task RevokeUserSessionsAsync(long userId, long? exceptSessionId, string reason, CancellationToken ct = default)
+  {
+    var now = DateTimeOffset.UtcNow;
+    var sessions = await db.Set<TSession>().IgnoreQueryFilters()
+      .Where(s => s.UserId == userId && s.RevokedAt == null && (exceptSessionId == null || s.Id != exceptSessionId.Value))
+      .ToListAsync(ct);
+
+    foreach (var s in sessions)
+    {
+      s.RevokedAt = now;
+      s.RevokedReason = reason;
+    }
   }
 
   public Task SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);

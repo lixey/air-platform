@@ -15,5 +15,6 @@ public interface IAuthStore
   Task<List<BaseAppTenant>> GetActiveTenantsAsync(CancellationToken ct = default);
   Task<BaseAppTenant?> FindTenantByIdAsync(long id, CancellationToken ct = default);
   BaseAppAuthSession CreateSession(long userId, long? tenantId, Guid familyId, string refreshTokenHash, DateTimeOffset expiresAt, string? client, string? address);
+  Task RevokeUserSessionsAsync(long userId, long? exceptSessionId, string reason, CancellationToken ct = default) => Task.CompletedTask;
   Task SaveChangesAsync(CancellationToken ct = default);
 }

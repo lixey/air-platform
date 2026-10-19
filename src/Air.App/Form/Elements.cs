@@ -411,6 +411,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.Reference;
+    dto.ReferenceServiceType = typeof(TGridService);
     if (dto.ExplicitRequired == null && typeof(TProp).IsValueType && Nullable.GetUnderlyingType(typeof(TProp)) == null && !dto.IsServerOwned)
     {
       dto.IsRequired = true;
@@ -429,6 +430,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.Reference;
+    dto.ReferenceServiceType = typeof(TGridService);
     if (dto.ExplicitRequired == null && typeof(TProp).IsValueType && Nullable.GetUnderlyingType(typeof(TProp)) == null && !dto.IsServerOwned)
     {
       dto.IsRequired = true;

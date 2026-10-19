@@ -34,7 +34,18 @@ public static class RightsTree
             rights.Add(Node(feat.Delete.Key, L["Delete"]));
           }
         }
+        rights.Add(Node(feat.MenuView.Key, L["Menu view"]));
         rights.Add(Node(feat.Export.Key, L["Export"]));
+
+        foreach (var accessRight in GetContainerRights(feat))
+        {
+          var labelKey = System.Text.RegularExpressions.Regex.Replace(accessRight.Action, "([a-z])([A-Z])", "$1 $2");
+          if (labelKey.Length > 1)
+          {
+            labelKey = labelKey[0] + labelKey[1..].ToLowerInvariant();
+          }
+          rights.Add(Node(accessRight.Key, modL[labelKey]));
+        }
 
         var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? modL[feat.Name] : modL[feat.CleanName];
         featureNodes.Add(Node(
@@ -63,6 +74,19 @@ public static class RightsTree
         IsDisabled = held != null && !Covers(held, key),
         Children = children ?? []
       };
+  }
+
+  private static IEnumerable<Right> GetContainerRights(Feature feature)
+  {
+    if (feature.GetType().GetProperty("AccessTo")?.GetValue(feature) is not FeatureAccess access)
+    {
+      return [];
+    }
+
+    return access.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+      .Where(p => p.PropertyType == typeof(Right) && p.GetIndexParameters().Length == 0)
+      .OrderBy(p => p.MetadataToken)
+      .Select(p => (Right)p.GetValue(access)!);
   }
 
   public static HashSet<string> FlattenKeys(IEnumerable<CheckboxTreeNodeDto> nodes)

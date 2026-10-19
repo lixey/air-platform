@@ -64,6 +64,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     await ValidateUniqueElementsAsync(elements, entity, ruleCtx, ct);
+    await ValidateReferenceElementsAsync(elements, entity, input, originalValues, ruleCtx, ct);
     return (saveCtx, ruleCtx);
   }
 
@@ -405,6 +406,110 @@ public abstract partial class FormService<TEntity, TInput>
           Path = el.Path,
           Detail = L[el.UniqueMessage ?? "FormValidationUnique"],
           Code = "form.validation.unique",
+          Type = MessageType.Error
+        });
+      }
+    }
+  }
+
+  private async Task ValidateReferenceElementsAsync(
+    Elements elements,
+    TEntity entity,
+    TInput input,
+    IReadOnlyDictionary<string, object?>? originalValues,
+    RuleContext<TInput> ruleCtx,
+    CancellationToken ct)
+  {
+    foreach (var el in elements.List)
+    {
+      if (el.ValueKind != FormValueKind.Reference || el.IsDisabled || el.IsServerOwned || string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
+
+      if (ruleCtx.Failures.Any(f => string.Equals(f.Path, el.Path, StringComparison.OrdinalIgnoreCase)))
+      {
+        continue;
+      }
+
+      var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
+      var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
+      if (inputProp == null && entityProp == null)
+      {
+        continue;
+      }
+
+      var val = inputProp != null
+        ? PropertyAccessorCache.GetValue(input, inputProp.Name)
+        : PropertyAccessorCache.GetValue(entity, entityProp!.Name);
+
+      if (val is not long refId || refId <= 0)
+      {
+        continue;
+      }
+
+      if (!IsNew &&
+          originalValues != null &&
+          originalValues.TryGetValue(el.Path, out var origVal) &&
+          origVal is long origId &&
+          origId == refId)
+      {
+        continue;
+      }
+
+      var refGridType = el.ReferenceServiceType
+        ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? Modules.ModuleCatalog.Instance.FindServiceType(rs) : null);
+
+      if (refGridType == null ||
+          Modules.ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, _app) is not Grid.IGridService refGrid)
+      {
+        continue;
+      }
+
+      var filterItems = new List<Air.Data.Contracts.FilterNode>
+      {
+        Air.Data.Contracts.FilterNode.Rule("id", Air.Data.Contracts.FilterOperator.Equals, refId)
+      };
+
+      if (el.Model is FormSelectModel selectModel)
+      {
+        if (selectModel.ReferenceFilter != null)
+        {
+          filterItems.Add(selectModel.ReferenceFilter);
+        }
+
+        if (selectModel.ReferenceDraftRules is { Count: > 0 })
+        {
+          foreach (var draftRule in selectModel.ReferenceDraftRules)
+          {
+            var draftProp = PropertyAccessorCache.GetProperty(typeof(TInput), draftRule.DraftField)
+              ?? PropertyAccessorCache.GetProperty(typeof(TEntity), draftRule.DraftField);
+            if (draftProp != null)
+            {
+              var draftVal = PropertyAccessorCache.GetProperty(typeof(TInput), draftRule.DraftField) != null
+                ? PropertyAccessorCache.GetValue(input, draftProp.Name)
+                : PropertyAccessorCache.GetValue(entity, draftProp.Name);
+              if (draftVal != null)
+              {
+                filterItems.Add(Air.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Air.Data.Contracts.FilterOperator.Equals, draftVal));
+              }
+            }
+          }
+        }
+      }
+
+      var combinedFilter = filterItems.Count == 1
+        ? filterItems[0]
+        : Air.Data.Contracts.FilterNode.All(filterItems.ToArray());
+
+      var countDto = await refGrid.GetCountAsync(new Grid.GridRequest { Filter = combinedFilter }, ct);
+      if (countDto.Total <= 0)
+      {
+        ruleCtx.Failures.Add(new MessageDto
+        {
+          Path = el.Path,
+          Detail = L["FormValidationReference"],
+          Code = "form.validation.reference",
           Type = MessageType.Error
         });
       }
