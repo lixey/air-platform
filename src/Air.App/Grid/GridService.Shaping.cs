@@ -63,7 +63,13 @@ public abstract partial class GridService<TEntity, TRow>
       {
         var rawName = PropertyAccessorCache.GetValue(value, "Name")?.ToString()
           ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
-        value = new Reference { Id = refEntity.Id, Name = Localizer.Instance[rawName] };
+        value = new Reference { Id = refEntity.Id, Name = L[rawName] };
+      }
+      else if (value is string strVal && !string.IsNullOrEmpty(strVal) &&
+               ((row is IReadOnlyEntity && string.Equals(column.Path, "name", StringComparison.OrdinalIgnoreCase)) ||
+                string.Equals(column.Path, "type", StringComparison.OrdinalIgnoreCase)))
+      {
+        value = L[strVal];
       }
 
       if (column.ColorEvaluator is not null)
@@ -76,7 +82,7 @@ public abstract partial class GridService<TEntity, TRow>
             value = new Dictionary<string, object?>
             {
               ["id"] = r.Id,
-              ["name"] = Localizer.Instance[r.Name],
+              ["name"] = L[r.Name],
               ["color"] = hue
             };
           }
@@ -88,6 +94,15 @@ public abstract partial class GridService<TEntity, TRow>
           {
             shaped[$"{column.Path}Color"] = hue;
           }
+        }
+      }
+
+      if (column.FormServiceResolver is not null && !shaped.ContainsKey("form"))
+      {
+        var formType = column.FormServiceResolver(row);
+        if (formType is not null)
+        {
+          shaped["form"] = Modules.ServicePathResolver.Resolve(formType);
         }
       }
 

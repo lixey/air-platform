@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Linq.Expressions;
 using System.Reflection;
 using Air.App.Internal;
@@ -51,7 +52,7 @@ public class FormSaveContext<TEntity, TInput>
       {
         var currentVal = PropertyAccessorCache.GetValue(Input, pi.Name);
         OriginalValues.TryGetValue(pi.Name, out var origVal);
-        if (!Equals(currentVal, origVal))
+        if (!ValuesEqual(currentVal, origVal))
         {
           return true;
         }
@@ -59,6 +60,18 @@ public class FormSaveContext<TEntity, TInput>
     }
 
     return false;
+  }
+
+  private static bool ValuesEqual(object? a, object? b)
+  {
+    if (ReferenceEquals(a, b)) return true;
+    if (a is string sa && b is null) return string.IsNullOrEmpty(sa);
+    if (a is null && b is string sb) return string.IsNullOrEmpty(sb);
+    if (a is IEnumerable ea and not string and not byte[] && b is IEnumerable eb and not string and not byte[])
+    {
+      return ea.Cast<object?>().SequenceEqual(eb.Cast<object?>());
+    }
+    return Equals(a, b);
   }
 }
 

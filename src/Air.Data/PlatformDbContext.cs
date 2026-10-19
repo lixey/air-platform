@@ -88,11 +88,18 @@ public abstract class PlatformDbContext : DbContext
         modelBuilder.Entity(clrType).Property(nameof(IInheritedByChildTenants.TenantId)).IsConcurrencyToken();
       }
 
-      if (typeof(IHasVersion).IsAssignableFrom(clrType))
+        if (typeof(IHasVersion).IsAssignableFrom(clrType))
       {
         modelBuilder.Entity(clrType).Property(nameof(IHasVersion.Ver)).IsConcurrencyToken();
       }
     }
+  }
+
+  protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+  {
+    base.ConfigureConventions(configurationBuilder);
+    configurationBuilder.Properties<DateTime>().HaveConversion<LocalDateTimeConverter>();
+    configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcOffsetConverter>();
   }
 
   public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -227,7 +234,7 @@ public abstract class PlatformDbContext : DbContext
     {
       if (entry.State == EntityState.Added)
       {
-        if (entry.Entity is IHasTimestamps timestamps && timestamps.CreatedAt == default)
+        if (entry.Entity is IHasTimestamps timestamps)
         {
           timestamps.CreatedAt = now;
         }
@@ -253,9 +260,13 @@ public abstract class PlatformDbContext : DbContext
       {
         var keepsVersion = ChangesLoginCountersOnly(entry);
 
-        if (entry.Entity is IHasTimestamps timestamps && !keepsVersion)
+        if (entry.Entity is IHasTimestamps timestamps)
         {
-          timestamps.UpdatedAt = now;
+          entry.Property(nameof(IHasTimestamps.CreatedAt)).IsModified = false;
+          if (!keepsVersion)
+          {
+            timestamps.UpdatedAt = now;
+          }
         }
 
         if (entry.Entity is IHasTenant)
@@ -278,4 +289,12 @@ public abstract class PlatformDbContext : DbContext
       }
     }
   }
+
+  private sealed class LocalDateTimeConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
+    v => DateTime.SpecifyKind(v, DateTimeKind.Unspecified),
+    v => DateTime.SpecifyKind(v, DateTimeKind.Unspecified));
+
+  private sealed class UtcOffsetConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimeOffset, DateTimeOffset>(
+    v => v.ToUniversalTime(),
+    v => v.ToUniversalTime());
 }

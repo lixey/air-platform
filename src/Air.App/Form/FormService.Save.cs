@@ -99,14 +99,6 @@ public abstract partial class FormService<TEntity, TInput>
 
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
-    if (IsReadOnly)
-    {
-      throw new FormRefusedException(
-        MutationOutcome.Refused,
-        L["FormReadOnly"],
-        [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
-    }
-
     var entityJson = json.ValueKind == JsonValueKind.Object && (json.TryGetProperty("value", out var val) || json.TryGetProperty("entity", out val))
       ? val
       : json;
@@ -159,10 +151,6 @@ public abstract partial class FormService<TEntity, TInput>
     var parent = new Parent();
     SetParent(parent);
 
-    var elements = new Elements();
-    await SetElementsAsync(elements, ct);
-    ApplyElementConstraints(elements);
-
     var hooks = new Hooks();
     SetHooks(hooks);
 
@@ -176,10 +164,6 @@ public abstract partial class FormService<TEntity, TInput>
         tenantEntity.TenantId = tid;
       }
       ApplyBoundParentId(entity, parent, Request.ParentId);
-      if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
-      {
-        statusFlow.Initialize(entity);
-      }
     }
     else
     {
@@ -195,7 +179,42 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       RestoreBoundParentId(entity, parent);
-      originalValues = SnapshotValues(entity);
+    }
+
+    var elements = new Elements();
+    await SetElementsAsync(elements, ct);
+    ApplyElementConstraints(elements);
+
+    if (IsReadOnly)
+    {
+      throw new FormRefusedException(
+        MutationOutcome.Refused,
+        L["FormReadOnly"],
+        [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
+    }
+
+    if (IsNew)
+    {
+      if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
+      {
+        statusFlow.Initialize(entity);
+      }
+    }
+    else
+    {
+      var baselineInput = new TInput();
+      CopyMatchingProperties(entity, baselineInput);
+      var baselineLoadCtx = new FormLoadContext<TEntity, TInput>
+      {
+        Entity = entity,
+        Input = baselineInput,
+        IsNew = false
+      };
+      foreach (var h in hooks.AfterLoadActions)
+      {
+        await h(baselineLoadCtx, ct);
+      }
+      originalValues = SnapshotValues(baselineInput);
     }
 
     NormalizeNullableStrings(elements, input);
@@ -237,22 +256,35 @@ public abstract partial class FormService<TEntity, TInput>
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
     }
 
-    if (IsNew)
+    await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
-      db.Set<TEntity>().Add(entity);
-    }
-    else
-    {
-      db.Set<TEntity>().Update(entity);
-    }
-    await db.SaveChangesAsync(ct);
+      await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-    foreach (var h in hooks.AfterSaveActions)
-    {
-      await h(saveCtx, ct);
-    }
+      if (IsNew)
+      {
+        db.Set<TEntity>().Add(entity);
+      }
+      else
+      {
+        db.Set<TEntity>().Update(entity);
+      }
+      await db.SaveChangesAsync(ct);
 
-    await db.SaveChangesAsync(ct);
+      foreach (var h in hooks.AfterSaveActions)
+      {
+        await h(saveCtx, ct);
+      }
+
+      if (saveCtx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+      }
+
+      await db.SaveChangesAsync(ct);
+      await tx.CommitAsync(ct);
+    });
+
     if (!ReferenceEquals(entity, input))
     {
       CopyMatchingProperties(entity, input);
@@ -268,24 +300,12 @@ public abstract partial class FormService<TEntity, TInput>
     Func<CancellationToken, Task<object?>> readRow,
     CancellationToken ct = default)
   {
-    if (IsReadOnly)
-    {
-      return new GridCellDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["FormReadOnly"], Path = path, Type = MessageType.Error }]
-      };
-    }
-
+    request.Id ??= id;
     Request = request;
     IsNew = false;
 
     var parent = new Parent();
     SetParent(parent);
-
-    var elements = new Elements();
-    await SetElementsAsync(elements, ct);
-    ApplyElementConstraints(elements);
 
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
@@ -300,7 +320,19 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     RestoreBoundParentId(entity, parent);
-    var originalValues = SnapshotValues(entity);
+
+    var elements = new Elements();
+    await SetElementsAsync(elements, ct);
+    ApplyElementConstraints(elements);
+
+    if (IsReadOnly)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["FormReadOnly"], Path = path, Type = MessageType.Error }]
+      };
+    }
 
     var input = entity is TInput same ? same : new TInput();
     if (!ReferenceEquals(entity, input))
@@ -322,6 +354,8 @@ public abstract partial class FormService<TEntity, TInput>
     {
       await h(loadCtx, ct);
     }
+
+    var originalValues = SnapshotValues(input);
 
     SetPropertyValue(input, path, value);
     if (!ReferenceEquals(entity, input))
@@ -364,14 +398,37 @@ public abstract partial class FormService<TEntity, TInput>
       };
     }
 
-    db.Set<TEntity>().Update(entity);
-    await db.SaveChangesAsync(ct);
-
-    foreach (var h in hooks.AfterSaveActions)
+    var cellRefused = await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
-      await h(saveCtx, ct);
+      await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+      db.Set<TEntity>().Update(entity);
+      await db.SaveChangesAsync(ct);
+
+      foreach (var h in hooks.AfterSaveActions)
+      {
+        await h(saveCtx, ct);
+      }
+
+      if (saveCtx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        return true;
+      }
+
+      await db.SaveChangesAsync(ct);
+      await tx.CommitAsync(ct);
+      return false;
+    });
+
+    if (cellRefused)
+    {
+      return new GridCellDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = saveCtx.Errors
+      };
     }
-    await db.SaveChangesAsync(ct);
 
     var row = await readRow(ct);
     return new GridCellDto
@@ -394,6 +451,10 @@ public abstract partial class FormService<TEntity, TInput>
     var entity = await db.Set<TEntity>().FindAsync([id], ct)
       ?? throw new KeyNotFoundException($"Entity {typeof(TEntity).Name} with ID {id} not found.");
 
+    var parent = new Parent();
+    SetParent(parent);
+    RestoreBoundParentId(entity, parent);
+
     var hooks = new Hooks();
     SetHooks(hooks);
 
@@ -408,14 +469,27 @@ public abstract partial class FormService<TEntity, TInput>
       throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], deleteCtx.Errors);
     }
 
-    db.Set<TEntity>().Remove(entity);
-    await db.SaveChangesAsync(ct);
-
-    foreach (var h in hooks.AfterDeleteActions)
+    await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
-      await h(deleteCtx, ct);
-    }
-    await db.SaveChangesAsync(ct);
+      await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+      db.Set<TEntity>().Remove(entity);
+      await db.SaveChangesAsync(ct);
+
+      foreach (var h in hooks.AfterDeleteActions)
+      {
+        await h(deleteCtx, ct);
+      }
+
+      if (deleteCtx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], deleteCtx.Errors);
+      }
+
+      await db.SaveChangesAsync(ct);
+      await tx.CommitAsync(ct);
+    });
   }
 
   public virtual async Task<FormActionDto> MoveStatusAsync(
@@ -424,6 +498,9 @@ public abstract partial class FormService<TEntity, TInput>
     JsonElement? body,
     CancellationToken ct = default)
   {
+    Request = new FormRequest { Id = id };
+    IsNew = false;
+
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     if (elements.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
@@ -719,6 +796,34 @@ public abstract partial class FormService<TEntity, TInput>
           Code = "form.validation.option",
           Type = MessageType.Error
         });
+      }
+      else if (el.Model is FormCheckboxSetModel { Options: { } checkOptions } && val is IEnumerable<long> checkIds)
+      {
+        var allowedIds = checkOptions.Select(o => o.Id).ToHashSet();
+        if (checkIds.Any(id => !allowedIds.Contains(id)))
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["FormValidationOption"],
+            Code = "form.validation.option",
+            Type = MessageType.Error
+          });
+        }
+      }
+      else if (el.Model is FormCheckboxTreeModel { Nodes: { } treeNodes } && val is IEnumerable<string> treeKeys)
+      {
+        var allowedKeys = Air.App.Auth.RightsTree.FlattenKeys(treeNodes);
+        if (treeKeys.Any(k => !allowedKeys.Contains(k)))
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["FormValidationOption"],
+            Code = "form.validation.option",
+            Type = MessageType.Error
+          });
+        }
       }
     }
   }

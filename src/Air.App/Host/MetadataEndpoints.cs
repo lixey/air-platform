@@ -73,7 +73,7 @@ internal static class MetadataEndpoints
           var rootItem = new MenuItemDto
           {
             Handle = module.Handle,
-            Name = Localizer.Instance[module.Name],
+            Name = Localizer.Instance.For(module.Handle)[module.Name],
             Path = module.Handle.ToLowerInvariant(),
             Items = trimmedNodes
           };
@@ -88,6 +88,7 @@ internal static class MetadataEndpoints
             continue;
           }
 
+          var featL = Localizer.Instance.For(feat.Module);
           var screen = feat.ServiceType != null ? ServicePathResolver.Resolve(feat.ServiceType) : feat.Path;
           if (metadata.Routes.All(r => r.Screen != screen && r.Path != feat.Path))
           {
@@ -95,7 +96,7 @@ internal static class MetadataEndpoints
             {
               Path = feat.Path,
               Handle = feat.Name.ToLowerInvariant(),
-              Name = Localizer.Instance[feat.Name],
+              Name = featL[feat.Name],
               Screen = screen
             });
           }
@@ -107,7 +108,7 @@ internal static class MetadataEndpoints
             {
               Path = flatPath,
               Handle = feat.Name.ToLowerInvariant(),
-              Name = Localizer.Instance[feat.Name],
+              Name = featL[feat.Name],
               Screen = screen
             });
           }
@@ -122,6 +123,7 @@ internal static class MetadataEndpoints
 
   private static MenuItemDto? ToMenuItem(string moduleHandle, ModuleMenuNode node, IUserContext user)
   {
+    var modL = Localizer.Instance.For(moduleHandle);
     if (node.IsSeparator)
     {
       return new MenuItemDto { IsSeparator = true };
@@ -146,7 +148,7 @@ internal static class MetadataEndpoints
       {
         Path = fullPath,
         Handle = node.Handle,
-        Name = node.Title != null ? Localizer.Instance[node.Title] : null,
+        Name = node.Title != null ? modL[node.Title] : null,
         Icon = node.Icon,
         Screen = feature.ServiceType != null ? ServicePathResolver.Resolve(feature.ServiceType) : feature.Path
       };
@@ -164,7 +166,7 @@ internal static class MetadataEndpoints
     return new MenuItemDto
     {
       Handle = node.Handle,
-      Name = node.Title != null ? Localizer.Instance[node.Title] : null,
+      Name = node.Title != null ? modL[node.Title] : null,
       Icon = node.Icon,
       Items = trimmedChildren
     };

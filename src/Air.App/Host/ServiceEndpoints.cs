@@ -242,6 +242,14 @@ internal static class ServiceEndpoints
 
         var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
         var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+        if (entity is IReadOnlyEntity && dict.TryGetValue("name", out var nameObj) && nameObj != null)
+        {
+          var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
+          if (!string.IsNullOrEmpty(nameStr))
+          {
+            dict["name"] = Localizer.Instance[nameStr];
+          }
+        }
         await form.PopulateReferencesAsync(dict, entity, screen, ct);
 
         screen.Data = new FormDataDto

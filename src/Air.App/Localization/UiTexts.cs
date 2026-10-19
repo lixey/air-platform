@@ -242,6 +242,8 @@ public sealed class Localizer : ILocalizer
 {
   public static readonly Localizer Instance = new();
 
+  private readonly Localizer? _root;
+  private readonly string? _moduleHandle;
   private readonly Lock _sync = new();
   private readonly List<System.Resources.ResourceManager> _managers = [];
   private readonly Dictionary<string, string> _canonicalKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -254,8 +256,19 @@ public sealed class Localizer : ILocalizer
     EnsureManagersLoaded();
   }
 
+  private Localizer(Localizer root, string moduleHandle)
+  {
+    _root = root;
+    _moduleHandle = moduleHandle;
+  }
+
   public void Register(Type resourceType)
   {
+    if (_root != null)
+    {
+      _root.Register(resourceType);
+      return;
+    }
     if (resourceType == null) return;
     lock (_sync)
     {
@@ -270,7 +283,7 @@ public sealed class Localizer : ILocalizer
       return;
     }
 
-    var mgr = new System.Resources.ResourceManager(resourceType);
+    var mgr = new System.Resources.ResourceManager(resourceType) { IgnoreCase = true };
     _managers.Add(mgr);
     IndexKeysLocked(mgr, System.Globalization.CultureInfo.InvariantCulture);
     try
@@ -299,6 +312,12 @@ public sealed class Localizer : ILocalizer
 
   public void EnsureManagersLoaded()
   {
+    if (_root != null)
+    {
+      _root.EnsureManagersLoaded();
+      return;
+    }
+
     var assemblies = AppDomain.CurrentDomain.GetAssemblies();
     if (assemblies.Length == _lastAssemblyCount)
     {
@@ -338,6 +357,16 @@ public sealed class Localizer : ILocalizer
     {
       result = string.Empty;
       return false;
+    }
+
+    if (_root != null)
+    {
+      if (!string.IsNullOrWhiteSpace(_moduleHandle) &&
+          _root.TryGetString($"{_moduleHandle}: {key}", out result))
+      {
+        return true;
+      }
+      return _root.TryGetString(key, out result);
     }
 
     var culture = System.Globalization.CultureInfo.CurrentUICulture;
@@ -382,7 +411,13 @@ public sealed class Localizer : ILocalizer
     return fallback;
   }
 
-  public Localizer For(string? moduleHandle) => this;
+  public Localizer For(string? moduleHandle)
+  {
+    var root = _root ?? this;
+    return string.IsNullOrWhiteSpace(moduleHandle) ? root : new Localizer(root, moduleHandle);
+  }
+
+  ILocalizer ILocalizer.For(string? moduleHandle) => For(moduleHandle);
 
   public string this[string key]
   {

@@ -25,6 +25,10 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
   {
+    ParentId = request?.ParentId;
+    var parent = new Parent();
+    SetParent(parent);
+
     var columns = CreateColumns();
 
     var isSelect = request?.ReferenceLabelPaths is { Count: > 0 } || (request?.IsReferencePicker ?? false);
@@ -41,7 +45,7 @@ public abstract partial class GridService<TEntity, TRow>
     LocalizeAndConfigureColumns(columns.List);
 
     var isUserReadOnly = User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
-    var isGridReadOnly = Feature.IsReadOnly || isUserReadOnly;
+    var isGridReadOnly = IsReadOnly || isUserReadOnly;
 
     var navStart = new List<NavElementModel>();
     if (formOverlay is not null && !isGridReadOnly)
@@ -56,7 +60,10 @@ public abstract partial class GridService<TEntity, TRow>
       });
     }
 
-    navStart.AddRange(nav.Pickers);
+    if (!isGridReadOnly)
+    {
+      navStart.AddRange(nav.Pickers);
+    }
     navStart.AddRange(nav.CustomStart);
 
     var navElements = new List<NavElementModel>
@@ -75,6 +82,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           var baseQ = BaseQuery(db);
           foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
+          if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
           badgeValue = baseQ.Where(item.Predicate).Count().ToString(CultureInfo.InvariantCulture);
         }
         catch { }
@@ -83,10 +91,10 @@ public abstract partial class GridService<TEntity, TRow>
       navElements.Add(new GridNavNamedFilterModel
       {
         Key = item.Key,
-        Label = Localizer.Instance[item.Label],
+        Label = L[item.Label],
         Badge = badgeValue,
         IsRemembered = item.IsRemembered,
-        IsSelected = false
+        IsSelected = request?.NamedFilters?.Any(k => string.Equals(k, item.Key, StringComparison.OrdinalIgnoreCase)) == true
       });
     }
 
@@ -163,12 +171,50 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
+    foreach (var rule in queryDeclaration.InitialFilters)
+    {
+      if (rule.Picked is null)
+      {
+        var col = columns.List.FirstOrDefault(c =>
+          string.Equals(c.Path, rule.Field, StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(c.FilterPath, rule.Field, StringComparison.OrdinalIgnoreCase));
+        if (col?.Options is { Count: > 0 } opts)
+        {
+          if (rule.Value is System.Collections.IEnumerable enumerable and not string)
+          {
+            rule.Picked = enumerable.Cast<object?>()
+              .Where(v => v != null)
+              .Select(v =>
+              {
+                var id = Convert.ToInt32(v, CultureInfo.InvariantCulture);
+                var opt = opts.FirstOrDefault(o => o.Id == id);
+                return new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) };
+              })
+              .ToList();
+          }
+          else if (rule.Value is not null)
+          {
+            var id = Convert.ToInt32(rule.Value, CultureInfo.InvariantCulture);
+            var opt = opts.FirstOrDefault(o => o.Id == id);
+            rule.Picked = [new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) }];
+          }
+        }
+      }
+    }
+
+    var initialFilter = queryDeclaration.InitialFilters.Count == 1
+      ? (FilterNode)queryDeclaration.InitialFilters[0]
+      : queryDeclaration.InitialFilters.Count > 1
+        ? FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()])
+        : null;
+
     var gridModel = new GridModel
     {
       Service = servicePath,
       Columns = columns.List.ToList(),
       IsReadOnly = isGridReadOnly,
       Form = formOverlay,
+      InitialFilter = initialFilter,
       MutationTexts = new MutationTextsDto
       {
         ConflictTitle = Localizer.Instance["MutationConflict"],
@@ -261,14 +307,24 @@ public abstract partial class GridService<TEntity, TRow>
       if (!string.IsNullOrEmpty(col.Label))
       {
         col.Label = !string.IsNullOrEmpty(col.Path)
-          ? Localizer.Instance.TextOr($"{Feature.CleanName}.{col.Path}",
-              Localizer.Instance.TextOr($"{Feature.Label}.{col.Path}",
-                Localizer.Instance.TextOr($"{Feature.Name}.{col.Path}", Localizer.Instance[col.Label])))
-          : Localizer.Instance[col.Label];
+          ? L.TextOr($"{Feature.CleanName}.{col.Path}",
+              L.TextOr($"{Feature.Label}.{col.Path}",
+                L.TextOr($"{Feature.Name}.{col.Path}", L[col.Label])))
+          : L[col.Label];
+      }
+      if (col.Options is { Count: > 0 })
+      {
+        col.Options = col.Options.Select(opt => new OptionDto
+        {
+          Id = opt.Id,
+          Name = L[opt.Name],
+          Color = opt.Color
+        }).ToList();
       }
       if (col.IsFilterable && col.Operators == null)
       {
-        col.Operators = GridFilterOperators.ForField(col.Type, col.ReferenceService != null, col.TemporalType != null);
+        var isRefOrSelect = col.ReferenceService != null || col.Options is { Count: > 0 } || col.Cell is GridCellReferenceModel;
+        col.Operators = GridFilterOperators.ForField(col.Type, isRefOrSelect, col.TemporalType != null);
       }
       if (col.IsFilterable && col.Header == null)
       {

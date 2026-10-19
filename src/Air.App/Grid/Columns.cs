@@ -35,14 +35,16 @@ public class Columns
   public GridColumn<TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
   {
     var path = ToCamelPath(MemberPath.Of(expression));
+    var isRefType = typeof(Reference).IsAssignableFrom(typeof(TProp));
     var col = new GridColumnDto
     {
       Path = path,
-      FilterPath = path,
+      FilterPath = isRefType && !path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) ? path + "Id" : path,
       Label = PathToLabel(path, typeof(TRow)),
-      Type = ResolveFieldType(typeof(TProp)),
+      Type = isRefType ? UiFieldType.Text : ResolveFieldType(typeof(TProp)),
       TemporalType = Form.Elements.ResolveTemporalType(typeof(TProp)),
-      Cell = ResolveDefaultCell(typeof(TProp)),
+      Cell = isRefType ? new GridCellReferenceModel() : ResolveDefaultCell(typeof(TProp)),
+      Header = isRefType ? new GridHeaderReferenceModel() : null,
       MemberType = typeof(TProp)
     };
     _columns.Add(col);
@@ -200,6 +202,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellSelectModel();
+    dto.Header = new GridHeaderReferenceModel();
     dto.Options = options.Select(o => new OptionDto
     {
       Id = o.Id,
@@ -295,6 +298,10 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
     dto.ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService));
+    if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
+    {
+      dto.FilterPath = dto.Path + "Id";
+    }
     return this;
   }
 
@@ -305,6 +312,10 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
     dto.ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService));
+    if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
+    {
+      dto.FilterPath = dto.Path + "Id";
+    }
     return this;
   }
 
@@ -425,6 +436,14 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Computed() { base.Computed(); return this; }
   public new GridColumn<TEntity, TProp> Hidden(bool hidden = true) { base.Hidden(hidden); return this; }
   public new GridColumn<TEntity, TProp> AsOpenForm<TFormService>() where TFormService : class { base.AsOpenForm<TFormService>(); return this; }
+  public GridColumn<TEntity, TProp> OpenForm(Func<TEntity, Type?> resolver)
+  {
+    Dto.Cell = new GridCellOpenFormModel();
+    Dto.Width ??= 80;
+    Dto.IsSticky = true;
+    Dto.FormServiceResolver = row => row is TEntity typed ? resolver(typed) : null;
+    return this;
+  }
   public new GridColumn<TEntity, TProp> AsCheckbox() { base.AsCheckbox(); return this; }
   public new GridColumn<TEntity, TProp> AsSelect(IEnumerable<OptionDto> options) { base.AsSelect(options); return this; }
   public new GridColumn<TEntity, TProp> AsDate() { base.AsDate(); return this; }
@@ -460,6 +479,18 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   }
 
   public GridColumn<TEntity, TProp> Hue(Expression<Func<TEntity, string?>> hueSelector) => Color(hueSelector);
+}
+
+public class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns owner) : GridColumn<TEntity, TProp>(dto, owner)
+{
+  public GridColumn<TEntity, TRow, TProp> OpenForm(Func<TRow, Type?> resolver)
+  {
+    Dto.Cell = new GridCellOpenFormModel();
+    Dto.Width ??= 80;
+    Dto.IsSticky = true;
+    Dto.FormServiceResolver = row => row is TRow typed ? resolver(typed) : null;
+    return this;
+  }
 }
 
 public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dto, Columns owner)

@@ -118,7 +118,12 @@ public abstract partial class FormService<TEntity, TInput>
       if (!prop.CanRead || IsIgnoredNavigationProperty(prop.PropertyType)) continue;
       try
       {
-        dict[prop.Name] = PropertyAccessorCache.GetValue(entity, prop.Name);
+        var val = PropertyAccessorCache.GetValue(entity, prop.Name);
+        if (val is IEnumerable enumerable and not string and not byte[])
+        {
+          val = enumerable.Cast<object?>().ToArray();
+        }
+        dict[prop.Name] = val;
       }
       catch { }
     }
@@ -193,9 +198,19 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private static bool IsIgnoredNavigationProperty(Type propertyType) =>
-    typeof(IEntity).IsAssignableFrom(propertyType) ||
-    (typeof(IEnumerable).IsAssignableFrom(propertyType) &&
-     propertyType != typeof(string) &&
-     propertyType != typeof(byte[]));
+  private static bool IsIgnoredNavigationProperty(Type propertyType)
+  {
+    if (typeof(IEntity).IsAssignableFrom(propertyType)) return true;
+    if (propertyType == typeof(string) || propertyType == typeof(byte[])) return false;
+    if (typeof(IEnumerable).IsAssignableFrom(propertyType))
+    {
+      var elemType = propertyType.IsArray
+        ? propertyType.GetElementType()
+        : propertyType.IsGenericType
+          ? propertyType.GetGenericArguments()[0]
+          : null;
+      return elemType == null || typeof(IEntity).IsAssignableFrom(elemType);
+    }
+    return false;
+  }
 }

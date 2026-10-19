@@ -56,11 +56,11 @@ public abstract partial class GridService<TEntity, TRow>
 
     query = IncludeColumnNavigations(query, cols.List);
 
-    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
+    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
     if (isSelect)
     {
-      var labelPaths = gridReq!.ReferenceLabelPaths!;
-      var patchColumns = gridReq.PatchSourceColumns ?? [];
+      var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 } ? gridReq.ReferenceLabelPaths : ["name"];
+      var patchColumns = gridReq?.PatchSourceColumns ?? [];
       var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
       foreach (var p in patchColumns) preserved.Add(p);
       cols.RetainOnly(preserved);
@@ -71,21 +71,27 @@ public abstract partial class GridService<TEntity, TRow>
       request.Sort = queryDeclaration.DefaultSort.ToList();
     }
 
+    if (!string.IsNullOrWhiteSpace(request.Search) && queryDeclaration.PickKeySelector != null)
+    {
+      request.Search = queryDeclaration.PickKeySelector(request.Search);
+    }
+
     if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
     {
       request.SearchFields = queryDeclaration.SearchFields.ToList();
     }
 
-    if (!isSelect && request.Filter is null && request.ColumnFilter is null && (gridReq?.NamedFilters is not { Count: > 0 }) && queryDeclaration.InitialFilters.Count > 0)
+    if (!isSelect && !(gridReq?.IsDataOnly ?? false) && request.Filter is null && request.ColumnFilter is null && (gridReq?.NamedFilters is not { Count: > 0 }) && queryDeclaration.InitialFilters.Count > 0)
     {
       request.Filter = queryDeclaration.InitialFilters.Count == 1
         ? queryDeclaration.InitialFilters[0]
         : FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()]);
     }
 
+    var queryMap = BuildQueryMap(queryDeclaration, cols.List);
+
     if (queryDeclaration.Selector != null)
     {
-      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
       var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
       var page = await dataProvider.GetPageAsync(request, ct);
       if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
@@ -100,6 +106,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         Rows = shapedRows,
         BottomRows = bottomRows,
+        Forms = CollectRowFormOverlays(shapedRows),
         Total = page.Total,
         Number = page.Number,
         Size = page.Size,
@@ -107,8 +114,7 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var defaultQueryMap = BuildDefaultQueryMap(cols.List);
-    var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+    var defaultDataProvider = DataProvider.Create(query, queryMap);
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
@@ -118,6 +124,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       Rows = defaultShapedRows,
       BottomRows = defaultBottomRows,
+      Forms = CollectRowFormOverlays(defaultShapedRows),
       Total = defaultPage.Total,
       Number = defaultPage.Number,
       Size = defaultPage.Size,
@@ -130,22 +137,27 @@ public abstract partial class GridService<TEntity, TRow>
     var query = BuildFilteredEntityQuery(request, out var parent, out var queryDeclaration);
     var cols = CreateColumns();
 
+    if (!string.IsNullOrWhiteSpace(request.Search) && queryDeclaration.PickKeySelector != null)
+    {
+      request.Search = queryDeclaration.PickKeySelector(request.Search);
+    }
+
     if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
     {
       request.SearchFields = queryDeclaration.SearchFields.ToList();
     }
 
+    var queryMap = BuildQueryMap(queryDeclaration, cols.List);
+
     int total;
     if (queryDeclaration.Selector != null)
     {
-      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
       var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
       total = await dataProvider.Filter(request).CountAsync(ct);
     }
     else
     {
-      var defaultQueryMap = BuildDefaultQueryMap(cols.List);
-      var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+      var defaultDataProvider = DataProvider.Create(query, queryMap);
       total = await defaultDataProvider.Filter(request).CountAsync(ct);
     }
 
@@ -385,53 +397,144 @@ public abstract partial class GridService<TEntity, TRow>
     return validProps.Count > 0 ? string.Join('.', validProps) : null;
   }
 
-  private static QueryMap<TEntity> BuildDefaultQueryMap(IReadOnlyList<GridColumnDto> columns)
+  private Dictionary<string, object?>? CollectRowFormOverlays(List<object> shapedRows)
   {
-    var builder = QueryMap.FromEntity<TEntity>();
+    Dictionary<string, object?>? forms = null;
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is Dictionary<string, object?> dict &&
+          dict.TryGetValue("form", out var formObj) &&
+          formObj is string formHandle &&
+          !string.IsNullOrEmpty(formHandle) &&
+          (forms == null || !forms.ContainsKey(formHandle)))
+      {
+        var formType = ModuleCatalog.Instance.FindServiceType(formHandle);
+        if (formType != null && typeof(Form.IFormService).IsAssignableFrom(formType))
+        {
+          try
+          {
+            if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, _app) is Form.IFormService formInstance)
+            {
+              forms ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+              forms[formHandle] = formInstance.Overlay(formHandle);
+            }
+          }
+          catch { }
+        }
+      }
+    }
+    return forms;
+  }
+
+  internal static QueryMap<TEntity> BuildQueryMap(Query queryDeclaration, IReadOnlyList<GridColumnDto> columns)
+  {
+    var builder = queryDeclaration.Selector is not null
+      ? QueryMap.FromSelector(queryDeclaration.Selector)
+      : QueryMap.FromEntity<TEntity>();
+
+    builder.AddEntityProperties();
+
     var entityParam = Expression.Parameter(typeof(TEntity), "e");
 
     foreach (var col in columns)
     {
-      if (string.IsNullOrEmpty(col.Path) || builder.FindExpression(col.Path) is not null) continue;
+      if (string.IsNullOrEmpty(col.Path)) continue;
 
-      var segments = col.Path.Split('.');
-      Expression? current = entityParam;
-      var currentType = typeof(TEntity);
-
-      foreach (var segment in segments)
+      var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
+      if (isRef)
       {
-        var prop = PropertyAccessorCache.GetProperty(currentType, segment);
-        if (prop is null)
+        var nameExpr = builder.FindExpression(col.Path + ".Name")
+          ?? BuildEntityMemberExpression(entityParam, col.Path, preferNameOnObject: true);
+        if (nameExpr != null)
         {
-          current = null;
-          break;
+          builder.Field(col.Path, nameExpr);
         }
-        current = Expression.Property(current, prop);
-        currentType = prop.PropertyType;
+
+        if (!string.IsNullOrEmpty(col.FilterPath) && !string.Equals(col.FilterPath, col.Path, StringComparison.OrdinalIgnoreCase))
+        {
+          var idExpr = builder.FindExpression(col.FilterPath)
+            ?? builder.FindExpression(col.Path + ".Id")
+            ?? BuildEntityMemberExpression(entityParam, col.FilterPath, preferNameOnObject: false);
+          if (idExpr != null)
+          {
+            builder.Field(col.FilterPath, idExpr);
+          }
+        }
+        continue;
       }
 
-      if (current is null) continue;
+      if (builder.FindExpression(col.Path) is null)
+      {
+        var expr = BuildEntityMemberExpression(entityParam, col.Path, preferNameOnObject: true);
+        if (expr is not null)
+        {
+          builder.Field(col.Path, expr);
+        }
+      }
+    }
 
-      if (!IsScalarType(currentType))
+    if (queryDeclaration.SearchFields is { Count: > 0 })
+    {
+      foreach (var sf in queryDeclaration.SearchFields)
+      {
+        if (builder.FindExpression(sf) is not null)
+        {
+          try
+          {
+            builder.Configure(sf, f => f.Searchable());
+          }
+          catch { }
+        }
+      }
+    }
+
+    foreach (var rule in queryDeclaration.DefaultSort)
+    {
+      if (builder.FindExpression(rule.Field) is null)
+      {
+        var sortExpr = BuildEntityMemberExpression(entityParam, rule.Field, preferNameOnObject: true);
+        if (sortExpr is not null)
+        {
+          builder.Field(rule.Field, sortExpr, f => f.SortOnly());
+        }
+      }
+    }
+
+    return builder.Build();
+  }
+
+  private static LambdaExpression? BuildEntityMemberExpression(ParameterExpression entityParam, string path, bool preferNameOnObject)
+  {
+    var segments = path.Split('.');
+    Expression? current = entityParam;
+    var currentType = typeof(TEntity);
+
+    foreach (var segment in segments)
+    {
+      var prop = PropertyAccessorCache.GetProperty(currentType, segment);
+      if (prop is null)
+      {
+        return null;
+      }
+      current = Expression.Property(current, prop);
+      currentType = prop.PropertyType;
+    }
+
+    if (!IsScalarType(currentType))
+    {
+      if (preferNameOnObject)
       {
         var nameProp = PropertyAccessorCache.GetProperty(currentType, "Name");
         if (nameProp != null && IsScalarType(nameProp.PropertyType))
         {
           current = Expression.Property(current, nameProp);
-        }
-        else
-        {
-          current = null;
+          return Expression.Lambda(current, entityParam);
         }
       }
-
-      if (current is not null)
-      {
-        builder.Field(col.Path, Expression.Lambda(current, entityParam));
-      }
+      return null;
     }
 
-    return builder.Build();
+    return Expression.Lambda(current, entityParam);
   }
 
   private static bool IsScalarType(Type t)

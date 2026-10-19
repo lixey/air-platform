@@ -42,7 +42,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public PlatformAppService? PlatformApp => _app;
   protected Auth.IUserContext? User => _app?.User;
-  protected Localizer L => Localizer.Instance;
+  protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
 
@@ -55,6 +55,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     internal Func<IQueryable<TEntity>, long, IQueryable<TEntity>>? FilterFunc { get; private set; }
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
+    public bool HasRead { get; private set; }
 
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
@@ -87,6 +88,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public void Read<TParentService>()
     {
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      HasRead = true;
     }
   }
 
@@ -141,6 +143,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     internal List<string>? SearchFields { get; private set; }
     internal List<FilterRule> InitialFilters { get; } = [];
     internal List<string>? ReferenceLabelPaths { get; private set; }
+    internal string? PickByField { get; private set; }
+    internal Func<string, string>? PickKeySelector { get; private set; }
     public Func<IReadOnlyList<TRow>, CancellationToken, Task>? ComputeAction { get; private set; }
 
     private static string? GetMemberName(Expression expr)
@@ -218,7 +222,18 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return this;
     }
 
-    public Query PickBy<TProp>(Expression<Func<TRow, TProp>> expr, Func<string, string>? keySelector = null) => this;
+    public Query PickBy<TProp>(Expression<Func<TRow, TProp>> expr, Func<string, string>? keySelector = null)
+    {
+      var path = GetMemberPath(expr.Body);
+      if (!string.IsNullOrEmpty(path))
+      {
+        PickByField = path;
+        PickKeySelector = keySelector;
+        SearchFields ??= [path];
+      }
+      return this;
+    }
+
     public Query FlagRows(string flagName, Func<TRow, bool> predicate) => this;
 
     internal List<NamedFilterItem> NamedFilters { get; } = [];
@@ -367,13 +382,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       Delegate method,
       string? label = null)
     {
+      var setParentMethod = typeof(TSource).GetMethod("SetParent", BindingFlags.Instance | BindingFlags.NonPublic);
+      var readsParent = setParentMethod != null && setParentMethod.DeclaringType != null && !setParentMethod.DeclaringType.IsGenericType;
       var picker = new GridNavPickerModel
       {
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
         Label = label != null ? Localizer.Instance[label] : null,
         ReferenceService = ServicePathResolver.Resolve(typeof(TSource)),
-        MinLength = 2
+        MinLength = 2,
+        ReadsParent = readsParent
       };
       Pickers.Add(picker);
       return new NavPickerBuilder(picker);
@@ -402,10 +420,10 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public sealed class Columns : Columns<TRow>
   {
-    public new GridColumn<TEntity, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
+    public new GridColumn<TEntity, TRow, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
     {
       var col = base.Add(expression);
-      return new GridColumn<TEntity, TProp>(col.Dto, this);
+      return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
     }
   }
 

@@ -31,6 +31,19 @@ public abstract partial class FormService<TEntity, TInput>
     var id = request.Id;
     IsNew = (id is null or 0);
 
+    var parent = new Parent();
+    SetParent(parent);
+
+    TEntity? entity = null;
+    if (id is not null && id > 0)
+    {
+      entity = await db.Set<TEntity>().FindAsync([id.Value], ct);
+      if (entity != null)
+      {
+        RestoreBoundParentId(entity, parent);
+      }
+    }
+
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
 
@@ -63,12 +76,6 @@ public abstract partial class FormService<TEntity, TInput>
         SelectionCorrectionLabel = L["MutationSelectionCorrection"]
       }
     };
-
-    TEntity? entity = null;
-    if (id is not null && id > 0)
-    {
-      entity = await db.Set<TEntity>().FindAsync([id.Value], ct);
-    }
 
     var caption = RecordCaption(entity, id);
     var filesChildren = elements.Children.Where(c => c.IsFiles).ToList();
@@ -153,6 +160,14 @@ public abstract partial class FormService<TEntity, TInput>
               L.TextOr($"{Feature.Label}.{el.Path}",
                 L.TextOr($"{Feature.Name}.{el.Path}", L[el.Label])))
           : L[el.Label];
+      }
+      if (!string.IsNullOrEmpty(el.Placeholder))
+      {
+        el.Placeholder = L[el.Placeholder];
+      }
+      if (!string.IsNullOrEmpty(el.Help))
+      {
+        el.Help = L[el.Help];
       }
       if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))
       {
@@ -621,9 +636,11 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
-      var refName = ReadDisplayCaption(navObj);
+      var selectModel = el.Model as FormSelectModel;
+      var labelPaths = selectModel?.ReferenceLabelPaths;
+      var refName = ReadDisplayCaption(navObj, labelPaths);
 
-      if (string.IsNullOrEmpty(refName) && el.Model is FormSelectModel selectModel && !string.IsNullOrEmpty(selectModel.ReferenceService))
+      if (string.IsNullOrEmpty(refName) && selectModel != null && !string.IsNullOrEmpty(selectModel.ReferenceService))
       {
         var refServiceType = ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
           ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
@@ -636,7 +653,7 @@ public abstract partial class FormService<TEntity, TInput>
             try
             {
               var loaded = await db.FindAsync(refEntityType, [key.Value], ct);
-              refName = ReadDisplayCaption(loaded);
+              refName = ReadDisplayCaption(loaded, labelPaths);
             }
             catch { }
           }
@@ -651,9 +668,25 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private static string? ReadDisplayCaption(object? target)
+  private static string? ReadDisplayCaption(object? target, IReadOnlyList<string>? labelPaths = null)
   {
     if (target == null) return null;
+    if (labelPaths is { Count: > 0 })
+    {
+      var parts = new List<string>(labelPaths.Count);
+      foreach (var path in labelPaths)
+      {
+        var partVal = PropertyAccessorCache.GetValue(target, path)?.ToString();
+        if (!string.IsNullOrWhiteSpace(partVal))
+        {
+          parts.Add(partVal);
+        }
+      }
+      if (parts.Count > 0)
+      {
+        return string.Join(" ", parts);
+      }
+    }
     var val = PropertyAccessorCache.GetValue(target, "Name")
       ?? PropertyAccessorCache.GetValue(target, "Title")
       ?? PropertyAccessorCache.GetValue(target, "Number")

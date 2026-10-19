@@ -45,7 +45,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public sealed class Elements : Elements<TInput> { }
 
-  protected Localizer L => Localizer.Instance;
+  protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   public virtual Feature Feature => new("", GetType().Name.Replace("FormService", "").ToLowerInvariant(), GetType());
 

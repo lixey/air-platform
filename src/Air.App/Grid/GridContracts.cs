@@ -164,6 +164,9 @@ public sealed class GridColumnDto
 
   [JsonIgnore]
   internal Type? MemberType { get; set; }
+
+  [JsonIgnore]
+  internal Func<object, Type?>? FormServiceResolver { get; set; }
 }
 
 // Concrete Cell Models

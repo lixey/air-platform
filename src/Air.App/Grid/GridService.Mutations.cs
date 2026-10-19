@@ -92,7 +92,8 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
-    if (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All))
+    ParentId = request.ParentId;
+    if (IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All)))
     {
       return new GridDeleteDto
       {
@@ -102,7 +103,6 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    ParentId = request.ParentId;
     var ids = request.SelectedIds ?? [];
     if (ids.Count == 0 && request.Id.HasValue)
     {
@@ -133,32 +133,48 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    try
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
-      db.Set<TEntity>().RemoveRange(entities);
-      await db.SaveChangesAsync(ct);
-
-      foreach (var h in hooks.AfterDeleteActions)
+      await using var tx = await db.Database.BeginTransactionAsync(ct);
+      try
       {
-        await h(ctx, ct);
+        db.Set<TEntity>().RemoveRange(entities);
+        await db.SaveChangesAsync(ct);
+
+        foreach (var h in hooks.AfterDeleteActions)
+        {
+          await h(ctx, ct);
+        }
+        if (ctx.Errors.Count > 0)
+        {
+          await tx.RollbackAsync(ct);
+          return new GridDeleteDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Deleted = 0,
+            Warnings = [.. ctx.Errors.Select(e => e.ToMessage())]
+          };
+        }
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
       }
-      await db.SaveChangesAsync(ct);
-    }
-    catch (DbUpdateException)
-    {
+      catch (DbUpdateException)
+      {
+        await tx.RollbackAsync(ct);
+        return new GridDeleteDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Deleted = 0,
+          Warnings = [new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error }]
+        };
+      }
+
       return new GridDeleteDto
       {
-        Outcome = MutationOutcome.Refused,
-        Deleted = 0,
-        Warnings = [new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error }]
+        Outcome = MutationOutcome.Committed,
+        Deleted = entities.Count
       };
-    }
-
-    return new GridDeleteDto
-    {
-      Outcome = MutationOutcome.Committed,
-      Deleted = entities.Count
-    };
+    });
   }
 
   public virtual async Task<object?> ReadRowAsync(long id, CancellationToken ct = default)
@@ -274,10 +290,10 @@ public abstract partial class GridService<TEntity, TRow>
 
     const int limit = 100_000;
     IAsyncEnumerable<object> rowStream;
+    var queryMap = BuildQueryMap(queryDeclaration, cols.List);
 
     if (queryDeclaration.Selector != null)
     {
-      var queryMap = QueryMap.FromSelector(queryDeclaration.Selector).Build();
       var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
       if (queryDeclaration.ComputeAction != null)
       {
@@ -304,8 +320,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
     else
     {
-      var defaultQueryMap = BuildDefaultQueryMap(cols.List);
-      var defaultDataProvider = DataProvider.Create(query, defaultQueryMap);
+      var defaultDataProvider = DataProvider.Create(query, queryMap);
       rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
     }
 

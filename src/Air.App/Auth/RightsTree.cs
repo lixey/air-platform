@@ -17,6 +17,7 @@ public static class RightsTree
       var features = module.Features;
       if (features.Count == 0) continue;
 
+      var modL = L.For(module.Handle);
       var featureNodes = new List<CheckboxTreeNodeDto>();
       foreach (var feat in features)
       {
@@ -35,7 +36,7 @@ public static class RightsTree
         }
         rights.Add(Node(feat.Export.Key, L["Export"]));
 
-        var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? L[feat.Name] : L[feat.CleanName];
+        var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? modL[feat.Name] : modL[feat.CleanName];
         featureNodes.Add(Node(
           feat.All.Key,
           featureLabel,
@@ -46,7 +47,7 @@ public static class RightsTree
 
       modules.Add(Node(
         $"{module.Handle}.*",
-        L[module.Name],
+        modL[module.Name],
         featureNodes
       ));
     }
