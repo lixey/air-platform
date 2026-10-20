@@ -3,9 +3,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { defineConfig } from 'vitest/config';
 
-// The library through the link `demo/web/.air-ui`, by the link's path and never its target: bare imports then resolve
-// from `demo/web/node_modules`, and the JIT plugin below recognises the library's files by this prefix.
-const root = fileURLToPath(new URL('../../.air-ui/', import.meta.url));
+const root = fileURLToPath(new URL('./', import.meta.url));
 
 export default defineConfig({
   root,

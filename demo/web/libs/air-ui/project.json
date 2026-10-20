@@ -11,14 +11,14 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "eslint .air-ui/src .air-ui/tests --config libs/air-ui/eslint.config.mjs --max-warnings 0"
+        "command": "eslint libs/air-ui/src --config libs/air-ui/eslint.config.mjs --max-warnings 0"
       }
     },
     "typecheck": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "commands": ["tsc -p .air-ui/tsconfig.spec.json --noEmit", "ngc -p .air-ui/tsconfig.lib.json --noEmit"],
+        "commands": ["tsc -p libs/air-ui/tsconfig.json --noEmit"],
         "parallel": false
       }
     },
