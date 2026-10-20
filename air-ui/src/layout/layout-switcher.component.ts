@@ -91,9 +91,11 @@ export class LayoutSwitcherComponent {
     return switcher ? `${switcher.label}: ${switcher.current.name}` : '';
   });
 
-  protected readonly hostClasses = computed(() => (this.fluid() ? 'flex min-w-0 flex-1' : 'contents'));
-  protected readonly buttonClasses = computed(() => [this.onPage() ? ON_PAGE : '', this.fluid() ? 'max-w-full' : ''].join(' ').trim());
-  protected readonly nameClasses = computed(() => (this.fluid() ? 'min-w-0 truncate' : 'min-w-0 max-w-40 truncate'));
+  protected readonly hostClasses = computed(() => (this.model() && this.fluid() ? 'flex min-w-0 flex-1' : 'contents'));
+  protected readonly buttonClasses = computed(() =>
+    [this.onPage() ? ON_PAGE : '', this.fluid() ? 'w-full max-w-full' : ''].join(' ').trim(),
+  );
+  protected readonly nameClasses = computed(() => (this.fluid() ? 'min-w-0 flex-1 text-left truncate' : 'min-w-0 max-w-40 truncate'));
   protected readonly labelClasses = computed(() => `inline-flex min-w-0 max-w-full items-center font-medium ${LABEL_SIZE[this.size()]}`);
 
   /** Options and the endpoint come together, and only to a principal who may switch. */

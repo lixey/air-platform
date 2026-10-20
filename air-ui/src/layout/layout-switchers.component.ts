@@ -11,8 +11,12 @@ import { LayoutSwitcherComponent } from './layout-switcher.component';
   selector: 'ui-layout-switchers',
   imports: [LayoutSwitcherComponent],
   template: `
-    <ui-layout-switcher [onPage]="onPage()" [size]="size()" [fluid]="fluid()" [model]="app.tenant()" />
-    <ui-layout-switcher [onPage]="onPage()" [size]="size()" [fluid]="fluid()" [model]="app.language()" />
+    @if (app.tenant(); as tenant) {
+      <ui-layout-switcher [onPage]="onPage()" [size]="size()" [fluid]="fluid()" [model]="tenant" />
+    }
+    @if (app.language(); as language) {
+      <ui-layout-switcher [onPage]="onPage()" [size]="size()" [fluid]="fluid()" [model]="language" />
+    }
   `,
   host: { class: 'contents' },
 })
