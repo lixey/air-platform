@@ -3,10 +3,14 @@ import type { FormValueControl } from '@angular/forms/signals';
 import { FIELD_DESCRIPTION } from '../controls/field-description';
 import { FIELD_LOOK } from '../controls/field-look';
 import { resultGate } from '../controls/result-gate';
+import type { FormDataDto, OverlayModelDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import { isFormData } from '../form/form-value';
 import { UiIconDirective } from '../icon/ui-icon.directive';
+import { OverlayService } from '../overlay/overlay.service';
+import { ScreenMutations } from '../screen/screen-mutations';
 import { FIELD_FOCUS_WITHIN, FIELD_HOVER, INVALID_EDGE, PICK_CHIP } from '../theme/css-classes';
-import type { SelectOption } from './select-option';
+import { optionOfRow, type SelectOption } from './select-option';
 import type { SelectSource } from './select-source';
 import { SelectService } from './select.service';
 
@@ -95,6 +99,19 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
           <i icon="close" class="[&>svg]:size-3.5" aria-hidden="true"></i>
         </button>
       }
+      @if (createOverlay() && !refusesInput()) {
+        <button
+          type="button"
+          tabindex="-1"
+          class="hue-emerald flex items-center justify-center size-6 mr-0.5 rounded-md text-muted hover:text-(--hue-ink) hover:bg-(--hue-soft) transition-colors cursor-pointer [&>svg]:size-4 [&_svg]:size-4"
+          [class]="multiple() ? 'self-start mt-1.25' : ''"
+          [title]="texts.of('Add')"
+          [attr.aria-label]="texts.of('Add')"
+          (click)="create($event)"
+        >
+          <i icon="plus" class="[&>svg]:size-4" aria-hidden="true"></i>
+        </button>
+      }
       <i
         icon="chevron-bottom"
         class="shrink-0 px-2 text-muted [&>svg]:size-4 [&>svg]:m-0"
@@ -115,6 +132,8 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
 export class SelectComponent implements FormValueControl<unknown> {
   protected readonly texts = inject(TextsService);
   protected readonly select = inject(SelectService);
+  private readonly overlay = inject(OverlayService);
+  private readonly mutations = inject(ScreenMutations, { optional: true });
   private readonly injector = inject(Injector);
   protected readonly description = inject(FIELD_DESCRIPTION, { optional: true });
   /** How the box is drawn: its own, or the whole of a cell whose editor it is. */
@@ -129,6 +148,7 @@ export class SelectComponent implements FormValueControl<unknown> {
   readonly disabled = input(false, { transform: booleanAttribute });
   readonly invalid = input(false);
   readonly placeholder = input<string>('');
+  readonly createOverlay = input<OverlayModelDto | null>(null);
 
   /** The picked: one option or none in single mode, any number in multiple. */
   readonly picked = model<readonly SelectOption[]>([]);
@@ -202,6 +222,43 @@ export class SelectComponent implements FormValueControl<unknown> {
   protected clear(event: Event): void {
     event.stopPropagation();
     this.write([]);
+  }
+
+  protected create(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const overlayModel = this.createOverlay();
+    if (!overlayModel || this.refusesInput()) {
+      return;
+    }
+    this.acceptsResult.set(true);
+    const targetService = overlayModel.screen?.service;
+    const ref = this.overlay.open(overlayModel, this.combobox().nativeElement, this.injector);
+    const applySaved = (data: FormDataDto | null | undefined) => {
+      if (!data || typeof data.id !== 'number' || data.id <= 0 || !this.acceptsResult()) {
+        return;
+      }
+      const option = optionOfRow({ ...data.value, id: data.id }, this.model().labelPaths);
+      const current = this.picked();
+      const next = this.multiple()
+        ? current.some(o => o.id === option.id)
+          ? current.map(o => (o.id === option.id ? option : o))
+          : [...current, option]
+        : [option];
+      this.write(next);
+    };
+    const unsubscribeMutation = this.mutations?.subscribe({
+      accepts: e => e.operation === 'save' && (!targetService || e.service === targetService),
+      refresh: e => applySaved(e?.data),
+      invalidate: () => undefined,
+    });
+    const closedSub = ref.closed.subscribe(result => {
+      unsubscribeMutation?.();
+      closedSub.unsubscribe();
+      if (isFormData(result)) {
+        applySaved(result);
+      }
+    });
   }
 
   /** The host's picked, the key a form field binds and the service's picked, together, so the next opening starts from what is shown. */

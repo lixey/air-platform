@@ -242,6 +242,7 @@
   "Handle": "Handle",
   "Client": "Client",
   "IdempotencyKeyReused": "The idempotency key was already used for another request.",
+  "Code": "Code",
   "AuthPermission": "Permission",
   "Unavailable": "The server is unavailable",
   "Pages": "Pages",

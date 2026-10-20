@@ -1,5 +1,5 @@
 import type { PickedValue, Reference } from '../core/generated/contracts';
-import { valueAt } from '../core/json';
+import { isRecord, valueAt } from '../core/json';
 
 /** One thing a select offers or holds: the id the filter uses, the label the user sees, and the row it came from. */
 export interface SelectOption extends PickedValue {
@@ -18,17 +18,17 @@ export function labelPathsOf(labelPaths: readonly string[] | null | undefined): 
   return labelPaths && labelPaths.length > 0 ? labelPaths : DEFAULT_LABEL_PATHS;
 }
 
-/** The label of a row for a select: the label paths' values joined by a space, or `name`, `label` or the id. */
+/** The label of a row for a select: the scalar label paths' values joined by a space, or `name`, `label` or the id. */
 export function optionLabelOf(row: Row, labelPaths: readonly string[] | null | undefined): string {
   const parts = (labelPaths ?? DEFAULT_LABEL_PATHS)
     .map(path => valueAt(row, path))
-    .filter(value => value !== null && value !== undefined && value !== '')
+    .filter(value => value !== null && value !== undefined && value !== '' && !isRecord(value))
     .map(value => String(value));
   if (parts.length > 0) {
     return parts.join(' ');
   }
   const fallback = valueAt(row, 'name') ?? valueAt(row, 'label') ?? valueAt(row, 'id');
-  return fallback === null || fallback === undefined ? '' : String(fallback);
+  return fallback === null || fallback === undefined || isRecord(fallback) ? '' : String(fallback);
 }
 
 /** A row as an option: the id, the label from the label paths, the row kept beside. */

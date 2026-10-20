@@ -135,24 +135,35 @@ public sealed class QueryMapBuilder<TEntity> where TEntity : class
   {
     var (name, expression, options) = declaration;
     var type = expression.ReturnType;
-    var kind = FieldKinds.Of(type)
+    var collection = FieldKinds.CollectionOf(type);
+    var kind = collection?.Kind ?? FieldKinds.Of(type)
       ?? throw new InvalidOperationException($"Field '{name}' of '{typeof(TEntity).Name}' is a '{type.Name}': no request value compares with it.");
+    var isCollection = collection is not null;
     SensitiveGuard.Ensure(expression, name);
 
-    var capabilities = options.Resolve(kind);
+    var capabilities = isCollection
+      ? (options.Resolve(kind) & FieldCapabilities.Filter)
+      : options.Resolve(kind);
     if ((capabilities & FieldCapabilities.Search) != 0 && kind is not (FieldKind.Text or FieldKind.Number or FieldKind.Guid))
     {
       throw new InvalidOperationException($"Field '{name}' of '{typeof(TEntity).Name}' is {kind}: a search cannot run on it.");
     }
 
-    var admitted = OperatorSets.For(kind);
+    var admitted = isCollection ? OperatorSets.ForCollection() : OperatorSets.For(kind);
     var foreign = options.AllowedOperators?.Where(o => !admitted.Contains(o)).ToList();
     if (foreign is { Count: > 0 })
     {
       throw new InvalidOperationException($"Field '{name}' of '{typeof(TEntity).Name}' is {kind} and does not admit '{foreign[0]}'.");
     }
 
-    return new QueryField(name, expression, kind, capabilities, options.AllowedOperators ?? admitted, StoreNullability.Of(expression));
+    return new QueryField(
+      name,
+      expression,
+      kind,
+      capabilities,
+      options.AllowedOperators ?? admitted,
+      isCollection || StoreNullability.Of(expression),
+      collection?.ElementType);
   }
 
   private static SortTerm DefaultTerm(List<QueryField> fields, SortRule rule)

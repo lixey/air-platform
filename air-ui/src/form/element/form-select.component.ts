@@ -28,6 +28,8 @@ import { FormItemComponent } from './form-item.component';
       @if (select(); as select) {
         <ui-select
           [model]="select"
+          [multiple]="isMultiple()"
+          [createOverlay]="model()?.createOverlay ?? null"
           [picked]="selected()"
           [clearable]="!element().isRequired"
           [placeholder]="element().placeholder ?? ''"
@@ -35,16 +37,31 @@ import { FormItemComponent } from './form-item.component';
           (pickedChange)="caption($event)"
         />
       } @else {
-        <div class="${FIELD_CLASSES} border-line flex items-center text-muted">{{ reference()?.name ?? '' }}</div>
+        <div class="${FIELD_CLASSES} border-line flex items-center text-muted">{{ referenceText() }}</div>
       }
     </ui-form-item>
   `,
 })
 export class FormSelectComponent extends FormElementBase<unknown, FormSelectModel> {
-  protected readonly reference = computed(() => {
+  protected readonly isMultiple = computed(() => Boolean(this.model()?.isMultiple));
+
+  protected readonly references = computed<readonly Reference[]>(() => {
     const path = this.element().referencePath;
-    return path ? ((this.form.value()[path] as Reference | null | undefined) ?? null) : null;
+    if (!path) {
+      return [];
+    }
+    const raw = this.form.value()[path];
+    if (Array.isArray(raw)) {
+      return raw as Reference[];
+    }
+    return raw ? [raw as Reference] : [];
   });
+
+  protected readonly referenceText = computed(() =>
+    this.references()
+      .map(r => r.name)
+      .join(', '),
+  );
 
   /** The fixed options the model carries; `null` for a select over a reference service. */
   protected readonly options = computed<readonly SelectOption[] | null>(() => this.model()?.options?.map(optionOfReference) ?? null);
@@ -52,12 +69,17 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
   protected readonly selected = computed<readonly SelectOption[]>(() => {
     const options = this.options();
     if (options) {
-      const key = this.field()().value();
-      const option = options.find(o => o.id === key);
+      const val = this.field()().value();
+      if (this.isMultiple() && Array.isArray(val)) {
+        return val.flatMap(k => {
+          const opt = options.find(o => o.id === k);
+          return opt ? [opt] : [];
+        });
+      }
+      const option = options.find(o => o.id === val);
       return option ? [option] : [];
     }
-    const reference = this.reference();
-    return reference ? [optionOfReference(reference)] : [];
+    return this.references().map(optionOfReference);
   });
 
   protected readonly referenceFilter = computed<FilterNode | null>(() => {
@@ -143,13 +165,14 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
       }
       untracked(() => {
         this.settled.set(dependencies);
-        if ((this.field()().value() ?? null) === null) {
+        const curVal = this.field()().value() ?? null;
+        if (curVal === null || (Array.isArray(curVal) && curVal.length === 0)) {
           return;
         }
-        this.form.setValueAt(this.element().path, null);
+        this.form.setValueAt(this.element().path, this.isMultiple() ? [] : null);
         const referencePath = this.element().referencePath;
         if (referencePath) {
-          this.form.setValueAt(referencePath, null);
+          this.form.setValueAt(referencePath, this.isMultiple() ? [] : null);
         }
       });
     });
@@ -160,7 +183,10 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
     const picked = options[0] ?? null;
     const path = this.element().referencePath;
     if (path && !this.options()) {
-      this.form.setValueAt(path, picked ? referenceOfOption(picked) : null);
+      this.form.setValueAt(
+        path,
+        this.isMultiple() ? options.map(referenceOfOption) : picked ? referenceOfOption(picked) : null,
+      );
     }
     const patches = this.element().selectPatches;
     if (patches && patches.length > 0 && picked?.row && typeof picked.row === 'object') {

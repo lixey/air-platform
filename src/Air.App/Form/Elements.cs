@@ -468,6 +468,31 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     };
     return new FormReferenceElement<TEntity, TProp, TSource>(dto);
   }
+
+  public FormReferenceElement<TEntity, TProp, object> AsReferences<TGridService>() =>
+    AsReferences<TGridService, object>();
+
+  public FormReferenceElement<TEntity, TProp, TSource> AsReferences<TGridService, TSource>()
+  {
+    StripDefaultIdLabel();
+    if (!_hasExplicitLabel && dto.Label is { } lbl && lbl.EndsWith(" Ids", StringComparison.Ordinal) && lbl.Length > 4)
+    {
+      dto.Label = lbl[..^4] + "s";
+    }
+    dto.Type = UiFieldType.Text;
+    dto.ValueKind = FormValueKind.List;
+    dto.ReferenceServiceType = typeof(TGridService);
+    dto.ReferencePath ??= dto.Path.EndsWith("Ids", StringComparison.Ordinal)
+      ? dto.Path[..^3] + "s"
+      : (dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path + "Refs");
+    dto.Model = new FormSelectModel
+    {
+      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
+      ReferenceLabelPaths = ["name"],
+      IsMultiple = true
+    };
+    return new FormReferenceElement<TEntity, TProp, TSource>(dto);
+  }
 }
 
 public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) : FormElement<TEntity, TProp>(dto)
@@ -553,6 +578,19 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   public new FormReferenceElement<TEntity, TProp, TSource> Label(string label)
   {
     base.Label(label);
+    return this;
+  }
+
+  public FormReferenceElement<TEntity, TProp, TSource> AllowCreate(bool allow = true)
+  {
+    Dto.AllowsCreate = allow;
+    return this;
+  }
+
+  public FormReferenceElement<TEntity, TProp, TSource> AllowCreate<TFormService>() where TFormService : class
+  {
+    Dto.AllowsCreate = true;
+    Dto.CreateFormServiceType = typeof(TFormService);
     return this;
   }
 }

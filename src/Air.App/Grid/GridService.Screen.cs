@@ -49,7 +49,16 @@ public abstract partial class GridService<TEntity, TRow>
     var isGridReadOnly = IsReadOnly || isUserReadOnly;
 
     var navStart = new List<NavElementModel>();
-    if (formOverlay is not null && !isGridReadOnly)
+    if (!isGridReadOnly && nav.Creates.Count > 0)
+    {
+      foreach (var (createFormType, createModel) in nav.Creates)
+      {
+        createModel.Overlay = ResolveFormOverlayForType(createFormType, createModel.Service!);
+        formOverlay ??= createModel.Overlay;
+        navStart.Add(createModel);
+      }
+    }
+    else if (formOverlay is not null && !isGridReadOnly)
     {
       navStart.Add(new GridNavAddModel
       {
@@ -429,13 +438,18 @@ public abstract partial class GridService<TEntity, TRow>
     if (detectedFormService is null) return null;
 
     var formType = ResolveFormServiceType(columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
+    return ResolveFormOverlayForType(formType, detectedFormService);
+  }
+
+  private OverlayModelDto ResolveFormOverlayForType(Type? formType, string formServicePath)
+  {
     if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
     {
       try
       {
         if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, _app) is IFormService formInstance)
         {
-          return formInstance.Overlay(detectedFormService);
+          return formInstance.Overlay(formServicePath);
         }
       }
       catch
@@ -444,7 +458,7 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    return OverlayModel.Dialog($"{detectedFormService}.modal").Screen(detectedFormService).Build();
+    return OverlayModel.Dialog($"{formServicePath}.modal").Screen(formServicePath).Build();
   }
 
   private GridNavStatusModel? BuildStatusNavElement(string servicePath, IRecordStatuses<TEntity> statusFlow)

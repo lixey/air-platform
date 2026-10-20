@@ -472,6 +472,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     return new GridReferenceColumn<TEntity, TSource, TProp>(Dto, owner);
   }
   public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value) { base.Where(sourceMember, value); return this; }
+  public GridColumn<TEntity, TProp> FilterBy<TFilterVal>(Expression<Func<TEntity, TFilterVal>> filterExpression)
+  {
+    Dto.FilterExpression = filterExpression;
+    return this;
+  }
   public GridColumn<TEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
   {
     ApplyColorSelector(colorSelector);
@@ -501,6 +506,22 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
     TVal value)
   {
     base.Where(sourceMember, value);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> FilterBy<TFilterVal>(
+    Expression<Func<TEntity, TFilterVal>> filterExpression)
+  {
+    Dto.FilterExpression = filterExpression;
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Hidden(bool hidden = true)
+  {
+    base.Hidden(hidden);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Label(string label)
+  {
+    base.Label(label);
     return this;
   }
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)

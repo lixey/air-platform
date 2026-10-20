@@ -231,9 +231,9 @@ public abstract partial class FormService<TEntity, TInput>
 
         if (!string.IsNullOrEmpty(select.ReferenceService))
         {
+          var targetServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
           if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || (select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name"))
           {
-            var targetServiceType = ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
             if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
             {
               try
@@ -248,6 +248,44 @@ public abstract partial class FormService<TEntity, TInput>
                 }
               }
               catch { }
+            }
+          }
+
+          if (el.AllowsCreate && !el.IsDisabled && !el.IsServerOwned && !IsReadOnly)
+          {
+            var createFormType = el.CreateFormServiceType;
+            if (createFormType == null && targetServiceType != null)
+            {
+              var candidateName = targetServiceType.Name.Replace("GridService", "FormService");
+              createFormType = targetServiceType.Assembly.GetType(targetServiceType.Namespace + "." + candidateName)
+                ?? targetServiceType.Assembly.GetTypes().FirstOrDefault(t => t.Name == candidateName);
+            }
+
+            if (createFormType != null && typeof(IFormService).IsAssignableFrom(createFormType))
+            {
+              var canCreate = true;
+              var featType = targetServiceType ?? createFormType;
+              if (Feature.FeaturesByServiceType.TryGetValue(featType, out var targetFeat))
+              {
+                if (targetFeat.IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(targetFeat.Edit) && !User.Can(targetFeat.All) && !User.Can("*")))
+                {
+                  canCreate = false;
+                }
+              }
+
+              if (canCreate)
+              {
+                var createServicePath = ServicePathResolver.Resolve(createFormType);
+                try
+                {
+                  if (ModuleCatalog.Instance.CreateServiceInstance(createFormType, db, _app) is IFormService createFormInst)
+                  {
+                    select.CreateOverlay = createFormInst.Overlay(createServicePath);
+                  }
+                }
+                catch { }
+                select.CreateOverlay ??= OverlayModel.Dialog($"{createServicePath}.modal").Screen(createServicePath).Build();
+              }
             }
           }
         }
@@ -795,6 +833,63 @@ public abstract partial class FormService<TEntity, TInput>
       if (string.IsNullOrEmpty(el.ReferencePath)) continue;
       refPaths.Add(el.ReferencePath);
 
+      var selectModel = el.Model as FormSelectModel;
+      var labelPaths = selectModel?.ReferenceLabelPaths;
+
+      if (selectModel?.IsMultiple == true)
+      {
+        var keys = new List<long>();
+        if (dict.TryGetValue(el.Path, out var multiRaw) && multiRaw != null)
+        {
+          if (multiRaw is JsonElement jeArr && jeArr.ValueKind == JsonValueKind.Array)
+          {
+            foreach (var item in jeArr.EnumerateArray())
+            {
+              if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var jeId) && jeId > 0) keys.Add(jeId);
+            }
+          }
+          else if (multiRaw is IEnumerable enumerable and not string)
+          {
+            foreach (var item in enumerable)
+            {
+              if (item is long l && l > 0) keys.Add(l);
+              else if (item is int i && i > 0) keys.Add(i);
+              else if (item != null && long.TryParse(item.ToString(), out var parsed) && parsed > 0) keys.Add(parsed);
+            }
+          }
+        }
+
+        var refs = new List<Reference>(keys.Count);
+        if (keys.Count > 0 && !string.IsNullOrEmpty(selectModel.ReferenceService))
+        {
+          var refServiceType = el.ReferenceServiceType
+            ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
+            ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
+          var refEntityType = refServiceType != null ? ResolveServiceEntityType(refServiceType) : null;
+          var targetDb = refEntityType != null && db.Model.FindEntityType(refEntityType) != null
+            ? db
+            : (refServiceType != null ? (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, _app) as IGridService)?.DbContext : null) ?? db;
+
+          foreach (var k in keys)
+          {
+            string? itemCaption = null;
+            if (refEntityType != null)
+            {
+              try
+              {
+                var loaded = await targetDb.FindAsync(refEntityType, [k], ct);
+                itemCaption = ReadDisplayCaption(loaded, labelPaths);
+              }
+              catch { }
+            }
+            refs.Add(new Reference { Id = k, Name = !string.IsNullOrEmpty(itemCaption) ? L[itemCaption] : $"#{k}" });
+          }
+        }
+
+        dict[el.ReferencePath] = refs;
+        continue;
+      }
+
       long? key = null;
       if (dict.TryGetValue(el.Path, out var rawVal) && rawVal != null)
       {
@@ -826,8 +921,6 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
-      var selectModel = el.Model as FormSelectModel;
-      var labelPaths = selectModel?.ReferenceLabelPaths;
       var refName = ReadDisplayCaption(navObj, labelPaths);
 
       if (string.IsNullOrEmpty(refName) && selectModel != null && !string.IsNullOrEmpty(selectModel.ReferenceService))
@@ -886,7 +979,12 @@ public abstract partial class FormService<TEntity, TInput>
       var parts = new List<string>(labelPaths.Count);
       foreach (var path in labelPaths)
       {
-        var partVal = PropertyAccessorCache.GetValue(target, path)?.ToString();
+        var rawPart = PropertyAccessorCache.GetValue(target, path);
+        if (rawPart is null or Reference or IEntity)
+        {
+          continue;
+        }
+        var partVal = rawPart.ToString();
         if (!string.IsNullOrWhiteSpace(partVal))
         {
           parts.Add(partVal);

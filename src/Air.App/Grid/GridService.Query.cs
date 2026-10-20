@@ -530,6 +530,17 @@ public abstract partial class GridService<TEntity, TRow>
     {
       if (string.IsNullOrEmpty(col.Path)) continue;
 
+      if (col.FilterExpression is not null)
+      {
+        var filterKey = !string.IsNullOrEmpty(col.FilterPath) ? col.FilterPath : col.Path;
+        builder.Field(filterKey, col.FilterExpression, f => f.FilterOnly());
+        if (!string.Equals(filterKey, col.Path, StringComparison.OrdinalIgnoreCase))
+        {
+          builder.Field(col.Path, col.FilterExpression, f => f.FilterOnly());
+        }
+        continue;
+      }
+
       var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
       if (isRef)
       {

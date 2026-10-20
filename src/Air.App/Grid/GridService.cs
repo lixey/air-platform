@@ -474,8 +474,26 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     internal List<NavActionEntry> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
     internal List<NavElementModel> CustomStart { get; } = [];
+    internal List<(Type FormType, GridNavAddModel Model)> Creates { get; } = [];
 
     public void AddStart(NavElementModel model) => CustomStart.Add(model);
+
+    public void AddCreate<TFormService>(Action<ButtonBuilder>? look = null) where TFormService : class
+    {
+      var b = new ButtonBuilder();
+      look?.Invoke(b);
+      var targetService = ServicePathResolver.Resolve(typeof(TFormService));
+      var rawLabel = b.LabelText ?? "Add";
+      Creates.Add((typeof(TFormService), new GridNavAddModel
+      {
+        Key = $"add.{targetService.Replace('/', '.')}",
+        Service = targetService,
+        Label = _l[rawLabel],
+        Icon = b.IconHandle ?? UiIcon.Plus,
+        Color = b.ColorHandle ?? UiColor.Orange,
+        Variant = b.VariantHandle ?? ButtonVariant.Soft
+      }));
+    }
 
     public NavActionBuilder AddAction(
       Delegate method,

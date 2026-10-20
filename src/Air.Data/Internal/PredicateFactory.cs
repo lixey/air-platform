@@ -7,6 +7,10 @@ internal static class PredicateFactory
   private static readonly MethodInfo StringCompare = typeof(string).GetMethod(nameof(string.Compare), [typeof(string), typeof(string)])!;
   private static readonly MethodInfo EnumerableContains = typeof(Enumerable).GetMethods()
     .Single(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2);
+  private static readonly MethodInfo EnumerableAny = typeof(Enumerable).GetMethods()
+    .Single(m => m.Name == nameof(Enumerable.Any) && m.GetParameters().Length == 1);
+  private static readonly MethodInfo EnumerableAnyWithPredicate = typeof(Enumerable).GetMethods()
+    .Single(m => m.Name == nameof(Enumerable.Any) && m.GetParameters().Length == 2);
   private static readonly MethodInfo StringContains = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
   private static readonly MethodInfo StringStartsWith = typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string)])!;
   private static readonly MethodInfo StringEndsWith = typeof(string).GetMethod(nameof(string.EndsWith), [typeof(string)])!;
@@ -53,6 +57,11 @@ internal static class PredicateFactory
 
   internal static Expression IsNull(QueryField field, Expression member)
   {
+    if (field.IsCollection)
+    {
+      return Expression.Not(Expression.Call(EnumerableAny.MakeGenericMethod(field.ValueType), member));
+    }
+
     if (!field.IsNullableInStore)
     {
       return Expression.Constant(false);
@@ -79,6 +88,14 @@ internal static class PredicateFactory
     if (RequestValue.IsNull(raw))
     {
       return IsNull(field, member);
+    }
+
+    if (field.IsCollection)
+    {
+      return Expression.Call(
+        EnumerableContains.MakeGenericMethod(field.ValueType),
+        member,
+        BoundValue.Of(Required(field, raw), field.ValueType));
     }
 
     return Guarded(field, member, Expression.Equal(member, BoundValue.Of(Required(field, raw), member.Type)));
@@ -127,6 +144,24 @@ internal static class PredicateFactory
     if (values.Count == 0)
     {
       return IsNull(field, member);
+    }
+
+    if (field.IsCollection)
+    {
+      var elemType = field.ValueType;
+      var colListType = typeof(List<>).MakeGenericType(elemType);
+      var colList = (IList)Activator.CreateInstance(colListType)!;
+      values.ForEach(item => colList.Add(Required(field, item)));
+      var itemParam = Expression.Parameter(elemType, "item");
+      var itemInList = Expression.Call(
+        EnumerableContains.MakeGenericMethod(elemType),
+        BoundValue.Of(colList, colListType),
+        itemParam);
+      var anyMatch = Expression.Call(
+        EnumerableAnyWithPredicate.MakeGenericMethod(elemType),
+        member,
+        Expression.Lambda(itemInList, itemParam));
+      return hasNull ? Expression.OrElse(anyMatch, IsNull(field, member)) : anyMatch;
     }
 
     var listType = typeof(List<>).MakeGenericType(member.Type);

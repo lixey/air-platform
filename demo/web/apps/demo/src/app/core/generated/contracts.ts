@@ -572,6 +572,8 @@ export interface FormSelectModel {
   options?: OptionDto[] | null;
   referenceFilter?: FilterNode | null;
   referenceDraftRules?: ReferenceDraftRuleDto[] | null;
+  isMultiple?: boolean;
+  createOverlay?: OverlayModelDto | null;
 }
 
 export interface FormTabDto {
@@ -851,6 +853,8 @@ export interface GridNavActionModel {
 
 export interface GridNavAddModel {
   kind: 'GridNavAdd';
+  service?: string | null;
+  overlay?: OverlayModelDto | null;
   label?: string | null;
   title?: string | null;
   icon?: UiIcon | null;

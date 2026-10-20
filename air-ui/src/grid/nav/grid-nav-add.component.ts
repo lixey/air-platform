@@ -25,6 +25,7 @@ export class GridNavAddComponent {
   readonly model = model<GridNavAddModel | null>();
 
   protected add(): void {
-    this.grid?.openForm(null, this.host.nativeElement);
+    const m = this.model();
+    this.grid?.openForm(null, this.host.nativeElement, m?.service ?? m?.overlay?.screen?.service, m?.overlay);
   }
 }

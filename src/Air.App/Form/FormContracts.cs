@@ -219,6 +219,12 @@ public sealed class FormElementDto
   internal Type? ReferenceServiceType { get; set; }
 
   [JsonIgnore]
+  internal bool AllowsCreate { get; set; }
+
+  [JsonIgnore]
+  internal Type? CreateFormServiceType { get; set; }
+
+  [JsonIgnore]
   internal bool IsRightsTree { get; set; }
 }
 
@@ -313,6 +319,12 @@ public sealed record FormSelectModel : FormElementModel
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<ReferenceDraftRuleDto>? ReferenceDraftRules { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool IsMultiple { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public OverlayModelDto? CreateOverlay { get; set; }
 }
 
 [UiContract]

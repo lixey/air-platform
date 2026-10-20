@@ -170,6 +170,9 @@ public sealed class GridColumnDto
 
   [JsonIgnore]
   internal Func<object, Type?>? FormServiceResolver { get; set; }
+
+  [JsonIgnore]
+  internal System.Linq.Expressions.LambdaExpression? FilterExpression { get; set; }
 }
 
 // Concrete Cell Models
@@ -272,7 +275,14 @@ public sealed record GridNavSearchModel : NavElementModel
 }
 
 [UiContract]
-public sealed record GridNavAddModel : NavButtonModel;
+public sealed record GridNavAddModel : NavButtonModel
+{
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Service { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public OverlayModelDto? Overlay { get; set; }
+}
 
 [UiContract]
 public sealed record GridNavActionModel : NavButtonModel

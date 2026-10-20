@@ -788,7 +788,7 @@ export class FormService {
     }
     const saved = { ...answer, value: this.value() };
     if (operation) {
-      this.mutations?.publish(operation, { service, recordId: saved.id, operation: 'save' });
+      this.mutations?.publish(operation, { service, recordId: saved.id, data: saved, operation: 'save' });
     }
     return saved;
   }

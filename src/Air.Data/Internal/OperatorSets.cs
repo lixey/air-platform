@@ -24,4 +24,6 @@ internal static class OperatorSets
     FieldKind.Number or FieldKind.Temporal => Ordered,
     _ => Identifying
   };
+
+  public static IReadOnlySet<string> ForCollection() => Identifying;
 }

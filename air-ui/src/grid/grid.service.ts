@@ -571,7 +571,7 @@ export class GridService {
    * carries under `forms` for that form when the row with this key names it, else in the overlay of the grid's own
    * form addressed to it, else in a dialog. In a select, picks the row instead.
    */
-  openForm(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null): boolean {
+  openForm(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null, customOverlay?: OverlayModelDto | null): boolean {
     // In a select the row's link picks the row, as a click on it does
     if (this.select) {
       const row = this.rows().find(r => keyOf(r) === id) ?? null;
@@ -582,7 +582,7 @@ export class GridService {
     const rowForm = typeof row?.['form'] === 'string' ? row['form'] : null;
     const targetService = formService ?? rowForm;
     // The page's overlay is the row's alone: a form opened by a name the row does not carry takes none
-    const rowOverlay = targetService !== null && targetService === rowForm ? (this.data()?.forms?.[targetService] ?? null) : null;
+    const rowOverlay = customOverlay ?? (targetService !== null && targetService === rowForm ? (this.data()?.forms?.[targetService] ?? null) : null);
     return this.forms.open(id, anchor, targetService, rowOverlay);
   }
 

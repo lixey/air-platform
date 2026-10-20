@@ -39,6 +39,27 @@ internal static class FieldKinds
     return Scalars.TryGetValue(underlying, out var scalar) ? scalar.Kind : null;
   }
 
+  public static (FieldKind Kind, Type ElementType)? CollectionOf(Type type)
+  {
+    if (type == typeof(string) || !typeof(IEnumerable).IsAssignableFrom(type))
+    {
+      return null;
+    }
+
+    var enumIface = type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>)
+      ? type
+      : type.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+    if (enumIface is null)
+    {
+      return null;
+    }
+
+    var elementType = enumIface.GetGenericArguments()[0];
+    return Of(elementType) is { } kind
+      ? (kind, Nullable.GetUnderlyingType(elementType) ?? elementType)
+      : null;
+  }
+
   public static Func<string, object>? ParserOf(Type underlying) =>
     Scalars.TryGetValue(underlying, out var scalar) ? scalar.Parse : null;
 
