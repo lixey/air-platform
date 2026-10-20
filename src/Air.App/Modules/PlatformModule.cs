@@ -118,15 +118,22 @@ public sealed class ModuleCatalog
   private void RegisterFeature(Feature feat)
   {
     _featuresByPath[feat.Path] = feat;
+    _featuresByPath[feat.Path.Replace('/', '-')] = feat;
     _featuresByPath[feat.Path.Replace("-", "")] = feat;
+    _featuresByPath[feat.Path.Replace("-", "").Replace('/', '-')] = feat;
     _featuresByPath[feat.Name] = feat;
     _featuresByPath[feat.CleanName] = feat;
     if (feat.ServiceType != null)
     {
       var servicePath = ServicePathResolver.Resolve(feat.ServiceType);
       _featuresByPath[servicePath] = feat;
+      _featuresByPath[servicePath.Replace('/', '-')] = feat;
+      _featuresByPath[servicePath.Replace("-", "")] = feat;
+      _featuresByPath[servicePath.Replace("-", "").Replace('/', '-')] = feat;
       _servicesByPath[feat.Path] = feat.ServiceType;
+      _servicesByPath[feat.Path.Replace('/', '-')] = feat.ServiceType;
       _servicesByPath[feat.Path.Replace("-", "")] = feat.ServiceType;
+      _servicesByPath[feat.Path.Replace("-", "").Replace('/', '-')] = feat.ServiceType;
       _servicesByPath[feat.Name] = feat.ServiceType;
     }
   }
