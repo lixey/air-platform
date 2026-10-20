@@ -27,10 +27,11 @@ function unavailableOf(row: GridRow): Unavailable | null {
   selector: 'ui-grid-nav-action',
   imports: [BtnComponent],
   template: `
-    @if (grid) {
+    @if (isVisible()) {
       <ui-btn [model]="model()" [disabled]="isDisabled()" [reason]="reason()" [loading]="isBusy()" (click)="run()" />
     }
   `,
+  host: { class: 'contents' },
 })
 export class GridNavActionComponent {
   protected readonly grid = inject(GridService, { optional: true });
@@ -38,6 +39,11 @@ export class GridNavActionComponent {
   private readonly menu = inject(NAV_MENU, { optional: true });
 
   readonly model = model<GridNavActionModel | null>();
+
+  protected readonly isVisible = computed(() => {
+    const action = this.model();
+    return !!action && !!this.grid && (!action.isSingle || this.grid.selection.count() === 1);
+  });
 
   protected readonly isBusy = computed(() => {
     const action = this.model();
@@ -51,6 +57,7 @@ export class GridNavActionComponent {
       !this.grid ||
       !!action.isDisabled ||
       (action.needsSelection && this.grid.selection.isEmpty()) ||
+      (action.isSingle && this.grid.selection.count() !== 1) ||
       (action.method === GRID_DELETE && this.grid.deletion.isBlocked())
     );
   });

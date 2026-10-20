@@ -836,6 +836,7 @@ export interface GridNavActionModel {
   service: string;
   method: string;
   needsSelection: boolean;
+  isSingle?: boolean;
   isDownload: boolean;
   confirm?: OverlayConfirmModel | null;
   ask?: FormAskModel | null;

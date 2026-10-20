@@ -95,17 +95,54 @@ public abstract partial class GridService<TEntity, TRow>
     return (entities, missing);
   }
 
+  protected Task<GridActionDto> ExecuteSingleAsync(
+    GridRequest request,
+    Func<GridBatchContext<TEntity>, TEntity, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default,
+    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
+  {
+    var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
+    if (ids.Count != 1)
+    {
+      return Task.FromResult(new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      });
+    }
+
+    return ExecuteBatchAsync(
+      request,
+      (ctx, ct) => handler(ctx, ctx.Records[0], ct),
+      cancellationToken,
+      actionName
+    );
+  }
+
   protected async Task<GridActionDto> ExecuteBatchAsync(
     GridRequest request,
     Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default,
+    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
   {
     ParentId = request.ParentId;
-    if (IsReadOnly)
+    var nav = new Nav(localizer: L);
+    SetNav(nav);
+
+    if (IsReadOnly && !nav.Actions.Any(a => a.IsAllowedInReadOnly))
     {
-      var nav = new Nav(localizer: L);
-      SetNav(nav);
-      if (!nav.Actions.Any(a => a.IsAllowedInReadOnly))
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
+    var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
+    if (!string.IsNullOrEmpty(actionName))
+    {
+      var navAction = nav.Actions.FirstOrDefault(a => string.Equals(a.Model.Method, actionName, StringComparison.OrdinalIgnoreCase));
+      if (navAction?.Model.IsSingle == true && ids.Count != 1)
       {
         return new GridActionDto
         {
@@ -114,8 +151,6 @@ public abstract partial class GridService<TEntity, TRow>
         };
       }
     }
-
-    var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
     var (records, missing) = await LoadSelectedEntitiesAsync(ids, cancellationToken);
     if (missing.Count > 0)
     {

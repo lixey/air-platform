@@ -290,6 +290,10 @@ public sealed record GridNavActionModel : NavButtonModel
   public string Service { get; set; } = string.Empty;
   public string Method { get; set; } = string.Empty;
   public bool NeedsSelection { get; set; } = true;
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool IsSingle { get; set; }
+
   public bool IsDownload { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

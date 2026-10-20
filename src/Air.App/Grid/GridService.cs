@@ -430,6 +430,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public string? ColorHandle { get; private set; }
     public string? VariantHandle { get; private set; }
     public bool IsInMenu { get; private set; }
+    public bool IsSingle { get; private set; }
 
     public ButtonBuilder Label(string label) { LabelText = label; return this; }
     public ButtonBuilder Icon(string icon) { IconHandle = icon; return this; }
@@ -437,6 +438,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public ButtonBuilder Variant(string variant) { VariantHandle = variant; return this; }
     public ButtonBuilder Soft() { VariantHandle = ButtonVariant.Soft; return this; }
     public ButtonBuilder InMenu() { IsInMenu = true; return this; }
+    public ButtonBuilder Single(bool single = true) { IsSingle = single; return this; }
   }
 
   public sealed class NavPickerBuilder(GridNavPickerModel model)
@@ -464,6 +466,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public NavActionBuilder AllowReadOnly(bool allow = true)
     {
       entry.IsAllowedInReadOnly = allow;
+      return this;
+    }
+
+    public NavActionBuilder Single(bool single = true)
+    {
+      entry.Model.IsSingle = single;
       return this;
     }
   }
@@ -514,6 +522,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         Color = b.ColorHandle ?? UiColor.Blue,
         Variant = b.VariantHandle ?? ButtonVariant.Soft,
         NeedsSelection = needsSelection,
+        IsSingle = b.IsSingle,
         Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = UiColor.Red } : null
       };
       var entry = new NavActionEntry
