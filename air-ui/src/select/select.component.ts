@@ -9,7 +9,14 @@ import { isFormData } from '../form/form-value';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayService } from '../overlay/overlay.service';
 import { ScreenMutations } from '../screen/screen-mutations';
-import { FIELD_FOCUS_WITHIN, FIELD_HOVER, INVALID_EDGE, PICK_CHIP } from '../theme/css-classes';
+import {
+  FIELD_FOCUS_WITHIN,
+  FIELD_HOVER,
+  INNER_CONTROL_HOVER,
+  INVALID_EDGE,
+  PICK_CHIP,
+  SEGMENT_LAST,
+} from '../theme/css-classes';
 import { optionOfRow, type SelectOption } from './select-option';
 import type { SelectSource } from './select-source';
 import { SelectService } from './select.service';
@@ -99,12 +106,18 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
           <i icon="close" class="[&>svg]:size-3.5" aria-hidden="true"></i>
         </button>
       }
+      <i
+        icon="chevron-bottom"
+        class="shrink-0 px-2 text-muted [&>svg]:size-4 [&>svg]:m-0"
+        [class]="multiple() ? 'self-start h-8.5 flex items-center' : ''"
+        aria-hidden="true"
+      ></i>
       @if (createOverlay() && !refusesInput()) {
         <button
           type="button"
           tabindex="-1"
-          class="hue-emerald flex items-center justify-center size-6 mr-0.5 rounded-md text-muted hover:text-(--hue-ink) hover:bg-(--hue-soft) transition-colors cursor-pointer [&>svg]:size-4 [&_svg]:size-4"
-          [class]="multiple() ? 'self-start mt-1.25' : ''"
+          class="flex items-center justify-center shrink-0 w-8.5 border-l border-field-edge ${SEGMENT_LAST} text-muted ${INNER_CONTROL_HOVER} cursor-pointer [&>svg]:size-4 [&_svg]:size-4"
+          [class]="multiple() ? 'self-start h-8.5' : 'self-stretch'"
           [title]="texts.of('Add')"
           [attr.aria-label]="texts.of('Add')"
           (click)="create($event)"
@@ -112,12 +125,6 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
           <i icon="plus" class="[&>svg]:size-4" aria-hidden="true"></i>
         </button>
       }
-      <i
-        icon="chevron-bottom"
-        class="shrink-0 px-2 text-muted [&>svg]:size-4 [&>svg]:m-0"
-        [class]="multiple() ? 'self-start h-8.5 flex items-center' : ''"
-        aria-hidden="true"
-      ></i>
     </div>
   `,
   host: {

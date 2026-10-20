@@ -96,6 +96,26 @@ public abstract partial class FormService<TEntity, TInput>
       await h(loadCtx, ct);
     }
 
+    if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
+    {
+      foreach (var prop in presetJson.EnumerateObject())
+      {
+        var targetName = prop.Name;
+        var entityProp = Internal.PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
+        if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
+            !targetName.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
+            Internal.PropertyAccessorCache.GetProperty(typeof(TEntity), targetName + "Id") != null)
+        {
+          targetName += "Id";
+        }
+        SetPropertyValue(entity, targetName, prop.Value);
+        if (!ReferenceEquals(entity, input))
+        {
+          SetPropertyValue(input, targetName, prop.Value);
+        }
+      }
+    }
+
     return input;
   }
 

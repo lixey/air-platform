@@ -9,7 +9,7 @@ public sealed class OrgOrganizationFormService(OrgDbContext db, OrgService? org 
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name).Unique("This name is already in use.").Span(8);
+    elements.Add(e => e.Name).Focus().Unique("This name is already in use.").Span(8);
     elements.Add(e => e.Code).Unique("This code is already in use.").Span(4);
     elements.Add(e => e.FullName);
     elements.Add(e => e.TaxId).Span(4);

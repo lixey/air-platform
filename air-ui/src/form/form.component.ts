@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { DynamicOutletDirective } from '../core/dynamic-component/dynamic-outlet.directive';
 import type { FormElementDto, FormFilesModel, FormModel, MessageDto } from '../core/generated/contracts';
+import { focusables } from '../overlay/overlay-focus';
 import { PanelsContext } from '../panels/panels-context';
 import { PANELS } from '../panels/panels-tokens';
 import { FormCloseGuard } from './form-close-guard';
@@ -45,7 +46,13 @@ import { FormService, isFormData } from './form.service';
     <div class="flex-1 min-h-0 overflow-y-auto w-full p-3 bg-page @container" data-form-body>
       <div class="grid grid-cols-12 gap-x-4 gap-y-3 content-start">
         @for (element of form.elements(); track element.path) {
-          <div class="min-w-0" [class]="spanOf(element)" [hidden]="!isShown(element)" [attr.data-tab]="element.tab || null">
+          <div
+            class="min-w-0"
+            [class]="spanOf(element)"
+            [hidden]="!isShown(element)"
+            [attr.data-tab]="element.tab || null"
+            [attr.data-focus]="element.isFocused ? '' : null"
+          >
             <ui-form-element-outlet [element]="element" />
           </div>
           @if (element.hasSeparatorAfter) {
@@ -94,6 +101,7 @@ export class FormComponent {
 
   /** The record's files drawn in the body, in declared order. */
   protected readonly files = computed<readonly FormFilesModel[]>(() => this.model()?.files ?? []);
+  private focusedData: unknown = null;
 
   constructor() {
     const published = this.context?.of(FORM);
@@ -109,6 +117,10 @@ export class FormComponent {
       const data = this.data();
       untracked(() => {
         this.guard.replace(model, isFormData(data) ? data : null);
+        if (model && isFormData(data) && !data.id && this.focusedData !== data) {
+          this.focusedData = data;
+          afterNextRender(() => this.focusInitialField(), { injector: this.injector });
+        }
       });
     });
 
@@ -172,6 +184,15 @@ export class FormComponent {
   private focusFirstInvalid(): void {
     const invalid = [...this.host.querySelectorAll<HTMLElement>('[aria-invalid="true"]')].find(field => !field.closest('[hidden]'));
     invalid?.focus();
+  }
+
+  /** On a new record, the first visible element marked `.Focus()` takes focus once rendered. */
+  private focusInitialField(): void {
+    const marked = [...this.host.querySelectorAll<HTMLElement>('[data-focus]')].find(field => !field.closest('[hidden]'));
+    if (!marked) {
+      return;
+    }
+    focusables(marked)[0]?.focus();
   }
 }
 

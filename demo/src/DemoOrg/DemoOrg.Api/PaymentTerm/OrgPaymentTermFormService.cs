@@ -9,7 +9,7 @@ public sealed class OrgPaymentTermFormService(OrgDbContext db, OrgService? org =
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name);
+    elements.Add(e => e.Name).Focus();
     elements.Add(e => e.Handle);
   }
 }

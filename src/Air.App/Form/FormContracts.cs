@@ -186,6 +186,9 @@ public sealed class FormElementDto
   public bool IsInputOnly { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool IsFocused { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsSecret { get; set; }
 
   [OneOf(typeof(FormValueKind))]

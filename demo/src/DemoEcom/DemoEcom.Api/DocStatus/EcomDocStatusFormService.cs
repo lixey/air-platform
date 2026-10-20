@@ -15,7 +15,7 @@ public sealed class EcomDocStatusFormService(EcomDbContext db, EcomService? ecom
   {
     elements.Add(e => e.DocTypeId).Label("Type").AsReference<EcomDocTypeGridService>().Span(6);
     elements.Add(e => e.ColorId).AsReference<AppColorGridService>().Span(6);
-    elements.Add(e => e.Name).Span(6);
+    elements.Add(e => e.Name).Focus().Span(6);
     elements.Add(e => e.Handle).Span(6);
     elements.Add(e => e.IsEditable).Label("Editable").AsCheckbox().Span(3);
     elements.Add(e => e.IsPosted).Label("Posted").AsCheckbox().Span(3);

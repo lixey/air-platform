@@ -7,7 +7,7 @@ public sealed class OrgCustomerFormService(OrgDbContext db, OrgService? org = nu
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name);
+    elements.Add(e => e.Name).Focus();
     elements.Add(e => e.Phone).AsPhone("+380 (##) ###-##-##").Span(6);
     elements.Add(e => e.Email).AsEmail().Span(6);
 

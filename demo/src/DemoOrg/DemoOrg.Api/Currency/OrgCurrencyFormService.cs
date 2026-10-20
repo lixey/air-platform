@@ -11,7 +11,7 @@ public sealed class OrgCurrencyFormService(OrgDbContext db, OrgService? org = nu
   {
     elements.Add(e => e.Handle);
     elements.Add(e => e.Code);
-    elements.Add(e => e.Name);
+    elements.Add(e => e.Name).Focus();
     elements.Add(e => e.Symbol);
   }
 }

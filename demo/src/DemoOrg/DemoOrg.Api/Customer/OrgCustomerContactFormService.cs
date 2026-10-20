@@ -11,7 +11,7 @@ public sealed class OrgCustomerContactFormService(OrgDbContext db, OrgService? o
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name).Span(6);
+    elements.Add(e => e.Name).Focus().Span(6);
     elements.Add(e => e.Position).Span(6);
     elements.Add(e => e.Phone).AsPhone("+380 (##) ###-##-##").Span(6);
     elements.Add(e => e.Email).AsEmail().Span(6);

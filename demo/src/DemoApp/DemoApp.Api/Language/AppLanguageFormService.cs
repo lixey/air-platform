@@ -15,7 +15,7 @@ public sealed class AppLanguageFormService(AppDbContext db, AppService? app = nu
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name);
+    elements.Add(e => e.Name).Focus();
     elements.Add(e => e.Handle);
     elements.Add(e => e.Code);
     elements.Add(e => e.Description);

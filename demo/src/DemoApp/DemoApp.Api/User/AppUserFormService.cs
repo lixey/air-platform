@@ -23,7 +23,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
     elements.Add(e => e.Login).Unique("This login is already in use.").Span(2);
-    elements.Add(e => e.Name).Span(2);
+    elements.Add(e => e.Name).Focus().Span(2);
     elements.Add(e => e.Email).AsEmail().Unique("This email is already in use.");
     elements.Add(e => e.LanguageId).AsReference<AppLanguageGridService>().Span(2);
     elements.Add(e => e.TimeZone).AsTimeZone().Span(2);

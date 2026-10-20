@@ -1,6 +1,6 @@
 import { Component, computed, effect, linkedSignal, untracked } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
-import type { FilterNode, FormSelectModel, Reference } from '../../core/generated/contracts';
+import type { FilterNode, FormSelectModel, OverlayModelDto, Reference } from '../../core/generated/contracts';
 import { valueAt } from '../../core/json';
 import type { SelectOption } from '../../select/select-option';
 import { labelPathsOf, optionOfReference, referenceOfOption } from '../../select/select-option';
@@ -29,7 +29,7 @@ import { FormItemComponent } from './form-item.component';
         <ui-select
           [model]="select"
           [multiple]="isMultiple()"
-          [createOverlay]="model()?.createOverlay ?? null"
+          [createOverlay]="createOverlay()"
           [picked]="selected()"
           [clearable]="!element().isRequired"
           [placeholder]="element().placeholder ?? ''"
@@ -119,6 +119,35 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
     };
   });
 
+  protected readonly createOverlay = computed<OverlayModelDto | null>(() => {
+    const base = this.model()?.createOverlay ?? null;
+    if (!base?.screen) {
+      return base;
+    }
+    const presets = collectPresetValues(this.referenceFilter());
+    if (Object.keys(presets).length === 0) {
+      return base;
+    }
+    const baseParams =
+      typeof base.screen.params === 'object' && base.screen.params !== null
+        ? (base.screen.params as Record<string, unknown>)
+        : {};
+    const existingValue =
+      typeof baseParams['value'] === 'object' && baseParams['value'] !== null
+        ? (baseParams['value'] as Record<string, unknown>)
+        : {};
+    return {
+      ...base,
+      screen: {
+        ...base.screen,
+        params: {
+          ...baseParams,
+          value: { ...presets, ...existingValue },
+        },
+      },
+    };
+  });
+
   protected readonly select = computed<SelectSource | null>(() => {
     const element = this.element();
     const label = element.label ?? element.path;
@@ -204,4 +233,20 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
 /** Whether two lists of dependency values hold the same value at every place. */
 function hasSameItems(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+function collectPresetValues(node: FilterNode | null | undefined, out: Record<string, unknown> = {}): Record<string, unknown> {
+  if (!node) {
+    return out;
+  }
+  if (node.kind === 'FilterRule') {
+    if (node.operator === 'equals' && node.field && node.value !== undefined && node.value !== null) {
+      out[node.field] = node.value;
+    }
+  } else if (node.kind === 'FilterGroup' && node.logic === 'and' && Array.isArray(node.items)) {
+    for (const item of node.items) {
+      collectPresetValues(item, out);
+    }
+  }
+  return out;
 }

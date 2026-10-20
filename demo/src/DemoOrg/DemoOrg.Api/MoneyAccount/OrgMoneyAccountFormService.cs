@@ -10,7 +10,7 @@ public sealed class OrgMoneyAccountFormService(OrgDbContext db, OrgService? org 
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew);
-    elements.Add(e => e.Name).Unique("The organization already has a money account of this name.", e => e.OrganizationId);
+    elements.Add(e => e.Name).Focus().Unique("The organization already has a money account of this name.", e => e.OrganizationId);
     elements.Add(e => e.IsCash).AsCheckbox().Span(6);
     elements.Add(e => e.Iban).Span(6);
     elements.Add(e => e.BankName).Span(6);

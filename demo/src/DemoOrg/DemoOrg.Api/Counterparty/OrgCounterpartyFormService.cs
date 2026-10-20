@@ -9,7 +9,7 @@ public sealed class OrgCounterpartyFormService(OrgDbContext db, OrgService? org 
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name);
+    elements.Add(e => e.Name).Focus();
     elements.Add(e => e.FullName);
     elements.Add(e => e.IsSupplier).AsCheckbox().Span(6);
     elements.Add(e => e.IsBuyer).AsCheckbox().Span(6);

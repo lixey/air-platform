@@ -9,7 +9,7 @@ public sealed class OrgProductCategoryFormService(OrgDbContext db, OrgService? o
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name).Unique("This name is already in use.");
+    elements.Add(e => e.Name).Focus().Unique("This name is already in use.");
     elements.Add(e => e.ColorId).AsReference<AppColorGridService>().Span(4);
     elements.Add(e => e.IsActive).AsCheckbox().Span(4);
     elements.Add(e => e.SortOrder).Span(4);

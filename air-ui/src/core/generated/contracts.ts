@@ -429,6 +429,7 @@ export interface FormElementDto {
   isHidden: boolean;
   isServerOwned: boolean;
   isInputOnly: boolean;
+  isFocused?: boolean;
   isSecret?: boolean;
   valueKind: FormValueKind;
   hasSeparatorAfter?: boolean;

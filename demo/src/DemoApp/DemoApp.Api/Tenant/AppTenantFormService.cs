@@ -15,7 +15,7 @@ public sealed class AppTenantFormService(AppDbContext db, AppService? app = null
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.Name);
+    elements.Add(e => e.Name).Focus();
     elements.Add(e => e.Handle);
     elements.Add(e => e.ParentId).AsReference<AppTenantGridService>();
     elements.Add(e => e.TimeZone).AsTimeZone();

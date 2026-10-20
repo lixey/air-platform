@@ -611,6 +611,7 @@ internal static class ServiceEndpoints
       if (root.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var bodyVer)) req.Ver = bodyVer;
       if (root.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid)) req.ParentId = bodyPid;
       if (root.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } bodyPs) req.ParentService = bodyPs;
+      if (root.TryGetProperty("value", out var valProp) && valProp.ValueKind == JsonValueKind.Object) req.Value = valProp.Clone();
     }
 
     return req;

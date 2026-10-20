@@ -22,7 +22,7 @@ public sealed class OrgProductFormService(OrgDbContext db, OrgService? org = nul
     elements.Add(e => e.UnitId).AsReference<OrgUnitGridService>().Required().Span(6);
     elements.Add(e => e.Article)
       .Unique("The supplier already has a product of this brand and article.", e => e.SupplierId, e => e.BrandId).Span(4);
-    elements.Add(e => e.Name).Span(8);
+    elements.Add(e => e.Name).Focus().Span(8);
     elements.Add(e => e.Barcode).Span(6);
     elements.Add(e => e.CustomsCode).Span(6);
     elements.Add(e => e.Weight).Label("Weight, kg").Min(0).Step(0.001).Span(4);

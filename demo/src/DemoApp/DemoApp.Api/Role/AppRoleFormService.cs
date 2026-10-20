@@ -20,7 +20,7 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
 
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
-    elements.Add(e => e.Name).Span(4);
+    elements.Add(e => e.Name).Focus().Span(4);
     elements.Add(e => e.TenantId).InputOnly().AsReference<AppTenantGridService>().Span(4);
     elements.Add(e => e.SortOrder).Span(2);
     elements.Add(e => e.IsActive).AsCheckbox().Span(2);

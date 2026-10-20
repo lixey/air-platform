@@ -191,6 +191,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> Required(bool required = true) { dto.ExplicitRequired = required; dto.IsRequired = required; return this; }
   public FormElement<TEntity, TProp> Disabled(bool disabled = true) { dto.IsDisabled = disabled; return this; }
   public FormElement<TEntity, TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
+  public FormElement<TEntity, TProp> Focus(bool focus = true) { dto.IsFocused = focus; return this; }
   public FormElement<TEntity, TProp> Placeholder(string placeholder) { dto.Placeholder = placeholder; return this; }
   public FormElement<TEntity, TProp> Tab(string tab) { dto.Tab = tab; return this; }
 
@@ -578,6 +579,12 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   public new FormReferenceElement<TEntity, TProp, TSource> Label(string label)
   {
     base.Label(label);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Focus(bool focus = true)
+  {
+    base.Focus(focus);
     return this;
   }
 
