@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { DynamicOutletDirective } from '../../core/dynamic-component/dynamic-outlet.directive';
 import type { CellModel, HeaderModel } from '../../core/generated/contracts';
 import { valueAt } from '../../core/json';
@@ -6,18 +6,21 @@ import type { UiColor } from '../../theme/ui-color';
 import { UI_COLORS } from '../../theme/ui-color';
 import { SELECTION_PATH } from '../column/grid-selection-column';
 import type { GridRow } from '../grid-row';
+import { GridService } from '../grid.service';
 import type { GridCellContext } from './grid-cell-context';
 
 /**
  * A cell painted in its hue, over the whole cell: the hue's cell ground and its semibold ink, the grid's link inks turned
- * to that ink so a reference or an open-form cell reads in the hue and still acts as a link, and a line of the grid's
- * `line` role (`--panel-line`) under the cell, an inset shadow, so the cell's box and the row's height stay; while the pointer is anywhere
+ * to that ink so a reference or an open-form cell reads in the hue and still acts as a link; while the pointer is anywhere
  * on the row, the hovered ground and ink. The ground is important, over the sticky cell's inherited ground; the hover
- * ring and the active cell's ring are drawn above it, the line under them.
+ * ring and the active cell's ring are drawn above it.
  */
 const PAINTED =
-  'font-semibold bg-(--hue-cell)! text-(--hue-cell-ink) [--grid-link:var(--hue-cell-ink)] [--grid-link-hover:var(--hue-cell-ink)] shadow-[inset_0_-1px_0_var(--panel-line)] ' +
+  'font-semibold bg-(--hue-cell)! text-(--hue-cell-ink) [--grid-link:var(--hue-cell-ink)] [--grid-link-hover:var(--hue-cell-ink)] ' +
   '[tr:hover_&]:bg-(--hue-cell-hover)! [tr:hover_&]:text-(--hue-cell-hover-ink) [tr:hover_&]:[--grid-link:var(--hue-cell-hover-ink)] [tr:hover_&]:[--grid-link-hover:var(--hue-cell-hover-ink)]';
+
+/** The bottom line of a painted body cell that has another body row below it. */
+const PAINTED_LINE = 'shadow-[inset_0_-1px_0_var(--panel-line)]';
 
 /**
  * One cell of the table: mounts the component the model's kind names, given the cell and the model. Put on the `td`
@@ -41,6 +44,8 @@ const PAINTED =
   host: { '[class]': 'paint()' },
 })
 export class GridCellOutletComponent {
+  private readonly grid = inject(GridService, { optional: true });
+
   readonly cell = input.required<GridCellContext>();
   readonly model = input<CellModel | HeaderModel | null>();
   readonly fallback = input.required<CellModel['kind'] | HeaderModel['kind']>();
@@ -50,10 +55,23 @@ export class GridCellOutletComponent {
   /** The hue the cell is painted in: the row's at the model's hue path, else a flag's; null for none. */
   protected readonly hue = computed(() => hueOf(this.cell().row, this.model()) ?? flagHueOf(this.cell(), this.model()));
 
+  /** Whether the cell needs its own bottom line: every body row except the last, which shares the table's bottom border. */
+  private readonly hasBottomLine = computed(() => {
+    const cell = this.cell();
+    if (cell.pinned !== undefined) {
+      return false;
+    }
+    const rows = this.grid?.rows();
+    return rows === undefined || cell.index < rows.length - 1;
+  });
+
   /** The classes the hue adds to the cell's own; none while the cell is not painted. */
   protected readonly paint = computed(() => {
     const hue = this.hue();
-    return hue ? `hue-${hue} ${PAINTED}` : '';
+    if (!hue) {
+      return '';
+    }
+    return this.hasBottomLine() ? `hue-${hue} ${PAINTED} ${PAINTED_LINE}` : `hue-${hue} ${PAINTED}`;
   });
 }
 

@@ -258,7 +258,12 @@ function isOwnControl(event: MouseEvent): boolean {
           }
 
           <tr aria-hidden="true">
-            <td class="p-0 border-b border-line" [attr.colspan]="fullSpan()" [style.height.px]="bottomSpacer()"></td>
+            <td
+              class="p-0 border-line"
+              [class.border-b]="bottomRows().length === 0"
+              [attr.colspan]="fullSpan()"
+              [style.height.px]="bottomSpacer()"
+            ></td>
           </tr>
         </tbody>
 
