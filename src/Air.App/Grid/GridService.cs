@@ -573,6 +573,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       var col = base.Add(expression);
       return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
     }
+
+    public new GridColumn<TEntity, TRow, TProp> Add<TProp>(string path)
+    {
+      var col = base.Add<TProp>(path);
+      return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
+    }
   }
 
   protected virtual void SetColumns(Columns columns) { }

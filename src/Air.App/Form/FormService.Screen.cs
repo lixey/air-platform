@@ -962,8 +962,7 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var isEntityNav = typeof(IEntity).IsAssignableFrom(prop.PropertyType) ||
-        (typeof(IEnumerable).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string));
+      var isEntityNav = IsIgnoredNavigationProperty(prop.PropertyType);
       if (isEntityNav && !refPaths.Contains(key))
       {
         dict.Remove(key);
