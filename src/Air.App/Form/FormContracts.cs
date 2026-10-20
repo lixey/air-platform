@@ -173,7 +173,7 @@ public sealed class FormElementDto
 
   public FormElementModel Model { get; set; } = new FormInputModel();
 
-  public int Span { get; set; } = 6;
+  public int Span { get; set; } = 3;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Tab { get; set; }

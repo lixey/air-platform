@@ -116,13 +116,13 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
         <button
           type="button"
           tabindex="-1"
-          class="flex items-center justify-center shrink-0 w-8.5 border-l border-field-edge ${SEGMENT_LAST} text-muted ${INNER_CONTROL_HOVER} cursor-pointer [&>svg]:size-4 [&_svg]:size-4"
-          [class]="multiple() ? 'self-start h-8.5' : 'self-stretch'"
+          class="flex justify-center shrink-0 self-stretch w-8.5 border-l border-field-edge ${SEGMENT_LAST} text-muted ${INNER_CONTROL_HOVER} cursor-pointer [&>svg]:size-4 [&_svg]:size-4"
+          [class]="multiple() ? 'items-start' : 'items-center'"
           [title]="texts.of('Add')"
           [attr.aria-label]="texts.of('Add')"
           (click)="create($event)"
         >
-          <i icon="plus" class="[&>svg]:size-4" aria-hidden="true"></i>
+          <i icon="plus" class="flex items-center justify-center h-8.5 [&>svg]:size-4" aria-hidden="true"></i>
         </button>
       }
     </div>

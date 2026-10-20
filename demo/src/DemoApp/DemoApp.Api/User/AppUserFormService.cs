@@ -22,17 +22,17 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
-    elements.Add(e => e.Login).Unique("This login is already in use.").Span(2);
-    elements.Add(e => e.Name).Focus().Span(2);
-    elements.Add(e => e.Email).AsEmail().Unique("This email is already in use.");
-    elements.Add(e => e.LanguageId).AsReference<AppLanguageGridService>().Span(2);
-    elements.Add(e => e.TimeZone).AsTimeZone().Span(2);
-    elements.Add(e => e.UserGroupId).AsReference<AppUserGroupGridService>().Span(2);
+    elements.Add(e => e.Login).Unique("This login is already in use.");
+    elements.Add(e => e.Name).Focus();
+    elements.Add(e => e.Email).AsEmail().Unique("This email is already in use.").Span(6);
+    elements.Add(e => e.LanguageId).AsReference<AppLanguageGridService>();
+    elements.Add(e => e.TimeZone).AsTimeZone().Span(6);
+    elements.Add(e => e.UserGroupId).AsReference<AppUserGroupGridService>();
 
     elements.AddTab("Security");
+    elements.Add(e => e.Password).InputOnly().AsPassword().Span(6);
     elements.Add(e => e.IsActive).AsCheckbox();
     elements.Add(e => e.MustChangePassword).AsCheckbox();
-    elements.Add(e => e.Password).InputOnly().AsPassword();
 
     elements.AddTab("Roles");
     var roles = await db.Set<AppAuthRole>().Where(r => r.IsActive).OrderBy(r => r.SortOrder)
