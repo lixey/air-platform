@@ -43,6 +43,10 @@ internal static class MetadataEndpoints
         var activeTenantId = AsyncLocalTenantContext.Instance.TenantId
           ?? (userContext.IsAuthenticated && userContext.Claim(AuthClaims.Tenant) is { } tc && long.TryParse(tc, out var tId) ? tId : 1);
         var currentTenant = tenants.FirstOrDefault(t => t.Id == activeTenantId) ?? tenants.FirstOrDefault();
+        var hasTenantMenu = catalog.Modules
+          .SelectMany(m => ModuleCatalog.Flatten(m.Menu.Nodes))
+          .Any(n => !n.IsHidden && n.Feature?.CleanName.Equals("tenant", StringComparison.OrdinalIgnoreCase) == true);
+        var showTenantSwitcher = currentTenant != null && (tenants.Count > 1 || hasTenantMenu);
 
         var metadata = new AppMetadataDto
         {
@@ -61,10 +65,10 @@ internal static class MetadataEndpoints
             Service = "platform-language",
             Method = "switch"
           },
-          Tenant = currentTenant != null ? new SwitcherDto
+          Tenant = showTenantSwitcher ? new SwitcherDto
           {
             Label = Localizer.Instance["Tenant"],
-            Current = new Reference { Id = currentTenant.Id, Name = currentTenant.Name },
+            Current = new Reference { Id = currentTenant!.Id, Name = currentTenant.Name },
             Options = tenants.Count > 1 ? tenants.Select(t => new Reference { Id = t.Id, Name = t.Name }).ToList() : null,
             Service = tenants.Count > 1 ? "platform-tenant" : null,
             Method = tenants.Count > 1 ? "switch" : null
