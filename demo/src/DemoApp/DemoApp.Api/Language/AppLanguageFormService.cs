@@ -17,6 +17,7 @@ public sealed class AppLanguageFormService(AppDbContext db, AppService? app = nu
   {
     elements.Add(e => e.Name);
     elements.Add(e => e.Handle);
+    elements.Add(e => e.Code);
     elements.Add(e => e.Description);
     elements.Add(e => e.IsActive).AsCheckbox();
   }

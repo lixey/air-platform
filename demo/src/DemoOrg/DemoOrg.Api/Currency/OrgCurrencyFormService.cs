@@ -10,6 +10,7 @@ public sealed class OrgCurrencyFormService(OrgDbContext db, OrgService? org = nu
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Handle);
+    elements.Add(e => e.Code);
     elements.Add(e => e.Name);
     elements.Add(e => e.Symbol);
   }

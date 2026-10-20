@@ -9,7 +9,7 @@ using DemoApp.UserGroup;
 
 namespace DemoApp;
 
-[Module("app")]
+[Module(AppData.ModuleHandle)]
 public sealed class App : ModuleDefinition<App>
 {
   public static readonly Feature Tenant = Feature<AppTenantGridService>();

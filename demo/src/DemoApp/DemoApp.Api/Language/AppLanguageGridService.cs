@@ -15,5 +15,6 @@ public sealed class AppLanguageGridService(AppDbContext db, AppService? app = nu
     columns.Add(r => r.Id).AsOpenForm<AppLanguageFormService>();
     columns.Add(r => r.Name);
     columns.Add(r => r.Handle);
+    columns.Add(r => r.Code);
   }
 }

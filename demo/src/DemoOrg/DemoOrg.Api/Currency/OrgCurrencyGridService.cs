@@ -9,6 +9,7 @@ public sealed class OrgCurrencyGridService(OrgDbContext db, OrgService? org = nu
   {
     columns.Add(r => r.Id).AsOpenForm<OrgCurrencyFormService>();
     columns.Add(r => r.Handle);
+    columns.Add(r => r.Code);
     columns.Add(r => r.Name);
     columns.Add(r => r.Symbol);
   }

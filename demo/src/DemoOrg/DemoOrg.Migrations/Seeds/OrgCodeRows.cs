@@ -8,9 +8,9 @@ public static class OrgCodeRows
 {
   public static OrgCurrency[] Currencies() =>
   [
-    new() { Id = OrgData.Currency.UahId, Handle = OrgData.Currency.Uah, Name = "Ukrainian Hryvnia", Symbol = "₴", IsActive = true },
-    new() { Id = OrgData.Currency.UsdId, Handle = OrgData.Currency.Usd, Name = "US Dollar", Symbol = "$", IsActive = true },
-    new() { Id = OrgData.Currency.EurId, Handle = OrgData.Currency.Eur, Name = "Euro", Symbol = "€", IsActive = true }
+    new() { Id = OrgData.Currency.UahId, Handle = OrgData.Currency.Uah, Code = OrgData.Currency.UahCode, Name = "Ukrainian Hryvnia", Symbol = "\u20b4", IsActive = true },
+    new() { Id = OrgData.Currency.UsdId, Handle = OrgData.Currency.Usd, Code = OrgData.Currency.UsdCode, Name = "US Dollar", Symbol = "$", IsActive = true },
+    new() { Id = OrgData.Currency.EurId, Handle = OrgData.Currency.Eur, Code = OrgData.Currency.EurCode, Name = "Euro", Symbol = "\u20ac", IsActive = true }
   ];
 
   public static OrgUnit[] Units() =>

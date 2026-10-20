@@ -12,7 +12,7 @@ import { LayoutMenuEntryComponent } from './layout-menu-entry.component';
 import { LayoutMenuGroupComponent } from './layout-menu-group.component';
 import { LayoutMenuGroups } from './layout-menu-groups';
 import { LayoutSignOutComponent } from './layout-sign-out.component';
-import { LayoutSwitchersComponent } from './layout-switchers.component';
+import { LayoutSwitcherComponent } from './layout-switcher.component';
 import { LayoutThemeButtonComponent } from './layout-theme-button.component';
 
 /**
@@ -58,7 +58,7 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
     LayoutMenuEntryComponent,
     LayoutMenuGroupComponent,
     LayoutSignOutComponent,
-    LayoutSwitchersComponent,
+    LayoutSwitcherComponent,
     LayoutThemeButtonComponent,
   ],
   template: `
@@ -105,14 +105,17 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
       as wide as the navigation and adds nothing to its width: a long name truncates rather than widening the panel.
     -->
     <div class="shrink-0 border-t border-line">
-      @if (hasSwitchers()) {
+      @if (app.tenant(); as tenant) {
         <div class="flex w-0 min-w-full gap-(--ui-panel-gap) px-(--ui-panel-gap) pt-(--ui-panel-gap)">
-          <ui-layout-switchers fluid />
+          <ui-layout-switcher fluid [model]="tenant" />
         </div>
       }
 
       <ui-nav>
-        <ui-layout-theme-button start />
+        <ng-container ngProjectAs="[start]">
+          <ui-layout-theme-button />
+          <ui-layout-switcher [model]="app.language()" />
+        </ng-container>
 
         <ng-container ngProjectAs="[end]">
           <ui-layout-sign-out />

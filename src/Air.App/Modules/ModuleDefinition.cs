@@ -177,9 +177,15 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
 }
 
 [AttributeUsage(AttributeTargets.Class)]
-public sealed class ModuleAttribute(string handle) : Attribute
+public sealed class ModuleAttribute : Attribute
 {
-  public string Handle { get; } = handle;
+  public ModuleAttribute(string handle)
+  {
+    Air.Data.CodeRows.EnsurePascalCaseHandle(handle, "Module");
+    Handle = handle;
+  }
+
+  public string Handle { get; }
   public string? Name { get; set; }
   public string? Icon { get; set; }
 }

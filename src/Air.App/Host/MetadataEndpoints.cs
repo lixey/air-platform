@@ -55,12 +55,12 @@ internal static class MetadataEndpoints
           {
             Label = Localizer.Instance["Language"],
             Current = isUk
-              ? new Reference { Id = 2, Name = Localizer.Instance["Ukrainian"] }
-              : new Reference { Id = 1, Name = Localizer.Instance["English"] },
+              ? new Reference { Id = 2, Name = "Ua" }
+              : new Reference { Id = 1, Name = "En" },
             Options =
             [
-              new Reference { Id = 1, Name = Localizer.Instance["English"] },
-              new Reference { Id = 2, Name = Localizer.Instance["Ukrainian"] }
+              new Reference { Id = 1, Name = "English" },
+              new Reference { Id = 2, Name = "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430" }
             ],
             Service = "platform-language",
             Method = "switch"
@@ -112,7 +112,7 @@ internal static class MetadataEndpoints
             metadata.Routes.Add(new MenuItemDto
             {
               Path = feat.Path,
-              Handle = feat.Name.ToLowerInvariant(),
+              Handle = feat.CleanName,
               Name = featL[feat.Name],
               Screen = screen
             });
@@ -124,7 +124,7 @@ internal static class MetadataEndpoints
             metadata.Routes.Add(new MenuItemDto
             {
               Path = flatPath,
-              Handle = feat.Name.ToLowerInvariant(),
+              Handle = feat.CleanName,
               Name = featL[feat.Name],
               Screen = screen
             });

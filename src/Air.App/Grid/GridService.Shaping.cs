@@ -93,7 +93,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       if (column.ColorEvaluator is not null)
       {
-        var hue = column.ColorEvaluator(row);
+        var hue = column.ColorEvaluator(row)?.ToLowerInvariant();
         if (!string.IsNullOrEmpty(hue))
         {
           if (value is Reference r)

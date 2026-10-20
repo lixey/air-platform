@@ -324,7 +324,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       foreach (var col in colorCols)
       {
-        var hue = col.ColorEvaluator!(entity);
+        var hue = col.ColorEvaluator!(entity)?.ToLowerInvariant();
         if (string.IsNullOrEmpty(hue) || string.IsNullOrEmpty(col.Path)) continue;
 
         var key = ToCamel(col.Path.Split('.')[0]);

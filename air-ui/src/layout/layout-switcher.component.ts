@@ -115,8 +115,9 @@ export class LayoutSwitcherComponent {
       return;
     }
     const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const currentOption = switcher.options.find(o => o.id === switcher.current.id) ?? switcher.current;
     this.select.open(
-      { model: { label: switcher.label, options: switcher.options.map(optionOfReference) }, picked: [optionOfReference(switcher.current)] },
+      { model: { label: switcher.label, options: switcher.options.map(optionOfReference) }, picked: [optionOfReference(currentOption)] },
       anchor,
       this.injector,
     );

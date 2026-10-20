@@ -44,7 +44,7 @@ public sealed class ModuleMenuBuilder
     _nodes.Add(new ModuleMenuNode
     {
       Feature = feature,
-      Handle = feature.Name.ToLowerInvariant(),
+      Handle = feature.CleanName,
       Title = title ?? feature.Name,
       Icon = icon
     });
@@ -54,13 +54,13 @@ public sealed class ModuleMenuBuilder
   public ModuleMenuBuilder Item(string module, string name, string title, string? icon = null, Type? serviceType = null)
   {
     var feature = new Feature(module, name, serviceType);
-    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = name, Title = title, Icon = icon });
+    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = feature.CleanName, Title = title, Icon = icon });
     return this;
   }
 
   public ModuleMenuBuilder Hidden(Feature feature)
   {
-    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = feature.Name, Title = feature.Name, IsHidden = true });
+    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = feature.CleanName, Title = feature.Name, IsHidden = true });
     return this;
   }
 

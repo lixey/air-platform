@@ -25,7 +25,7 @@ public static class EcomCodeRows
 
   public static EcomDocStatus[] DocStatuses()
   {
-    var colors = AppCodeRows.Colors().ToDictionary(color => color.Handle, color => color.Id);
+    var colors = AppCodeRows.Colors().ToDictionary(color => color.Handle, color => color.Id, StringComparer.OrdinalIgnoreCase);
     return
     [
       Row(EcomData.DocStatus.CustomerOrderNewId, EcomData.DocStatus.CustomerOrderNew, "New", UiColor.Sky, editable: true),

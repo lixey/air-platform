@@ -21,7 +21,7 @@ public abstract class EcomDocHistoryGridService<TDocForm>(EcomDbContext db, Ecom
       .Include(s => s.Color)
       .OrderBy(s => s.SortOrder)
       .ToList()
-      .Select(s => new OptionDto { Id = s.Id, Name = L[s.Name], Color = s.Color?.Handle })
+      .Select(s => new OptionDto { Id = s.Id, Name = L[s.Name], Color = s.Color?.Handle.ToLowerInvariant() })
       .ToList();
 
     columns.Add(r => r.At).Label("Time");

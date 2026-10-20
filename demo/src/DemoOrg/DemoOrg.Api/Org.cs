@@ -15,7 +15,7 @@ using DemoOrg.Warehouse;
 
 namespace DemoOrg;
 
-[Module("org")]
+[Module(OrgData.ModuleHandle)]
 public sealed class Org : ModuleDefinition<Org>
 {
   public static readonly Feature Organization = Feature<OrgOrganizationGridService>();

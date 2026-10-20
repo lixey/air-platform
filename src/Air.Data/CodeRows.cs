@@ -1,23 +1,46 @@
+using System.Text.RegularExpressions;
 using Air.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Air.Data;
 
-public static class CodeRows
+public static partial class CodeRows
 {
   private static readonly HashSet<string> Kept =
   [
-    nameof(BaseDictionaryEntity.Handle),
     nameof(BaseEntity.Ver),
     nameof(BaseEntity.CreatedAt),
     nameof(BaseEntity.UpdatedAt)
   ];
+
+  [GeneratedRegex("^[A-Z][a-zA-Z0-9]*$", RegexOptions.CultureInvariant)]
+  private static partial Regex PascalCaseRegex();
+
+  public static void EnsurePascalCaseHandle(string? handle, string entityName)
+  {
+    if (string.IsNullOrWhiteSpace(handle) ||
+        !PascalCaseRegex().IsMatch(handle) ||
+        (handle.Length > 1 && handle.All(char.IsUpper)))
+    {
+      throw new InvalidOperationException(
+        $"Entity '{entityName}' has invalid Handle '{handle}'. Handle must always be a PascalCase identifier (use a separate property like Code for non-PascalCase values)."
+      );
+    }
+  }
 
   public static async Task SyncAsync<TEntity>(DbContext db, IReadOnlyCollection<TEntity> rows, CancellationToken cancellationToken = default)
     where TEntity : class, IEntity
   {
     ArgumentNullException.ThrowIfNull(db);
     ArgumentNullException.ThrowIfNull(rows);
+
+    foreach (var row in rows)
+    {
+      if (row is BaseDictionaryEntity dict)
+      {
+        EnsurePascalCaseHandle(dict.Handle, typeof(TEntity).Name);
+      }
+    }
 
     var set = db.Set<TEntity>();
     var existing = await set.IgnoreQueryFilters().ToDictionaryAsync(r => r.Id, cancellationToken);

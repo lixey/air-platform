@@ -994,6 +994,9 @@
   <data name="Size" xml:space="preserve">
     <value>Size</value>
   </data>
+  <data name="Code" xml:space="preserve">
+    <value>Code</value>
+  </data>
   <data name="Restore" xml:space="preserve">
     <value>Restore</value>
   </data>
