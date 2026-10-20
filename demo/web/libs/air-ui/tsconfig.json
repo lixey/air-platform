@@ -1,9 +1,0 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "allowJs": true,
-    "noEmit": true,
-    "types": ["node"]
-  },
-  "include": ["eslint.config.mjs", "vite.config.mts"]
-}

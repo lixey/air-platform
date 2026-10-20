@@ -5,7 +5,6 @@
   "prefix": "app",
   "sourceRoot": "apps/demo/src",
   "tags": [],
-  "implicitDependencies": ["air-ui"],
   "targets": {
     "lint": {
       "options": {
