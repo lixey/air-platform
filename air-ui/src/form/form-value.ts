@@ -2,13 +2,17 @@ import { hasZone, temporalText } from '../controls/temporal-text';
 import type { FormDataDto, FormElementDto, FormModel } from '../core/generated/contracts';
 import { isRecord } from '../core/json';
 
-/** The form service owns JSON values; callers cannot mutate nested state behind its guards. */
-export function frozenCopy<T>(value: T): T {
+/**
+ * The form service owns JSON values; callers cannot mutate nested state behind its guards.
+ * Objects inside arrays stay extensible so Angular Signal Forms can stamp its private `identitySymbol` on array items.
+ */
+export function frozenCopy<T>(value: T, inArray = false): T {
   if (Array.isArray(value)) {
-    return Object.freeze(value.map(item => frozenCopy(item))) as T;
+    return Object.freeze(value.map(item => frozenCopy(item, true))) as T;
   }
   if (value !== null && typeof value === 'object') {
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, frozenCopy(item)]))) as T;
+    const copy = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, frozenCopy(item, false)]));
+    return (inArray ? copy : Object.freeze(copy)) as T;
   }
   return value;
 }
@@ -80,6 +84,40 @@ export function draftOf(value: Readonly<Record<string, unknown>>, elements: read
     }
   }
   return draft;
+}
+
+export interface SplitDraft {
+  readonly fields: Record<string, unknown>;
+  readonly references: Record<string, unknown>;
+  readonly value: Record<string, unknown>;
+}
+
+/**
+ * Splits a form draft into the editable field values (passed to Angular Signal Forms `form()`)
+ * and the display-only reference captions (`referencePath`), so Signal Forms never walks `{ id, name }` objects.
+ */
+export function splitDraft(value: Readonly<Record<string, unknown>>, elements: readonly FormElementDto[]): SplitDraft {
+  const draft = draftOf(value, elements);
+  const elementPaths = new Set(elements.map(e => e.path));
+  const referencePaths = new Set(
+    elements.map(e => e.referencePath).filter((p): p is string => Boolean(p) && !elementPaths.has(p!)),
+  );
+  const fields: Record<string, unknown> = {};
+  const references: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(draft)) {
+    if (referencePaths.has(key)) {
+      references[key] = item;
+    } else {
+      fields[key] = item;
+    }
+  }
+  const frozenFields = frozenCopy(fields);
+  const frozenRefs = frozenCopy(references);
+  return {
+    fields: frozenFields,
+    references: frozenRefs,
+    value: frozenCopy({ ...frozenFields, ...frozenRefs }),
+  };
 }
 
 /** The model of a form of input alone over `elements`: no service, no text of a save. */

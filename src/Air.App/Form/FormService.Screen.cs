@@ -58,6 +58,32 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
     }
+    if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
+    {
+      foreach (var prop in presetJson.EnumerateObject())
+      {
+        if (prop.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+          continue;
+        }
+        var targetName = prop.Name;
+        var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
+        if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
+            !targetName.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
+            PropertyAccessorCache.GetProperty(typeof(TEntity), targetName + "Id") != null)
+        {
+          targetName += "Id";
+        }
+        var targetCamel = Elements.ToCamelPath(targetName);
+        foreach (var el in elements.List)
+        {
+          if (string.Equals(el.Path, targetCamel, StringComparison.OrdinalIgnoreCase))
+          {
+            el.IsDisabled = true;
+          }
+        }
+      }
+    }
     LocalizeAndResolveSelectElements(elements);
     await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
     _lastElements = elements;
@@ -953,19 +979,35 @@ public abstract partial class FormService<TEntity, TInput>
       };
     }
 
+    var allowedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var el in elements)
+    {
+      if (!string.IsNullOrEmpty(el.Path) && !el.IsSecret && !string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase))
+      {
+        allowedKeys.Add(el.Path);
+      }
+      if (!string.IsNullOrEmpty(el.ReferencePath))
+      {
+        allowedKeys.Add(el.ReferencePath);
+      }
+    }
+
     foreach (var prop in entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
     {
-      var key = JsonNamingPolicy.CamelCase.ConvertName(prop.Name);
       if (Attribute.IsDefined(prop, typeof(SensitiveAttribute)))
       {
-        dict.Remove(key);
-        continue;
+        allowedKeys.Remove(JsonNamingPolicy.CamelCase.ConvertName(prop.Name));
       }
+    }
 
-      var isEntityNav = IsIgnoredNavigationProperty(prop.PropertyType);
-      if (isEntityNav && !refPaths.Contains(key))
+    if (allowedKeys.Count > 0)
+    {
+      foreach (var key in dict.Keys.ToList())
       {
-        dict.Remove(key);
+        if (!allowedKeys.Contains(key))
+        {
+          dict.Remove(key);
+        }
       }
     }
   }

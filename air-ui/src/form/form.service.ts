@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injector, linkedSignal, Service, type Signal, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injector, linkedSignal, Service, type Signal, signal, untracked } from '@angular/core';
 import { type FieldTree, form } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
 import { AlertService } from '../app/alert/alert.service';
@@ -36,12 +36,13 @@ import { FormActions } from './form-actions';
 import { formFieldRules, isFieldDisabled } from './form-field-rules';
 import {
   canonicalJson,
-  draftOf,
   frozenCopy,
   hasSecret,
   inputModelOf,
   isFormData,
   isSecret,
+  type SplitDraft,
+  splitDraft,
   stripUntouchedSecrets,
 } from './form-value';
 
@@ -86,7 +87,7 @@ export class FormService {
   private readonly input = signal<Signal<FormInput> | null>(null);
   private readonly given = computed<FormInput | null>(() => this.input()?.() ?? null);
   /** What the form of input alone opens with: its elements and the value they hold before the first edit. */
-  private readonly opening = computed<FormInput | null>(() => {
+  private readonly opening = computed<(FormInput & SplitDraft) | null>(() => {
     const input = this.given();
     if (!input) {
       return null;
@@ -94,7 +95,8 @@ export class FormService {
     const unchecked = Object.fromEntries(
       input.elements.filter(element => element.type === 'checkbox').map(element => [element.path, false]),
     );
-    return { elements: input.elements, value: frozenCopy(draftOf({ ...unchecked, ...input.value }, input.elements)) };
+    const split = splitDraft({ ...unchecked, ...input.value }, input.elements);
+    return { elements: input.elements, ...split };
   });
 
   private readonly _model = linkedSignal<FormInput | null, FormModel | null>({
@@ -108,11 +110,15 @@ export class FormService {
   readonly id = this._id.asReadonly();
   private readonly _ver = signal<number | null>(null);
   readonly ver = this._ver.asReadonly();
-  private readonly _value = linkedSignal<FormInput | null, Record<string, unknown>>({
+  private readonly _fields = linkedSignal<(FormInput & SplitDraft) | null, Record<string, unknown>>({
     source: this.opening,
-    computation: opening => opening?.value ?? frozenCopy({}),
+    computation: opening => opening?.fields ?? frozenCopy({}),
   });
-  readonly value = this._value.asReadonly();
+  private readonly _references = linkedSignal<(FormInput & SplitDraft) | null, Record<string, unknown>>({
+    source: this.opening,
+    computation: opening => opening?.references ?? frozenCopy({}),
+  });
+  readonly value: Signal<Record<string, unknown>> = computed(() => frozenCopy({ ...this._fields(), ...this._references() }));
   private readonly _adoption = signal(0);
   /** Counts the records the form adopted: one given, one read again, the answer of a save or of an action, and none. */
   readonly adoption = this._adoption.asReadonly();
@@ -120,9 +126,9 @@ export class FormService {
   /** What the record the form holds does not offer; empty for a new record and for a record that offers all. */
   readonly unavailable = this._unavailable.asReadonly();
   /** The record the form was opened or last saved with: its elements and its value, read in the current zone. */
-  private readonly baseline = linkedSignal<FormInput | null, FormInput | null>({
+  private readonly baseline = linkedSignal<(FormInput & SplitDraft) | null, FormInput | null>({
     source: this.opening,
-    computation: opening => opening,
+    computation: opening => (opening ? { elements: opening.elements, value: untracked(this.value) } : null),
   });
   /** The baseline's canonical text on the user's current clock; `[]` with no baseline. */
   private readonly baselineText = computed(() => {
@@ -130,7 +136,7 @@ export class FormService {
     return baseline ? canonicalJson(baseline.value, baseline.elements, this.zone()) : '[]';
   });
   private readonly _messages = linkedSignal<Record<string, unknown>, readonly MessageDto[]>({
-    source: this._value,
+    source: this.value,
     computation: (value, previous) =>
       previous?.source ? previous.value.filter(m => !m.path || value[m.path] === (previous.source as Record<string, unknown>)[m.path]) : [],
   });
@@ -256,7 +262,7 @@ export class FormService {
   });
 
   private readonly tree = form(
-    this._value,
+    this._fields,
     formFieldRules({
       elementOf: path => this.elementOf(path),
       isReadOnly: () => this.isReadOnly(),
@@ -328,7 +334,9 @@ export class FormService {
   }
 
   fieldOf<T>(path: string): FieldTree<T> {
-    const field = this.tree[path];
+    const element = this.elementOf(path);
+    const key = element && element.referencePath === path ? element.path : path;
+    const field = this.tree[key];
     if (!field) {
       throw new Error(`The form has no field at "${path}"`);
     }
@@ -339,8 +347,21 @@ export class FormService {
     return this.value()[path];
   }
 
-  /** Writes one field through the field tree; refused when absent, disabled or readonly. */
+  /** Writes one field through the field tree (or reference caption map); refused when absent, disabled or readonly. */
   setValueAt(path: string, value: unknown): void {
+    const element = this.elementOf(path);
+    if (element && element.referencePath === path && element.path !== path) {
+      const field = this.tree[element.path];
+      if (!field) {
+        return;
+      }
+      const state = field();
+      if (state.disabled() || state.readonly()) {
+        return;
+      }
+      this._references.update(refs => frozenCopy({ ...refs, [path]: value }));
+      return;
+    }
     const field = this.tree[path];
     if (!field) {
       return;
@@ -527,9 +548,10 @@ export class FormService {
     this._ver.set(data?.ver ?? null);
     this._unavailable.set(frozenCopy(data?.unavailable ?? {}));
     const elements = this.model()?.elements ?? [];
-    const value = draftOf(data?.value ?? {}, elements);
-    this._value.set(frozenCopy(value));
-    this.baseline.set({ elements, value: frozenCopy(value) });
+    const { fields, references } = splitDraft(data?.value ?? {}, elements);
+    this._fields.set(fields);
+    this._references.set(references);
+    this.baseline.set({ elements, value: untracked(this.value) });
     this._messages.set([]);
     this._adoption.update(count => count + 1);
   }
