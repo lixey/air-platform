@@ -49,7 +49,9 @@ const LABEL_SIZE: Record<ButtonSize, string> = {
         <ui-btn [size]="size()" variant="ghost" [title]="title()" [loading]="isBusy()" [class]="buttonClasses()" (click)="open($event)">
           <span class="sr-only">{{ switcher.label + ': ' }}</span>
           <span [class]="nameClasses()">{{ switcher.current.name }}</span>
-          <i icon="chevron-bottom" class="shrink-0 opacity-60" aria-hidden="true"></i>
+          @if (!hideChevron()) {
+            <i icon="chevron-bottom" class="shrink-0 opacity-60" aria-hidden="true"></i>
+          }
         </ui-btn>
       } @else {
         <span [class]="labelClasses()" [class.text-on-active]="onPage()" [title]="title()">
@@ -82,6 +84,9 @@ export class LayoutSwitcherComponent {
    * a tenant's or a language's name. Otherwise the name stops at a fixed width.
    */
   readonly fluid = input(false, { transform: booleanAttribute });
+
+  /** Hides the trailing chevron icon for compact inline buttons (e.g. language code in the sidebar footer). */
+  readonly hideChevron = input(false, { transform: booleanAttribute });
 
   protected readonly isBusy = signal(false);
 

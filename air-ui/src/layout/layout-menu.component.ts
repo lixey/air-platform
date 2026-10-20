@@ -114,7 +114,7 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
       <ui-nav>
         <ng-container ngProjectAs="[start]">
           <ui-layout-theme-button />
-          <ui-layout-switcher [model]="app.language()" />
+          <ui-layout-switcher hideChevron [model]="app.language()" />
         </ng-container>
 
         <ng-container ngProjectAs="[end]">
