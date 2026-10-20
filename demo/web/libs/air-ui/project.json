@@ -2,7 +2,7 @@
   "name": "air-ui",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "root": "libs/air-ui",
-  "sourceRoot": ".air-ui/src",
+  "sourceRoot": "libs/air-ui/src",
   "prefix": "lib",
   "projectType": "library",
   "tags": [],

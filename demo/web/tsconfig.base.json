@@ -16,7 +16,7 @@
     "preserveSymlinks": true,
     "strict": false,
     "paths": {
-      "@air-ui/*": ["./.air-ui/src/*"]
+      "@air-ui/*": ["./libs/air-ui/src/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]

@@ -1,5 +1,5 @@
 @import 'tailwindcss';
-@import '../../../.air-ui/src/styles.css';
+@import '../../../libs/air-ui/src/styles.css';
 
 @theme {
   --color-brand-50: oklch(98% 0.01 262);
