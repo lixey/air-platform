@@ -12,11 +12,11 @@ import { SelectService } from './select.service';
   selector: 'ui-select-picked',
   imports: [BtnComponent, UiIconDirective],
   template: `
-    <div class="flex items-center gap-2 pl-2 border-b border-line bg-surface-2 text-sm">
+    <div class="flex items-center gap-2 h-7 pl-2 border-b border-line bg-surface-2 text-sm shrink-0">
       <span class="flex-1 text-center text-mark tabular-nums" [attr.aria-label]="texts.of('PickedCount', picked().length)">
         {{ picked().length }}
       </span>
-      <ui-btn size="small" variant="ghost" color="slate" [label]="texts.of('ClearAll')" (click)="select.clearDraft()" />
+      <ui-btn size="small" variant="ghost" color="blue" [label]="texts.of('ClearAll')" (click)="select.clearDraft()" />
     </div>
     <div class="flex flex-col gap-1 p-1 overflow-auto min-h-0">
       @for (option of picked(); track option.id) {

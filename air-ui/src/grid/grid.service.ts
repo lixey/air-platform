@@ -52,6 +52,7 @@ import { GridSelection } from './grid-selection';
 export interface GridTableIds {
   readonly table: string;
   readonly activeCell: Signal<string | null>;
+  readonly tableWidth?: Signal<number>;
 }
 
 /** The rows of a picker's list while its text is shorter than the least length: one list, so nothing is drawn anew. */
@@ -196,7 +197,7 @@ export class GridService {
   readonly data = this._data.asReadonly();
   /** Whether a page is held: the one that came with the screen, or one the server answered. */
   private readonly hasPage = computed(() => this.data() !== null);
-  readonly pageSize = computed(() => this.data()?.pageSize ?? this.model()?.pageSize ?? 25);
+  readonly pageSize = computed(() => this.data()?.pageSize ?? this.model()?.pageSize ?? 200);
 
   /** The request the state makes; data only once an answer is held, so the layout is never sent twice. */
   readonly request = computed<GridRequest>(() => ({
@@ -336,6 +337,7 @@ export class GridService {
       rowCount: () => this.rows().length,
       tableId: () => this.tableIds()?.table ?? null,
       activeCellId: () => this.tableIds()?.activeCell() ?? null,
+      tableWidth: () => this.tableIds()?.tableWidth?.() ?? 0,
     });
   }
 

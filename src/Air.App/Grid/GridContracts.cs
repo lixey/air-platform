@@ -25,7 +25,7 @@ public sealed record GridModel : PanelModel
   public List<List<GridHeaderCellDto>> Headers { get; set; } = [];
   public NavModel Nav { get; set; } = new();
   public NavModel ActionNav { get; set; } = new();
-  public int PageSize { get; set; } = 25;
+  public int PageSize { get; set; } = 200;
   public bool IsSelectable { get; set; } = true;
   public bool IsReadOnly { get; set; }
   public MutationTextsDto MutationTexts { get; set; } = new();

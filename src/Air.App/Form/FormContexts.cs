@@ -40,6 +40,19 @@ public class FormSaveContext<TEntity, TInput>
   public void Refuse(string detail, string? path = null) =>
     AddError(detail, path);
 
+  public TProp Original<TProp>(Expression<Func<TInput, TProp>> property)
+  {
+    if (IsNew || OriginalValues is null) return default!;
+    var body = property.Body is UnaryExpression ue ? ue.Operand : property.Body;
+    if (body is MemberExpression me && me.Member is PropertyInfo pi &&
+        OriginalValues.TryGetValue(pi.Name, out var origVal) &&
+        origVal is TProp typed)
+    {
+      return typed;
+    }
+    return default!;
+  }
+
   public bool Changed(params Expression<Func<TInput, object?>>[] properties)
   {
     if (IsNew || OriginalValues is null) return true;

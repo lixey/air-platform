@@ -1,6 +1,5 @@
 using Air.App.Form;
 using Air.App.Modules;
-using Air.App.Overlay;
 using DemoApp.Color;
 using DemoApp.Data;
 using DemoApp.Data.Models;
@@ -11,8 +10,6 @@ public sealed class AppUserGroupFormService(AppDbContext db, AppService? app = n
   : AppFormService<AppUserGroup>(db, app)
 {
   public override Feature Feature => App.UserGroup;
-
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 
   protected override void SetElements(Elements elements)
   {

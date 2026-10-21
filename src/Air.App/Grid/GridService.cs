@@ -145,7 +145,14 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     internal List<SortRule> DefaultSort { get; } = [];
+    internal int? CustomPageSize { get; private set; }
     internal List<string>? SearchFields { get; private set; }
+
+    public Query PageSize(int pageSize)
+    {
+      if (pageSize > 0) CustomPageSize = pageSize;
+      return this;
+    }
     internal List<FilterRule> InitialFilters { get; } = [];
     internal List<string>? ReferenceLabelPaths { get; private set; }
     internal string? PickByField { get; private set; }

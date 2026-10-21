@@ -1,6 +1,5 @@
 using Air.App.Form;
 using Air.App.Modules;
-using Air.App.Overlay;
 using DemoApp.Data;
 using DemoApp.Data.Models;
 
@@ -10,8 +9,6 @@ public sealed class AppLanguageFormService(AppDbContext db, AppService? app = nu
   : AppFormService<AppLanguage>(db, app)
 {
   public override Feature Feature => App.Language;
-
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 
   protected override void SetElements(Elements elements)
   {

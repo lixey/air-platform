@@ -27,4 +27,7 @@
 - **Interactive Alignment**: Always consult the user with recommendations before porting or adapting components from `/Volumes/Pro/Ai/air/air-space`.
 - **Consistency**: Keep one uniform shape across components, grids, forms, and models.
 - **PascalCase `Handle` Rule**: Every `Handle` (on modules, dictionary/code entities, menu items, etc.) MUST always be a `PascalCase` identifier (`^[A-Z][a-zA-Z0-9]*$`, e.g. `App`, `Fin`, `En`, `Ua`, `Uah`, `Usd`, `Slate`). Whenever an external or standard representation in another format is needed (e.g. ISO currency code `UAH`, culture code `uk-UA`), use a dedicated property such as `Code`.
+- **Form Overlay Presentation Rule (`Popover` vs `Drawer`)**:
+  - **Default (`Popover`)**: All standard and compact forms use `OverlayModel.Popover(handle)` by default (defined in the base `FormService` / `AppFormService` / `FinFormService`). Child form services must NOT redundantly override `Presentation` when using `Popover`.
+  - **Composite & Large Forms (`Drawer`)**: `OverlayModel.Drawer(handle)` is used ONLY for large multi-section/multi-tab forms and is **strictly mandatory** whenever a form has subordinate child tables (`elements.AddChild<TGrid>()` without `.AsFiles()`).
 - **Fast Feedback Loop**: Check compilation and run minimal checks.

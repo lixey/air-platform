@@ -4,7 +4,7 @@ public sealed record QueryLimits
 {
   public static QueryLimits Default { get; } = new();
 
-  public int DefaultPageSize { get; init; } = 25;
+  public int DefaultPageSize { get; init; } = 200;
   public int MaxPageSize { get; init; } = 500;
   public int MaxFilterValues { get; init; } = 1000;
   public int MaxFilterNodes { get; init; } = 200;

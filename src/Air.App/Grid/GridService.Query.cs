@@ -107,6 +107,11 @@ public abstract partial class GridService<TEntity, TRow>
       cols.RetainOnly(preserved);
     }
 
+    if (request.PageSize <= 0 && queryDeclaration.CustomPageSize is > 0)
+    {
+      request.PageSize = queryDeclaration.CustomPageSize.Value;
+    }
+
     if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
     {
       request.Sort = queryDeclaration.DefaultSort.ToList();

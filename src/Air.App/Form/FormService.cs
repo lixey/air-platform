@@ -220,14 +220,51 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public string Service => ServicePathResolver.Resolve(GetType());
 
-  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Dialog(handle);
+  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Popover(handle);
 
-  public virtual OverlayModelDto Overlay(string service) => Presentation($"{service}.modal").Screen(service).Build();
+  private bool HasChildPages()
+  {
+    if (_lastElements is not null)
+    {
+      return _lastElements.Children.Any(c => !c.IsFiles);
+    }
+
+    var probe = new Elements();
+    try
+    {
+      SetElementsAsync(probe, CancellationToken.None).GetAwaiter().GetResult();
+    }
+    catch
+    {
+    }
+    return probe.Children.Any(c => !c.IsFiles);
+  }
+
+  public virtual OverlayModelDto Overlay(string service)
+  {
+    var dto = Presentation($"{service}.modal").Screen(service).Build();
+    if (HasChildPages())
+    {
+      if (dto.Presentation != OverlayPresentation.Drawer)
+      {
+        dto.Presentation = OverlayPresentation.Drawer;
+        dto.Width = null;
+        dto.Height = null;
+      }
+    }
+    else if (dto.Presentation == OverlayPresentation.Popover && dto.Width is null)
+    {
+      dto.Width = PanelSize.Px(720);
+    }
+    return dto;
+  }
 
   protected virtual (string? Width, string? Height) OverlayAsk(Elements elements)
   {
     var declared = Overlay(Service);
-    if (declared.Presentation != OverlayPresentation.Dialog || declared.Width is not null || declared.Height is not null)
+    if ((declared.Presentation != OverlayPresentation.Dialog && declared.Presentation != OverlayPresentation.Popover)
+        || declared.Width is not null
+        || declared.Height is not null)
     {
       return (null, null);
     }

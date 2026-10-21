@@ -29,6 +29,8 @@ export interface SelectGridLink {
   tableId(): string | null;
   /** The id of the active row's active cell; null with none. */
   activeCellId(): string | null;
+  /** The fitted content width of the grid's table, in pixels; 0 before it is measured. */
+  tableWidth?(): number;
 }
 
 /**
@@ -148,6 +150,17 @@ export class SelectService {
     const width = Math.min(MOST_OVERLAY_WIDTH, list + (multiple ? PICKED_PANEL_WIDTH : 0));
     const overlayModel: OverlayModelDto = { ...menu.model, width: `${width}px`, height: `${BAR_HEIGHT + this.listHeight()}px` };
     const ref = this.menu.open(overlayModel, anchor, menu.injector, model.label || this.texts.of('SearchOptions'));
+    ref.ask(
+      computed(() => {
+        const measured = this.gridLink()?.tableWidth?.() ?? 0;
+        if (measured <= 0) {
+          return null;
+        }
+        const fittedList = Math.max(list, measured + 2);
+        const fittedWidth = Math.min(MOST_OVERLAY_WIDTH, fittedList + (this.isMultiple() ? PICKED_PANEL_WIDTH : 0));
+        return { width: `${fittedWidth}px` };
+      }),
+    );
     ref.closed.subscribe(() => {
       this.gridLink.set(null);
       this._searchText.set('');

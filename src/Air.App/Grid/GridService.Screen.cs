@@ -298,6 +298,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       Service = servicePath,
       Columns = columns.List.ToList(),
+      PageSize = queryDeclaration.CustomPageSize ?? 200,
       IsReadOnly = isGridReadOnly,
       Form = formOverlay,
       InitialFilter = initialFilter,

@@ -183,7 +183,7 @@ function isOwnControl(event: MouseEvent): boolean {
               ></th>
             }
             @if (hasFiller()) {
-              <th class="${HEADER_CELL} border-r-0" aria-hidden="true"></th>
+              <th class="${HEADER_CELL} border-r-0" [class.h-7!]="grid.isPicking()" aria-hidden="true"></th>
             }
           </tr>
           <!-- The pinned top rows: under the column header and sticky with it from md up, scrolling away below -->
@@ -379,10 +379,10 @@ export class GridTableComponent {
   protected readonly stretches = computed(() => this.grid.isPicking() && this.tableColumns().length === 1);
 
   /**
-   * In a picker's list of more than one column the columns share the table by their widths, each the share its width
+   * In a select's or a picker's list of more than one column the columns share the table by their widths, each the share its width
    * is of the columns' widths together, and no filler takes the rest.
    */
-  protected readonly shares = computed(() => this.grid.isPickerList() && !this.stretches());
+  protected readonly shares = computed(() => this.grid.isPicking() && !this.stretches());
 
   /** Whether the table draws the filler column and its cells: unless the one column stretches or the columns share. */
   protected readonly hasFiller = computed(() => !this.stretches() && !this.shares());
@@ -526,7 +526,13 @@ export class GridTableComponent {
   /** The column header's classes, by column index: its column's, and no right line when the one column stretches. */
   protected readonly headerClasses = computed(() => {
     const stretches = this.stretches();
-    return this.columnClasses().map(classes => (stretches ? `${classes} border-r-0` : classes));
+    const picking = this.grid.isPicking();
+    return this.columnClasses().map(classes => {
+      let result = classes;
+      if (stretches) result += ' border-r-0';
+      if (picking) result += ' h-7!';
+      return result;
+    });
   });
 
   /**
@@ -622,7 +628,7 @@ export class GridTableComponent {
     afterNextRender(() => (stopTabOrder = keepCellControlsOutOfTabOrder(this.table().nativeElement)), { injector: this.injector });
 
     // A search box that drives the grid names its table and its active cell
-    const ids: GridTableIds = { table: this.id, activeCell: this.activeCellId };
+    const ids: GridTableIds = { table: this.id, activeCell: this.activeCellId, tableWidth: this.tableWidth };
     this.grid.tableIds.set(ids);
 
     this.destroyRef.onDestroy(() => {

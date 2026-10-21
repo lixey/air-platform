@@ -119,7 +119,7 @@ export function resolveOverlay(
     hangsOnly && isAnchored(anchored) && anchor && !fitsBelow(model, anchor, windowFrame, units.offset) ? 'dialog' : anchored;
 
   if (isAnchored(presentation) && anchor) {
-    return menuBox(model, anchor, windowFrame, units.offset, size ?? null, presentation, keepsOwnWidth ?? false, hangsOnly);
+    return menuBox(model, anchor, windowFrame, units.offset, size ?? null, presentation, keepsOwnWidth ?? false, hangsOnly, asked);
   }
 
   if (presentation === 'drawer') {
@@ -146,7 +146,7 @@ export function resolveOverlay(
   const frame = shrink({ ...viewport, width: Math.min(viewport.width, DIALOG_FRAME) }, units.margin);
   const maxWidth = cap !== undefined ? Math.min(cap, frame.width) : frame.width;
   // The model's presentation, not the resolved one: a popover that presents as a dialog keeps its own sizes
-  const follows = model.presentation === 'dialog' && model.width == null && model.height == null;
+  const follows = (model.presentation === 'dialog' || model.presentation === 'popover') && model.width == null && model.height == null;
   const width = follows ? asked?.width : model.width;
   const height = follows ? asked?.height : model.height;
 
@@ -207,9 +207,10 @@ function menuBox(
   presentation: OverlayPresentation,
   keepsOwnWidth: boolean,
   hangsDownOnly: boolean,
+  asked?: OverlayAsk | null,
 ): OverlayBox {
-  const wantedWidth = toBound(model.width ?? undefined);
-  const wantedHeight = toBound(model.height ?? undefined);
+  const wantedWidth = toBound(asked?.width ?? model.width ?? undefined);
+  const wantedHeight = toBound(asked?.height ?? model.height ?? undefined);
   const x = place(wantedWidth ?? size?.width ?? 0, frame.left, frame.left + frame.width, anchor.left, anchor.left + anchor.width, inward);
   const y = place(wantedHeight ?? size?.height ?? 0, frame.top, frame.top + frame.height, anchor.top, anchor.top + anchor.height, inward);
   const minWidth = keepsOwnWidth ? 0 : Math.min(anchor.width, frame.width);
