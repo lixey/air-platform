@@ -112,7 +112,7 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
     }
 
     var mcpUrl = $"{request.ServerBaseUrl.TrimEnd('/')}/api/mcp";
-    await EnsureMcpRegisteredAsync(agyPath, mcpUrl, ct);
+    _ = EnsureMcpRegisteredAsync(agyPath, mcpUrl, CancellationToken.None);
 
     var tools = request.Services.GetServices<IMcpTool>().ToList();
     var existingConvId = store.GetConversationId(request.SessionId);
@@ -134,6 +134,9 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
     }
 
     var prompt = BuildPrompt(request, existingConvId is null, contextJson, tools);
+    var selectedModel = string.IsNullOrWhiteSpace(request.Model)
+      ? "gemini-3.8-flash-low"
+      : request.Model.Trim();
 
     var psi = new ProcessStartInfo
     {
@@ -154,7 +157,7 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
     psi.ArgumentList.Add("--dangerously-skip-permissions");
     psi.ArgumentList.Add("--disable-slash-commands");
     psi.ArgumentList.Add("--model");
-    psi.ArgumentList.Add("gemini-3.8-flash-medium");
+    psi.ArgumentList.Add(selectedModel);
     psi.ArgumentList.Add("--add-dir");
     psi.ArgumentList.Add(store.WorkspaceDirectory);
 

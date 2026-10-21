@@ -86,6 +86,7 @@ export class AgentService {
   private nextId = 0;
 
   readonly sessionId = signal<string>(Math.random().toString(36).slice(2, 12));
+  readonly model = signal<string>('gemini-3.8-flash-low');
   readonly messages = signal<readonly AgentChatMessage[]>([]);
   readonly pendingAttachments = signal<readonly AgentAttachment[]>([]);
   readonly isUploading = signal(false);
@@ -171,6 +172,7 @@ export class AgentService {
           message: text,
           attachmentIds: attachments.map(a => a.id),
           locale: this.locale.current(),
+          model: this.model(),
         }),
         signal: controller.signal,
       });

@@ -17,6 +17,7 @@ public sealed record AgentChatRequestDto
   public IReadOnlyList<string>? AttachmentIds { get; init; }
   public string? Locale { get; init; }
   public string? Provider { get; init; }
+  public string? Model { get; init; }
 }
 
 public sealed record AgentResetRequestDto(string? SessionId);
@@ -190,6 +191,7 @@ public static class AgentEndpoints
         Locale = body.Locale ?? "uk",
         ServerBaseUrl = serverBaseUrl,
         ProviderHandle = provider.Handle,
+        Model = body.Model,
         Services = ctx.RequestServices
       };
 

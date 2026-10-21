@@ -71,6 +71,7 @@ public sealed record AgentTurnRequest
   public string Locale { get; init; } = "uk";
   public string ServerBaseUrl { get; init; } = "http://localhost:5095";
   public string? ProviderHandle { get; init; }
+  public string? Model { get; init; }
   public IServiceProvider Services { get; init; } = null!;
 }
 

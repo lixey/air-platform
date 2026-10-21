@@ -17,7 +17,17 @@ import { AgentService, type AgentProposal } from './agent.service';
         <div class="flex items-center gap-1.5 pl-2 font-semibold text-ink">
           <i class="h-4 w-4 text-mark" [icon]="'star'"></i>
           <span>AI Асистент</span>
-          <ui-badge label="agy" color="blue" />
+          <select
+            #modelSelect
+            class="cursor-pointer rounded border border-line bg-surface px-1.5 py-0.5 text-xs font-normal text-ink outline-none focus:border-mark"
+            title="Модель AI"
+            [value]="agent.model()"
+            (change)="agent.model.set(modelSelect.value)"
+          >
+            @for (m of models; track m.id) {
+              <option [value]="m.id">{{ m.label }}</option>
+            }
+          </select>
         </div>
       </ng-container>
 
@@ -297,6 +307,14 @@ export class LayoutAgentComponent {
   protected readonly isDragging = signal(false);
 
   private readonly scrollContainer = viewChild<ElementRef<HTMLElement>>('scrollContainer');
+
+  protected readonly models = [
+    { id: 'gemini-3.8-flash-low', label: '3.8 Flash (Fast)' },
+    { id: 'gemini-3.8-flash-medium', label: '3.8 Flash (Medium)' },
+    { id: 'gemini-3.8-flash-high', label: '3.8 Flash (High)' },
+    { id: 'gemini-4-argon-medium', label: '4 Argon' },
+    { id: 'claude-sonnet-5-5-low', label: 'Sonnet 5.5' },
+  ];
 
   protected readonly samples = [
     'Сільпо 640 грн з картки Монобанк',
