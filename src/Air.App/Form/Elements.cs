@@ -498,6 +498,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
 public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) : FormElement<TEntity, TProp>(dto)
 {
+  public FormReferenceElement<TEntity, TProp, TSource> PatchOnSelect(
+    Expression<Func<TEntity, object?>> target,
+    Expression<Func<TSource, object?>> source) =>
+    PatchOnSelect<TSource>(target, source);
+
   public FormReferenceElement<TEntity, TProp, TSource> PatchOnSelect<TSourceRow>(
     Expression<Func<TEntity, object?>> target,
     Expression<Func<TSourceRow, object?>> source)

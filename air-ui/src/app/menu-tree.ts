@@ -39,16 +39,24 @@ export function joinMenuPath(parentPath: string, path?: string | null): string {
  */
 export function findMenuItemIn(menu: readonly MenuItemDto[], url: string): MenuItemDto | null {
   const clean = trimSlash(url.split('?')[0]).toLowerCase();
+  if (!clean) {
+    return null;
+  }
 
   const search = (items: readonly MenuItemDto[], parentPath = ''): MenuItemDto | null => {
     for (const item of items) {
       const fullPath = joinMenuPath(parentPath, item.path);
+      const ownPath = trimSlash(item.path).toLowerCase();
 
-      if (fullPath && (fullPath.toLowerCase() === clean || (item.path ?? '').toLowerCase() === clean)) {
+      if (ownPath && (fullPath.toLowerCase() === clean || ownPath === clean)) {
         return item;
       }
 
       if (item.items?.length) {
+        if (fullPath && fullPath.toLowerCase() === clean && ownPath) {
+          return item;
+        }
+
         const found = search(item.items, fullPath);
 
         if (found) {
@@ -70,6 +78,9 @@ export function findMenuItemIn(menu: readonly MenuItemDto[], url: string): MenuI
  */
 export function findRouteIn(routes: readonly MenuItemDto[], url: string): MenuItemDto | null {
   const clean = trimSlash(url.split('?')[0]).toLowerCase();
+  if (!clean) {
+    return null;
+  }
   return routes.find(route => trimSlash(route.path).toLowerCase() === clean) ?? null;
 }
 

@@ -442,20 +442,20 @@ public abstract partial class GridService<TEntity, TRow>
       if (string.IsNullOrEmpty(col.Path)) continue;
 
       var parts = col.Path.Split('.');
-      if (parts.Length > 1)
+      if (col.ReferenceService != null)
       {
-        var actualNavPath = ResolvePropertyPath(entityType, parts[..^1]);
+        var actualNavPath = ResolvePropertyPath(entityType, parts);
         if (actualNavPath != null)
         {
           try { query = query.Include(actualNavPath); } catch { }
         }
       }
-      else if (col.ReferenceService != null)
+      else if (parts.Length > 1)
       {
-        var prop = PropertyAccessorCache.GetProperty(entityType, col.Path);
-        if (prop != null && !prop.PropertyType.IsValueType && prop.PropertyType != typeof(string))
+        var actualNavPath = ResolvePropertyPath(entityType, parts[..^1]);
+        if (actualNavPath != null)
         {
-          try { query = query.Include(prop.Name); } catch { }
+          try { query = query.Include(actualNavPath); } catch { }
         }
       }
 

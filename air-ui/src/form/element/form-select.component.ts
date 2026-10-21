@@ -222,8 +222,15 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
       const row = picked.row as Record<string, unknown>;
       for (const patch of patches) {
         const val = valueAt(row, patch.sourceColumn);
-        if (val !== undefined) {
-          this.form.setValueAt(patch.targetField, val);
+        if (val !== undefined && val !== null) {
+          const targetEl = this.form.model()?.elements?.find(e => e.path === patch.targetField);
+          if (targetEl?.referencePath && typeof val === 'object' && 'id' in val) {
+            const refVal = val as { id: number; name?: string };
+            this.form.setValueAt(targetEl.path, refVal.id);
+            this.form.setValueAt(targetEl.referencePath, { id: refVal.id, name: refVal.name ?? '' });
+          } else {
+            this.form.setValueAt(patch.targetField, val);
+          }
         }
       }
     }

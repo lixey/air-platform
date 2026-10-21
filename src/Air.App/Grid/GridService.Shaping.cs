@@ -143,11 +143,26 @@ public abstract partial class GridService<TEntity, TRow>
       if (!current.TryGetValue(key, out var existing) || existing is not Dictionary<string, object?> nested)
       {
         nested = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (existing is Reference existingRef)
+        {
+          nested["id"] = existingRef.Id;
+          nested["name"] = existingRef.Name;
+        }
         current[key] = nested;
       }
       current = nested;
     }
-    current[ToCamel(segments[^1])] = value;
+
+    var lastKey = ToCamel(segments[^1]);
+    if (value is Reference valRef && current.TryGetValue(lastKey, out var curLast) && curLast is Dictionary<string, object?> curDict)
+    {
+      curDict["id"] = valRef.Id;
+      curDict["name"] = valRef.Name;
+    }
+    else
+    {
+      current[lastKey] = value;
+    }
   }
 
   private static string ToCamel(string str) =>
