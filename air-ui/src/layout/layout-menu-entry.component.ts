@@ -46,7 +46,14 @@ import { LayoutPinsService } from './layout-pins.service';
         name cannot unpin by accident. One button whose name says what it does next, so it carries no aria-pressed,
         and pinning keeps the focus where it was.
       -->
-      <button type="button" [class]="pinClasses()" [attr.aria-label]="pinLabel()" [title]="pinTitle()" (click)="togglePin()">
+      <button
+        type="button"
+        [class]="pinClasses()"
+        [attr.aria-label]="pinLabel()"
+        [attr.tabindex]="!isPinned() && !pins.altPressed() ? -1 : null"
+        [title]="pinTitle()"
+        (click)="togglePin($event)"
+      >
         @if (isPinned()) {
           <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
         } @else {
@@ -62,7 +69,7 @@ import { LayoutPinsService } from './layout-pins.service';
 export class LayoutMenuEntryComponent {
   private readonly texts = inject(TextsService);
   private readonly app = inject(AppService);
-  private readonly pins = inject(LayoutPinsService);
+  protected readonly pins = inject(LayoutPinsService);
 
   /** The entry the row draws: a leaf of the menu, whose path may be relative to its module. */
   readonly leaf = input.required<MenuItemDto>();
@@ -91,15 +98,21 @@ export class LayoutMenuEntryComponent {
   protected readonly pinLabel = computed(() => this.texts.of(this.isPinned() ? 'UnpinEntry' : 'PinEntry', this.leaf().name ?? ''));
   protected readonly pinTitle = computed(() => this.texts.of(this.isPinned() ? 'Unpin' : 'Pin'));
 
-  /** The pin at rest: a pinned row shows its mark, an unpinned one only under the pointer or the focus. */
+  /** The pin at rest: a pinned row shows its mark, an unpinned one only under the pointer while Alt/Option is held. */
   protected readonly pinClasses = computed(() =>
     [
-      `absolute inset-y-0 right-0 flex w-7 cursor-pointer items-center justify-center transition-opacity hover:opacity-100 focus-visible:opacity-100 ${FOCUS_RING}`,
-      this.isPinned() ? 'opacity-40' : 'bg-inherit opacity-0 group-hover/row:opacity-60',
+      `absolute inset-y-0 right-0 flex w-7 cursor-pointer items-center justify-center transition-opacity ${FOCUS_RING}`,
+      this.isPinned()
+        ? 'opacity-40 hover:opacity-100 focus-visible:opacity-100'
+        : this.pins.altPressed()
+          ? 'bg-inherit opacity-0 group-hover/row:opacity-60 hover:opacity-100 focus-visible:opacity-100'
+          : 'pointer-events-none opacity-0',
     ].join(' '),
   );
 
-  protected togglePin(): void {
+  protected togglePin(event?: MouseEvent): void {
+    event?.preventDefault();
+    event?.stopPropagation();
     const path = this.path();
 
     if (path) {

@@ -1,4 +1,5 @@
-import { computed, inject, linkedSignal, Service } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { computed, DestroyRef, inject, linkedSignal, Service, signal } from '@angular/core';
 import { AppService } from '../app/app.service';
 import { AuthService } from '../app/auth/auth.service';
 import { browserStorage, userStorageKey } from '../app/auth/user-storage';
@@ -19,6 +20,38 @@ import type { MenuItemDto } from '../core/generated/contracts';
 export class LayoutPinsService {
   private readonly auth = inject(AuthService);
   private readonly app = inject(AppService);
+  private readonly doc = inject(DOCUMENT);
+  private readonly alt = signal(false);
+
+  /** Whether the Alt (Option on macOS) key is currently held down. */
+  readonly altPressed = this.alt.asReadonly();
+
+  constructor() {
+    const win = this.doc.defaultView;
+    if (!win) {
+      return;
+    }
+
+    const onKey = (event: KeyboardEvent) => this.alt.set(event.altKey);
+    const onPointer = (event: MouseEvent) => {
+      if (this.alt() !== event.altKey) {
+        this.alt.set(event.altKey);
+      }
+    };
+    const onBlur = () => this.alt.set(false);
+
+    win.addEventListener('keydown', onKey, true);
+    win.addEventListener('keyup', onKey, true);
+    win.addEventListener('mousemove', onPointer, { capture: true, passive: true });
+    win.addEventListener('blur', onBlur);
+
+    inject(DestroyRef).onDestroy(() => {
+      win.removeEventListener('keydown', onKey, true);
+      win.removeEventListener('keyup', onKey, true);
+      win.removeEventListener('mousemove', onPointer, true);
+      win.removeEventListener('blur', onBlur);
+    });
+  }
 
   /** The pinned paths of the signed-in user, in the order pinned. */
   private readonly paths = linkedSignal<number | null, readonly string[]>({
