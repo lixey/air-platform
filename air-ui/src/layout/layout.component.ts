@@ -101,11 +101,11 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
     @if (overlay.bounds(); as b) {
       <button
         type="button"
-        class="fixed z-10 flex h-9 w-10 cursor-pointer items-center justify-center rounded-bl-lg rounded-tr-md border border-line bg-surface-2 text-muted shadow-xs transition-colors hover:bg-active hover:text-on-active"
+        class="fixed z-40 flex h-9 w-[36px] -translate-y-full cursor-pointer items-center justify-center rounded-bl-lg border-t border-r border-line bg-surface-2 text-muted transition-colors hover:bg-active hover:text-on-active"
         [class.bg-active!]="isAgentOpen()"
         [class.text-on-active!]="isAgentOpen()"
         [style.left.px]="b.left"
-        [style.top.px]="b.top + b.height - 36"
+        [style.top.px]="b.top + b.height"
         title="AI Асистент"
         aria-label="AI Асистент"
         (click)="toggleAgent()"
