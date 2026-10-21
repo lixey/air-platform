@@ -3,6 +3,8 @@
     <Project Path="src/Air.Data/Air.Data.csproj" />
     <Project Path="src/Air.Data.Postgres/Air.Data.Postgres.csproj" />
     <Project Path="src/Air.App/Air.App.csproj" />
+    <Project Path="src/Air.Mcp/Air.Mcp.csproj" />
+    <Project Path="src/Air.Agent/Air.Agent.csproj" />
     <Project Path="src/Air.UiContracts/Air.UiContracts.csproj" />
   </Folder>
   <Folder Name="/demo/">

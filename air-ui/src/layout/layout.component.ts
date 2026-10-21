@@ -1,11 +1,12 @@
-import { afterNextRender, Component, DestroyRef, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { AppService } from '../app/app.service';
 import { LocaleService } from '../app/locale.service';
 import type { PanelLayoutDto } from '../core/generated/contracts';
+import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayHostComponent } from '../overlay/overlay-host.component';
 import { OverlayService } from '../overlay/overlay.service';
 import { PanelsComponent } from '../panels/panels.component';
-import { MENU_PANEL, TABS_PANEL, WORK_PANEL } from './layout-panel-keys';
+import { AGENT_PANEL, MENU_PANEL, TABS_PANEL, WORK_PANEL } from './layout-panel-keys';
 import { LayoutPinsService } from './layout-pins.service';
 import { isTabStripVisible } from './layout-tabs.component';
 
@@ -30,6 +31,15 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
         maxSize: '320px',
         isResizable: true,
         hideUnder: 1280,
+      },
+      {
+        key: AGENT_PANEL,
+        model: { kind: 'LayoutAgent' },
+        size: '380px',
+        minSize: '300px',
+        maxSize: '560px',
+        isResizable: true,
+        isCollapsed: true,
       },
       {
         key: 'work',
@@ -85,8 +95,26 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
  */
 @Component({
   selector: 'ui-layout',
-  imports: [PanelsComponent, OverlayHostComponent],
-  template: '<ui-panels [layout]="layout" [attr.inert]="overlay.hasModal() ? \'\' : null" /><ui-overlay-host />',
+  imports: [PanelsComponent, OverlayHostComponent, UiIconDirective],
+  template: `
+    <ui-panels [layout]="layout" [attr.inert]="overlay.hasModal() ? '' : null" />
+    @if (overlay.bounds(); as b) {
+      <button
+        type="button"
+        class="fixed z-10 flex h-9 w-10 cursor-pointer items-center justify-center rounded-bl-lg rounded-tr-md border border-line bg-surface-2 text-muted shadow-xs transition-colors hover:bg-active hover:text-on-active"
+        [class.bg-active!]="isAgentOpen()"
+        [class.text-on-active!]="isAgentOpen()"
+        [style.left.px]="b.left"
+        [style.top.px]="b.top + b.height - 36"
+        title="AI Асистент"
+        aria-label="AI Асистент"
+        (click)="toggleAgent()"
+      >
+        <i class="h-4 w-4" [icon]="'star'"></i>
+      </button>
+    }
+    <ui-overlay-host />
+  `,
   host: {
     class: 'flex flex-col grow shrink overflow-hidden min-h-0 min-w-0 w-full h-full bg-page',
   },
@@ -110,6 +138,14 @@ export class LayoutComponent {
   private readonly isEngineReady = signal(false);
 
   protected readonly layout = SHELL_LAYOUT;
+  protected readonly isAgentOpen = computed(() => {
+    const panels = this.panels();
+    return this.isEngineReady() && !!panels && !panels.isCollapsed(AGENT_PANEL);
+  });
+
+  protected toggleAgent(): void {
+    this.panels()?.toggle(AGENT_PANEL);
+  }
 
   constructor() {
     afterNextRender(() => {

@@ -64,6 +64,7 @@ import { GridNavSearchComponent } from './grid/nav/grid-nav-search.component';
 import { GridNavStatusComponent } from './grid/nav/grid-nav-status.component';
 import { GridNavUploadComponent } from './grid/nav/grid-nav-upload.component';
 import { GridPickerOverlayComponent } from './grid/nav/grid-picker-overlay.component';
+import { LayoutAgentComponent } from './layout/layout-agent.component';
 import { LayoutMegaMenuBodyComponent } from './layout/layout-mega-menu-body.component';
 import { LayoutMenuComponent } from './layout/layout-menu.component';
 import { LayoutRouteScreenComponent } from './layout/layout-route-screen.component';
@@ -87,6 +88,11 @@ import { SelectOverlayComponent } from './select/select-overlay.component';
 /** The shell's side menu, a panel the frame composes. */
 export interface LayoutMenuModel {
   kind: 'LayoutMenu';
+}
+
+/** The shell's AI agent chat panel, between the menu and the work area. */
+export interface LayoutAgentModel {
+  kind: 'LayoutAgent';
 }
 
 /** The strip of the shell's open tabs, a panel the frame composes. */
@@ -178,6 +184,7 @@ export interface GridHeaderSelectionModel {
 /** The panels only the library composes: the server never sends them. */
 interface ClientPanelKinds {
   LayoutMenu: LayoutMenuModel;
+  LayoutAgent: LayoutAgentModel;
   LayoutTabs: LayoutTabsModel;
   LayoutRouteScreen: LayoutRouteScreenModel;
   LayoutMegaMenuBody: LayoutMegaMenuBodyModel;
@@ -211,6 +218,7 @@ export type ClientKind = keyof ClientPanelKinds | keyof ClientHeaderKinds;
 /** Every kind the library draws, the platform's and its own, each under the component named after it. */
 export const UI_COMPONENTS = defineComponents({
   LayoutMenu: LayoutMenuComponent,
+  LayoutAgent: LayoutAgentComponent,
   LayoutTabs: LayoutTabsComponent,
   LayoutRouteScreen: LayoutRouteScreenComponent,
   LayoutMegaMenuBody: LayoutMegaMenuBodyComponent,

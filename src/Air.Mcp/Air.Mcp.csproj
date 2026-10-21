@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Air.Data\Air.Data.csproj" />
+    <ProjectReference Include="..\Air.App\Air.App.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -8,5 +8,6 @@ import type { FramePanel } from '../core/generated/contracts';
  * the move from `nav` to `menu` does once.
  */
 export const MENU_PANEL = 'menu' satisfies FramePanel;
+export const AGENT_PANEL = 'agent';
 export const WORK_PANEL = 'work';
 export const TABS_PANEL = 'work/tabs';

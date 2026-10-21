@@ -92,6 +92,19 @@ const NO_ROWS: readonly GridRow[] = [];
  */
 @Service({ autoProvided: false })
 export class GridService {
+  private static readonly liveGrids = new Set<GridService>();
+
+  /** Reloads every active grid on screen, or those matching the given service names. */
+  static reloadServices(services?: readonly string[]): void {
+    const filter = services && services.length > 0 ? new Set(services.map(s => s.toLowerCase())) : null;
+    for (const grid of GridService.liveGrids) {
+      const svc = grid.service()?.toLowerCase();
+      if (!filter || (svc && filter.has(svc))) {
+        grid.reload();
+      }
+    }
+  }
+
   private readonly address = inject(SCREEN_ADDRESS, { optional: true });
   private readonly api = inject(Api);
   private readonly auth = inject(AuthService);
@@ -324,7 +337,9 @@ export class GridService {
   });
 
   constructor() {
+    GridService.liveGrids.add(this);
     inject(DestroyRef).onDestroy(() => {
+      GridService.liveGrids.delete(this);
       this.release();
       this.lifetime.end();
     });
