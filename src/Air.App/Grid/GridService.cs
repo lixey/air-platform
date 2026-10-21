@@ -423,9 +423,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         return null;
       }
     }
-    return (Air.App.Internal.PropertyAccessorCache.GetValue(typed, "Name")
-      ?? Air.App.Internal.PropertyAccessorCache.GetValue(typed, "Number")
-      ?? Air.App.Internal.PropertyAccessorCache.GetValue(typed, "Title"))?.ToString();
+    return null;
   }
 
   protected virtual void SetQuery(Query query) { }

@@ -301,10 +301,6 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       catch { }
     }
 
-    label ??= (PropertyAccessorCache.GetValue(entity, "Number")
-      ?? PropertyAccessorCache.GetValue(entity, "Name")
-      ?? PropertyAccessorCache.GetValue(entity, "Title"))?.ToString();
-
     return string.IsNullOrWhiteSpace(label)
       ? L["FormRecord", title, id]
       : L["FormRecordNamed", title, label];
