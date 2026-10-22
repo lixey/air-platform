@@ -86,6 +86,149 @@ public abstract partial class GridService<TEntity, TRow>
     return (entities, missing);
   }
 
+  protected Task<GridActionDto> AttachPickedAsync<TPicked>(
+    GridPickRequest request,
+    Func<GridBatchContext<TEntity>, TPicked, TEntity, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default)
+    where TPicked : class, IEntity =>
+    ExecutePickedAsync(request, isAttach: true, handler, cancellationToken);
+
+  protected Task<GridActionDto> AttachPickedAsync<TPicked>(
+    GridPickRequest request,
+    Action<TPicked, TEntity> handler,
+    CancellationToken cancellationToken = default)
+    where TPicked : class, IEntity =>
+    ExecutePickedAsync<TPicked>(
+      request,
+      isAttach: true,
+      (_, picked, target, _) =>
+      {
+        handler(picked, target);
+        return Task.CompletedTask;
+      },
+      cancellationToken);
+
+  protected Task<GridActionDto> ReplacePickedAsync<TPicked>(
+    GridPickRequest request,
+    Func<GridBatchContext<TEntity>, TPicked, TEntity, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default)
+    where TPicked : class, IEntity =>
+    ExecutePickedAsync(request, isAttach: false, handler, cancellationToken);
+
+  protected Task<GridActionDto> ReplacePickedAsync<TPicked>(
+    GridPickRequest request,
+    Action<TPicked, TEntity> handler,
+    CancellationToken cancellationToken = default)
+    where TPicked : class, IEntity =>
+    ExecutePickedAsync<TPicked>(
+      request,
+      isAttach: false,
+      (_, picked, target, _) =>
+      {
+        handler(picked, target);
+        return Task.CompletedTask;
+      },
+      cancellationToken);
+
+  private async Task<GridActionDto> ExecutePickedAsync<TPicked>(
+    GridPickRequest request,
+    bool isAttach,
+    Func<GridBatchContext<TEntity>, TPicked, TEntity, CancellationToken, Task> handler,
+    CancellationToken cancellationToken)
+    where TPicked : class, IEntity
+  {
+    ParentId = request.ParentId;
+    if (IsReadOnly)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
+    var picked = await db.Set<TPicked>().FirstOrDefaultAsync(e => e.Id == request.PickedId, cancellationToken);
+    if (picked == null)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
+      };
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+
+    TEntity target;
+    if (isAttach)
+    {
+      target = new TEntity();
+      if (target is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
+      {
+        tenantEntity.TenantId = tid;
+      }
+
+      if (parent.BoundProperty != null && ParentId is > 0 && parent.BoundProperty.CanWrite)
+      {
+        parent.BoundProperty.SetValue(target, ParentId.Value);
+      }
+    }
+    else
+    {
+      var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault() ?? 0;
+      var loaded = targetId > 0
+        ? await RestrictedQuery().AsTracking().FirstOrDefaultAsync(e => e.Id == targetId, cancellationToken)
+        : null;
+      if (loaded == null)
+      {
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
+        };
+      }
+
+      target = loaded;
+    }
+
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+      await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+      var ctx = new GridBatchContext<TEntity>(target.Id > 0 ? [target.Id] : [], [target], ct => db.SaveChangesAsync(ct), db);
+      await handler(ctx, picked, target, cancellationToken);
+      if (ctx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(cancellationToken);
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = FormatErrors(ctx.Errors, [target], MessageType.Error)
+        };
+      }
+
+      if (isAttach)
+      {
+        db.Set<TEntity>().Add(target);
+      }
+      else if (db.Entry(target).State == EntityState.Detached)
+      {
+        db.Set<TEntity>().Update(target);
+      }
+
+      await db.SaveChangesAsync(cancellationToken);
+      await tx.CommitAsync(cancellationToken);
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Committed,
+        Id = target.Id,
+        Count = 1,
+        OpenScreen = ctx.OpenScreen,
+        OpenId = ctx.OpenId
+      };
+    });
+  }
+
   protected Task<GridActionDto> ExecuteSingleAsync(
     GridRequest request,
     Func<GridBatchContext<TEntity>, TEntity, CancellationToken, Task> handler,
@@ -130,9 +273,11 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
+    SelectedIds = ids;
+    NavActionEntry? navAction = null;
     if (!string.IsNullOrEmpty(actionName))
     {
-      var navAction = nav.Actions.FirstOrDefault(a => string.Equals(a.Model.Method, actionName, StringComparison.OrdinalIgnoreCase));
+      navAction = nav.Actions.FirstOrDefault(a => string.Equals(a.Model.Method, actionName, StringComparison.OrdinalIgnoreCase));
       if (navAction?.Model.IsSingle == true && ids.Count != 1)
       {
         return new GridActionDto
@@ -151,6 +296,28 @@ public abstract partial class GridService<TEntity, TRow>
         Outcome = MutationOutcome.Refused,
         Warnings = missing
       };
+    }
+
+    if (navAction is { Offers.Count: > 0 } && records.Count > 0)
+    {
+      foreach (var record in records)
+      {
+        foreach (var offer in navAction.Offers)
+        {
+          if (offer.Condition is Expression<Func<TEntity, bool>> cond)
+          {
+            var passes = await db.Set<TEntity>().Where(e => e.Id == record.Id).AnyAsync(cond, cancellationToken);
+            if (!passes)
+            {
+              return new GridActionDto
+              {
+                Outcome = MutationOutcome.Refused,
+                Warnings = FormatErrors([new MutationError("grid.availability", L[offer.Reason], RecordId: record.Id)], records, MessageType.Error)
+              };
+            }
+          }
+        }
+      }
     }
 
     if (HasVersionConflict(request, ids, records))
@@ -199,6 +366,11 @@ public abstract partial class GridService<TEntity, TRow>
     if (cols.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
     {
       return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };
+    }
+
+    if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+    {
+      flowSvc.AttachPlatformApp(PlatformApp);
     }
 
     var transition = statusFlow.Transitions.FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));

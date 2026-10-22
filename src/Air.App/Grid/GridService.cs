@@ -14,6 +14,7 @@ public interface IGridService
   Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) => DeleteAsync(request, cancellationToken);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
+  Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   string? GetRecordLabel(object? entity) => null;
@@ -97,6 +98,18 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   protected virtual void SetParent(Parent parent) { }
   protected internal long? ParentId { get; set; }
+  protected IReadOnlyList<long> SelectedIds { get; set; } = [];
+
+  protected IQueryable<TEntity> Reachable(bool asTracking = false)
+  {
+    var q = RestrictedQuery();
+    return asTracking ? q.AsTracking() : q.AsNoTracking();
+  }
+
+  protected IQueryable<TEntity> Selected(bool asTracking = false) =>
+    SelectedIds.Count > 0
+      ? Reachable(asTracking).Where(e => SelectedIds.Contains(e.Id))
+      : Reachable(asTracking).Where(_ => false);
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
   {
@@ -583,9 +596,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public bool IsInMenu { get; set; }
     public bool IsAllowedInReadOnly { get; set; }
     public Delegate Method { get; init; } = null!;
+    public Screens.RecordAsk? Ask { get; set; }
+    public Func<CancellationToken, Task<object?>>? DefaultProvider { get; set; }
+    public List<Screens.RecordAvailability> Offers { get; } = [];
   }
 
-  public sealed class NavActionBuilder(NavActionEntry entry, Nav nav)
+  public class NavActionBuilder(NavActionEntry entry, Nav nav)
   {
     public Nav InMenu()
     {
@@ -602,6 +618,40 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public NavActionBuilder Single(bool single = true)
     {
       entry.Model.IsSingle = single;
+      return this;
+    }
+  }
+
+  public sealed class NavActionBuilder<TRequest>(NavActionEntry entry, Nav nav) : NavActionBuilder(entry, nav)
+    where TRequest : class, new()
+  {
+    public NavActionBuilder<TRequest> Ask(Action<Form.Actions.ActionInput<TRequest>> elements)
+    {
+      entry.Ask = Form.Actions.TransitionAsk.Of(elements);
+      return this;
+    }
+
+    public NavActionBuilder<TRequest> Default(Func<CancellationToken, Task<TRequest>> provider)
+    {
+      entry.DefaultProvider = async ct => await provider(ct);
+      return this;
+    }
+
+    public NavActionBuilder<TRequest> Default(Func<TRequest> provider)
+    {
+      entry.DefaultProvider = _ => Task.FromResult<object?>(provider());
+      return this;
+    }
+
+    public new NavActionBuilder<TRequest> AllowReadOnly(bool allow = true)
+    {
+      base.AllowReadOnly(allow);
+      return this;
+    }
+
+    public new NavActionBuilder<TRequest> Single(bool single = true)
+    {
+      base.Single(single);
       return this;
     }
   }
@@ -667,6 +717,57 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return new NavActionBuilder(entry, this);
     }
 
+    public NavActionBuilder<TRequest> AddAction<TRequest>(
+      Delegate method,
+      Action<ButtonBuilder>? look = null,
+      string? confirm = null,
+      bool needsSelection = true)
+      where TRequest : class, new()
+    {
+      var b = new ButtonBuilder();
+      look?.Invoke(b);
+      var rawLabel = b.LabelText ?? method.Method.Name;
+      var action = new GridNavActionModel
+      {
+        Service = servicePath,
+        Key = method.Method.Name.ToLowerInvariant(),
+        Method = method.Method.Name,
+        Label = _l[rawLabel],
+        Title = b.TitleText != null ? _l[b.TitleText] : null,
+        Icon = b.IconHandle,
+        Color = b.ColorHandle ?? UiColor.Blue,
+        Variant = b.VariantHandle ?? ButtonVariant.Soft,
+        NeedsSelection = needsSelection,
+        IsSingle = b.IsSingle,
+        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = b.ColorHandle ?? UiColor.Red } : null
+      };
+      var entry = new NavActionEntry
+      {
+        Model = action,
+        IsInMenu = b.IsInMenu,
+        Method = method
+      };
+      Actions.Add(entry);
+      return new NavActionBuilder<TRequest>(entry, this);
+    }
+
+    public void AvailableWhen(
+      Expression<Func<TEntity, bool>> condition,
+      string reason,
+      params Delegate[] actions)
+    {
+      var methodNames = actions.Select(a => a.Method.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+      foreach (var entry in Actions)
+      {
+        if (methodNames.Count == 0 || methodNames.Contains(entry.Method.Method.Name))
+        {
+          entry.Offers.Add(new Screens.RecordAvailability { Condition = condition, Reason = reason });
+          entry.Model.UnavailableReasons ??= [];
+          entry.Model.UnavailableReasons.Add(_l[reason]);
+        }
+      }
+    }
+
     public NavPickerBuilder AddPicker<TSource>(
       Delegate method,
       string? label = null)
@@ -688,6 +789,78 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   }
 
   protected virtual void SetNav(Nav nav) { }
+
+  public virtual async Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default)
+  {
+    ParentId = request.ParentId;
+    SelectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
+    var nav = new Nav(ServicePathResolver.Resolve(GetType()), L);
+    SetNav(nav);
+    var entry = nav.Actions.FirstOrDefault(a =>
+      string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
+    if (entry?.DefaultProvider == null)
+    {
+      return new Dictionary<string, object?>();
+    }
+
+    var rawDefaults = await entry.DefaultProvider(ct);
+    if (rawDefaults == null)
+    {
+      return new Dictionary<string, object?>();
+    }
+
+    var jsonText = JsonSerializer.Serialize(rawDefaults, PlatformJsonOptions.DefaultOptions);
+    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    if (entry.Ask != null)
+    {
+      foreach (var el in entry.Ask.BuildElements())
+      {
+        if (string.IsNullOrEmpty(el.ReferencePath) || el.Model is not Form.FormSelectModel selectModel || string.IsNullOrEmpty(selectModel.ReferenceService))
+        {
+          continue;
+        }
+
+        if (dict.TryGetValue(el.Path, out var rawVal) && rawVal is JsonElement je && je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var refId) && refId > 0)
+        {
+          var refServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService);
+          if (refServiceType != null)
+          {
+            try
+            {
+              var cur = refServiceType;
+              Type? refEntityType = null;
+              while (cur != null && cur != typeof(object))
+              {
+                if (cur.IsGenericType && cur.GetGenericTypeDefinition() == typeof(GridService<,>))
+                {
+                  refEntityType = cur.GetGenericArguments()[0];
+                  break;
+                }
+
+                cur = cur.BaseType;
+              }
+
+              if (refEntityType != null)
+              {
+                var targetDb = db.Model.FindEntityType(refEntityType) != null
+                  ? db
+                  : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService)?.DbContext ?? db;
+                var loaded = await targetDb.FindAsync(refEntityType, [refId], ct);
+                var name = loaded != null
+                  ? (PropertyAccessorCache.GetValue(loaded, "Name") ?? PropertyAccessorCache.GetValue(loaded, "Title") ?? PropertyAccessorCache.GetValue(loaded, "Number"))?.ToString()
+                  : null;
+                dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? L[name] : $"#{refId}" };
+              }
+            }
+            catch { }
+          }
+        }
+      }
+    }
+
+    return dict;
+  }
 
   public sealed class Hooks
   {

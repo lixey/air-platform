@@ -26,6 +26,9 @@ public class PlatformAppService(
   /// <summary>Password hasher and verifier.</summary>
   public IPasswordHasher Hasher => Services.GetService<IPasswordHasher>() ?? new PasswordHasher();
 
+  /// <summary>Time provider for the current request or system default.</summary>
+  public TimeProvider Time => Services.GetService<TimeProvider>() ?? TimeProvider.System;
+
   /// <summary>Direct string translation indexer.</summary>
   public string this[string name] => L[name];
 

@@ -29,6 +29,12 @@ internal static class ServiceEndpoints
           method = "move-status";
           subMethod = parts[^1];
         }
+        else if (parts.Length >= 3 && string.Equals(parts[^2], "get-action-input", StringComparison.OrdinalIgnoreCase))
+        {
+          serviceName = string.Join('/', parts[..^2]);
+          method = "get-action-input";
+          subMethod = parts[^1];
+        }
         else
         {
           serviceName = string.Join('/', parts[..^1]);
@@ -157,6 +163,31 @@ internal static class ServiceEndpoints
           return PlatformEndpoints.ToMutationResult(await grid.SaveCellAsync(req, services, ct));
         }
 
+      case "get-action-input":
+        {
+          GridRequest? req = null;
+          var actionMethodKey = subMethod ?? "";
+          if (httpRequest.ContentLength > 0)
+          {
+            try
+            {
+              using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+              if (string.IsNullOrEmpty(actionMethodKey) && doc.RootElement.TryGetProperty("method", out var mProp) && mProp.ValueKind == JsonValueKind.String)
+              {
+                actionMethodKey = mProp.GetString() ?? "";
+              }
+
+              req = JsonSerializer.Deserialize<GridRequest>(doc.RootElement.GetRawText(), PlatformJsonOptions.DefaultOptions);
+            }
+            catch { }
+          }
+
+          req ??= new GridRequest();
+          ApplyGridQueryParams(httpRequest, req);
+          var defaults = await grid.GetActionInputAsync(actionMethodKey, req, ct);
+          return Results.Ok(new { value = defaults ?? new Dictionary<string, object?>() });
+        }
+
       case "move-status":
         {
           GridRequest? req = null;
@@ -268,7 +299,22 @@ internal static class ServiceEndpoints
 
     var parameters = actionMethod.GetParameters();
     var pickReqType = parameters.FirstOrDefault(p => typeof(GridRequest).IsAssignableFrom(p.ParameterType))?.ParameterType ?? typeof(GridRequest);
-    var customReq = await ReadGridRequestAsync(httpRequest, pickReqType, ct);
+    JsonElement? rawBody = null;
+    if (httpRequest.ContentLength > 0)
+    {
+      try
+      {
+        using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+        rawBody = doc.RootElement.Clone();
+      }
+      catch { }
+    }
+
+    var customReq = rawBody.HasValue
+      ? (GridRequest?)JsonSerializer.Deserialize(rawBody.Value.GetRawText(), pickReqType, PlatformJsonOptions.DefaultOptions)
+      : null;
+    customReq ??= (GridRequest)Activator.CreateInstance(pickReqType)!;
+    ApplyGridQueryParams(httpRequest, customReq);
 
     var args = new object?[parameters.Length];
     for (var i = 0; i < parameters.Length; i++)
@@ -285,6 +331,12 @@ internal static class ServiceEndpoints
       else if (pType == typeof(long) && customReq.Id.HasValue)
       {
         args[i] = customReq.Id.Value;
+      }
+      else if (pType.IsClass && pType != typeof(string))
+      {
+        args[i] = rawBody.HasValue
+          ? JsonSerializer.Deserialize(rawBody.Value.GetRawText(), pType, PlatformJsonOptions.DefaultOptions) ?? Activator.CreateInstance(pType)
+          : Activator.CreateInstance(pType);
       }
     }
 
@@ -477,7 +529,53 @@ internal static class ServiceEndpoints
         }
 
       default:
-        return Results.NotFound();
+        {
+          var formActionMethod = serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(m => !m.IsSpecialName
+                        && m.DeclaringType != typeof(object)
+                        && m.DeclaringType != typeof(IFormService)
+                        && (!m.DeclaringType!.IsGenericType ||
+                          m.DeclaringType.GetGenericTypeDefinition() != typeof(FormService<,>) &&
+                          m.DeclaringType.GetGenericTypeDefinition() != typeof(FormService<>)))
+            .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
+          if (formActionMethod == null)
+          {
+            return Results.NotFound();
+          }
+
+          if (!IsCustomActionPermitted(formActionMethod, feat, userContext))
+          {
+            return Results.UnprocessableEntity(new
+            {
+              outcome = MutationOutcome.Refused,
+              title = Localizer.Instance["MutationRefused"],
+              messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error } }
+            });
+          }
+
+          var formReq = await ReadFormRequestAsync(httpRequest, ct);
+          var fParams = formActionMethod.GetParameters();
+          var fArgs = new object?[fParams.Length];
+          for (var i = 0; i < fParams.Length; i++)
+          {
+            var pType = fParams[i].ParameterType;
+            if (pType == typeof(CancellationToken))
+            {
+              fArgs[i] = ct;
+            }
+            else if (typeof(FormRequest).IsAssignableFrom(pType))
+            {
+              fArgs[i] = formReq;
+            }
+            else if (pType == typeof(long) && formReq.Id.HasValue)
+            {
+              fArgs[i] = formReq.Id.Value;
+            }
+          }
+
+          return await InvokeServiceMethodAsync(formActionMethod, form, fArgs);
+        }
     }
   }
 

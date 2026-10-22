@@ -15,4 +15,16 @@ public sealed class ActionInputRuleBuilder<TProp>(FormElementDto dto)
     dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
     return this;
   }
+
+  public ActionInputRuleBuilder<TProp> GreaterThan(decimal value)
+  {
+    dto.Constraints.Min = JsonSerializer.SerializeToElement(value + 0.0001m);
+    return this;
+  }
+
+  public ActionInputRuleBuilder<TProp> GreaterThanOrEqualTo(decimal value)
+  {
+    dto.Constraints.Min = JsonSerializer.SerializeToElement(value);
+    return this;
+  }
 }

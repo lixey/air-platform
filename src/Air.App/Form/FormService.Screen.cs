@@ -123,7 +123,59 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
-      ConfigureStatusFlowAndActions(servicePath, statusFlow, formModel, entity, id, actionStart);
+      ConfigureStatusFlowAndActions(servicePath, statusFlow, elements.StatusFlowAllowsReadOnly, formModel, entity, id, actionStart);
+    }
+
+    if (entity != null && id is > 0)
+    {
+      var customNav = new Nav(servicePath, L);
+      await SetNavAsync(customNav, ct);
+      var isUserReadOnly = User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
+      var permittedActions = new List<FormNavActionEntry>();
+      foreach (var entry in customNav.Actions)
+      {
+        var methodInfo = entry.Method.Method;
+        var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true);
+        var reqAction = methodInfo.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true);
+        var hasRight = true;
+        if (reqAttr != null && User != null && User.IsAuthenticated)
+        {
+          if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
+          {
+            hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(targetFeat.All) || User.Can(Feature.All);
+          }
+        }
+        else if (reqAction != null && User != null && User.IsAuthenticated)
+        {
+          hasRight = User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
+        }
+        else if (!entry.IsAllowedInReadOnly && (IsReadOnly || isUserReadOnly))
+        {
+          hasRight = false;
+        }
+
+        if (hasRight)
+        {
+          permittedActions.Add(entry);
+        }
+      }
+
+      var inMenuActions = permittedActions.Where(a => a.IsInMenu).Select(a => (NavElementModel)a.Model).ToList();
+      if (inMenuActions.Count > 0)
+      {
+        actionElements.Add(new NavMenuModel
+        {
+          Key = "actions",
+          Label = L["Actions"],
+          Variant = ButtonVariant.Soft,
+          Elements = inMenuActions
+        });
+      }
+
+      foreach (var entry in permittedActions.Where(a => !a.IsInMenu))
+      {
+        actionElements.Add(entry.Model);
+      }
     }
 
     var hasActions = actionStart.Count > 0 || actionElements.Count > 0;
@@ -714,12 +766,13 @@ public abstract partial class FormService<TEntity, TInput>
   private void ConfigureStatusFlowAndActions(
     string servicePath,
     IRecordStatuses<TEntity> statusFlow,
+    bool allowReadOnly,
     FormModel formModel,
     TEntity? entity,
     long? id,
     List<NavElementModel> actionStart)
   {
-    if (entity != null && id.HasValue && id.Value > 0 && !IsReadOnly)
+    if (entity != null && id.HasValue && id.Value > 0 && (!IsReadOnly || allowReadOnly))
     {
       var currentStatus = statusFlow.StatusMember.Compile()(entity);
       foreach (var transition in statusFlow.Transitions)
@@ -788,28 +841,50 @@ public abstract partial class FormService<TEntity, TInput>
       _lastElements = elements;
     }
 
-    if (_lastElements.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
+    Dictionary<string, int>? unavailable = null;
+    if (_lastElements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
-      return null;
+      foreach (var transition in statusFlow.Transitions)
+      {
+        if (transition.Offers.Count == 0)
+        {
+          continue;
+        }
+
+        for (var i = 0; i < transition.Offers.Count; i++)
+        {
+          if (transition.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
+          {
+            var passes = await db.Set<TEntity>().Where(e => e.Id == id.Value).AnyAsync(cond, ct);
+            if (!passes)
+            {
+              unavailable ??= new Dictionary<string, int>(StringComparer.Ordinal);
+              unavailable[$"status.{transition.Name.ToLowerInvariant()}"] = i;
+              break;
+            }
+          }
+        }
+      }
     }
 
-    Dictionary<string, int>? unavailable = null;
-    foreach (var transition in statusFlow.Transitions)
+    var customNav = new Nav(Service, L);
+    await SetNavAsync(customNav, ct);
+    foreach (var entry in customNav.Actions)
     {
-      if (transition.Offers.Count == 0)
+      if (entry.Offers.Count == 0)
       {
         continue;
       }
 
-      for (var i = 0; i < transition.Offers.Count; i++)
+      for (var i = 0; i < entry.Offers.Count; i++)
       {
-        if (transition.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
+        if (entry.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
           var passes = await db.Set<TEntity>().Where(e => e.Id == id.Value).AnyAsync(cond, ct);
           if (!passes)
           {
             unavailable ??= new Dictionary<string, int>(StringComparer.Ordinal);
-            unavailable[$"status.{transition.Name.ToLowerInvariant()}"] = i;
+            unavailable[entry.Model.Key] = i;
             break;
           }
         }

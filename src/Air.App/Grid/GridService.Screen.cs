@@ -85,6 +85,27 @@ public abstract partial class GridService<TEntity, TRow>
 
       if (hasRight)
       {
+        if (entry.Ask != null)
+        {
+          entry.Model.Ask = new FormAskModel
+          {
+            Title = entry.Model.Label,
+            Message = entry.Model.Confirm?.Message,
+            Color = entry.Model.Color,
+            HasDefaults = entry.DefaultProvider != null,
+            Elements = entry.Ask.BuildElements().Select(e =>
+            {
+              if (!string.IsNullOrEmpty(e.Label))
+              {
+                e.Label = L[e.Label];
+              }
+
+              return e;
+            }).ToList()
+          };
+          entry.Model.Confirm = null;
+        }
+
         permittedActions.Add(entry);
       }
     }
@@ -209,7 +230,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var actionElements = new List<NavElementModel>();
-    if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && !isGridReadOnly)
+    if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && (!isGridReadOnly || columns.StatusFlowAllowsReadOnly))
     {
       var statusButton = BuildStatusNavElement(servicePath, statusFlow);
       if (statusButton != null)

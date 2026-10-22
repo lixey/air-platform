@@ -652,6 +652,11 @@ public abstract partial class FormService<TEntity, TInput>
       throw new InvalidOperationException($"Form '{GetType().Name}' does not use a status flow.");
     }
 
+    if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+    {
+      flowSvc.AttachPlatformApp(PlatformApp);
+    }
+
     if (ver.HasValue && ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != ver.Value)
     {
       return new FormActionDto

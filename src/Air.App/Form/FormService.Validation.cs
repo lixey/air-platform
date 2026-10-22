@@ -19,6 +19,7 @@ public abstract partial class FormService<TEntity, TInput>
       Entity = entity,
       Input = input,
       IsNew = IsNew,
+      Db = db,
       OriginalValues = originalValues
     };
 
@@ -43,6 +44,7 @@ public abstract partial class FormService<TEntity, TInput>
         Entity = entity,
         Input = input,
         IsNew = IsNew,
+        Db = db,
         OriginalValues = originalValues
       }
     };

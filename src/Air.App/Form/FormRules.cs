@@ -24,6 +24,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
   private sealed class ValidatorEntry
   {
     public required Func<TProp, RuleContext<TInput>, ValidatorEntry, CancellationToken, Task> Execute { get; init; }
+    public Func<TInput, bool>? Condition { get; set; }
     public string? Message { get; set; }
     public string? Code { get; set; }
   }
@@ -154,6 +155,16 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
+  public RuleBuilder<TInput, TProp> When(Func<TInput, bool> condition)
+  {
+    if (_entries.Count > 0)
+    {
+      _entries[^1].Condition = condition;
+    }
+
+    return this;
+  }
+
   internal async Task ValidateAsync(FormSaveContext<object, TInput> ctx, RuleContext<TInput> ruleCtx, CancellationToken ct)
   {
     var prevPath = ruleCtx.CurrentPath;
@@ -163,6 +174,11 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
       var val = getter(ctx);
       foreach (var entry in _entries)
       {
+        if (entry.Condition != null && !entry.Condition(ctx.Input))
+        {
+          continue;
+        }
+
         await entry.Execute(val, ruleCtx, entry, ct);
       }
     }

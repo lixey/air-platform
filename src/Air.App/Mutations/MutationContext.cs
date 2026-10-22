@@ -46,7 +46,9 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
       return;
     }
 
-    if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true)
+    var isPostgres = db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+    var isSqlServer = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
+    if (!isPostgres && !isSqlServer)
     {
       return;
     }
@@ -54,7 +56,17 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
     var lockKeys = keys.Select(k => LockKeyOf(lockedType, k)).Distinct().OrderBy(k => k).ToList();
     foreach (var lockKey in lockKeys)
     {
-      await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
+      if (isPostgres)
+      {
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
+      }
+      else if (isSqlServer)
+      {
+        var resource = $"air-lock:{lockKey}";
+        await db.Database.ExecuteSqlInterpolatedAsync(
+          $"EXEC sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;",
+          ct);
+      }
     }
   }
 }

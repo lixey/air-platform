@@ -199,8 +199,192 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       Entity = (TEntity)context.SaveContext.Entity,
       Input = context.SaveContext.Input,
       IsNew = context.SaveContext.IsNew,
+      Db = context.SaveContext.Db,
       OriginalValues = context.SaveContext.OriginalValues
     };
+
+  public sealed class FormNavActionEntry
+  {
+    public required FormNavActionModel Model { get; init; }
+    public bool IsInMenu { get; set; }
+    public bool IsAllowedInReadOnly { get; set; }
+    public Delegate Method { get; init; } = null!;
+    public List<Screens.RecordAvailability> Offers { get; } = [];
+  }
+
+  public sealed class FormNavActionBuilder(FormNavActionEntry entry, Nav nav)
+  {
+    public Nav InMenu()
+    {
+      entry.IsInMenu = true;
+      return nav;
+    }
+
+    public FormNavActionBuilder AllowReadOnly(bool allow = true)
+    {
+      entry.IsAllowedInReadOnly = allow;
+      return this;
+    }
+  }
+
+  public sealed class Nav(string servicePath = "", Localizer? localizer = null)
+  {
+    private readonly Localizer _l = localizer ?? Localizer.Instance;
+    internal List<FormNavActionEntry> Actions { get; } = [];
+
+    public FormNavActionBuilder AddAction(
+      Delegate method,
+      Action<Grid.GridService<TEntity, TEntity>.ButtonBuilder>? look = null,
+      string? confirm = null)
+    {
+      var b = new Grid.GridService<TEntity, TEntity>.ButtonBuilder();
+      look?.Invoke(b);
+      var rawLabel = b.LabelText ?? method.Method.Name;
+      var action = new FormNavActionModel
+      {
+        Service = servicePath,
+        Key = method.Method.Name.ToLowerInvariant(),
+        Method = method.Method.Name,
+        Label = _l[rawLabel],
+        Title = b.TitleText != null ? _l[b.TitleText] : null,
+        Icon = b.IconHandle,
+        Color = b.ColorHandle ?? UiColor.Blue,
+        Variant = b.VariantHandle ?? ButtonVariant.Soft,
+        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = b.ColorHandle ?? UiColor.Red } : null
+      };
+      var entry = new FormNavActionEntry
+      {
+        Model = action,
+        IsInMenu = b.IsInMenu,
+        Method = method
+      };
+      Actions.Add(entry);
+      return new FormNavActionBuilder(entry, this);
+    }
+
+    public void AvailableWhen(
+      Expression<Func<TEntity, bool>> condition,
+      string reason,
+      params Delegate[] actions)
+    {
+      var methodNames = actions.Select(a => a.Method.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+      foreach (var entry in Actions)
+      {
+        if (methodNames.Count == 0 || methodNames.Contains(entry.Method.Method.Name))
+        {
+          entry.Offers.Add(new Screens.RecordAvailability { Condition = condition, Reason = reason });
+          entry.Model.UnavailableReasons ??= [];
+          entry.Model.UnavailableReasons.Add(_l[reason]);
+        }
+      }
+    }
+  }
+
+  protected virtual void SetNav(Nav nav) { }
+
+  protected virtual Task SetNavAsync(Nav nav, CancellationToken ct = default)
+  {
+    SetNav(nav);
+    return Task.CompletedTask;
+  }
+
+  protected async Task<FormActionDto> ExecuteActionAsync(
+    FormRequest request,
+    Func<FormActionContext<TEntity>, TEntity, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default,
+    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
+  {
+    Request = request;
+    IsNew = false;
+    if (request.Id is not > 0)
+    {
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
+      };
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+
+    var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == request.Id.Value, cancellationToken)
+      ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
+    if (request.Ver.HasValue && request.Ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != request.Ver.Value)
+    {
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Conflict,
+        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+      };
+    }
+
+    RestoreBoundParentId(entity, parent);
+
+    var nav = new Nav(Service, L);
+    await SetNavAsync(nav, cancellationToken);
+    var navEntry = !string.IsNullOrEmpty(actionName)
+      ? nav.Actions.FirstOrDefault(a => string.Equals(a.Method.Method.Name, actionName, StringComparison.OrdinalIgnoreCase))
+      : null;
+
+    if (IsReadOnly && navEntry?.IsAllowedInReadOnly != true)
+    {
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
+      };
+    }
+
+    if (navEntry is { Offers.Count: > 0 })
+    {
+      foreach (var offer in navEntry.Offers)
+      {
+        if (offer.Condition is Expression<Func<TEntity, bool>> cond)
+        {
+          var passes = await db.Set<TEntity>().Where(e => e.Id == entity.Id).AnyAsync(cond, cancellationToken);
+          if (!passes)
+          {
+            return new FormActionDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Warnings = [new MessageDto { Detail = L[offer.Reason], RecordId = entity.Id, Type = MessageType.Error }]
+            };
+          }
+        }
+      }
+    }
+
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+      await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+      var ctx = new FormActionContext<TEntity>(entity, ct => db.SaveChangesAsync(ct), db);
+      await handler(ctx, entity, cancellationToken);
+      if (ctx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(cancellationToken);
+        return new FormActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+        };
+      }
+
+      if (db.ChangeTracker.HasChanges())
+      {
+        await db.SaveChangesAsync(cancellationToken);
+      }
+
+      await tx.CommitAsync(cancellationToken);
+      return new FormActionDto
+      {
+        Outcome = MutationOutcome.Committed,
+        OpenScreen = ctx.OpenScreen,
+        OpenId = ctx.OpenId
+      };
+    });
+  }
 
   public sealed class Query
   {

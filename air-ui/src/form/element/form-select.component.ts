@@ -227,6 +227,9 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
         }
       }
     }
+    if (this.element().savesOnChange && this.form.id() !== null && this.form.canSave()) {
+      void this.form.save();
+    }
   }
 }
 

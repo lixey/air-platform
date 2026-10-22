@@ -38,6 +38,7 @@ import { GridCellNumberComponent } from './grid/cell/grid-cell-number.component'
 import { GridCellOpenFormComponent } from './grid/cell/grid-cell-open-form.component';
 import { GridCellPercentComponent } from './grid/cell/grid-cell-percent.component';
 import { GridCellPhoneComponent } from './grid/cell/grid-cell-phone.component';
+import { GridCellPickerComponent } from './grid/cell/grid-cell-picker.component';
 import { GridCellReferenceComponent } from './grid/cell/grid-cell-reference.component';
 import { GridCellSelectComponent } from './grid/cell/grid-cell-select.component';
 import { GridCellTextComponent } from './grid/cell/grid-cell-text.component';
@@ -257,6 +258,7 @@ export const UI_COMPONENTS = defineComponents({
   GridCellDatetime: GridCellDatetimeComponent,
   GridCellTime: GridCellTimeComponent,
   GridCellOpenForm: GridCellOpenFormComponent,
+  GridCellPicker: GridCellPickerComponent,
   GridCellReference: GridCellReferenceComponent,
   GridCellSelect: GridCellSelectComponent,
   GridCellFile: GridCellFileComponent,

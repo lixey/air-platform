@@ -1,6 +1,12 @@
 namespace Air.App.Screens;
 
-public interface IRecordStatuses<TEntity> where TEntity : class
+public interface IRecordStatuses
+{
+  IReadOnlyList<Type> Followers { get; }
+  Task FollowMovesAsync(IMutationContext context, IReadOnlySet<long> movedRecordIds, CancellationToken cancellationToken);
+}
+
+public interface IRecordStatuses<TEntity> : IRecordStatuses where TEntity : class
 {
   Expression<Func<TEntity, long>> StatusMember { get; }
   IReadOnlyList<OptionDto> Statuses { get; }

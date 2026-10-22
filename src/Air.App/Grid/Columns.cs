@@ -14,15 +14,26 @@ public class Columns
   public Type? FormServiceType { get; set; }
   public Type? CoverFileGridType { get; set; }
   internal object? StatusFlow { get; private set; }
+  internal bool StatusFlowAllowsReadOnly { get; private set; }
+
+  public sealed class StatusFlowBuilder(Columns owner)
+  {
+    public StatusFlowBuilder AllowReadOnly(bool allow = true)
+    {
+      owner.StatusFlowAllowsReadOnly = allow;
+      return this;
+    }
+  }
 
   public void UseForm<TFormService>() where TFormService : class
   {
     FormServiceType = typeof(TFormService);
   }
 
-  public void UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
+  public StatusFlowBuilder UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
   {
     StatusFlow = statuses;
+    return new StatusFlowBuilder(this);
   }
 
   public GridColumn<TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
@@ -171,7 +182,7 @@ public class Columns<TRow> : Columns where TRow : class
     return new GridColumn<TRow, TProp>(baseCol.Dto, this);
   }
 
-  public void UseStatusOf(Screens.IRecordStatuses<TRow> statuses) =>
+  public StatusFlowBuilder UseStatusOf(Screens.IRecordStatuses<TRow> statuses) =>
     base.UseStatusOf(statuses);
 }
 
@@ -364,6 +375,20 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
       dto.NumberEdit = new GridNumberEditDto { Step = 1, HasStepper = false };
     }
 
+    return this;
+  }
+
+  public GridColumn<TProp> Editable(Func<bool> condition) =>
+    Editable(condition());
+
+  public GridColumn<TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
+  {
+    dto.Cell = new GridCellPickerModel
+    {
+      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TSource)),
+      Method = method.Method.Name,
+      MinLength = minLength
+    };
     return this;
   }
 
@@ -571,6 +596,15 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.AsOpenForm<TFormService>();
     return this;
   }
+  public GridColumn<TEntity, TProp> AsOpenForm<TFormService>(Expression<Func<TEntity, object?>> keySelector) where TFormService : class
+  {
+    Dto.Cell = new GridCellOpenFormModel
+    {
+      KeyPath = Columns.ToCamelPath(MemberPath.Of(keySelector))
+    };
+    owner.FormServiceType = typeof(TFormService);
+    return this;
+  }
   public GridColumn<TEntity, TProp> OpenForm(Func<TEntity, Type?> resolver)
   {
     Dto.Cell = new GridCellOpenFormModel();
@@ -657,6 +691,16 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Editable(bool isEditable = true)
   {
     base.Editable(isEditable);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Editable(Func<bool> condition)
+  {
+    base.Editable(condition);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
+  {
+    base.PickedBy<TSource>(method, minLength);
     return this;
   }
   public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() where TFileGrid : class

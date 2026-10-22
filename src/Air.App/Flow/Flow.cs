@@ -5,6 +5,7 @@ public sealed class Flow<TEntity>
   internal Expression<Func<TEntity, long>>? StateMember { get; private set; }
   internal List<OptionDto> DeclaredStatuses { get; } = [];
   internal long? InitialStatusId { get; private set; }
+  internal List<Type> FollowerTypes { get; } = [];
 
   public void State(Expression<Func<TEntity, long>> member)
   {
@@ -24,5 +25,10 @@ public sealed class Flow<TEntity>
   public void Initial(long id)
   {
     InitialStatusId = id;
+  }
+
+  public void FollowedBy<TFlowService>() where TFlowService : class
+  {
+    FollowerTypes.Add(typeof(TFlowService));
   }
 }

@@ -203,7 +203,19 @@ public sealed record GridCellTimeModel : CellModel;
 public sealed record GridCellCheckboxModel : CellModel;
 
 [UiContract]
-public sealed record GridCellOpenFormModel : CellModel;
+public sealed record GridCellOpenFormModel : CellModel
+{
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? KeyPath { get; init; }
+}
+
+[UiContract]
+public sealed record GridCellPickerModel : CellModel
+{
+  public string ReferenceService { get; set; } = string.Empty;
+  public string Method { get; set; } = string.Empty;
+  public int MinLength { get; set; } = 2;
+}
 
 [UiContract]
 public sealed record GridCellSelectModel : CellModel;

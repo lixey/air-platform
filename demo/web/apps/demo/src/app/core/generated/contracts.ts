@@ -312,6 +312,7 @@ export interface CellKinds {
   GridCellOpenForm: GridCellOpenFormModel;
   GridCellPercent: GridCellPercentModel;
   GridCellPhone: GridCellPhoneModel;
+  GridCellPicker: GridCellPickerModel;
   GridCellReference: GridCellReferenceModel;
   GridCellSelect: GridCellSelectModel;
   GridCellText: GridCellTextModel;
@@ -688,6 +689,7 @@ export interface FormElementDto {
   isInputOnly: boolean;
   isFocused?: boolean;
   isSecret?: boolean;
+  savesOnChange?: boolean;
   valueKind: FormValueKind;
   hasSeparatorAfter?: boolean;
   separatorLabel?: string | null;
@@ -918,6 +920,7 @@ export interface GridCellNumberModel {
 
 export interface GridCellOpenFormModel {
   kind: 'GridCellOpenForm';
+  keyPath?: string | null;
   colorPath?: string | null;
 }
 
@@ -929,6 +932,14 @@ export interface GridCellPercentModel {
 
 export interface GridCellPhoneModel {
   kind: 'GridCellPhone';
+  colorPath?: string | null;
+}
+
+export interface GridCellPickerModel {
+  kind: 'GridCellPicker';
+  referenceService: string;
+  method: string;
+  minLength: number;
   colorPath?: string | null;
 }
 

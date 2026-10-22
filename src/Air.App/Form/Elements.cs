@@ -48,10 +48,21 @@ public class Elements
   }
 
   internal object? StatusFlow { get; private set; }
+  internal bool StatusFlowAllowsReadOnly { get; private set; }
 
-  public void UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
+  public sealed class StatusFlowBuilder(Elements owner)
+  {
+    public StatusFlowBuilder AllowReadOnly(bool allow = true)
+    {
+      owner.StatusFlowAllowsReadOnly = allow;
+      return this;
+    }
+  }
+
+  public StatusFlowBuilder UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
   {
     StatusFlow = statuses;
+    return new StatusFlowBuilder(this);
   }
 
   public FormElement<TEntity, TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression)
@@ -216,7 +227,7 @@ public class Elements<TEntity> : Elements where TEntity : class
   public FormElement<TEntity, TProp> Add<TProp>(Expression<Func<TEntity, TProp>> expression) =>
     Add<TEntity, TProp>(expression);
 
-  public void UseStatusOf(Screens.IRecordStatuses<TEntity> statuses) =>
+  public StatusFlowBuilder UseStatusOf(Screens.IRecordStatuses<TEntity> statuses) =>
     base.UseStatusOf(statuses);
 }
 
@@ -524,6 +535,19 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
+  public FormElement<TEntity, TProp> SaveOnChange(bool save = true)
+  {
+    dto.SavesOnChange = save;
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> Rules(Action<Actions.ActionInputRuleBuilder<TProp>> configure)
+  {
+    var builder = new Actions.ActionInputRuleBuilder<TProp>(dto);
+    configure(builder);
+    return this;
+  }
+
   internal static string? GetMemberName(Expression expr)
   {
     if (expr is UnaryExpression ue)
@@ -565,7 +589,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return new FormReferenceElement<TEntity, TProp, object>(dto);
   }
 
-  public FormReferenceElement<TEntity, TProp, TSource> AsReference<TGridService, TSource>()
+  public FormReferenceElement<TEntity, TProp, TSource> AsReference<TGridService, TSource>(
+    params Expression<Func<TSource, object?>>[] label)
   {
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
@@ -576,11 +601,21 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
       dto.IsRequired = true;
     }
 
+    var labelPaths = label
+      .Select(expr => GetMemberName(expr.Body))
+      .Where(n => !string.IsNullOrEmpty(n))
+      .Select(n => ToCamel(n!))
+      .ToList();
+    if (labelPaths.Count == 0)
+    {
+      labelPaths = ["name"];
+    }
+
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
       ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
-      ReferenceLabelPaths = ["name"]
+      ReferenceLabelPaths = labelPaths
     };
     return new FormReferenceElement<TEntity, TProp, TSource>(dto);
   }
@@ -726,6 +761,12 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   public new FormReferenceElement<TEntity, TProp, TSource> Focus(bool focus = true)
   {
     base.Focus(focus);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> SaveOnChange(bool save = true)
+  {
+    base.SaveOnChange(save);
     return this;
   }
 

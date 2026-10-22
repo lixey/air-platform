@@ -235,13 +235,17 @@ public abstract partial class GridService<TEntity, TRow>
 
   private async Task PopulateRowAvailabilityAsync(List<object> shapedRows, Columns columns, CancellationToken ct)
   {
-    if (shapedRows.Count == 0 || columns.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow)
+    if (shapedRows.Count == 0)
     {
       return;
     }
 
-    var transitionsWithOffers = statusFlow.Transitions.Where(t => t.Offers.Count > 0).ToList();
-    if (transitionsWithOffers.Count == 0)
+    var nav = new Nav(localizer: L);
+    SetNav(nav);
+    var actionsWithOffers = nav.Actions.Where(a => a.Offers.Count > 0).ToList();
+    var statusFlow = columns.StatusFlow as Screens.IRecordStatuses<TEntity>;
+    var transitionsWithOffers = statusFlow?.Transitions.Where(t => t.Offers.Count > 0).ToList() ?? [];
+    if (transitionsWithOffers.Count == 0 && actionsWithOffers.Count == 0)
     {
       return;
     }
@@ -258,6 +262,48 @@ public abstract partial class GridService<TEntity, TRow>
       for (var i = 0; i < transition.Offers.Count; i++)
       {
         if (transition.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond)
+        {
+          continue;
+        }
+
+        var passedIds = (await db.Set<TEntity>()
+          .Where(e => rowIds.Contains(e.Id))
+          .Where(cond)
+          .Select(e => e.Id)
+          .ToListAsync(ct)).ToHashSet();
+
+        foreach (var rowObj in shapedRows)
+        {
+          if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
+          {
+            continue;
+          }
+
+          if (!long.TryParse(idVal.ToString(), out var parsedId))
+          {
+            continue;
+          }
+
+          if (!passedIds.Contains(parsedId))
+          {
+            if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
+            {
+              unav = new Dictionary<string, int>(StringComparer.Ordinal);
+              dict["unavailable"] = unav;
+            }
+
+            unav.TryAdd(actionKey, i);
+          }
+        }
+      }
+    }
+
+    foreach (var action in actionsWithOffers)
+    {
+      var actionKey = action.Model.Key;
+      for (var i = 0; i < action.Offers.Count; i++)
+      {
+        if (action.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond)
         {
           continue;
         }

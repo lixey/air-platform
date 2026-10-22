@@ -189,6 +189,9 @@ public sealed class FormElementDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsSecret { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool SavesOnChange { get; set; }
+
   [OneOf(typeof(FormValueKind))]
   public string ValueKind { get; set; } = FormValueKind.Scalar;
 
