@@ -41,11 +41,11 @@ reset: db-reset
 
 agent-up: ## Start Demo backend (5191) and frontend (4400) on dedicated agent ports
 	@nohup dotnet run --project demo/src/Demo.Api --urls http://localhost:$(AGENT_API_PORT) >/tmp/air-platform-agent-api.log 2>&1 &
-	@cd $(WEB) && DEMO_API_URL=http://localhost:$(AGENT_API_PORT) nohup npx nx serve demo --port $(AGENT_WEB_PORT) >/tmp/air-platform-agent-web.log 2>&1 &
+	@cd $(WEB) && DEMO_API_URL=http://localhost:$(AGENT_API_PORT) nohup npx nx serve demo --configuration=agent --port $(AGENT_WEB_PORT) >/tmp/air-platform-agent-web.log 2>&1 &
 	@echo "Agent Demo servers starting: Backend http://localhost:$(AGENT_API_PORT) | Frontend http://localhost:$(AGENT_WEB_PORT)"
 
 agent-down: ## Stop Demo backend (5191) and frontend (4400) on dedicated agent ports
-	@lsof -ti :$(AGENT_API_PORT) :$(AGENT_WEB_PORT) | xargs kill -9 2>/dev/null || true
+	@lsof -ti :$(AGENT_API_PORT) -i :$(AGENT_WEB_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "Agent Demo servers stopped ($(AGENT_API_PORT), $(AGENT_WEB_PORT))."
 
 agent-restart: ## Restart Demo backend (5191) and frontend (4400) on dedicated agent ports

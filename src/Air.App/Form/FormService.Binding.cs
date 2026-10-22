@@ -89,13 +89,11 @@ public abstract partial class FormService<TEntity, TInput>
     {
       converted = val.GetDateTime();
     }
-    else if (targetType == typeof(DateOnly))
-    {
-      converted = DateOnly.Parse(val.GetString()!);
-    }
     else
     {
-      converted = targetType == typeof(TimeOnly)
+      converted = targetType == typeof(DateOnly)
+        ? DateOnly.Parse(val.GetString()!)
+        : targetType == typeof(TimeOnly)
         ? TimeOnly.Parse(val.GetString()!)
         : targetType.IsEnum
         ? val.ValueKind == JsonValueKind.Number

@@ -60,6 +60,11 @@
           "optimization": false,
           "extractLicenses": false,
           "sourceMap": true
+        },
+        "agent": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
         }
       }
     },
@@ -77,6 +82,10 @@
         },
         "development": {
           "buildTarget": "demo:build:development"
+        },
+        "agent": {
+          "buildTarget": "demo:build:agent",
+          "port": 4400
         }
       }
     }
