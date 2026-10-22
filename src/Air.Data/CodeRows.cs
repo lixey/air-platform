@@ -67,7 +67,40 @@ public static partial class CodeRows
 
     if (db.ChangeTracker.HasChanges())
     {
-      await db.SaveChangesAsync(cancellationToken);
+      var isSqlServer = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
+      var hasExplicitInsert = isSqlServer && db.ChangeTracker.Entries<TEntity>().Any(e => e.State == EntityState.Added && e.Entity.Id != 0);
+      if (hasExplicitInsert)
+      {
+        var entityType = db.Model.FindEntityType(typeof(TEntity))!;
+        var tableName = entityType.GetTableName()!;
+        var schema = entityType.GetSchema();
+        var qualifiedTable = string.IsNullOrWhiteSpace(schema) ? $"[{tableName}]" : $"[{schema}].[{tableName}]";
+        var strategy = db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+          await db.Database.OpenConnectionAsync(cancellationToken);
+          try
+          {
+            await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} ON", cancellationToken);
+            try
+            {
+              await db.SaveChangesAsync(cancellationToken);
+            }
+            finally
+            {
+              await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} OFF", cancellationToken);
+            }
+          }
+          finally
+          {
+            await db.Database.CloseConnectionAsync();
+          }
+        });
+      }
+      else
+      {
+        await db.SaveChangesAsync(cancellationToken);
+      }
     }
   }
 }
