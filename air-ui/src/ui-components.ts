@@ -301,4 +301,5 @@ export const UI_COMPONENTS = defineComponents({
   FormNavSave: FormNavSaveComponent,
   FormNavSaveClose: FormNavSaveCloseComponent,
   FormNavSaveOpen: FormNavSaveOpenComponent,
+  Report: () => import('./report/report.component').then(m => m.ReportComponent),
 }) satisfies Record<PlatformKind | ClientKind, unknown>;

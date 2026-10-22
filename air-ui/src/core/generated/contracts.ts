@@ -210,6 +210,10 @@ export type FileType =
 
 export type FileCover = 'auto' | 'manual';
 
+export type ReportChartKind = 'bar' | 'line' | 'area' | 'stacked-bar' | 'horizontal-bar' | 'donut' | 'pie';
+
+export type ReportColumnKind = 'text' | 'money' | 'number' | 'percent';
+
 export type ButtonVariant = 'soft' | 'solid' | 'ghost';
 export type ButtonSize = 'small' | 'medium';
 export type FilterNode = FilterGroup | FilterRule;
@@ -296,6 +300,7 @@ export interface PanelKinds {
   Nav: NavModel;
   OverlayConfirm: OverlayConfirmModel;
   OverlayDirty: OverlayDirtyModel;
+  Report: ReportModel;
 }
 
 export type PanelModel = PanelKinds[keyof PanelKinds];
@@ -1608,6 +1613,90 @@ export interface ReferenceDraftRuleDto {
 
 export interface RefreshRequest {
   refreshToken?: string | null;
+}
+
+export interface ReportChartDto {
+  key: string;
+  title: string;
+  subtitle?: string | null;
+  kind: ReportChartKind;
+  currency?: string | null;
+  height?: number | null;
+  span?: number | null;
+  categories?: string[] | null;
+  series?: ReportSeriesDto[] | null;
+  slices?: ReportPieSliceDto[] | null;
+}
+
+export interface ReportColumnDto {
+  key: string;
+  label: string;
+  kind: ReportColumnKind;
+  currency?: string | null;
+  sticky?: string | null;
+  width?: number | null;
+}
+
+export interface ReportDataDto {
+  filterGroups: ReportFilterGroupDto[];
+  activeFilters: Record<string, string>;
+  kpis?: ReportKpiDto[] | null;
+  charts?: ReportChartDto[] | null;
+  table?: ReportTableDto | null;
+}
+
+export interface ReportFilterGroupDto {
+  key: string;
+  label: string;
+  items: ReportFilterItemDto[];
+}
+
+export interface ReportFilterItemDto {
+  key: string;
+  label: string;
+  color?: UiColor | null;
+}
+
+export interface ReportKpiDto {
+  label: string;
+  value: number;
+  currency?: string | null;
+  isPercent?: boolean;
+  isCount?: boolean;
+  subtitle?: string | null;
+  color?: UiColor | null;
+}
+
+export interface ReportModel {
+  kind: 'Report';
+  service: string;
+  title?: string | null;
+}
+
+export interface ReportPieSliceDto {
+  name: string;
+  value: number;
+  color?: UiColor | null;
+}
+
+export interface ReportRequest {
+  isDataOnly?: boolean;
+  filters?: Record<string, string> | null;
+}
+
+export interface ReportSeriesDto {
+  name: string;
+  kind: ReportChartKind;
+  color?: UiColor | null;
+  stack?: string | null;
+  data: number[];
+}
+
+export interface ReportTableDto {
+  title?: string | null;
+  columns: ReportColumnDto[];
+  rows: Record<string, unknown>[];
+  bottomRows?: Record<string, unknown>[] | null;
 }
 
 export interface ScreenDto {

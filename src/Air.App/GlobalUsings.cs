@@ -28,6 +28,7 @@ global using Air.App.Mutations;
 global using Air.App.Nav;
 global using Air.App.Overlay;
 global using Air.App.Panels;
+global using Air.App.Report;
 global using Air.App.Screens;
 global using Air.App.TypeScript;
 global using Air.Data;

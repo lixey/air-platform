@@ -91,6 +91,8 @@ public static class ContractExporter
     ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileImages), "FileImages");
     ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileType), "FileType");
     ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileCover), "FileCover");
+    ExportUnionFromConsts(sb, typeof(ReportChartKind), "ReportChartKind");
+    ExportUnionFromConsts(sb, typeof(ReportColumnKind), "ReportColumnKind");
 
     sb.AppendLine("export type ButtonVariant = 'soft' | 'solid' | 'ghost';");
     sb.AppendLine("export type ButtonSize = 'small' | 'medium';");
@@ -149,6 +151,10 @@ public static class ContractExporter
     sb.AppendLine();
     sb.AppendLine("export interface ScreenServiceEndpoints {");
     sb.AppendLine("  'get-data': { request: void; answer: ScreenDto };");
+    sb.AppendLine("}");
+    sb.AppendLine();
+    sb.AppendLine("export interface ReportServiceEndpoints {");
+    sb.AppendLine("  'get-data': { request: ReportRequest | null; answer: ScreenDto };");
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface FormServiceEndpoints {");

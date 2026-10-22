@@ -63,6 +63,27 @@ internal static class ServiceEndpoints
           return await DispatchFormAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
         }
 
+        if (typeof(IReportService).IsAssignableFrom(serviceType))
+        {
+          var reportService = (IReportService)services.GetRequiredService(serviceType);
+          feat ??= reportService.Feature;
+          if (method == "get-data")
+          {
+            if (!CanView(feat, services.GetService<IUserContext>()))
+            {
+              return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            var req = await ReadReportRequestAsync(httpRequest, ct);
+            if (req.IsDataOnly)
+            {
+              return Results.Ok(new ScreenDto { Data = await reportService.GetReportAsync(req, ct) });
+            }
+
+            return Results.Ok(await reportService.BuildScreenAsync(serviceName, req, ct));
+          }
+        }
+
         if (typeof(IScreenService).IsAssignableFrom(serviceType))
         {
           var screenService = (IScreenService)services.GetRequiredService(serviceType);
@@ -850,5 +871,22 @@ internal static class ServiceEndpoints
     }
 
     return ids;
+  }
+
+  private static async Task<ReportRequest> ReadReportRequestAsync(HttpRequest request, CancellationToken ct)
+  {
+    if (request.ContentLength is null or 0)
+    {
+      return new ReportRequest();
+    }
+
+    try
+    {
+      return await request.ReadFromJsonAsync<ReportRequest>(PlatformJsonOptions.DefaultOptions, ct) ?? new ReportRequest();
+    }
+    catch
+    {
+      return new ReportRequest();
+    }
   }
 }
