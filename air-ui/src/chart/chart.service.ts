@@ -129,17 +129,30 @@ export class ChartService {
         if (disposed || chartInstance || !container.isConnected) {
           return;
         }
-        chartInstance = echarts.init(container, undefined, {
-          renderer: 'canvas',
-          devicePixelRatio: this.isBrowser() ? window.devicePixelRatio || 1 : 1,
-        });
-        chartInstance.setOption(lastOptions, {
-          notMerge: true,
-          lazyUpdate: true,
-        });
+        const initChart = () => {
+          if (disposed || chartInstance || !container.isConnected) {
+            return;
+          }
+          if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+            return;
+          }
+          chartInstance = echarts.init(container, undefined, {
+            renderer: 'canvas',
+            devicePixelRatio: this.isBrowser() ? window.devicePixelRatio || 1 : 1,
+          });
+          chartInstance.setOption(lastOptions, {
+            notMerge: true,
+            lazyUpdate: true,
+          });
+        };
+        initChart();
         if (this.isBrowser() && 'ResizeObserver' in window) {
           resizeObserver = new ResizeObserver(() => {
-            if (!chartInstance || disposed) {
+            if (disposed) {
+              return;
+            }
+            if (!chartInstance) {
+              initChart();
               return;
             }
             cancelAnimationFrame(rafId);

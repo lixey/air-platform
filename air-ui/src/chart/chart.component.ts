@@ -9,14 +9,14 @@ import { type ChartHandle, ChartService, resolveHueHex } from './chart.service';
 @Component({
   selector: 'ui-chart',
   template: `
-    <div class="flex flex-col h-full w-full min-w-0 min-h-0 p-4 gap-2 bg-surface border border-line rounded-xl">
+    <div class="flex flex-col w-full min-w-0 p-4 gap-2 bg-surface border border-line rounded-xl">
       <div class="flex items-baseline justify-between gap-2 shrink-0">
         <h3 class="m-0 text-sm font-semibold text-ink truncate">{{ chart().title }}</h3>
         @if (chart().subtitle; as subtitle) {
           <span class="text-xs text-muted truncate">{{ subtitle }}</span>
         }
       </div>
-      <div #canvasHost class="w-full flex-1 min-h-0" [style.height.px]="chart().height ?? 280"></div>
+      <div #canvasHost class="w-full" [style.height.px]="chart().height ?? 280"></div>
     </div>
   `,
   host: { class: 'block min-w-0' },
