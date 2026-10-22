@@ -33,7 +33,7 @@ import { UI_COLORS } from '../theme/ui-color';
                     [label]="item.label"
                     [color]="itemColor(item)"
                     [variant]="active ? 'solid' : 'soft'"
-                    [pressed]="active"
+                    [attr.aria-pressed]="active"
                     [class]="joinedBtnClass(first, last)"
                     (click)="selectFilter(group.key, item.key)"
                   />
@@ -207,12 +207,12 @@ export class ReportComponent {
   protected formatKpi(kpi: ReportKpiDto): string {
     const loc = this.currentLocale();
     if (kpi.isPercent) {
-      return formatCellAmount(kpi.value, loc, percentFormatOf({ kind: 'GridCellPercent', decimals: 1 }));
+      return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
     }
     if (kpi.isCount) {
       return formatCellNumber(kpi.value, loc, 0, true);
     }
-    return formatCellAmount(kpi.value, loc, moneyFormatOf({ kind: 'GridCellMoney', currency: kpi.currency, decimals: 2 }));
+    return formatCellAmount(kpi.value, loc, moneyFormatOf({ currency: kpi.currency, decimals: 2 }));
   }
 
   protected formatCell(col: ReportColumnDto, raw: unknown): string {
@@ -224,10 +224,10 @@ export class ReportComponent {
     }
     const loc = this.currentLocale();
     if (col.kind === 'money') {
-      return formatCellAmount(raw, loc, moneyFormatOf({ kind: 'GridCellMoney', currency: col.currency, decimals: 2 }));
+      return formatCellAmount(raw, loc, moneyFormatOf({ currency: col.currency, decimals: 2 }));
     }
     if (col.kind === 'percent') {
-      return formatCellAmount(raw, loc, percentFormatOf({ kind: 'GridCellPercent', decimals: 1 }));
+      return formatCellAmount(raw, loc, percentFormatOf({ decimals: 1 }));
     }
     if (col.kind === 'number') {
       return formatCellNumber(raw, loc, 0, true);

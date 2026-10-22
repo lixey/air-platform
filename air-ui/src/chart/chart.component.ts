@@ -61,7 +61,7 @@ function buildEChartsOptions(chart: ReportChartDto, isDark: boolean, locale: str
 
   const formatValue = (val: number): string => {
     if (chart.currency) {
-      return formatCellAmount(val, locale, moneyFormatOf({ kind: 'GridCellMoney', currency: chart.currency, decimals: 2 }));
+      return formatCellAmount(val, locale, moneyFormatOf({ currency: chart.currency, decimals: 2 }));
     }
     return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(val);
   };

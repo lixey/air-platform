@@ -273,6 +273,10 @@ export interface ScreenServiceEndpoints {
   'get-data': { request: void; answer: ScreenDto };
 }
 
+export interface ReportServiceEndpoints {
+  'get-data': { request: ReportRequest | null; answer: ScreenDto };
+}
+
 export interface FormServiceEndpoints {
   'get-data': { request: FormRequest | null; answer: ScreenDto };
   save: { request: FormRequest; answer: FormDataDto };
