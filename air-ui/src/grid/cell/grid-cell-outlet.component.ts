@@ -22,6 +22,9 @@ const PAINTED =
 /** The bottom line of a painted body cell that has another body row below it. */
 const PAINTED_LINE = 'shadow-[inset_0_-1px_0_var(--panel-line)]';
 
+/** Numeric cell kinds that render their hue as colored text rather than a painted cell background. */
+const NUMERIC_KINDS: ReadonlySet<string | undefined> = new Set(['GridCellMoney', 'GridCellNumber', 'GridCellPercent']);
+
 /**
  * One cell of the table: mounts the component the model's kind names, given the cell and the model. Put on the `td`
  * or `th` itself, so the cell component is the cell's content and the table keeps the box.
@@ -29,11 +32,10 @@ const PAINTED_LINE = 'shadow-[inset_0_-1px_0_var(--panel-line)]';
  * Fallback policy: the table hands in the fallback kind of what it is drawing, and a cell without a model, or one
  * whose kind nobody registered, is drawn by it.
  *
- * Hue: when the model names a `colorPath` and the row's value there is one of `UI_COLORS`, the cell itself is painted
- * carrying `hue-<value>`; failing that, a checkbox cell outside the selection column is painted `green` for true and
- * `red` for false. Any other value, null included, draws the cell as it is. A select cell is never painted: the colour
- * of its option is the badge it draws. The component inside is the same, so the
- * painted cell keeps the cell's behaviour.
+ * Hue: when the model names a `colorPath` and the row's value there is one of `UI_COLORS`, numeric cells tint their
+ * text in `hue-<value>` while other cells are painted carrying `hue-<value>`; failing that, a checkbox cell outside
+ * the selection column is painted `green` for true and `red` for false. Any other value, null included, draws the
+ * cell as it is. A select cell is never painted: the colour of its option is the badge it draws.
  */
 @Component({
   selector: '[ui-grid-cell-outlet]',
@@ -70,6 +72,9 @@ export class GridCellOutletComponent {
     const hue = this.hue();
     if (!hue) {
       return '';
+    }
+    if (NUMERIC_KINDS.has(this.model()?.kind)) {
+      return `hue-${hue} text-(--hue-ink)`;
     }
     return this.hasBottomLine() ? `hue-${hue} ${PAINTED} ${PAINTED_LINE}` : `hue-${hue} ${PAINTED}`;
   });
