@@ -6,6 +6,7 @@ PRETTIER_PATHS := . ../../air-ui/src ../../docs
 AGENT_API_PORT ?= 5191
 AGENT_WEB_PORT ?= 4400
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
+DAEMON_RUN := python3 -c 'import os, sys, subprocess; r, w = os.pipe(); f = open(sys.argv[1], "wb"); subprocess.Popen(sys.argv[2:], stdin=r, stdout=f, stderr=f, pass_fds=(w,), start_new_session=True)'
 
 all: build
 
@@ -40,8 +41,8 @@ db-reset: ## Drop, recreate, and seed the demo database
 reset: db-reset
 
 agent-up: ## Start Demo backend (5191) and frontend (4400) on dedicated agent ports
-	@nohup dotnet run --project demo/src/Demo.Api --urls http://localhost:$(AGENT_API_PORT) >/tmp/air-platform-agent-api.log 2>&1 &
-	@cd $(WEB) && DEMO_API_URL=http://localhost:$(AGENT_API_PORT) nohup npx nx serve demo --configuration=agent --port $(AGENT_WEB_PORT) >/tmp/air-platform-agent-web.log 2>&1 &
+	@$(DAEMON_RUN) /tmp/air-platform-agent-api.log dotnet run --project demo/src/Demo.Api --urls http://localhost:$(AGENT_API_PORT)
+	@cd $(WEB) && DEMO_API_URL=http://localhost:$(AGENT_API_PORT) $(DAEMON_RUN) /tmp/air-platform-agent-web.log ./node_modules/.bin/nx serve demo --configuration=agent --port $(AGENT_WEB_PORT)
 	@echo "Agent Demo servers starting: Backend http://localhost:$(AGENT_API_PORT) | Frontend http://localhost:$(AGENT_WEB_PORT)"
 
 agent-down: ## Stop Demo backend (5191) and frontend (4400) on dedicated agent ports
