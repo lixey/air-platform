@@ -657,22 +657,6 @@ public abstract partial class FormService<TEntity, TInput>
         Variant = ButtonVariant.Soft
       });
 
-      if (IsNew && pageChildren.Count > 0)
-      {
-        foreach (var child in pageChildren)
-        {
-          var childLabel = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : child.DeclaredKey;
-          navElements.Add(new FormNavSaveOpenModel
-          {
-            Key = child.DeclaredKey,
-            Label = childLabel,
-            Color = UiColor.Indigo,
-            Variant = ButtonVariant.Soft,
-            Path = child.DeclaredKey
-          });
-        }
-      }
-
       navElements.Add(new NavCloseModel
       {
         Key = "form-close",
@@ -713,6 +697,7 @@ public abstract partial class FormService<TEntity, TInput>
         Value = FormTab.Record,
         Label = caption,
         Color = UiColor.Sky,
+        Variant = ButtonVariant.Soft,
         IsSelected = true,
         Path = "form"
       });
@@ -726,8 +711,25 @@ public abstract partial class FormService<TEntity, TInput>
           Value = tab.Key,
           Label = L[tab.Label],
           Title = tab.Title != null ? L[tab.Title] : null,
+          Color = UiColor.Sky,
           Variant = ButtonVariant.Soft,
           Path = "form"
+        });
+      }
+    }
+
+    if (!IsReadOnly && IsNew && pageChildren.Count > 0)
+    {
+      foreach (var child in pageChildren)
+      {
+        var childLabel = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : child.DeclaredKey;
+        navElements.Add(new FormNavSaveOpenModel
+        {
+          Key = child.DeclaredKey,
+          Label = childLabel,
+          Color = UiColor.Indigo,
+          Variant = ButtonVariant.Soft,
+          Path = child.DeclaredKey
         });
       }
     }
