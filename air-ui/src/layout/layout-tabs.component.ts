@@ -85,7 +85,7 @@ export function visibleTabs(pins: readonly MenuItemDto[], current: MenuItemDto |
           <button
             type="button"
             class="flex min-h-7 cursor-pointer items-center py-0.5 pl-2 pr-6 text-sm ${FOCUS_RING}"
-            [attr.title]="tab.name"
+            [attr.title]="tab.title || tab.name"
             [attr.aria-current]="isActive(tab) ? 'page' : null"
             (click)="open(tab)"
             (auxclick)="onAuxClick($event, tab)"

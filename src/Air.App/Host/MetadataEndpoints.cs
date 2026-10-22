@@ -108,6 +108,7 @@ internal static class MetadataEndpoints
               Path = feat.Path,
               Handle = feat.CleanName,
               Name = featL[feat.Name],
+              Title = feat.Title != null ? featL[feat.Title] : null,
               Screen = screen
             });
           }
@@ -120,6 +121,7 @@ internal static class MetadataEndpoints
               Path = flatPath,
               Handle = feat.CleanName,
               Name = featL[feat.Name],
+              Title = feat.Title != null ? featL[feat.Title] : null,
               Screen = screen
             });
           }
@@ -159,11 +161,13 @@ internal static class MetadataEndpoints
         fullPath = $"{modLower}/{fullPath.TrimStart('/')}";
       }
 
+      var tooltip = node.Tooltip ?? feature.Title;
       return new MenuItemDto
       {
         Path = fullPath,
         Handle = node.Handle,
         Name = node.Title != null ? modL[node.Title] : null,
+        Title = tooltip != null ? modL[tooltip] : null,
         Icon = node.Icon,
         Screen = feature.ServiceType != null ? ServicePathResolver.Resolve(feature.ServiceType) : feature.Path
       };

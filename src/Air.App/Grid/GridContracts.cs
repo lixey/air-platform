@@ -48,6 +48,9 @@ public sealed class GridHeaderCellDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(UiColor))]
   public string? Color { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Title { get; set; }
 }
 
 [UiContract]
@@ -86,6 +89,9 @@ public sealed class GridColumnDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Label { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Title { get; set; }
 
   [OneOf(typeof(UiFieldType))]
   public string Type { get; set; } = UiFieldType.Text;

@@ -8,6 +8,9 @@ public class MenuItemDto
   public string? Name { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Title { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(UiIcon))]
   public string? Icon { get; set; }
 

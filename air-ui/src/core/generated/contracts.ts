@@ -674,6 +674,7 @@ export interface FormElementDto {
   path: string;
   referencePath?: string | null;
   label?: string | null;
+  title?: string | null;
   type: UiFieldType | FormFieldType;
   temporalType?: UiTemporalType | null;
   model: FormElementModel;
@@ -836,6 +837,7 @@ export interface FormSelectModel {
 export interface FormTabDto {
   key: string;
   label: string;
+  title?: string | null;
 }
 
 export interface FormTextareaModel {
@@ -984,6 +986,7 @@ export interface GridColumnDto {
   path?: string | null;
   filterPath?: string | null;
   label?: string | null;
+  title?: string | null;
   type: UiFieldType;
   temporalType?: UiTemporalType | null;
   width?: number | null;
@@ -1044,6 +1047,7 @@ export interface GridHeaderCellDto {
   colspan: number;
   model: HeaderModel;
   color?: UiColor | null;
+  title?: string | null;
 }
 
 export interface GridHeaderCheckboxModel {
@@ -1306,6 +1310,7 @@ export interface MenuItemDto {
   path?: string | null;
   handle?: string | null;
   name?: string | null;
+  title?: string | null;
   icon?: UiIcon | null;
   screen?: string | null;
   isSeparator?: boolean;
@@ -1508,6 +1513,7 @@ export interface OptionDto {
   id: number;
   name: string;
   color?: UiColor | null;
+  title?: string | null;
 }
 
 export interface OverlayConfirmModel {

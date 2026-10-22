@@ -343,6 +343,18 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       item.IsRemembered = remember;
       return this;
     }
+
+    public GridNamedFilterBuilder Title(string title)
+    {
+      item.Title = title;
+      return this;
+    }
+
+    public GridNamedFilterBuilder Title(string legacyUi, string legacyDb)
+    {
+      item.Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
+      return this;
+    }
   }
 
   public sealed class GridNamedFilterGroupBuilder(NamedFilterGroup group)
@@ -379,6 +391,19 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return this;
     }
 
+    public GridNamedFilterGroupBuilder Title(string title)
+    {
+      if (group.Items.Count > 0)
+      {
+        group.Items[^1].Title = title;
+      }
+
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder Title(string legacyUi, string legacyDb) =>
+      Title($"Легасі UI: {legacyUi} | БД: {legacyDb}");
+
     public GridNamedFilterGroupBuilder Badge(bool badge = true)
     {
       if (group.Items.Count > 0)
@@ -405,6 +430,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public bool IsRemembered { get; set; }
     public bool IsDefault { get; set; }
     public string? Color { get; set; }
+    public string? Title { get; set; }
   }
 
   public sealed class NamedFilterGroup(string key, string? label)
@@ -483,6 +509,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public sealed class ButtonBuilder
   {
     public string? LabelText { get; private set; }
+    public string? TitleText { get; private set; }
     public string? IconHandle { get; private set; }
     public string? ColorHandle { get; private set; }
     public string? VariantHandle { get; private set; }
@@ -492,6 +519,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public ButtonBuilder Label(string label)
     {
       LabelText = label;
+      return this;
+    }
+    public ButtonBuilder Title(string title)
+    {
+      TitleText = title;
+      return this;
+    }
+    public ButtonBuilder Title(string legacyUi, string legacyDb)
+    {
+      TitleText = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
       return this;
     }
     public ButtonBuilder Icon(string icon)
@@ -590,6 +627,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         Key = $"add.{targetService.Replace('/', '.')}",
         Service = targetService,
         Label = _l[rawLabel],
+        Title = b.TitleText != null ? _l[b.TitleText] : null,
         Icon = b.IconHandle ?? UiIcon.Plus,
         Color = b.ColorHandle ?? UiColor.Orange,
         Variant = b.VariantHandle ?? ButtonVariant.Soft
@@ -611,6 +649,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         Key = method.Method.Name.ToLowerInvariant(),
         Method = method.Method.Name,
         Label = _l[rawLabel],
+        Title = b.TitleText != null ? _l[b.TitleText] : null,
         Icon = b.IconHandle,
         Color = b.ColorHandle ?? UiColor.Blue,
         Variant = b.VariantHandle ?? ButtonVariant.Soft,

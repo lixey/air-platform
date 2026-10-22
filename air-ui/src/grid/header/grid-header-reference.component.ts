@@ -5,7 +5,7 @@ import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { SelectService } from '../../select/select.service';
 import { GRID_HEADER_CLEAR, GRID_HEADER_HOST, GRID_HEADER_STRIP } from '../../theme/css-classes';
 import { GridCellBase } from '../cell/grid-cell-base';
-import { columnLabelOf } from '../column/grid-column-label';
+import { columnLabelOf, columnTitleOf } from '../column/grid-column-label';
 import { selectSourceOf } from '../column/grid-column-select-source';
 import { GridHeaderSortComponent } from './grid-header-sort.component';
 
@@ -30,7 +30,7 @@ import { GridHeaderSortComponent } from './grid-header-sort.component';
       class="flex-1 min-w-0 h-full pl-2 pr-1 flex items-center text-sm font-semibold truncate text-left outline-none"
       [class]="labelClasses()"
       [class.pr-12]="showsControls()"
-      [title]="label()"
+      [title]="title()"
       [attr.aria-label]="name()"
       [attr.aria-haspopup]="canPick() ? 'dialog' : null"
       [attr.aria-expanded]="canPick() ? select.isOpen() : null"
@@ -66,6 +66,7 @@ export class GridHeaderReferenceComponent extends GridCellBase<GridHeaderReferen
   private readonly anchor = viewChild.required<ElementRef<HTMLElement>>('anchor');
 
   protected readonly label = computed(() => columnLabelOf(this.column()));
+  protected readonly title = computed(() => columnTitleOf(this.column()));
   protected readonly isSortable = computed(() => this.column().isSortable && !!this.grid);
   /** What the select picks from: the column's filter service or its options; null when it has neither. */
   protected readonly source = computed(() => selectSourceOf(this.column()));

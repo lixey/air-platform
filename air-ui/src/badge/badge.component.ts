@@ -15,11 +15,12 @@ const BADGE =
   template: `
     <span class="min-w-0 truncate">{{ label() }}</span>
   `,
-  host: { '[class]': 'classes()', '[attr.title]': 'label() || null' },
+  host: { '[class]': 'classes()', '[attr.title]': 'title() || label() || null' },
 })
 export class BadgeComponent {
   readonly label = input.required<string>();
   readonly color = input<UiColor | null>();
+  readonly title = input<string | null>();
 
   protected readonly classes = computed(() => `hue-${this.color() ?? 'slate'} ${BADGE}`);
 }

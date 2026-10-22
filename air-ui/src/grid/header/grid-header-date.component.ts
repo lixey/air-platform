@@ -6,7 +6,7 @@ import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { OverlayService } from '../../overlay/overlay.service';
 import { GRID_HEADER_CLEAR, GRID_HEADER_HOST, GRID_HEADER_STRIP } from '../../theme/css-classes';
 import { GridCellBase } from '../cell/grid-cell-base';
-import { columnLabelOf } from '../column/grid-column-label';
+import { columnLabelOf, columnTitleOf } from '../column/grid-column-label';
 import { temporalTypeOf } from '../column/grid-column-temporal-type';
 import { rangeOfFilter, rangeText } from '../filter/grid-date-periods';
 import { gridDateRangeOverlay } from '../filter/grid-date-range-overlay.component';
@@ -32,7 +32,7 @@ import { GridHeaderSortComponent } from './grid-header-sort.component';
       class="flex-1 min-w-0 h-full pl-2 pr-1 flex items-center text-sm font-semibold tabular-nums text-left outline-none"
       [class]="labelClasses()"
       [class.pr-16]="showsControls()"
-      [title]="label()"
+      [title]="title()"
       [attr.aria-label]="name()"
       [attr.aria-haspopup]="canPick() ? 'dialog' : null"
       [attr.aria-expanded]="canPick() ? rangeMenu.isOpen() : null"
@@ -74,6 +74,7 @@ export class GridHeaderDateComponent extends GridCellBase<GridHeaderDateModel> {
   protected readonly rangeMenu = this.overlay.menu();
 
   protected readonly label = computed(() => columnLabelOf(this.column()));
+  protected readonly title = computed(() => columnTitleOf(this.column()));
   protected readonly isSortable = computed(() => this.column().isSortable && !!this.grid);
   protected readonly canPick = computed(() => this.column().isFilterable && !!this.column().path && !!this.grid);
   protected readonly sort = computed(() => this.grid?.sortOf(this.column().path) ?? null);

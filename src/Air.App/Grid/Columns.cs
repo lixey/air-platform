@@ -186,6 +186,16 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Label = label;
     return this;
   }
+  public GridColumn<TProp> Title(string title)
+  {
+    dto.Title = title;
+    return this;
+  }
+  public GridColumn<TProp> Title(string legacyUi, string legacyDb)
+  {
+    dto.Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
+    return this;
+  }
   public GridColumn<TProp> Width(int px)
   {
     dto.Width = px;
@@ -271,7 +281,8 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     {
       Id = o.Id,
       Name = Localizer.Instance[o.Name],
-      Color = o.Color
+      Color = o.Color,
+      Title = o.Title != null ? Localizer.Instance[o.Title] : null
     }).ToList();
     return this;
   }
@@ -515,6 +526,16 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Label(label);
     return this;
   }
+  public new GridColumn<TEntity, TProp> Title(string title)
+  {
+    base.Title(title);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Title(string legacyUi, string legacyDb)
+  {
+    base.Title(legacyUi, legacyDb);
+    return this;
+  }
   public new GridColumn<TEntity, TProp> Width(int px)
   {
     base.Width(px);
@@ -708,6 +729,16 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Label(string label)
   {
     base.Label(label);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Title(string title)
+  {
+    base.Title(title);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Title(string legacyUi, string legacyDb)
+  {
+    base.Title(legacyUi, legacyDb);
     return this;
   }
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)

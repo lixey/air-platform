@@ -5,7 +5,7 @@ import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { GRID_HEADER_CLEAR, GRID_HEADER_HOST, GRID_HEADER_STRIP } from '../../theme/css-classes';
 import type { GridHeaderDefaultModel } from '../../ui-components';
 import { GridCellBase } from '../cell/grid-cell-base';
-import { columnLabelOf } from '../column/grid-column-label';
+import { columnLabelOf, columnTitleOf } from '../column/grid-column-label';
 import { defaultOperatorFor, operatorOf } from '../filter/grid-filter-operators';
 import { type GridFilter, isEmptyFilter, rulesOf } from '../filter/grid-filter-set';
 import { typedFilterValue } from '../filter/grid-filter-value';
@@ -36,6 +36,7 @@ const DEBOUNCE_MS = 400;
       class="peer flex-1 min-w-0 h-full pl-2 pr-0 bg-transparent text-sm font-semibold tabular-nums outline-none placeholder:text-muted placeholder:font-semibold truncate [&::-webkit-search-cancel-button]:hidden"
       [class]="(hasText() ? 'text-mark' : 'text-ink') + (showsControls() ? (hasText() ? ' pr-16' : ' pr-12') : '')"
       [placeholder]="label()"
+      [title]="title()"
       [attr.aria-label]="label()"
       [disabled]="!canType()"
       [readonly]="showsClause()"
@@ -74,6 +75,7 @@ export class GridHeaderDefaultComponent extends GridCellBase<GridHeaderDefaultMo
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   protected readonly label = computed(() => columnLabelOf(this.column()));
+  protected readonly title = computed(() => columnTitleOf(this.column()));
   protected readonly isSortable = computed(() => this.column().isSortable && !!this.grid);
   protected readonly isFilterable = computed(() => this.column().isFilterable && !!this.grid);
 

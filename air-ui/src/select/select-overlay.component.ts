@@ -44,7 +44,7 @@ import { SelectService } from './select.service';
               [class.bg-row-active]="index === select.activeIndex()"
               [id]="select.listId + '-' + index"
               [attr.aria-selected]="isPicked(option)"
-              [title]="option.label"
+              [title]="option.title || option.label"
               (click)="select.pick(option)"
             >
               <span class="truncate">{{ option.label }}</span>

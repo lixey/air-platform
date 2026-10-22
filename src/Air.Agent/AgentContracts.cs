@@ -9,6 +9,7 @@ public sealed class AgentOptions
   public string DefaultModel { get; set; } = "gemini-3.8-flash-low";
   public int MaxFullDictionarySize { get; set; } = 50;
   public TimeSpan SessionTtl { get; set; } = TimeSpan.FromHours(2);
+  public string? DomainKnowledge { get; set; }
 }
 
 public sealed record AgentOwnerScope(long TenantId, long? UserId);

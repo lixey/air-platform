@@ -27,7 +27,7 @@ public static class AgentPromptBuilder
     sb.AppendLine("   - Small dictionaries (<= 50 rows) are preloaded in full in `dictionaries[referenceService]`. If an existing record matches by name (respecting `referenceFilter` if present), set the field to its numeric `id`.");
     sb.AppendLine("   - Large dictionaries (> 50 rows, listed in `largeDictionaries`) only include keyword-matched rows in `dictionaries[referenceService]`. If you know the referenced entity's name (for example, a merchant/counterparty name read from a receipt photo or user prompt) and it is not in the preloaded list, simply pass its exact name string in `<air_proposal>` — the server will automatically search the full database for an existing match or stage a new-record proposal if it does not exist yet.");
     sb.AppendLine("6. When creating a new record, if a required reference field is not specified by the user, pick the most appropriate default from `dictionaries` and mention it briefly.");
-    sb.AppendLine("7. Respond with a short, friendly message (1-3 sentences) in the Preferred Language AND include one or more `<air_proposal>` JSON blocks at the end of your response using this universal schema:");
+    sb.AppendLine("7. If the user asks an informational question (e.g. how the system works, how a process or status works, or how it differs from the legacy system) without asking to create or edit a record, answer clearly and concisely in the Preferred Language and do NOT output `<air_proposal>`. When the user asks to create or edit record(s), respond with a short, friendly message (1-3 sentences) in the Preferred Language AND include one or more `<air_proposal>` JSON blocks at the end of your response using this universal schema:");
     sb.AppendLine("""
 <air_proposal>
 {
@@ -48,6 +48,14 @@ public static class AgentPromptBuilder
 """);
     sb.AppendLine("(Omit `id`, `lines`, `linesMode`, `tagsMode`, and `attachmentIds` when not applicable. Include `id` ONLY when editing an existing record.)");
     sb.AppendLine("Do NOT wrap `<air_proposal>` in markdown code fences (` ``` `) — output `<air_proposal>{...}</air_proposal>` directly.");
+
+    var domainKnowledge = request.Services?.GetService<AgentOptions>()?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
+    if (!string.IsNullOrWhiteSpace(domainKnowledge))
+    {
+      sb.AppendLine();
+      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE & LEGACY MAPPING]");
+      sb.AppendLine(domainKnowledge);
+    }
 
     if (!string.IsNullOrWhiteSpace(contextJson))
     {

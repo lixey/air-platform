@@ -75,23 +75,19 @@ public abstract partial class FormService<TEntity, TInput>
     {
       converted = val.ValueKind == JsonValueKind.Number ? val.GetInt16() : short.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var s) ? s : (short)0;
     }
-    else if (targetType == typeof(bool))
-    {
-      converted = val.ValueKind switch
-      {
-        JsonValueKind.True => true,
-        JsonValueKind.False => false,
-        JsonValueKind.String => bool.TryParse(val.GetString(), out var b) && b,
-        _ => false
-      };
-    }
-    else if (targetType == typeof(DateTime))
-    {
-      converted = val.GetDateTime();
-    }
     else
     {
-      converted = targetType == typeof(DateOnly)
+      converted = targetType == typeof(bool)
+        ? val.ValueKind switch
+        {
+          JsonValueKind.True => true,
+          JsonValueKind.False => false,
+          JsonValueKind.String => bool.TryParse(val.GetString(), out var b) && b,
+          _ => false
+        }
+        : targetType == typeof(DateTime)
+        ? val.GetDateTime()
+        : targetType == typeof(DateOnly)
         ? DateOnly.Parse(val.GetString()!)
         : targetType == typeof(TimeOnly)
         ? TimeOnly.Parse(val.GetString()!)

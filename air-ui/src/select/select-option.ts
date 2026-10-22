@@ -5,6 +5,7 @@ import { isRecord, valueAt } from '../core/json';
 export interface SelectOption extends PickedValue {
   readonly id: number;
   readonly label: string;
+  readonly title?: string;
   readonly row?: unknown;
 }
 
@@ -38,8 +39,8 @@ export function optionOfRow(row: Row, labelPaths: readonly string[] | null | und
 }
 
 /** A reference the server sent as the option that shows it. */
-export function optionOfReference(reference: Reference): SelectOption {
-  return { id: reference.id, label: reference.name };
+export function optionOfReference(reference: Reference & { readonly title?: string }): SelectOption {
+  return { id: reference.id, label: reference.name, ...(reference.title ? { title: reference.title } : {}) };
 }
 
 /** The option as the reference a form value carries. */

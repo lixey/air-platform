@@ -152,6 +152,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           Key = item.Key,
           Label = L[item.Label],
+          Title = item.Title != null ? L[item.Title] : null,
           Color = item.Color,
           Badge = badgeVal,
           IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
@@ -199,6 +200,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         Key = item.Key,
         Label = L[item.Label],
+        Title = item.Title != null ? L[item.Title] : null,
         Color = item.Color,
         Badge = badgeValue,
         IsRemembered = item.IsRemembered,
@@ -419,13 +421,19 @@ public abstract partial class GridService<TEntity, TRow>
           : L[col.Label];
       }
 
+      if (!string.IsNullOrEmpty(col.Title))
+      {
+        col.Title = L[col.Title];
+      }
+
       if (col.Options is { Count: > 0 })
       {
         col.Options = col.Options.Select(opt => new OptionDto
         {
           Id = opt.Id,
           Name = L[opt.Name],
-          Color = opt.Color
+          Color = opt.Color,
+          Title = opt.Title != null ? L[opt.Title] : null
         }).ToList();
       }
 
@@ -512,6 +520,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Key = $"status.{t.Name.ToLowerInvariant()}",
             Label = verbLabel != t.Name ? verbLabel : targetLabel,
+            Title = target?.Title != null ? L[target.Title] : null,
             Color = target?.Color,
             Service = servicePath,
             Method = $"move-status/{t.Name.ToLowerInvariant()}",

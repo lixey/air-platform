@@ -20,7 +20,11 @@ export type FormItemLabelMode = 'above' | 'none' | 'spacer';
   selector: 'ui-form-item',
   template: `
     @if (labelMode() === 'above') {
-      <label class="block mb-1 text-sm font-medium text-muted truncate" [attr.for]="id()">
+      <label
+        class="block mb-1 text-sm font-medium text-muted truncate"
+        [attr.for]="id()"
+        [attr.title]="element().title || element().label || null"
+      >
         {{ element().label }}
         @if (element().isRequired) {
           <span class="hue-red text-(--hue-ink)" aria-hidden="true">*</span>

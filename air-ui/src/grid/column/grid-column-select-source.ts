@@ -18,7 +18,14 @@ export function selectSourceOf(column: GridColumnDto): SelectSource | null {
     };
   }
   if (column.options) {
-    return { label, options: column.options.map(option => ({ id: option.id, label: option.name })) };
+    return {
+      label,
+      options: column.options.map(option => ({
+        id: option.id,
+        label: option.name,
+        ...(option.title ? { title: option.title } : {}),
+      })),
+    };
   }
   return null;
 }

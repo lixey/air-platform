@@ -20,17 +20,17 @@ import { referenceOf } from './grid-cell-format';
   imports: [BadgeComponent],
   template: `
     @if (canFilter()) {
-      <button type="button" [class]="buttonClasses()" [title]="texts.of('FilterBy', text())" (click)="filter($event)">
+      <button type="button" [class]="buttonClasses()" [title]="optionTitle() || texts.of('FilterBy', text())" (click)="filter($event)">
         @if (color(); as hue) {
-          <ui-badge [label]="text()" [color]="hue" />
+          <ui-badge [label]="text()" [color]="hue" [title]="optionTitle()" />
         } @else {
           {{ text() }}
         }
       </button>
     } @else if (color(); as hue) {
-      <ui-badge [label]="text()" [color]="hue" />
+      <ui-badge [label]="text()" [color]="hue" [title]="optionTitle()" />
     } @else {
-      <span class="block truncate" [title]="text()">{{ text() }}</span>
+      <span class="block truncate" [title]="optionTitle() || text()">{{ text() }}</span>
     }
   `,
   host: { class: 'flex items-center h-full min-w-0 px-2' },
@@ -45,6 +45,11 @@ export class GridCellSelectComponent extends GridCellBase<GridCellSelectModel> {
   protected readonly color = computed(() => {
     const reference = this.reference();
     return reference ? (optionOf(this.column(), reference.id)?.color ?? null) : null;
+  });
+
+  protected readonly optionTitle = computed(() => {
+    const reference = this.reference();
+    return reference ? (optionOf(this.column(), reference.id)?.title ?? null) : null;
   });
 
   protected readonly canFilter = computed(

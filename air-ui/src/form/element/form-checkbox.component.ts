@@ -12,7 +12,7 @@ import { FormItemComponent } from './form-item.component';
   template: `
     <ui-form-item [element]="element()" labelMode="spacer">
       <ui-checkbox [id]="id()" [formField]="field()">
-        <span class="truncate">{{ element().label }}</span>
+        <span class="truncate" [attr.title]="element().title || element().label || null">{{ element().label }}</span>
         @if (element().isRequired) {
           <span class="hue-red text-(--hue-ink)" aria-hidden="true">*</span>
         }

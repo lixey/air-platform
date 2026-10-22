@@ -5,6 +5,7 @@ public sealed class ModuleMenuNode
   public Feature? Feature { get; init; }
   public string? Handle { get; init; }
   public string? Title { get; init; }
+  public string? Tooltip { get; init; }
   public string? Icon { get; init; }
   public bool IsHidden { get; init; }
   public bool IsSeparator { get; init; }
@@ -37,13 +38,14 @@ public sealed class ModuleMenuBuilder
 {
   private readonly List<ModuleMenuNode> _nodes = [];
 
-  public ModuleMenuBuilder Route(Feature feature, string? title = null, string? icon = null)
+  public ModuleMenuBuilder Route(Feature feature, string? title = null, string? icon = null, string? tooltip = null)
   {
     _nodes.Add(new ModuleMenuNode
     {
       Feature = feature,
       Handle = feature.CleanName,
       Title = title ?? feature.Name,
+      Tooltip = tooltip ?? feature.Title,
       Icon = icon
     });
     return this;

@@ -58,6 +58,7 @@ public class Feature
 
   public string Label { get; set; } = string.Empty;
   public string Name { get; set; } = string.Empty;
+  public string? Title { get; set; }
 
   private static string PascalToSpaced(string s) =>
     System.Text.RegularExpressions.Regex.Replace(s, "([a-z])([A-Z])", "$1 $2");
@@ -101,6 +102,7 @@ public class Feature
     Module = source.Module;
     Name = source.Name;
     Label = source.Label;
+    Title = source.Title;
     CleanName = source.CleanName;
     ServiceType = source.ServiceType;
     Path = source.Path;
@@ -160,6 +162,18 @@ public class Feature
     return this;
   }
 
+  public Feature WithTitle(string title)
+  {
+    Title = title;
+    return this;
+  }
+
+  public Feature WithTitle(string legacyUi, string legacyDb)
+  {
+    Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
+    return this;
+  }
+
   public Feature<TAccess> WithAccess<TAccess>() where TAccess : FeatureAccess, new()
   {
     var typed = new Feature<TAccess>(this);
@@ -192,6 +206,18 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
   public new Feature<TAccess> AllowAgent(bool allow = true)
   {
     base.AllowAgent(allow);
+    return this;
+  }
+
+  public new Feature<TAccess> WithTitle(string title)
+  {
+    base.WithTitle(title);
+    return this;
+  }
+
+  public new Feature<TAccess> WithTitle(string legacyUi, string legacyDb)
+  {
+    base.WithTitle(legacyUi, legacyDb);
     return this;
   }
 }

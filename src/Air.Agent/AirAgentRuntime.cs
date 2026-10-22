@@ -2,6 +2,8 @@ namespace Air.Agent;
 
 public static class AirAgentRuntime
 {
+  public static string? SystemPromptSupplement { get; set; }
+
   public static IReadOnlyList<GridCreateDescriptor> DiscoverForms(PlatformDbContext db, PlatformAppService app) =>
     AgentFeatureRegistry.DiscoverForms(db, app);
 

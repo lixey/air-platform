@@ -175,4 +175,7 @@ public sealed class OptionDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [OneOf(typeof(UiColor))]
   public string? Color { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Title { get; init; }
 }

@@ -11,11 +11,11 @@ public class Elements
   public IReadOnlyList<FormTabDto> Tabs => _tabs;
   public IReadOnlyList<ChildGridBuilder> Children => _children;
 
-  public void AddTab(string label, string? key = null)
+  public void AddTab(string label, string? key = null, string? title = null)
   {
     var tabKey = key ?? label.ToLowerInvariant().Replace(' ', '-');
     _currentTab = tabKey;
-    _tabs.Add(new FormTabDto { Key = tabKey, Label = label });
+    _tabs.Add(new FormTabDto { Key = tabKey, Label = label, Title = title });
   }
 
   public void AddSeparator(string? label = null)
@@ -236,6 +236,16 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Label = label;
     return this;
   }
+  public FormElement<TEntity, TProp> Title(string title)
+  {
+    dto.Title = title;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Title(string legacyUi, string legacyDb)
+  {
+    dto.Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
+    return this;
+  }
   public FormElement<TEntity, TProp> Span(int cols)
   {
     _hasSpan = true;
@@ -348,7 +358,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
       {
         Id = o.Id,
         Name = Localizer.Instance[o.Name],
-        Color = o.Color
+        Color = o.Color,
+        Title = o.Title != null ? Localizer.Instance[o.Title] : null
       }).ToList()
     };
     return this;
@@ -697,6 +708,18 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   public new FormReferenceElement<TEntity, TProp, TSource> Label(string label)
   {
     base.Label(label);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Title(string title)
+  {
+    base.Title(title);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Title(string legacyUi, string legacyDb)
+  {
+    base.Title(legacyUi, legacyDb);
     return this;
   }
 

@@ -2,7 +2,7 @@ import { Component, computed } from '@angular/core';
 import type { GridHeaderLabelModel } from '../../core/generated/contracts';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { GridCellBase } from '../cell/grid-cell-base';
-import { headerLabelOf } from '../column/grid-column-label';
+import { headerLabelOf, headerTitleOf } from '../column/grid-column-label';
 import { fieldOf } from '../filter/grid-filter-set';
 
 /**
@@ -15,10 +15,10 @@ import { fieldOf } from '../filter/grid-filter-set';
   imports: [UiIconDirective],
   template: `
     @if (icon(); as icon) {
-      <i [icon]="icon" aria-hidden="true"></i>
+      <i [icon]="icon" aria-hidden="true" [title]="title()"></i>
       <span class="sr-only">{{ label() }}</span>
     } @else {
-      <span class="block overflow-hidden whitespace-nowrap font-medium" [title]="label()">{{ label() }}</span>
+      <span class="block overflow-hidden whitespace-nowrap font-medium" [title]="title()">{{ label() }}</span>
     }
   `,
   host: {
@@ -32,6 +32,7 @@ export class GridHeaderLabelComponent extends GridCellBase<GridHeaderLabelModel>
   protected readonly header = computed(() => this.cell().header);
 
   protected readonly label = computed(() => headerLabelOf(this.cell()));
+  protected readonly title = computed(() => headerTitleOf(this.cell()));
 
   protected readonly icon = computed(() => this.model()?.icon ?? null);
 

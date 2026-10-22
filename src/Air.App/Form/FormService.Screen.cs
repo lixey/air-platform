@@ -79,7 +79,12 @@ public abstract partial class FormService<TEntity, TInput>
       Service = servicePath,
       Elements = elements.List.ToList(),
       Tabs = elements.Tabs.Count > 0
-        ? elements.Tabs.Select(t => new FormTabDto { Key = t.Key, Label = L[t.Label] }).ToList()
+        ? elements.Tabs.Select(t => new FormTabDto
+        {
+          Key = t.Key,
+          Label = L[t.Label],
+          Title = t.Title != null ? L[t.Title] : null
+        }).ToList()
         : null,
       IsReadOnly = IsReadOnly,
       DirtyDialog = new OverlayDirtyModel
@@ -186,7 +191,8 @@ public abstract partial class FormService<TEntity, TInput>
       {
         Id = s.Id,
         Name = L[s.Name],
-        Color = s.Color
+        Color = s.Color,
+        Title = s.Title != null ? L[s.Title] : null
       }).ToList();
 
       foreach (var el in elements.List)
@@ -224,6 +230,11 @@ public abstract partial class FormService<TEntity, TInput>
           : L[el.Label];
       }
 
+      if (!string.IsNullOrEmpty(el.Title))
+      {
+        el.Title = L[el.Title];
+      }
+
       if (!string.IsNullOrEmpty(el.Placeholder))
       {
         el.Placeholder = L[el.Placeholder];
@@ -241,7 +252,13 @@ public abstract partial class FormService<TEntity, TInput>
           select.Options = select.Options
             .Select(opt => string.IsNullOrEmpty(opt.Name)
               ? opt
-              : new OptionDto { Id = opt.Id, Name = L[opt.Name], Color = opt.Color })
+              : new OptionDto
+              {
+                Id = opt.Id,
+                Name = L[opt.Name],
+                Color = opt.Color,
+                Title = opt.Title != null ? L[opt.Title] : null
+              })
             .ToList();
         }
 
@@ -656,6 +673,7 @@ public abstract partial class FormService<TEntity, TInput>
           Group = FormTab.Group,
           Value = tab.Key,
           Label = L[tab.Label],
+          Title = tab.Title != null ? L[tab.Title] : null,
           Variant = ButtonVariant.Soft,
           Path = "form"
         });
@@ -721,6 +739,7 @@ public abstract partial class FormService<TEntity, TInput>
           {
             Key = $"status.{transition.Name.ToLowerInvariant()}",
             Label = verbLabel != transition.Name ? verbLabel : targetLabel,
+            Title = targetStatus?.Title != null ? L[targetStatus.Title] : null,
             Color = targetStatus?.Color,
             Service = servicePath,
             Method = $"move-status/{transition.Name.ToLowerInvariant()}",

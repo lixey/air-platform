@@ -31,7 +31,7 @@ import { LayoutPinsService } from './layout-pins.service';
       <a
         [routerLink]="'/' + path()"
         [attr.aria-current]="isCurrent() ? 'page' : null"
-        [attr.title]="leaf().name"
+        [attr.title]="leaf().title || leaf().name"
         class="flex min-w-0 flex-1 items-center py-1.5 pl-2"
         [class.pr-2]="!isPinned()"
         [class.pr-6]="isPinned()"
