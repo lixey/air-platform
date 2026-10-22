@@ -31,8 +31,20 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public PlatformDbContext DbContext => db;
   public PlatformAppService? PlatformApp { get; private set; } = app;
-  protected Auth.IUserContext? User => PlatformApp?.User;
+  protected Auth.IUserContext User => PlatformApp?.User ?? new Auth.UserContext(new HttpContextAccessor());
   protected Localizer L => Localizer.Instance.For(Feature.Module);
+
+  public sealed class UserRestrictions
+  {
+    internal List<Expression<Func<TEntity, bool>>> Filters { get; } = [];
+
+    public void Restrict(Expression<Func<TEntity, bool>> predicate)
+    {
+      Filters.Add(predicate);
+    }
+  }
+
+  protected virtual void SetUserRestrictions(UserRestrictions restrictions) { }
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
 
@@ -643,6 +655,28 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return this;
     }
 
+    public NavActionBuilder<TRequest> Default(Func<TRequest, CancellationToken, Task> provider)
+    {
+      entry.DefaultProvider = async ct =>
+      {
+        var req = new TRequest();
+        await provider(req, ct);
+        return req;
+      };
+      return this;
+    }
+
+    public NavActionBuilder<TRequest> Default(Action<TRequest> provider)
+    {
+      entry.DefaultProvider = _ =>
+      {
+        var req = new TRequest();
+        provider(req);
+        return Task.FromResult<object?>(req);
+      };
+      return this;
+    }
+
     public new NavActionBuilder<TRequest> AllowReadOnly(bool allow = true)
     {
       base.AllowReadOnly(allow);
@@ -750,6 +784,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       Actions.Add(entry);
       return new NavActionBuilder<TRequest>(entry, this);
     }
+
+    public void AvailableWhen(
+      Delegate action,
+      Expression<Func<TEntity, bool>> condition,
+      string reason) =>
+      AvailableWhen(condition, reason, action);
 
     public void AvailableWhen(
       Expression<Func<TEntity, bool>> condition,

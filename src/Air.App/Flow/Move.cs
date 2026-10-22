@@ -1,6 +1,6 @@
 namespace Air.App.Flow;
 
-public sealed class Move<TEntity>
+public class Move<TEntity>
 {
   public required TEntity Record { get; init; }
   public required long From { get; init; }
@@ -12,5 +12,6 @@ public sealed class Move<TEntity>
   public required IMutationContext Context { get; init; }
   public object? Input { get; init; }
 
-  public TInput? InputOf<TInput>() where TInput : class => Input as TInput;
+  public TInput InputOf<TInput>() where TInput : class =>
+    Input as TInput ?? throw new InvalidOperationException($"Expected transition input of type '{typeof(TInput).Name}'.");
 }

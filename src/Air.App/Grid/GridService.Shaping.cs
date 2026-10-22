@@ -6,6 +6,8 @@ public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
   where TRow : class
 {
+  protected virtual object ShapeRow(TRow row) => row;
+
   protected virtual object ShapeRow(
     TRow row,
     IReadOnlyList<GridColumnDto> columns,
@@ -15,6 +17,8 @@ public abstract partial class GridService<TEntity, TRow>
     {
       return row!;
     }
+
+    _ = ShapeRow(row);
 
     var shaped = new Dictionary<string, object?>(StringComparer.Ordinal);
     if (PropertyAccessorCache.GetValue(row, "Id") is { } idVal)

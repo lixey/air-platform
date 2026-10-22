@@ -15,6 +15,13 @@ public abstract partial class GridService<TEntity, TRow>
     SetQuery(queryDeclaration);
 
     var query = BaseQuery(db);
+    var restrictions = new UserRestrictions();
+    SetUserRestrictions(restrictions);
+    foreach (var restriction in restrictions.Filters)
+    {
+      query = query.Where(restriction);
+    }
+
     if (ParentId.HasValue && parent.FilterFunc != null)
     {
       query = parent.FilterFunc(query, ParentId.Value);
@@ -129,6 +136,132 @@ public abstract partial class GridService<TEntity, TRow>
         return Task.CompletedTask;
       },
       cancellationToken);
+
+  protected async Task<GridActionDto> AttachPickedAsync(
+    GridPickRequest request,
+    Action<TEntity, long> bindPicked,
+    Func<TEntity> factory,
+    Func<GridBatchContext<TEntity>, CancellationToken, Task> afterAttach,
+    CancellationToken cancellationToken = default)
+  {
+    ParentId = request.ParentId;
+    if (IsReadOnly)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+
+    var target = factory();
+    if (target is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
+    {
+      tenantEntity.TenantId = tid;
+    }
+
+    if (parent.BoundProperty != null && ParentId is > 0 && parent.BoundProperty.CanWrite)
+    {
+      parent.BoundProperty.SetValue(target, ParentId.Value);
+    }
+
+    bindPicked(target, request.PickedId);
+    db.Set<TEntity>().Add(target);
+
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+      await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+      var ctx = new GridBatchContext<TEntity>([request.PickedId], [target], ct => db.SaveChangesAsync(ct), db);
+      await afterAttach(ctx, cancellationToken);
+      if (ctx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(cancellationToken);
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = FormatErrors(ctx.Errors, [target], MessageType.Error)
+        };
+      }
+
+      if (db.ChangeTracker.HasChanges())
+      {
+        await db.SaveChangesAsync(cancellationToken);
+      }
+
+      await tx.CommitAsync(cancellationToken);
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Committed,
+        Id = target.Id,
+        Count = 1,
+        OpenScreen = ctx.OpenScreen,
+        OpenId = ctx.OpenId
+      };
+    });
+  }
+
+  protected async Task<GridActionDto> ReplacePickedAsync(
+    GridPickRequest request,
+    Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default)
+  {
+    ParentId = request.ParentId;
+    if (IsReadOnly)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+      };
+    }
+
+    var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault() ?? 0;
+    var target = targetId > 0
+      ? await RestrictedQuery().AsTracking().FirstOrDefaultAsync(e => e.Id == targetId, cancellationToken)
+      : null;
+    if (target == null)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
+      };
+    }
+
+    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    {
+      await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+      var ctx = new GridBatchContext<TEntity>([request.PickedId], [target], ct => db.SaveChangesAsync(ct), db);
+      await handler(ctx, cancellationToken);
+      if (ctx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(cancellationToken);
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = FormatErrors(ctx.Errors, [target], MessageType.Error)
+        };
+      }
+
+      if (db.ChangeTracker.HasChanges())
+      {
+        await db.SaveChangesAsync(cancellationToken);
+      }
+
+      await tx.CommitAsync(cancellationToken);
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Committed,
+        Id = target.Id,
+        Count = 1,
+        OpenScreen = ctx.OpenScreen,
+        OpenId = ctx.OpenId
+      };
+    });
+  }
 
   private async Task<GridActionDto> ExecutePickedAsync<TPicked>(
     GridPickRequest request,
@@ -251,6 +384,18 @@ public abstract partial class GridService<TEntity, TRow>
       cancellationToken,
       actionName
     );
+  }
+
+  protected Task<GridActionDto> ExecuteBatchAsync(
+    GridRequest request,
+    IReadOnlyList<long> selectedIds,
+    Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default,
+    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
+  {
+    request.SelectedIds = [.. selectedIds];
+    request.Id = null;
+    return ExecuteBatchAsync(request, handler, cancellationToken, actionName);
   }
 
   protected async Task<GridActionDto> ExecuteBatchAsync(

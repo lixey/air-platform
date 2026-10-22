@@ -67,13 +67,11 @@ public abstract partial class FormService<TEntity, TInput>
     {
       converted = val.ValueKind == JsonValueKind.Number ? val.GetInt32() : int.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var i) ? i : 0;
     }
-    else if (targetType == typeof(long))
-    {
-      converted = val.ValueKind == JsonValueKind.Number ? val.GetInt64() : long.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var l) ? l : 0L;
-    }
     else
     {
-      converted = targetType == typeof(short)
+      converted = targetType == typeof(long)
+        ? val.ValueKind == JsonValueKind.Number ? val.GetInt64() : long.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var l) ? l : 0L
+        : targetType == typeof(short)
         ? val.ValueKind == JsonValueKind.Number ? val.GetInt16() : short.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var s) ? s : (short)0
         : targetType == typeof(bool)
         ? val.ValueKind switch

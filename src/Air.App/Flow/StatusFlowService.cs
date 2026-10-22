@@ -3,6 +3,70 @@ namespace Air.App.Flow;
 public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : IRecordStatuses<TEntity>
   where TEntity : class, IEntity, new()
 {
+  public sealed class Flow : Flow<TEntity>;
+
+  public sealed class Move : Move<TEntity>;
+
+  public sealed class Follow
+  {
+    public required TEntity Record { get; init; }
+    public required IMutationContext Context { get; init; }
+  }
+
+  public sealed class Transition(string name, IReadOnlyList<long> from, long to) : Transition<TEntity>(name, from, to)
+  {
+    public new Transition When(Func<TEntity, bool> guard, string refusal, string? path = null)
+    {
+      base.When(guard, refusal, path);
+      return this;
+    }
+
+    public new Transition When(Func<Move<TEntity>, CancellationToken, Task<bool>> guard, string refusal, string? path = null)
+    {
+      base.When(guard, refusal, path);
+      return this;
+    }
+
+    public Transition When(Func<Move, CancellationToken, Task<bool>> guard, string refusal, string? path = null)
+    {
+      ArgumentNullException.ThrowIfNull(guard);
+      base.When((m, ct) => guard((Move)m, ct), refusal, path);
+      return this;
+    }
+
+    public new Transition AvailableWhen(Expression<Func<TEntity, bool>> condition, string reason)
+    {
+      base.AvailableWhen(condition, reason);
+      return this;
+    }
+
+    public new Transition Do(Func<Move<TEntity>, CancellationToken, Task> effect)
+    {
+      base.Do(effect);
+      return this;
+    }
+
+    public Transition Do(Func<Move, CancellationToken, Task> effect)
+    {
+      ArgumentNullException.ThrowIfNull(effect);
+      base.Do((m, ct) => effect((Move)m, ct));
+      return this;
+    }
+
+    public new Transition Ask<TInput>(Action<ActionInput<TInput>> elements, Func<TInput, string?>? note = null)
+      where TInput : class, new()
+    {
+      base.Ask(elements, note);
+      return this;
+    }
+
+    public new Transition Confirm(string question)
+    {
+      base.Confirm(question);
+      return this;
+    }
+  }
+
   protected PlatformDbContext Db => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
@@ -45,94 +109,195 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     return (TFlowService)Activator.CreateInstance(typeof(TFlowService), Db)!;
   }
 
-  public sealed class ChildRule(Func<IMutationContext, IReadOnlyList<TEntity>, CancellationToken, Task> executor)
+  public class ChildRule(Func<IMutationContext, IReadOnlyList<TEntity>, CancellationToken, Task> executor)
   {
-    private readonly List<Func<Move<TEntity>, CancellationToken, Task>> _effects = [];
+    private readonly List<Func<Move<TEntity>, CancellationToken, Task>> _moveEffects = [];
+    private readonly List<Func<Follow, CancellationToken, Task>> _followEffects = [];
 
-    internal IReadOnlyList<Func<Move<TEntity>, CancellationToken, Task>> Effects => _effects;
+    internal IReadOnlyList<Func<Move<TEntity>, CancellationToken, Task>> Effects => _moveEffects;
+    internal IReadOnlyList<Func<Follow, CancellationToken, Task>> FollowEffects => _followEffects;
 
     public ChildRule Do(Func<Move<TEntity>, CancellationToken, Task> effect)
     {
-      _effects.Add(effect);
+      _moveEffects.Add(effect);
       return this;
     }
 
-    internal Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken ct) =>
-      executor(context, records, ct);
+    public ChildRule Do(Func<Follow, CancellationToken, Task> effect)
+    {
+      _followEffects.Add(effect);
+      return this;
+    }
+
+    internal async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken ct)
+    {
+      await executor(context, records, ct);
+      if (context.Errors.Count > 0 || _followEffects.Count == 0)
+      {
+        return;
+      }
+
+      foreach (var record in records)
+      {
+        var follow = new Follow { Record = record, Context = context };
+        foreach (var effect in _followEffects)
+        {
+          await effect(follow, ct);
+          if (context.Errors.Count > 0)
+          {
+            return;
+          }
+        }
+      }
+
+      await context.FlushAsync(ct);
+    }
   }
 
-  public sealed class ChildFlowRuleBuilder<TChild>(
-    StatusFlowService<TEntity> parentFlow,
-    StatusFlowService<TChild> childFlow,
-    Expression<Func<TChild, long>> parentKey)
+  public sealed class ChildFlowRuleBuilder<TChild> : ChildRule
     where TChild : class, IEntity, new()
   {
-    public ChildRule Give(
+    private readonly List<(
+      Transition<TEntity> Transition,
+      Expression<Func<TChild, bool>>? AnyPredicate,
+      Expression<Func<TChild, bool>>? RestPredicate,
+      IReadOnlyList<long>? AnyStatuses,
+      IReadOnlyList<long>? RestStatuses
+    )> _clauses = [];
+
+    public ChildFlowRuleBuilder(
+      StatusFlowService<TEntity> parentFlow,
+      StatusFlowService<TChild> childFlow,
+      Expression<Func<TChild, long>> parentKey)
+      : base((context, parents, ct) => Task.CompletedTask)
+    {
+      _parentFlow = parentFlow;
+      _childFlow = childFlow;
+      _parentKey = parentKey;
+    }
+
+    private readonly StatusFlowService<TEntity> _parentFlow;
+    private readonly StatusFlowService<TChild> _childFlow;
+    private readonly Expression<Func<TChild, long>> _parentKey;
+
+    public ChildFlowRuleBuilder<TChild> Give(
       Transition<TEntity> transition,
       Expression<Func<TChild, bool>>? any = null,
       Expression<Func<TChild, bool>>? rest = null)
     {
-      ChildRule? rule = null;
-      rule = new ChildRule(async (context, parents, ct) =>
-      {
-        if (parents.Count == 0)
-        {
-          return;
-        }
+      _clauses.Add((transition, any, rest, null, null));
+      return this;
+    }
 
-        parentFlow.EnsureDeclared();
-        childFlow.EnsureDeclared();
+    public ChildFlowRuleBuilder<TChild> Give(
+      Transition<TEntity> transition,
+      IReadOnlyList<long> any,
+      IReadOnlyList<long>? rest = null)
+    {
+      _clauses.Add((transition, null, null, any, rest));
+      return this;
+    }
+
+    internal new async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> parents, CancellationToken ct)
+    {
+      if (parents.Count == 0)
+      {
+        return;
+      }
+
+      _parentFlow.EnsureDeclared();
+      _childFlow.EnsureDeclared();
+
+      if (_clauses.Count > 0)
+      {
         var parentIds = parents.Select(p => p.Id).Distinct().ToList();
-        var keyCompiled = parentKey.Compile();
-        var param = parentKey.Parameters[0];
+        var keyCompiled = _parentKey.Compile();
+        var param = _parentKey.Parameters[0];
         var containsMethod = typeof(Enumerable).GetMethods(BindingFlags.Static | BindingFlags.Public)
           .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
           .MakeGenericMethod(typeof(long));
         var filterExpr = Expression.Lambda<Func<TChild, bool>>(
-          Expression.Call(containsMethod, Expression.Constant(parentIds), parentKey.Body),
+          Expression.Call(containsMethod, Expression.Constant(parentIds), _parentKey.Body),
           param);
 
-        var allChildren = await parentFlow.Db.Set<TChild>()
+        var allChildren = await _parentFlow.Db.Set<TChild>()
           .Where(filterExpr)
           .ToListAsync(ct);
 
         var byParent = allChildren.ToLookup(keyCompiled);
-        var anyPred = any?.Compile();
-        var restPred = rest?.Compile();
-        var toMove = new List<TEntity>();
+        var childStatusReader = _childFlow.StatusMember.Compile();
 
         foreach (var parent in parents)
         {
-          if (!parentFlow.Allows(parent, transition))
-          {
-            continue;
-          }
-
           var children = byParent[parent.Id].ToList();
           if (children.Count == 0)
           {
             continue;
           }
 
-          if (anyPred != null && !children.Any(anyPred))
+          foreach (var clause in _clauses)
           {
-            continue;
-          }
+            if (!_parentFlow.Allows(parent, clause.Transition))
+            {
+              continue;
+            }
 
-          if (restPred != null && !children.Where(c => anyPred == null || !anyPred(c)).All(restPred))
-          {
-            continue;
-          }
+            if (clause.AnyStatuses != null)
+            {
+              var childStatuses = children.Select(childStatusReader).ToHashSet();
+              if (!clause.AnyStatuses.Any(childStatuses.Contains))
+              {
+                continue;
+              }
 
-          toMove.Add(parent);
+              var allowed = clause.RestStatuses != null
+                ? clause.AnyStatuses.Concat(clause.RestStatuses).ToHashSet()
+                : clause.AnyStatuses.ToHashSet();
+              if (!childStatuses.All(allowed.Contains))
+              {
+                continue;
+              }
+            }
+            else
+            {
+              var anyPred = clause.AnyPredicate?.Compile();
+              var restPred = clause.RestPredicate?.Compile();
+              if (anyPred != null && !children.Any(anyPred))
+              {
+                continue;
+              }
+
+              if (restPred != null && !children.Where(c => anyPred == null || !anyPred(c)).All(restPred))
+              {
+                continue;
+              }
+            }
+
+            await _parentFlow.ExecuteRuleTransitionAsync(context, [parent], clause.Transition, Effects, ct);
+            break;
+          }
         }
+      }
 
-        if (toMove.Count > 0)
+      if (context.Errors.Count > 0 || FollowEffects.Count == 0)
+      {
+        return;
+      }
+
+      foreach (var record in parents)
+      {
+        var follow = new Follow { Record = record, Context = context };
+        foreach (var effect in FollowEffects)
         {
-          await parentFlow.ExecuteRuleTransitionAsync(context, toMove, transition, rule!.Effects, ct);
+          await effect(follow, ct);
+          if (context.Errors.Count > 0)
+          {
+            return;
+          }
         }
-      });
-      return rule;
+      }
+
+      await context.FlushAsync(ct);
     }
   }
 
@@ -162,6 +327,13 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     CancellationToken cancellationToken = default) =>
     MoveInternalAsync(context, records, transition, null, note, [], cancellationToken);
 
+  public Task MoveAsync(
+    IMutationContext context,
+    IReadOnlyList<TEntity> records,
+    Transition<TEntity> transition,
+    CancellationToken cancellationToken) =>
+    MoveInternalAsync(context, records, transition, null, null, [], cancellationToken);
+
   public async Task FollowAsync(
     IMutationContext context,
     IEnumerable<TEntity> records,
@@ -174,7 +346,22 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       return;
     }
 
-    await rule.ExecuteAsync(context, list, cancellationToken);
+    await DispatchRuleAsync(rule, context, list, cancellationToken);
+  }
+
+  private static Task DispatchRuleAsync(
+    ChildRule rule,
+    IMutationContext context,
+    IReadOnlyList<TEntity> records,
+    CancellationToken ct)
+  {
+    var specific = rule.GetType().GetMethod("ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+    if (specific != null)
+    {
+      return (Task)specific.Invoke(rule, [context, records, ct])!;
+    }
+
+    return rule.ExecuteAsync(context, records, ct);
   }
 
   public async Task FollowMovesAsync(
@@ -199,7 +386,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
 
     foreach (var rule in _childRules)
     {
-      await rule.ExecuteAsync(context, parents, cancellationToken);
+      await DispatchRuleAsync(rule, context, parents, cancellationToken);
       if (context.Errors.Count > 0)
       {
         return;
@@ -265,7 +452,8 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
   public string NameOf(long status) =>
     Statuses.FirstOrDefault(option => option.Id == status)?.Name ?? status.ToString();
 
-  protected abstract void SetFlow(Flow<TEntity> flow);
+  protected virtual void SetFlow(Flow<TEntity> flow) { }
+  protected virtual void SetFlow(Flow flow) => SetFlow((Flow<TEntity>)flow);
 
   protected TransitionSource<TEntity> From(params long[] statuses)
   {
@@ -278,9 +466,13 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
   }
 
   protected virtual Task OnMovedAsync(Move<TEntity> move, CancellationToken cancellationToken) => Task.CompletedTask;
+  protected virtual Task OnMovedAsync(Move move, CancellationToken cancellationToken) => OnMovedAsync((Move<TEntity>)move, cancellationToken);
 
   protected virtual ValueTask<string> RefusalAsync(Transition<TEntity> transition, long status, CancellationToken cancellationToken) =>
     new(L["StatusRefusesMove", L[NameOf(status)], L[NameOf(transition.To)]]);
+
+  protected virtual ValueTask<string> RefusalAsync(Transition transition, long status, CancellationToken cancellationToken) =>
+    RefusalAsync((Transition<TEntity>)transition, status, cancellationToken);
 
   protected virtual Task LockAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken cancellationToken) =>
     Task.CompletedTask;
@@ -344,7 +536,9 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       var currentStatus = statusReader(record);
       if (!transition.From.Contains(currentStatus))
       {
-        var refusal = await RefusalAsync(transition, currentStatus, cancellationToken);
+        var refusal = transition is Transition nestedTransition
+          ? await RefusalAsync(nestedTransition, currentStatus, cancellationToken)
+          : await RefusalAsync(transition, currentStatus, cancellationToken);
         context.AddError("status.transition", refusal, record.Id);
         return;
       }
@@ -368,7 +562,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     foreach (var record in records)
     {
       var currentStatus = statusReader(record);
-      var move = new Move<TEntity>
+      var move = new Move
       {
         Record = record,
         From = currentStatus,
@@ -380,7 +574,6 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         Input = input
       };
 
-      // Check guards
       foreach (var (passes, refusal, path) in transition.Guards)
       {
         if (!await passes(move, cancellationToken))
@@ -390,10 +583,8 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         }
       }
 
-      // Update entity status
       _statusSetter?.Invoke(record, transition.To);
 
-      // Execute effects
       var errorsBefore = context.Errors.Count;
       foreach (var effect in transition.Effects)
       {
@@ -415,7 +606,6 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         }
       }
 
-      // Record move event (history)
       await OnMovedAsync(move, cancellationToken);
     }
 
@@ -432,7 +622,6 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
           continue;
         }
 
-        // Collect parent key IDs for follower entity type
         var followerBase = followerType.BaseType;
         while (followerBase != null && (!followerBase.IsGenericType || followerBase.GetGenericTypeDefinition() != typeof(StatusFlowService<>)))
         {
@@ -471,7 +660,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     }
 
     _isDeclared = true;
-    var flow = new Flow<TEntity>();
+    var flow = new Flow();
     SetFlow(flow);
 
     _statuses.AddRange(flow.DeclaredStatuses);
@@ -490,9 +679,8 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       }
     }
 
-    // Reflect transitions and child rules from properties
     var allProps = GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-    foreach (var p in allProps.Where(p => p.PropertyType == typeof(Transition<TEntity>)))
+    foreach (var p in allProps.Where(p => typeof(Transition<TEntity>).IsAssignableFrom(p.PropertyType)))
     {
       if (p.GetValue(this) is Transition<TEntity> t)
       {
@@ -504,7 +692,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       }
     }
 
-    foreach (var p in allProps.Where(p => p.PropertyType == typeof(ChildRule)))
+    foreach (var p in allProps.Where(p => typeof(ChildRule).IsAssignableFrom(p.PropertyType)))
     {
       if (p.GetValue(this) is ChildRule rule)
       {

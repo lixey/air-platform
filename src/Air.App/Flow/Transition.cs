@@ -1,13 +1,13 @@
 namespace Air.App.Flow;
 
-public sealed class Transition<TEntity>
+public class Transition<TEntity>
 {
   private readonly List<(Func<Move<TEntity>, CancellationToken, Task<bool>> Passes, string Refusal, string? Path)> _guards = [];
   private readonly List<Func<Move<TEntity>, CancellationToken, Task>> _effects = [];
   private readonly List<RecordAvailability> _availability = [];
   private Func<object, string?>? _note;
 
-  internal Transition(string name, IReadOnlyList<long> from, long to)
+  protected internal Transition(string name, IReadOnlyList<long> from, long to)
   {
     Name = name;
     From = from;

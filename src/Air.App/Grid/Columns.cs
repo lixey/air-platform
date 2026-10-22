@@ -239,6 +239,11 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.IsHidden = hidden;
     return this;
   }
+  public GridColumn<TProp> Disabled(bool disabled = true)
+  {
+    dto.IsDisabled = disabled;
+    return this;
+  }
   public GridColumn<TProp> Cell(CellModel cell)
   {
     dto.Cell = cell;
@@ -316,6 +321,43 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   {
     dto.Type = UiFieldType.Number;
     dto.Cell = new GridCellNumberModel();
+    return this;
+  }
+
+  public GridColumn<TProp> Decimals(int decimals)
+  {
+    switch (dto.Cell)
+    {
+      case GridCellNumberModel num:
+        num.Decimals = decimals;
+        break;
+      case GridCellMoneyModel money:
+        money.Decimals = decimals;
+        break;
+      case GridCellPercentModel pct:
+        pct.Decimals = decimals;
+        break;
+      default:
+        dto.Type = UiFieldType.Number;
+        dto.Cell = new GridCellNumberModel { Decimals = decimals };
+        break;
+    }
+
+    return this;
+  }
+
+  public GridColumn<TProp> Grouped(bool isGrouped = true)
+  {
+    if (dto.Cell is GridCellNumberModel num)
+    {
+      num.IsGrouped = isGrouped;
+    }
+    else
+    {
+      dto.Type = UiFieldType.Number;
+      dto.Cell = new GridCellNumberModel { IsGrouped = isGrouped };
+    }
+
     return this;
   }
 
@@ -407,7 +449,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
-  public GridColumn<TProp> AsReference<TGridService, TSource>()
+  public GridColumn<TProp> AsReference<TGridService, TSource>(params Expression<Func<TSource, object?>>[] labelPaths)
   {
     StripDefaultIdLabel();
     dto.Type = UiFieldType.Text;
@@ -417,6 +459,14 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
     {
       dto.FilterPath = dto.Path + "Id";
+    }
+
+    if (labelPaths is { Length: > 0 })
+    {
+      dto.ReferenceLabelPaths = labelPaths
+        .Select(e => Columns.ToCamelPath(MemberPath.Of(e)))
+        .Where(s => !string.IsNullOrEmpty(s))
+        .ToList();
     }
 
     return this;
@@ -591,6 +641,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Hidden(hidden);
     return this;
   }
+  public new GridColumn<TEntity, TProp> Disabled(bool disabled = true)
+  {
+    base.Disabled(disabled);
+    return this;
+  }
   public new GridColumn<TEntity, TProp> AsOpenForm<TFormService>() where TFormService : class
   {
     base.AsOpenForm<TFormService>();
@@ -636,6 +691,16 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> AsNumber()
   {
     base.AsNumber();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Decimals(int decimals)
+  {
+    base.Decimals(decimals);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Grouped(bool isGrouped = true)
+  {
+    base.Grouped(isGrouped);
     return this;
   }
   public new GridColumn<TEntity, TProp> AsMoney(string? currency = null)
@@ -713,9 +778,9 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.AsReference<TGridService>();
     return new GridReferenceColumn<TEntity, TProp, TProp>(Dto, owner);
   }
-  public new GridReferenceColumn<TEntity, TSource, TProp> AsReference<TGridService, TSource>()
+  public new GridReferenceColumn<TEntity, TSource, TProp> AsReference<TGridService, TSource>(params Expression<Func<TSource, object?>>[] labelPaths)
   {
-    base.AsReference<TGridService, TSource>();
+    base.AsReference<TGridService, TSource>(labelPaths);
     return new GridReferenceColumn<TEntity, TSource, TProp>(Dto, owner);
   }
   public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value)

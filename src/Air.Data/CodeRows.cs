@@ -68,10 +68,12 @@ public static partial class CodeRows
     if (db.ChangeTracker.HasChanges())
     {
       var isSqlServer = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
-      var hasExplicitInsert = isSqlServer && db.ChangeTracker.Entries<TEntity>().Any(e => e.State == EntityState.Added && e.Entity.Id != 0);
-      if (hasExplicitInsert)
+      var entityType = db.Model.FindEntityType(typeof(TEntity));
+      var idProp = entityType?.FindPrimaryKey()?.Properties.FirstOrDefault();
+      var hasIdentityColumn = idProp?.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd;
+      var hasExplicitInsert = isSqlServer && hasIdentityColumn && db.ChangeTracker.Entries<TEntity>().Any(e => e.State == EntityState.Added && e.Entity.Id != 0);
+      if (hasExplicitInsert && entityType != null)
       {
-        var entityType = db.Model.FindEntityType(typeof(TEntity))!;
         var tableName = entityType.GetTableName()!;
         var schema = entityType.GetSchema();
         var qualifiedTable = string.IsNullOrWhiteSpace(schema) ? $"[{tableName}]" : $"[{schema}].[{tableName}]";
@@ -81,6 +83,7 @@ public static partial class CodeRows
           await db.Database.OpenConnectionAsync(cancellationToken);
           try
           {
+#pragma warning disable EF1002
             await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} ON", cancellationToken);
             try
             {
@@ -90,6 +93,7 @@ public static partial class CodeRows
             {
               await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} OFF", cancellationToken);
             }
+#pragma warning restore EF1002
           }
           finally
           {

@@ -4,12 +4,13 @@ namespace Air.App.Flow;
 
 public sealed class TransitionSource<TEntity>(
   IReadOnlyList<long> from,
-  Func<Transition<TEntity>, Transition<TEntity>> register
+  Func<StatusFlowService<TEntity>.Transition, StatusFlowService<TEntity>.Transition> register
 )
+  where TEntity : class, IEntity, new()
 {
-  public Transition<TEntity> To(long status, [CallerMemberName] string name = "")
+  public StatusFlowService<TEntity>.Transition To(long status, [CallerMemberName] string name = "")
   {
-    var transition = new Transition<TEntity>(name, from, status);
+    var transition = new StatusFlowService<TEntity>.Transition(name, from, status);
     return register(transition);
   }
 }

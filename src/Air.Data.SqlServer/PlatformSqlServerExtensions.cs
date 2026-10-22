@@ -49,7 +49,28 @@ public static class PlatformSqlServerExtensions
   /// High-speed bulk insert into SQL Server preserving explicit entity IDs (<see cref="SqlBulkCopyOptions.KeepIdentity"/>)
   /// and automatically reseeding the table's IDENTITY sequence above the maximum imported <see cref="IEntity.Id"/>.
   /// </summary>
-  public static async Task BulkImportAsync<TEntity>(
+  public static async Task<int> BulkImportAsync<TEntity>(
+    this PlatformDbContext db,
+    IAsyncEnumerable<TEntity> items,
+    CancellationToken ct = default)
+    where TEntity : class, IEntity
+  {
+    ArgumentNullException.ThrowIfNull(db);
+    ArgumentNullException.ThrowIfNull(items);
+    var list = new List<TEntity>();
+    await foreach (var item in items.WithCancellation(ct))
+    {
+      list.Add(item);
+    }
+
+    return await db.BulkImportAsync((IReadOnlyList<TEntity>)list, ct);
+  }
+
+  /// <summary>
+  /// High-speed bulk insert into SQL Server preserving explicit entity IDs (<see cref="SqlBulkCopyOptions.KeepIdentity"/>)
+  /// and automatically reseeding the table's IDENTITY sequence above the maximum imported <see cref="IEntity.Id"/>.
+  /// </summary>
+  public static async Task<int> BulkImportAsync<TEntity>(
     this PlatformDbContext db,
     IReadOnlyList<TEntity> items,
     CancellationToken ct = default)
@@ -59,7 +80,7 @@ public static class PlatformSqlServerExtensions
     ArgumentNullException.ThrowIfNull(items);
     if (items.Count == 0)
     {
-      return;
+      return 0;
     }
 
     var entityType = db.Model.FindEntityType(typeof(TEntity))
@@ -148,7 +169,6 @@ public static class PlatformSqlServerExtensions
         currentTx)
       {
         DestinationTableName = qualifiedTable,
-        BatchSize = 5000,
         BulkCopyTimeout = 300
       };
 
@@ -164,14 +184,19 @@ public static class PlatformSqlServerExtensions
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = currentTx;
         cmd.CommandText = """
-          DECLARE @cur bigint = ISNULL(IDENT_CURRENT(@tbl), 0);
-          IF @maxId > @cur
-            DBCC CHECKIDENT (@tbl, RESEED, @maxId) WITH NO_INFOMSGS;
+          IF OBJECTPROPERTY(OBJECT_ID(@tbl), 'TableHasIdentity') = 1
+          BEGIN
+            DECLARE @cur bigint = ISNULL(IDENT_CURRENT(@tbl), 0);
+            IF @maxId > @cur
+              DBCC CHECKIDENT (@tbl, RESEED, @maxId) WITH NO_INFOMSGS;
+          END
           """;
         cmd.Parameters.Add(new SqlParameter("@tbl", SqlDbType.NVarChar, 256) { Value = qualifiedTable });
         cmd.Parameters.Add(new SqlParameter("@maxId", SqlDbType.BigInt) { Value = maxId });
         await cmd.ExecuteNonQueryAsync(ct);
       }
+
+      return items.Count;
     }
     finally
     {

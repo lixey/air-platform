@@ -15,6 +15,13 @@ public abstract partial class GridService<TEntity, TRow>
     SetQuery(queryDeclaration);
 
     var query = BaseQuery(db);
+    var restrictions = new UserRestrictions();
+    SetUserRestrictions(restrictions);
+    foreach (var restriction in restrictions.Filters)
+    {
+      query = query.Where(restriction);
+    }
+
     foreach (var filter in queryDeclaration.Filters)
     {
       query = query.Where(filter);

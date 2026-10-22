@@ -165,6 +165,7 @@ public sealed class FormActionContext<TEntity>(
   where TEntity : class, IEntity
 {
   public TEntity Record { get; } = record;
+  public TEntity Entity => Record;
   public string? OpenScreen { get; private set; }
   public long? OpenId { get; private set; }
 

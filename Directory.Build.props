@@ -6,7 +6,7 @@
     <LangVersion>preview</LangVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591;CS9107</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CS9107;NU1902;NU1903</NoWarn>
   </PropertyGroup>
 
   <ItemGroup Condition="$(MSBuildProjectName.EndsWith('.Api')) and '$(MSBuildProjectName)' != 'Demo.Api'">

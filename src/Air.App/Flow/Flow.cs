@@ -1,6 +1,6 @@
 namespace Air.App.Flow;
 
-public sealed class Flow<TEntity>
+public class Flow<TEntity>
 {
   internal Expression<Func<TEntity, long>>? StateMember { get; private set; }
   internal List<OptionDto> DeclaredStatuses { get; } = [];
@@ -12,13 +12,14 @@ public sealed class Flow<TEntity>
     StateMember = member;
   }
 
-  public void Status(long id, string name, string color)
+  public void Status(long id, string name, string color, string? legacyUi = null, string? legacyDb = null)
   {
     DeclaredStatuses.Add(new OptionDto
     {
       Id = id,
       Name = name,
-      Color = color
+      Color = color,
+      Title = legacyUi != null && legacyDb != null ? $"Легасі UI: {legacyUi} | БД: {legacyDb}" : legacyUi
     });
   }
 

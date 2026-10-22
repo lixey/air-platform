@@ -34,7 +34,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public PlatformDbContext DbContext => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
-  protected Auth.IUserContext? User => PlatformApp?.User;
+  protected Auth.IUserContext User => PlatformApp?.User ?? new Auth.UserContext(new HttpContextAccessor());
 
   public sealed class Elements : Elements<TInput> { }
 
@@ -263,6 +263,12 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     }
 
     public void AvailableWhen(
+      Delegate action,
+      Expression<Func<TEntity, bool>> condition,
+      string reason) =>
+      AvailableWhen(condition, reason, action);
+
+    public void AvailableWhen(
       Expression<Func<TEntity, bool>> condition,
       string reason,
       params Delegate[] actions)
@@ -287,6 +293,13 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     SetNav(nav);
     return Task.CompletedTask;
   }
+
+  protected Task<FormActionDto> ExecuteActionAsync(
+    FormRequest request,
+    Func<FormActionContext<TEntity>, CancellationToken, Task> handler,
+    CancellationToken cancellationToken = default,
+    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null) =>
+    ExecuteActionAsync(request, (ctx, _, ct) => handler(ctx, ct), cancellationToken, actionName);
 
   protected async Task<FormActionDto> ExecuteActionAsync(
     FormRequest request,
