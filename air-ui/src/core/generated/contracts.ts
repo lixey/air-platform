@@ -1642,6 +1642,7 @@ export interface ReportColumnDto {
 }
 
 export interface ReportDataDto {
+  hasDateRange?: boolean;
   filterGroups: ReportFilterGroupDto[];
   activeFilters: Record<string, string>;
   kpis?: ReportKpiDto[] | null;

@@ -177,6 +177,9 @@ public sealed class ReportTableDto
 [UiContract]
 public sealed class ReportDataDto
 {
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool HasDateRange { get; init; }
+
   public List<ReportFilterGroupDto> FilterGroups { get; init; } = [];
   public Dictionary<string, string> ActiveFilters { get; init; } = new();
 

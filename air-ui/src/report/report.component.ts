@@ -13,15 +13,17 @@ import type {
   ReportServiceEndpoints,
   UiColor,
 } from '../core/generated/contracts';
+import { TextsService } from '../core/texts.service';
+import { TemporalBoxComponent } from '../datepicker/temporal-box.component';
 import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { UI_COLORS } from '../theme/ui-color';
 
 @Component({
   selector: 'ui-report',
-  imports: [BtnComponent, ChartComponent],
+  imports: [BtnComponent, ChartComponent, TemporalBoxComponent],
   template: `
     @if (reportData(); as report) {
-      @if (report.filterGroups.length > 0) {
+      @if (report.filterGroups.length > 0 || report.hasDateRange) {
         <div class="shrink-0 border-b border-line bg-surface px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
           @for (group of report.filterGroups; track group.key) {
             <div class="flex items-center gap-1.5" role="group" [attr.aria-label]="group.label">
@@ -39,6 +41,35 @@ import { UI_COLORS } from '../theme/ui-color';
                   />
                 }
               </div>
+            </div>
+          }
+          @if (report.hasDateRange) {
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-medium text-muted select-none">{{ texts.of('Periods') }}:</span>
+              <div class="w-34">
+                <ui-temporal-box
+                  kind="date"
+                  temporalType="dateOnly"
+                  [clearable]="true"
+                  [placeholder]="texts.of('PeriodFrom')"
+                  [value]="report.activeFilters['from'] || null"
+                  (valueChange)="selectDateFilter('from', $event)"
+                />
+              </div>
+              <span class="text-xs text-muted select-none">—</span>
+              <div class="w-34">
+                <ui-temporal-box
+                  kind="date"
+                  temporalType="dateOnly"
+                  [clearable]="true"
+                  [placeholder]="texts.of('PeriodTo')"
+                  [value]="report.activeFilters['to'] || null"
+                  (valueChange)="selectDateFilter('to', $event)"
+                />
+              </div>
+              @if (report.activeFilters['from'] || report.activeFilters['to']) {
+                <ui-btn icon="close" color="slate" variant="ghost" [title]="texts.of('Clear')" (click)="clearDateRange()" />
+              }
             </div>
           }
         </div>
@@ -122,6 +153,7 @@ import { UI_COLORS } from '../theme/ui-color';
 })
 export class ReportComponent {
   private readonly api = inject(Api);
+  protected readonly texts = inject(TextsService);
   private readonly locale = inject(LocaleService).current;
   private readonly destroyRef = inject(DestroyRef);
 
@@ -169,8 +201,7 @@ export class ReportComponent {
 
   protected selectFilter(groupKey: string, itemKey: string): void {
     const current = this.reportData();
-    const service = this.model()?.service;
-    if (!current || !service) {
+    if (!current) {
       return;
     }
 
@@ -178,6 +209,62 @@ export class ReportComponent {
       ...current.activeFilters,
       [groupKey]: itemKey,
     };
+
+    if (groupKey === 'year' && itemKey !== 'all') {
+      delete nextFilters['from'];
+      delete nextFilters['to'];
+    }
+
+    this.applyFilters(nextFilters);
+  }
+
+  protected selectDateFilter(bound: 'from' | 'to', value: string | null): void {
+    const current = this.reportData();
+    if (!current) {
+      return;
+    }
+
+    const currentVal = current.activeFilters[bound] || null;
+    if (currentVal === (value || null)) {
+      return;
+    }
+
+    const nextFilters: Record<string, string> = {
+      ...current.activeFilters,
+    };
+
+    if (value) {
+      nextFilters[bound] = value;
+      if ('year' in nextFilters) {
+        nextFilters['year'] = 'all';
+      }
+    } else {
+      delete nextFilters[bound];
+    }
+
+    this.applyFilters(nextFilters);
+  }
+
+  protected clearDateRange(): void {
+    const current = this.reportData();
+    if (!current) {
+      return;
+    }
+
+    const nextFilters: Record<string, string> = {
+      ...current.activeFilters,
+    };
+    delete nextFilters['from'];
+    delete nextFilters['to'];
+    this.applyFilters(nextFilters);
+  }
+
+  private applyFilters(nextFilters: Record<string, string>): void {
+    const current = this.reportData();
+    const service = this.model()?.service;
+    if (!current || !service) {
+      return;
+    }
 
     this.reportData.set({
       ...current,
