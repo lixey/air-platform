@@ -1,6 +1,3 @@
-using DemoApp.Data.Models;
-using DemoOrg.Data.Models;
-
 namespace DemoEcom.Data.Models;
 
 [Index(nameof(TenantId), nameof(OrganizationId), nameof(WarehouseId), nameof(ProductId), IsUnique = true)]

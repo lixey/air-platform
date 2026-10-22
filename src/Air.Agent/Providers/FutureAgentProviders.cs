@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-
 namespace Air.Agent.Providers;
 
 /// <summary>
@@ -12,12 +10,12 @@ public sealed class ClaudeCliAgentProvider : IAgentProvider
   public string Name => "Claude CLI (claude)";
   public bool IsAvailable => false;
 
-  public async IAsyncEnumerable<AgentStreamEvent> StreamTurnAsync(
+  public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
   {
     await Task.CompletedTask;
-    yield return new AgentStreamEvent
+    yield return new AgentStreamEventDto
     {
       Type = "error",
       Text = "Claude CLI provider is registered as a future adapter."
@@ -34,12 +32,12 @@ public sealed class CodexCliAgentProvider : IAgentProvider
   public string Name => "Codex CLI (codex)";
   public bool IsAvailable => false;
 
-  public async IAsyncEnumerable<AgentStreamEvent> StreamTurnAsync(
+  public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
   {
     await Task.CompletedTask;
-    yield return new AgentStreamEvent
+    yield return new AgentStreamEventDto
     {
       Type = "error",
       Text = "Codex CLI provider is registered as a future adapter."
@@ -56,12 +54,12 @@ public sealed class OpenAiCompatibleAgentProvider : IAgentProvider
   public string Name => "LM Studio / Local OpenAI";
   public bool IsAvailable => false;
 
-  public async IAsyncEnumerable<AgentStreamEvent> StreamTurnAsync(
+  public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
   {
     await Task.CompletedTask;
-    yield return new AgentStreamEvent
+    yield return new AgentStreamEventDto
     {
       Type = "error",
       Text = "LM Studio provider is registered as a future adapter."

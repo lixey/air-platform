@@ -1,9 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Documents;
-using DemoEcom.OutgoingPayment;
-using DemoEcom.SupplierReturn;
-using DemoOrg.Counterparty;
-
 namespace DemoEcom.SupplierInvoice;
 
 /// <summary>

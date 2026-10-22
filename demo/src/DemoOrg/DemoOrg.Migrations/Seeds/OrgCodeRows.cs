@@ -1,7 +1,3 @@
-using Air.Data;
-using DemoOrg.Data;
-using DemoOrg.Data.Models;
-
 namespace DemoOrg.Migrations.Seeds;
 
 public static class OrgCodeRows

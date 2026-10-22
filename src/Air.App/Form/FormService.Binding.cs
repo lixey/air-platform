@@ -1,10 +1,3 @@
-using System.Collections;
-using System.Globalization;
-using System.Reflection;
-using System.Text.Json;
-using Air.App.Internal;
-using Air.Data.Entities;
-
 namespace Air.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
@@ -13,20 +6,31 @@ public abstract partial class FormService<TEntity, TInput>
 {
   internal static void SetPropertyValue(object target, string path, JsonElement val)
   {
-    if (target == null || string.IsNullOrEmpty(path)) return;
+    if (target == null || string.IsNullOrEmpty(path))
+    {
+      return;
+    }
+
     var current = target;
     var parts = path.Split('.');
     for (var i = 0; i < parts.Length - 1; i++)
     {
       var next = PropertyAccessorCache.GetValue(current, parts[i]);
-      if (next == null) return;
+      if (next == null)
+      {
+        return;
+      }
+
       current = next;
     }
 
     var currentType = current.GetType();
     var prop = PropertyAccessorCache.GetProperty(currentType, parts[^1]);
     var setter = PropertyAccessorCache.GetSetter(currentType, parts[^1]);
-    if (prop == null || setter == null) return;
+    if (prop == null || setter == null)
+    {
+      return;
+    }
 
     var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
     object? converted;
@@ -89,19 +93,15 @@ public abstract partial class FormService<TEntity, TInput>
     {
       converted = DateOnly.Parse(val.GetString()!);
     }
-    else if (targetType == typeof(TimeOnly))
-    {
-      converted = TimeOnly.Parse(val.GetString()!);
-    }
-    else if (targetType.IsEnum)
-    {
-      converted = val.ValueKind == JsonValueKind.Number
-        ? Enum.ToObject(targetType, val.GetInt64())
-        : Enum.Parse(targetType, val.GetString()!, true);
-    }
     else
     {
-      converted = JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType);
+      converted = targetType == typeof(TimeOnly)
+        ? TimeOnly.Parse(val.GetString()!)
+        : targetType.IsEnum
+        ? val.ValueKind == JsonValueKind.Number
+        ? Enum.ToObject(targetType, val.GetInt64())
+        : Enum.Parse(targetType, val.GetString()!, true)
+        : JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType);
     }
 
     setter(current, converted);
@@ -115,7 +115,11 @@ public abstract partial class FormService<TEntity, TInput>
 
     foreach (var prop in props)
     {
-      if (!prop.CanRead || IsIgnoredNavigationProperty(prop.PropertyType)) continue;
+      if (!prop.CanRead || IsIgnoredNavigationProperty(prop.PropertyType))
+      {
+        continue;
+      }
+
       try
       {
         var val = PropertyAccessorCache.GetValue(entity, prop.Name);
@@ -123,10 +127,12 @@ public abstract partial class FormService<TEntity, TInput>
         {
           val = enumerable.Cast<object?>().ToArray();
         }
+
         dict[prop.Name] = val;
       }
       catch { }
     }
+
     return dict;
   }
 
@@ -146,7 +152,11 @@ public abstract partial class FormService<TEntity, TInput>
     var isSeparateInput = typeof(TInput) != typeof(TEntity);
     foreach (var el in elements.List)
     {
-      if (string.IsNullOrEmpty(el.Path)) continue;
+      if (string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
+
       var acceptsInput = !el.IsDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
       if (acceptsInput && !(isSeparateInput && el.IsInputOnly))
       {
@@ -188,6 +198,7 @@ public abstract partial class FormService<TEntity, TInput>
         set.Add(el.Path);
       }
     }
+
     return set;
   }
 
@@ -198,7 +209,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     foreach (var sp in PropertyAccessorCache.GetProperties(srcType))
     {
-      if (!sp.CanRead || (protectedPaths != null && protectedPaths.Contains(sp.Name)))
+      if (!sp.CanRead || protectedPaths != null && protectedPaths.Contains(sp.Name))
       {
         continue;
       }
@@ -229,8 +240,16 @@ public abstract partial class FormService<TEntity, TInput>
 
   private static bool IsIgnoredNavigationProperty(Type propertyType)
   {
-    if (typeof(IEntity).IsAssignableFrom(propertyType)) return true;
-    if (propertyType == typeof(string) || propertyType == typeof(byte[])) return false;
+    if (typeof(IEntity).IsAssignableFrom(propertyType))
+    {
+      return true;
+    }
+
+    if (propertyType == typeof(string) || propertyType == typeof(byte[]))
+    {
+      return false;
+    }
+
     if (typeof(IEnumerable).IsAssignableFrom(propertyType))
     {
       var elemType = propertyType.IsArray
@@ -240,6 +259,7 @@ public abstract partial class FormService<TEntity, TInput>
           : null;
       return elemType == null || typeof(IEntity).IsAssignableFrom(elemType);
     }
+
     return false;
   }
 
@@ -248,16 +268,34 @@ public abstract partial class FormService<TEntity, TInput>
     var targetType = target.GetType();
     foreach (var el in elements.List)
     {
-      if (string.IsNullOrEmpty(el.Path)) continue;
-      if (el.Constraints.AllowsNull == true && el.Constraints.RejectsBlank != true)
+      if (string.IsNullOrEmpty(el.Path))
       {
-        var prop = PropertyAccessorCache.GetProperty(targetType, el.Path);
-        if (prop != null && prop.PropertyType == typeof(string) && prop.CanRead && prop.CanWrite)
+        continue;
+      }
+
+      var prop = PropertyAccessorCache.GetProperty(targetType, el.Path);
+      if (prop == null || prop.PropertyType != typeof(string) || !prop.CanRead || !prop.CanWrite)
+      {
+        continue;
+      }
+
+      if (PropertyAccessorCache.GetValue(target, prop.Name) is not string str)
+      {
+        continue;
+      }
+
+      if (el.Constraints.AllowsNull == true && el.Constraints.RejectsBlank != true && string.IsNullOrWhiteSpace(str))
+      {
+        prop.SetValue(target, null);
+        continue;
+      }
+
+      if (el.Model is FormPhoneModel && str.Length > 0 && str.All(c => char.IsAsciiDigit(c) || c is '+' or ' ' or '-' or '(' or ')'))
+      {
+        var digits = new string(str.Where(char.IsAsciiDigit).ToArray());
+        if (digits.Length > 0)
         {
-          if (PropertyAccessorCache.GetValue(target, prop.Name) is string str && string.IsNullOrWhiteSpace(str))
-          {
-            prop.SetValue(target, null);
-          }
+          prop.SetValue(target, "+" + digits);
         }
       }
     }
@@ -265,17 +303,28 @@ public abstract partial class FormService<TEntity, TInput>
 
   private static void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
   {
-    if (!parentId.HasValue || parent.BoundProperty == null) return;
+    if (!parentId.HasValue || parent.BoundProperty == null)
+    {
+      return;
+    }
 
     if (parent.BoundProperty.PropertyType == typeof(long))
+    {
       parent.BoundProperty.SetValue(entity, parentId.Value);
+    }
     else if (parent.BoundProperty.PropertyType == typeof(long?))
+    {
       parent.BoundProperty.SetValue(entity, (long?)parentId.Value);
+    }
   }
 
   private void RestoreBoundParentId(TEntity entity, Parent parent)
   {
-    if (parent.BoundProperty == null || Request.ParentId.HasValue) return;
+    if (parent.BoundProperty == null || Request.ParentId.HasValue)
+    {
+      return;
+    }
+
     var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
     if (storedParentId.HasValue)
     {

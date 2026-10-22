@@ -1,8 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using Air.Data.Entities;
-using DemoApp.Data.Models;
-using DemoOrg.Data.Models;
-
 namespace DemoEcom.Data.Models;
 
 [Index(nameof(TenantId), nameof(OrganizationId), nameof(DocTypeId), nameof(Number), IsUnique = true)]

@@ -1186,4 +1186,85 @@
   <data name="English" xml:space="preserve">
     <value>English</value>
   </data>
+  <data name="AgentTitle" xml:space="preserve">
+    <value>AI Assistant</value>
+  </data>
+  <data name="AgentModel" xml:space="preserve">
+    <value>AI Model</value>
+  </data>
+  <data name="AgentNewChat" xml:space="preserve">
+    <value>New chat</value>
+  </data>
+  <data name="AgentEmptyTitle" xml:space="preserve">
+    <value>AI Assistant</value>
+  </data>
+  <data name="AgentEmptyDescription" xml:space="preserve">
+    <value>Describe what you want to create or edit, or drop a photo/receipt (drag &amp; drop or press ⌘V).</value>
+  </data>
+  <data name="AgentDropHint" xml:space="preserve">
+    <value>Drop photo or document here</value>
+  </data>
+  <data name="AgentInputPlaceholder" xml:space="preserve">
+    <value>Write a message or paste a photo…</value>
+  </data>
+  <data name="AgentAttachTitle" xml:space="preserve">
+    <value>Attach photo</value>
+  </data>
+  <data name="AgentSendTitle" xml:space="preserve">
+    <value>Send (Enter)</value>
+  </data>
+  <data name="AgentStopTitle" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="AgentConfirm" xml:space="preserve">
+    <value>Confirm</value>
+  </data>
+  <data name="AgentCheckBeforeSave" xml:space="preserve">
+    <value>Check the details before saving</value>
+  </data>
+  <data name="AgentSaved" xml:space="preserve">
+    <value>Saved: {0}</value>
+  </data>
+  <data name="AgentPhotoWillAttach" xml:space="preserve">
+    <value>Attached file will be linked to the record</value>
+  </data>
+  <data name="AgentLinesTitle" xml:space="preserve">
+    <value>Items ({0})</value>
+  </data>
+  <data name="AgentNewBadge" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="AgentChangedBadge" xml:space="preserve">
+    <value>Changed</value>
+  </data>
+  <data name="AgentEditBadge" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="AgentDefaultPhotoPrompt" xml:space="preserve">
+    <value>Analyze the attached photo</value>
+  </data>
+  <data name="AgentStatusAnalyzing" xml:space="preserve">
+    <value>Analyzing…</value>
+  </data>
+  <data name="AgentStatusReadingPhoto" xml:space="preserve">
+    <value>Reading photo…</value>
+  </data>
+  <data name="AgentStatusPreparing" xml:space="preserve">
+    <value>Preparing record…</value>
+  </data>
+  <data name="AgentProposalNotFound" xml:space="preserve">
+    <value>The proposal was not found or has expired.</value>
+  </data>
+  <data name="AgentErrorCliMissing" xml:space="preserve">
+    <value>CLI 'agy' was not found on the system.</value>
+  </data>
+  <data name="AgentErrorUpload" xml:space="preserve">
+    <value>Could not upload the file.</value>
+  </data>
+  <data name="AgentErrorSave" xml:space="preserve">
+    <value>Could not save the record.</value>
+  </data>
+  <data name="AgentErrorRequest" xml:space="preserve">
+    <value>Could not get a response from the AI assistant.</value>
+  </data>
 </root>

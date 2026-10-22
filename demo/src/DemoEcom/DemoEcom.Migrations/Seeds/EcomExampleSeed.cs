@@ -1,11 +1,3 @@
-using Bogus;
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using DemoOrg.Data;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Migrations.Seeds;
 
 public static class EcomExampleSeed

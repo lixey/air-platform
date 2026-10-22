@@ -1,5 +1,3 @@
-using Air.Data.Entities;
-
 namespace Air.App.Auth;
 
 /// <summary>

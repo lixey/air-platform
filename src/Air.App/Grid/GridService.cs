@@ -1,22 +1,6 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text.Json;
-using Air.App.Components;
-using Air.App.Grid.Selection;
-using Air.App.Localization;
-using Air.App.Modules;
-using Air.App.Nav;
-using Air.App.Overlay;
-using Air.App.Panels;
-using Air.App.Screens;
-using Air.Data;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Air.Data.Querying;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Grid;
+
+public sealed record GridCreateDescriptor(Type FormServiceType, string ServicePath, string Label, string? Color = null);
 
 public interface IGridService
 {
@@ -33,6 +17,7 @@ public interface IGridService
   Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   string? GetRecordLabel(object? entity) => null;
+  IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
   void AttachPlatformApp(PlatformAppService app);
   Feature Feature { get; }
 }
@@ -41,17 +26,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   where TEntity : class, IEntity, new()
   where TRow : class
 {
-  private PlatformAppService? _app = app;
-  public void AttachPlatformApp(PlatformAppService service) => _app ??= service;
+  public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 
   public PlatformDbContext DbContext => db;
-  public PlatformAppService? PlatformApp => _app;
-  protected Auth.IUserContext? User => _app?.User;
+  public PlatformAppService? PlatformApp { get; private set; } = app;
+  protected Auth.IUserContext? User => PlatformApp?.User;
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
 
-  protected virtual bool IsReadOnly => Feature.IsReadOnly || (User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*"));
+  protected virtual bool IsReadOnly => Feature.IsReadOnly || User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*");
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
 
@@ -65,8 +49,15 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
-      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi) BoundProperty = pi;
-      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi) BoundProperty = upi;
+      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
+      {
+        BoundProperty = pi;
+      }
+      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi)
+      {
+        BoundProperty = upi;
+      }
+
       var param = member.Parameters[0];
       FilterFunc = (q, parentId) =>
       {
@@ -79,8 +70,15 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
     {
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
-      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi) BoundProperty = pi;
-      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi) BoundProperty = upi;
+      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
+      {
+        BoundProperty = pi;
+      }
+      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi)
+      {
+        BoundProperty = upi;
+      }
+
       var param = member.Parameters[0];
       FilterFunc = (q, parentId) =>
       {
@@ -103,9 +101,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
   {
     if (ParentId == null || ParentId.Value <= 0)
+    {
       return null;
+    }
+
     var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
-    if (tracked != null) return tracked;
+    if (tracked != null)
+    {
+      return tracked;
+    }
+
     var efModel = db.Model.FindEntityType(typeof(TParent));
     IQueryable<TParent> query = db.Set<TParent>();
     if (efModel != null)
@@ -113,9 +118,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       foreach (var nav in efModel.GetNavigations())
       {
         if (!nav.IsCollection)
+        {
           query = query.Include(nav.Name);
+        }
       }
     }
+
     return query.FirstOrDefault(e => e.Id == ParentId.Value);
   }
 
@@ -150,7 +158,11 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     public Query PageSize(int pageSize)
     {
-      if (pageSize > 0) CustomPageSize = pageSize;
+      if (pageSize > 0)
+      {
+        CustomPageSize = pageSize;
+      }
+
       return this;
     }
     internal List<FilterRule> InitialFilters { get; } = [];
@@ -161,19 +173,28 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     private static string? GetMemberName(Expression expr)
     {
-      if (expr is UnaryExpression ue) expr = ue.Operand;
+      if (expr is UnaryExpression ue)
+      {
+        expr = ue.Operand;
+      }
+
       return expr is MemberExpression me ? me.Member.Name : null;
     }
 
     private static string? GetMemberPath(Expression expr)
     {
-      if (expr is UnaryExpression ue) expr = ue.Operand;
+      if (expr is UnaryExpression ue)
+      {
+        expr = ue.Operand;
+      }
+
       var parts = new List<string>();
       while (expr is MemberExpression me)
       {
         parts.Insert(0, char.ToLowerInvariant(me.Member.Name[0]) + me.Member.Name[1..]);
         expr = me.Expression!;
       }
+
       return parts.Count > 0 ? string.Join('.', parts) : null;
     }
 
@@ -181,7 +202,11 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     {
       DefaultSort.Clear();
       var path = GetMemberPath(expr.Body);
-      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Asc(path));
+      if (!string.IsNullOrEmpty(path))
+      {
+        DefaultSort.Add(SortRule.Asc(path));
+      }
+
       return this;
     }
 
@@ -189,21 +214,33 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     {
       DefaultSort.Clear();
       var path = GetMemberPath(expr.Body);
-      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Desc(path));
+      if (!string.IsNullOrEmpty(path))
+      {
+        DefaultSort.Add(SortRule.Desc(path));
+      }
+
       return this;
     }
 
     public Query ThenBy<TProp>(Expression<Func<TRow, TProp>> expr)
     {
       var path = GetMemberPath(expr.Body);
-      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Asc(path));
+      if (!string.IsNullOrEmpty(path))
+      {
+        DefaultSort.Add(SortRule.Asc(path));
+      }
+
       return this;
     }
 
     public Query ThenByDescending<TProp>(Expression<Func<TRow, TProp>> expr)
     {
       var path = GetMemberPath(expr.Body);
-      if (!string.IsNullOrEmpty(path)) DefaultSort.Add(SortRule.Desc(path));
+      if (!string.IsNullOrEmpty(path))
+      {
+        DefaultSort.Add(SortRule.Desc(path));
+      }
+
       return this;
     }
 
@@ -243,6 +280,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         PickKeySelector = keySelector;
         SearchFields ??= [path];
       }
+
       return this;
     }
 
@@ -254,6 +292,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         RowFlags.Add((flagName, predicate));
       }
+
       return this;
     }
 
@@ -285,6 +324,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         {
           query.InitialFilters.Add(FilterNode.Rule(field, FilterOperator.In, values.Cast<object?>().ToList()));
         }
+
         return query;
       }
     }
@@ -325,6 +365,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         group.Items[^1].IsDefault = true;
       }
+
       return this;
     }
 
@@ -334,6 +375,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         group.Items[^1].Color = color;
       }
+
       return this;
     }
 
@@ -343,6 +385,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         group.Items[^1].HasBadge = badge;
       }
+
       return this;
     }
 
@@ -374,7 +417,10 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual bool CanDelete()
   {
-    if (IsReadOnly) return false;
+    if (IsReadOnly)
+    {
+      return false;
+    }
 
     var deleteMethod = GetType().GetMethod(nameof(Delete), BindingFlags.Public | BindingFlags.Instance)
       ?? GetType().GetMethod(nameof(DeleteAsync), BindingFlags.Public | BindingFlags.Instance);
@@ -388,6 +434,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
           return User == null || !User.IsAuthenticated || User.Can(targetFeat.Action(reqRight.Action.ToString())) || User.Can(targetFeat.All);
         }
       }
+
       if (deleteMethod.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true) is { } reqAction)
       {
         return User == null || !User.IsAuthenticated || User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
@@ -409,7 +456,11 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual string? GetRecordLabel(object? entity)
   {
-    if (entity is not TEntity typed) return null;
+    if (entity is not TEntity typed)
+    {
+      return null;
+    }
+
     var q = new Query();
     SetQuery(q);
     if (q.LabelSelector != null)
@@ -423,6 +474,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         return null;
       }
     }
+
     return null;
   }
 
@@ -437,19 +489,55 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     public bool IsInMenu { get; private set; }
     public bool IsSingle { get; private set; }
 
-    public ButtonBuilder Label(string label) { LabelText = label; return this; }
-    public ButtonBuilder Icon(string icon) { IconHandle = icon; return this; }
-    public ButtonBuilder Color(string color) { ColorHandle = color; return this; }
-    public ButtonBuilder Variant(string variant) { VariantHandle = variant; return this; }
-    public ButtonBuilder Soft() { VariantHandle = ButtonVariant.Soft; return this; }
-    public ButtonBuilder InMenu() { IsInMenu = true; return this; }
-    public ButtonBuilder Single(bool single = true) { IsSingle = single; return this; }
+    public ButtonBuilder Label(string label)
+    {
+      LabelText = label;
+      return this;
+    }
+    public ButtonBuilder Icon(string icon)
+    {
+      IconHandle = icon;
+      return this;
+    }
+    public ButtonBuilder Color(string color)
+    {
+      ColorHandle = color;
+      return this;
+    }
+    public ButtonBuilder Variant(string variant)
+    {
+      VariantHandle = variant;
+      return this;
+    }
+    public ButtonBuilder Soft()
+    {
+      VariantHandle = ButtonVariant.Soft;
+      return this;
+    }
+    public ButtonBuilder InMenu()
+    {
+      IsInMenu = true;
+      return this;
+    }
+    public ButtonBuilder Single(bool single = true)
+    {
+      IsSingle = single;
+      return this;
+    }
   }
 
   public sealed class NavPickerBuilder(GridNavPickerModel model)
   {
-    public NavPickerBuilder MinLength(int len) { model.MinLength = len; return this; }
-    public NavPickerBuilder ReadsParent() { model.ReadsParent = true; return this; }
+    public NavPickerBuilder MinLength(int len)
+    {
+      model.MinLength = len;
+      return this;
+    }
+    public NavPickerBuilder ReadsParent()
+    {
+      model.ReadsParent = true;
+      return this;
+    }
   }
 
   public sealed class NavActionEntry
@@ -569,13 +657,21 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>
-      BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      BeforeDeleteActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
     public void ValidateDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
     public void ValidateDelete(Action<GridDeleteContext<TEntity>> handler) => BeforeDelete(handler);
 
     public void AfterDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
     public void AfterDelete(Action<GridDeleteContext<TEntity>> handler) =>
-      AfterDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      AfterDeleteActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
   }
 
   protected virtual void SetHooks(Hooks hooks) { }
@@ -610,8 +706,15 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   private Type? ResolveFormServiceType(Columns columns)
   {
-    if (columns.FormServiceType != null) return columns.FormServiceType;
-    if (FormServicePath != null) return ModuleCatalog.Instance.FindServiceType(FormServicePath);
+    if (columns.FormServiceType != null)
+    {
+      return columns.FormServiceType;
+    }
+
+    if (FormServicePath != null)
+    {
+      return ModuleCatalog.Instance.FindServiceType(FormServicePath);
+    }
 
     var candidateFormName = GetType().Name.Replace("GridService", "FormService");
     return GetType().Assembly.GetType(GetType().Namespace + "." + candidateFormName)
@@ -620,9 +723,45 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   private string? ResolveFormServicePath(Columns columns)
   {
-    if (FormServicePath != null) return FormServicePath;
+    if (FormServicePath != null)
+    {
+      return FormServicePath;
+    }
+
     var formType = ResolveFormServiceType(columns);
     return formType != null ? ServicePathResolver.Resolve(formType) : null;
+  }
+
+  public virtual IReadOnlyList<GridCreateDescriptor> GetCreateForms()
+  {
+    if (IsReadOnly)
+    {
+      return [];
+    }
+
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var nav = new Nav(servicePath, L);
+    SetNav(nav);
+    if (nav.Creates.Count > 0)
+    {
+      return nav.Creates
+        .Select(c => new GridCreateDescriptor(
+          c.FormType,
+          c.Model.Service ?? ServicePathResolver.Resolve(c.FormType),
+          c.Model.Label ?? L["Add"],
+          c.Model.Color))
+        .ToList();
+    }
+
+    var columns = CreateColumns();
+    var formType = ResolveFormServiceType(columns);
+    var formPath = ResolveFormServicePath(columns);
+    if (formType != null && !string.IsNullOrEmpty(formPath))
+    {
+      return [new GridCreateDescriptor(formType, formPath, L[Feature.Label], UiColor.Orange)];
+    }
+
+    return [];
   }
 }
 

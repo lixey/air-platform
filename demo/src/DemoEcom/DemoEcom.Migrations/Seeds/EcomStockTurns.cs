@@ -1,5 +1,3 @@
-using DemoEcom.Data;
-
 namespace DemoEcom.Migrations.Seeds;
 
 /// <summary>

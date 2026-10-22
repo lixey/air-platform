@@ -1,18 +1,4 @@
-using System.Globalization;
 using System.IO.Compression;
-using Air.App.Files.Contracts;
-using Air.App.Files.Internal;
-using Air.App.Form.Contracts;
-using Air.App.Grid;
-using Air.App.Grid.AddOns.Covers.Contracts;
-using Air.App.Nav;
-using Air.Data;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Air.Data.Files;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Air.App.Files;
 
@@ -50,6 +36,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     {
       columns.Add(r => ((IHasCoverFile)(object)r).IsCover).Label(L["Cover"]);
     }
+
     columns.Add(r => r.ContentType).Label(L["Type"]);
     columns.Add(r => r.Size).Label(L["Size"]);
     columns.Add(r => r.CreatedAt).Label(L["Created"]);
@@ -225,7 +212,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
 
     var headSpan = fileBytes.AsSpan(0, Math.Min(fileBytes.Length, 12));
     if (!FileTypeTable.StartsAsDeclared(normalizedType, headSpan) ||
-        (FileTypeTable.IsZipDocument(normalizedType) && !FileTypeTable.StartsAsZip(headSpan)))
+        FileTypeTable.IsZipDocument(normalizedType) && !FileTypeTable.StartsAsZip(headSpan))
     {
       return new GridActionDto
       {
@@ -247,6 +234,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
           Warnings = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
         };
       }
+
       try
       {
         var parsedMeta = System.Text.Json.JsonSerializer.Deserialize<FileMetadataDto>(
@@ -398,7 +386,10 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     }
 
     var ids = request.SelectedIds ?? [];
-    if (ids.Count == 0 && request.Id.HasValue) ids = [request.Id.Value];
+    if (ids.Count == 0 && request.Id.HasValue)
+    {
+      ids = [request.Id.Value];
+    }
 
     var list = await RestrictedQuery().Where(f => ids.Contains(f.Id)).ToListAsync(cancellationToken);
     if (list.Count == 0)
@@ -426,11 +417,20 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
       db.Set<TFile>().Remove(item);
       if (!string.IsNullOrEmpty(item.StorageKey))
       {
-        try { await storage.DeleteAsync(item.StorageKey, cancellationToken); } catch { }
+        try
+        {
+          await storage.DeleteAsync(item.StorageKey, cancellationToken);
+        }
+        catch { }
       }
+
       if (!string.IsNullOrEmpty(item.ThumbnailKey))
       {
-        try { await storage.DeleteAsync(item.ThumbnailKey, cancellationToken); } catch { }
+        try
+        {
+          await storage.DeleteAsync(item.ThumbnailKey, cancellationToken);
+        }
+        catch { }
       }
     }
 
@@ -452,6 +452,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
           cf.IsCover = true;
         }
       }
+
       await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -542,7 +543,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     var parent = new Parent();
     SetParent(parent);
 
-    IQueryable<TFile> siblingsQuery = RestrictedQuery().Where(f => f.Id != target.Id);
+    var siblingsQuery = RestrictedQuery().Where(f => f.Id != target.Id);
     if (parent.BoundProperty != null && parent.BoundProperty.GetValue(target) is { } parentVal)
     {
       siblingsQuery = siblingsQuery.Where(BuildParentFilter(parent.BoundProperty, parentVal));
@@ -724,9 +725,16 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
       var seenNames = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
       foreach (var file in files)
       {
-        if (string.IsNullOrEmpty(file.StorageKey)) continue;
+        if (string.IsNullOrEmpty(file.StorageKey))
+        {
+          continue;
+        }
+
         await using var fileStream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
-        if (fileStream == null) continue;
+        if (fileStream == null)
+        {
+          continue;
+        }
 
         var entryName = file.Name;
         if (seenNames.TryGetValue(entryName, out var count))
@@ -783,6 +791,97 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     };
   }
 
+  async Task<long?> IFormFilesSource.AttachFileAsync(
+    long parentId,
+    string fileName,
+    string contentType,
+    byte[] content,
+    CancellationToken cancellationToken
+  )
+  {
+    if (IsReadOnly || parentId <= 0 || content.Length == 0)
+    {
+      return null;
+    }
+
+    var cleanedName = FileTypeTable.NameOf(fileName) ?? "attachment";
+    var rules = FileRulesAttribute.Of(typeof(TFile));
+    var normalizedType = FileTypeTable.Normalize(contentType) ?? "application/octet-stream";
+    var sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+
+    var parent = new Parent();
+    SetParent(parent);
+    ParentId = parentId;
+
+    List<TFile>? siblings = null;
+    if (parent.BoundProperty != null)
+    {
+      siblings = await RestrictedQuery()
+        .OrderBy(f => f.SortOrder)
+        .ThenByDescending(f => f.Id)
+        .ToListAsync(cancellationToken);
+
+      if (siblings.FirstOrDefault(s => string.Equals(s.Sha256, sha256, StringComparison.OrdinalIgnoreCase)) is { } duplicate)
+      {
+        return duplicate.Id;
+      }
+    }
+
+    var storageKey = FileKeys.New();
+    var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
+    var storage = Stores.Of(storeKey);
+
+    await using (var stream = new MemoryStream(content, writable: false))
+    {
+      await storage.WriteAsync(storageKey, stream, cancellationToken);
+    }
+
+    var entity = new TFile
+    {
+      Name = cleanedName,
+      ContentType = normalizedType,
+      Size = content.Length,
+      StorageKey = storageKey,
+      Store = storeKey,
+      Sha256 = sha256,
+      UploadedById = User?.UserId,
+      CreatedAt = DateTimeOffset.UtcNow,
+      SortOrder = 0
+    };
+
+    if (parent.BoundProperty != null && siblings != null)
+    {
+      if (parent.BoundProperty.PropertyType == typeof(long))
+      {
+        parent.BoundProperty.SetValue(entity, parentId);
+      }
+      else if (parent.BoundProperty.PropertyType == typeof(long?))
+      {
+        parent.BoundProperty.SetValue(entity, (long?)parentId);
+      }
+
+      var place = siblings.Count;
+      if (Between(place > 0 ? siblings[place - 1].SortOrder : null, null) is { } order)
+      {
+        entity.SortOrder = order;
+      }
+      else
+      {
+        siblings.Insert(place, entity);
+        Renumber(siblings);
+      }
+
+      if (entity is IHasCoverFile coverFile && rules.Cover == FileCover.Auto)
+      {
+        coverFile.IsCover = !siblings.OfType<IHasCoverFile>().Any(s => !ReferenceEquals(s, entity) && s.IsCover);
+      }
+    }
+
+    await db.Set<TFile>().AddAsync(entity, cancellationToken);
+    await db.SaveChangesAsync(cancellationToken);
+    return entity.Id;
+  }
+
   async Task<IReadOnlyDictionary<long, GridCoverDto>> IFileCoverSource.CoversAsync(
     IReadOnlyCollection<long> owners,
     CancellationToken cancellationToken
@@ -829,7 +928,11 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     foreach (var cover in covers)
     {
       var rawParent = parent.BoundProperty.GetValue(cover);
-      if (rawParent == null) continue;
+      if (rawParent == null)
+      {
+        continue;
+      }
+
       var parentKey = Convert.ToInt64(rawParent, CultureInfo.InvariantCulture);
 
       if (!result.ContainsKey(parentKey) && Links.TryUrl(cover) is { } url)

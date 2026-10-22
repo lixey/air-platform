@@ -1,6 +1,3 @@
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.Data;
 
 public static class Installation

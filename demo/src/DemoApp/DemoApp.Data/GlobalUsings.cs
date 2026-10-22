@@ -1,3 +1,4 @@
+global using System.ComponentModel.DataAnnotations;
 global using Air.Data;
 global using Air.Data.Entities;
 global using Air.Data.Tenancy;

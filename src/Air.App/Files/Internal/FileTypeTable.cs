@@ -1,5 +1,3 @@
-using Air.Data.Entities;
-
 namespace Air.App.Files.Internal;
 
 internal static class FileTypeTable
@@ -84,8 +82,12 @@ internal static class FileTypeTable
   {
     foreach (var type in Thumbnail)
     {
-      if (StartsAsDeclared(type, head)) return type;
+      if (StartsAsDeclared(type, head))
+      {
+        return type;
+      }
     }
+
     return null;
   }
 

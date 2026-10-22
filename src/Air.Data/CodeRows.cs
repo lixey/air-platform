@@ -1,6 +1,4 @@
 using System.Text.RegularExpressions;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
 
 namespace Air.Data;
 
@@ -20,7 +18,7 @@ public static partial class CodeRows
   {
     if (string.IsNullOrWhiteSpace(handle) ||
         !PascalCaseRegex().IsMatch(handle) ||
-        (handle.Length > 1 && handle.All(char.IsUpper)))
+        handle.Length > 1 && handle.All(char.IsUpper))
     {
       throw new InvalidOperationException(
         $"Entity '{entityName}' has invalid Handle '{handle}'. Handle must always be a PascalCase identifier (use a separate property like Code for non-PascalCase values)."

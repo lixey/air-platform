@@ -1,11 +1,3 @@
-using Bogus;
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using DemoOrg.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Migrations.Seeds;
 
 internal sealed class EcomPurchasingSeed

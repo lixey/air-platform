@@ -1,9 +1,3 @@
-using Air.App.Metadata;
-using Air.App.Modules;
-using Air.Data.Postgres;
-using DemoEcom.Data;
-using Microsoft.AspNetCore.Builder;
-
 namespace DemoEcom;
 
 public sealed class EcomModule : PlatformModule<Ecom>

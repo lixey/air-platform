@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.Data.Tenancy;
 
 /// <summary>

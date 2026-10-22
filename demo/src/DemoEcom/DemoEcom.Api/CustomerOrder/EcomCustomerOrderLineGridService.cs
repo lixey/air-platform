@@ -1,12 +1,3 @@
-using Air.App.Contracts;
-using Air.App.Grid;
-using Air.App.Security;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using DemoEcom.Documents;
-using DemoOrg.Product;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomService? ecom = null)

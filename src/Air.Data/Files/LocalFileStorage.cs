@@ -1,5 +1,3 @@
-using Air.Data.Files;
-
 namespace Air.Data.Files;
 
 public sealed class LocalFileStorage : IFileStorage
@@ -21,12 +19,14 @@ public sealed class LocalFileStorage : IFileStorage
     {
       throw new ArgumentException("Invalid storage key", nameof(key));
     }
+
     var filePath = PathOf(key);
     var tempPath = filePath + ".tmp";
     await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, true))
     {
       await content.CopyToAsync(fs, cancellationToken);
     }
+
     File.Move(tempPath, filePath, overwrite: true);
   }
 
@@ -36,23 +36,34 @@ public sealed class LocalFileStorage : IFileStorage
     {
       return Task.FromResult<Stream?>(null);
     }
+
     var filePath = PathOf(key);
     if (!File.Exists(filePath))
     {
       return Task.FromResult<Stream?>(null);
     }
+
     Stream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, true);
     return Task.FromResult<Stream?>(fs);
   }
 
   public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
   {
-    if (!FileKeys.IsValid(key)) return Task.CompletedTask;
+    if (!FileKeys.IsValid(key))
+    {
+      return Task.CompletedTask;
+    }
+
     var filePath = PathOf(key);
     if (File.Exists(filePath))
     {
-      try { File.Delete(filePath); } catch { }
+      try
+      {
+        File.Delete(filePath);
+      }
+      catch { }
     }
+
     return Task.CompletedTask;
   }
 
@@ -70,6 +81,7 @@ public sealed class LocalFileStorage : IFileStorage
         }
       }
     }
+
     return Task.FromResult<IReadOnlyList<string>>(list);
   }
 }

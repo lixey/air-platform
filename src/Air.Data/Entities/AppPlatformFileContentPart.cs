@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.Data.Entities;
 
 [PrimaryKey(nameof(Key), nameof(Index))]

@@ -1,12 +1,3 @@
-using Air.App.Auth;
-using Air.App.Localization;
-using Air.App.Metadata;
-using Air.Data;
-using Air.Data.Entities;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-
 namespace Air.App.Host;
 
 internal static class AuthEndpoints
@@ -82,8 +73,10 @@ internal static class AuthEndpoints
             user.AccessFailedCount = 0;
             user.LockoutEnd = now.AddMinutes(Math.Min(60, 5 * user.LockoutCount));
           }
+
           await authStore.SaveChangesAsync(ct);
         }
+
         return Results.Unauthorized();
       }
 
@@ -199,7 +192,11 @@ internal static class AuthEndpoints
       RefreshRequest? req = null;
       if (ctx.Request.ContentLength > 0)
       {
-        try { req = await ctx.Request.ReadFromJsonAsync<RefreshRequest>(cancellationToken: ct); } catch { }
+        try
+        {
+          req = await ctx.Request.ReadFromJsonAsync<RefreshRequest>(cancellationToken: ct);
+        }
+        catch { }
       }
 
       var now = DateTimeOffset.UtcNow;
@@ -240,7 +237,7 @@ internal static class AuthEndpoints
           session.RefreshTokenHash != providedHash &&
           session.PreviousRefreshTokenHash == providedHash)
       {
-        if (session.RotatedAt is not { } rotatedAt || (now - rotatedAt) > TimeSpan.FromSeconds(30))
+        if (session.RotatedAt is not { } rotatedAt || now - rotatedAt > TimeSpan.FromSeconds(30))
         {
           session.RevokedAt = now;
           session.RevokedReason = "reuse";
@@ -307,6 +304,7 @@ internal static class AuthEndpoints
             user.LanguageId = req.Id;
             await authStore.SaveChangesAsync(ct);
           }
+
           var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
           return Results.Ok(BuildUserProfileDto(user, securityInfo, isUk));
         }

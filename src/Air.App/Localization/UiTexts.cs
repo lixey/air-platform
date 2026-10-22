@@ -9,6 +9,33 @@ public static class UiTexts
     ["ActualSize"] = "Actual size",
     ["AddCondition"] = "Add a condition",
     ["AddConditionGroup"] = "Add a condition group",
+    ["AgentAttachTitle"] = "Attach photo",
+    ["AgentChangedBadge"] = "Changed",
+    ["AgentCheckBeforeSave"] = "Check the details before saving",
+    ["AgentConfirm"] = "Confirm",
+    ["AgentDefaultPhotoPrompt"] = "Analyze the attached photo",
+    ["AgentDropHint"] = "Drop photo or document here",
+    ["AgentEditBadge"] = "Edit",
+    ["AgentEmptyDescription"] = "Describe what you want to create or edit, or drop a photo/receipt (drag & drop or press \u2318V).",
+    ["AgentEmptyTitle"] = "AI Assistant",
+    ["AgentErrorCliMissing"] = "CLI 'agy' was not found on the system.",
+    ["AgentErrorRequest"] = "Could not get a response from the AI assistant.",
+    ["AgentErrorSave"] = "Could not save the record.",
+    ["AgentErrorUpload"] = "Could not upload the file.",
+    ["AgentInputPlaceholder"] = "Write a message or paste a photo\u2026",
+    ["AgentLinesTitle"] = "Items ({0})",
+    ["AgentModel"] = "AI Model",
+    ["AgentNewBadge"] = "New",
+    ["AgentNewChat"] = "New chat",
+    ["AgentPhotoWillAttach"] = "Attached file will be linked to the record",
+    ["AgentProposalNotFound"] = "The proposal was not found or has expired.",
+    ["AgentSaved"] = "Saved: {0}",
+    ["AgentSendTitle"] = "Send (Enter)",
+    ["AgentStatusAnalyzing"] = "Analyzing\u2026",
+    ["AgentStatusPreparing"] = "Preparing record\u2026",
+    ["AgentStatusReadingPhoto"] = "Reading photo\u2026",
+    ["AgentStopTitle"] = "Stop",
+    ["AgentTitle"] = "AI Assistant",
     ["AllAreTrue"] = "All of the following are true\u2026",
     ["Any"] = "Any",
     ["AnyIsTrue"] = "Any of the following is true\u2026",
@@ -234,6 +261,7 @@ public static class UiTexts
       }
     }
     catch { }
+
     return seed.ToFrozenDictionary(StringComparer.Ordinal);
   }
 }
@@ -269,7 +297,12 @@ public sealed class Localizer : ILocalizer
       _root.Register(resourceType);
       return;
     }
-    if (resourceType == null) return;
+
+    if (resourceType == null)
+    {
+      return;
+    }
+
     lock (_sync)
     {
       RegisterLocked(resourceType);
@@ -298,7 +331,11 @@ public sealed class Localizer : ILocalizer
     try
     {
       var set = mgr.GetResourceSet(culture, true, false);
-      if (set == null) return;
+      if (set == null)
+      {
+        return;
+      }
+
       foreach (System.Collections.DictionaryEntry entry in set)
       {
         if (entry.Key is string k && !_canonicalKeys.ContainsKey(k))
@@ -333,7 +370,11 @@ public sealed class Localizer : ILocalizer
 
       foreach (var asm in assemblies)
       {
-        if (asm.IsDynamic) continue;
+        if (asm.IsDynamic)
+        {
+          continue;
+        }
+
         try
         {
           foreach (var type in asm.GetTypes())
@@ -366,6 +407,7 @@ public sealed class Localizer : ILocalizer
       {
         return true;
       }
+
       return _root.TryGetString(key, out result);
     }
 
@@ -392,12 +434,14 @@ public sealed class Localizer : ILocalizer
       }
       catch { }
     }
+
     if (UiTexts.English.TryGetValue(key, out var val) ||
-        (canonical != null && UiTexts.English.TryGetValue(canonical, out val)))
+        canonical != null && UiTexts.English.TryGetValue(canonical, out val))
     {
       result = val;
       return true;
     }
+
     result = key;
     return false;
   }
@@ -408,6 +452,7 @@ public sealed class Localizer : ILocalizer
     {
       return result;
     }
+
     return fallback;
   }
 
@@ -423,7 +468,11 @@ public sealed class Localizer : ILocalizer
   {
     get
     {
-      if (TryGetString(key, out var res)) return res;
+      if (TryGetString(key, out var res))
+      {
+        return res;
+      }
+
       return key;
     }
   }

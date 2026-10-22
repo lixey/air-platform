@@ -1,11 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Air.App.Components;
-using Air.App.Grid;
-using Air.App.Nav;
-using Air.App.Overlay;
-using Air.Data.Contracts;
-
 namespace Air.App.Form;
 
 [UiContract]
@@ -219,18 +211,17 @@ public sealed class FormElementDto
   internal bool? ExplicitRequired { get; set; }
 
   [JsonIgnore]
-  internal Type? ReferenceServiceType { get; set; }
+  public Type? ReferenceServiceType { get; set; }
 
   [JsonIgnore]
-  internal bool AllowsCreate { get; set; }
+  public bool AllowsCreate { get; set; }
 
   [JsonIgnore]
-  internal Type? CreateFormServiceType { get; set; }
+  public Type? CreateFormServiceType { get; set; }
 
   [JsonIgnore]
   internal bool IsRightsTree { get; set; }
 }
-
 
 [UiContract]
 public sealed class FormActionDto

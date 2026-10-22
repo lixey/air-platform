@@ -1,8 +1,3 @@
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Migrations.Seeds;
-using Air.Data;
-
 namespace DemoEcom.Migrations;
 
 /// <summary>

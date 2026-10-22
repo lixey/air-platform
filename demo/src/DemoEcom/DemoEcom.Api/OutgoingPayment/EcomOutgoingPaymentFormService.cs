@@ -1,7 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Documents;
-using DemoOrg.Data.Models;
-
 namespace DemoEcom.OutgoingPayment;
 
 public sealed class EcomOutgoingPaymentFormService(

@@ -1,6 +1,3 @@
-using Air.App.Components;
-using Air.Data.Contracts;
-
 namespace Air.App.Metadata;
 
 [UiContract]

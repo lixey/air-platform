@@ -1,6 +1,3 @@
-using DemoApp.Data;
-using DemoApp.Migrations.Seeds;
-
 namespace DemoApp.Migrations;
 
 public static class AppSeed

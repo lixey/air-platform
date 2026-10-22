@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using Air.Data.Contracts;
 
 namespace Air.App.Form;
 
@@ -35,7 +34,11 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
   {
     _entries.Add(new ValidatorEntry
     {
-      Execute = (val, ctx, _, _) => { action(val, ctx); return Task.CompletedTask; }
+      Execute = (val, ctx, _, _) =>
+      {
+        action(val, ctx);
+        return Task.CompletedTask;
+      }
     });
     return this;
   }
@@ -59,6 +62,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
         {
           ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
         }
+
         return Task.CompletedTask;
       }
     });
@@ -75,6 +79,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
         {
           ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
         }
+
         return Task.CompletedTask;
       }
     });
@@ -122,6 +127,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
         {
           ctx.AddFailure(entry.Message ?? "Value does not match required pattern.", path, entry.Code);
         }
+
         return Task.CompletedTask;
       }
     });
@@ -134,6 +140,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     {
       _entries[^1].Message = message;
     }
+
     return this;
   }
 
@@ -143,6 +150,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     {
       _entries[^1].Code = code;
     }
+
     return this;
   }
 

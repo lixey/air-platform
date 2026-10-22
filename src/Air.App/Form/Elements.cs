@@ -1,11 +1,3 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using Air.App.Components;
-using Air.App.Localization;
-using Air.Data;
-using Air.Data.Contracts;
-using Air.Data.Internal;
-
 namespace Air.App.Form;
 
 public class Elements
@@ -98,13 +90,14 @@ public class Elements
   internal static string ToCamelPath(string path)
   {
     var parts = path.Split('.');
-    for (int i = 0; i < parts.Length; i++)
+    for (var i = 0; i < parts.Length; i++)
     {
       if (parts[i].Length > 0)
       {
         parts[i] = char.ToLowerInvariant(parts[i][0]) + parts[i][1..];
       }
     }
+
     return string.Join('.', parts);
   }
 
@@ -119,45 +112,101 @@ public class Elements
         last = navCandidate;
       }
     }
+
     if (last.Length > 0)
     {
       last = char.ToUpperInvariant(last[0]) + last[1..];
     }
+
     return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
   }
 
   internal static string ResolveFieldType(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(bool)) return UiFieldType.Checkbox;
-    if (underlying == typeof(DateOnly)) return UiFieldType.Date;
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return UiFieldType.Datetime;
-    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return UiFieldType.Time;
+    if (underlying == typeof(bool))
+    {
+      return UiFieldType.Checkbox;
+    }
+
+    if (underlying == typeof(DateOnly))
+    {
+      return UiFieldType.Date;
+    }
+
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
+    {
+      return UiFieldType.Datetime;
+    }
+
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
+    {
+      return UiFieldType.Time;
+    }
+
     if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte) ||
-        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float)) return UiFieldType.Number;
+        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+    {
+      return UiFieldType.Number;
+    }
+
     return UiFieldType.Text;
   }
 
   internal static string? ResolveTemporalType(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(DateOnly)) return UiTemporalType.DateOnly;
-    if (underlying == typeof(DateTime)) return UiTemporalType.DateTime;
-    if (underlying == typeof(DateTimeOffset)) return UiTemporalType.DateTimeOffset;
+    if (underlying == typeof(DateOnly))
+    {
+      return UiTemporalType.DateOnly;
+    }
+
+    if (underlying == typeof(DateTime))
+    {
+      return UiTemporalType.DateTime;
+    }
+
+    if (underlying == typeof(DateTimeOffset))
+    {
+      return UiTemporalType.DateTimeOffset;
+    }
+
     return null;
   }
 
   internal static FormElementModel ResolveDefaultModel(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(bool)) return new FormCheckboxModel();
-    if (underlying == typeof(DateOnly)) return new FormDateModel();
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return new FormDatetimeModel();
-    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return new FormTimeModel();
+    if (underlying == typeof(bool))
+    {
+      return new FormCheckboxModel();
+    }
+
+    if (underlying == typeof(DateOnly))
+    {
+      return new FormDateModel();
+    }
+
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
+    {
+      return new FormDatetimeModel();
+    }
+
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
+    {
+      return new FormTimeModel();
+    }
+
     if (underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+    {
       return new FormNumberModel { Step = 0.01 };
+    }
+
     if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte))
+    {
       return new FormNumberModel { Step = 1.0 };
+    }
+
     return new FormInputModel();
   }
 }
@@ -187,13 +236,43 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Label = label;
     return this;
   }
-  public FormElement<TEntity, TProp> Span(int cols) { _hasSpan = true; dto.Span = cols; return this; }
-  public FormElement<TEntity, TProp> Required(bool required = true) { dto.ExplicitRequired = required; dto.IsRequired = required; return this; }
-  public FormElement<TEntity, TProp> Disabled(bool disabled = true) { dto.IsDisabled = disabled; return this; }
-  public FormElement<TEntity, TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
-  public FormElement<TEntity, TProp> Focus(bool focus = true) { dto.IsFocused = focus; return this; }
-  public FormElement<TEntity, TProp> Placeholder(string placeholder) { dto.Placeholder = placeholder; return this; }
-  public FormElement<TEntity, TProp> Tab(string tab) { dto.Tab = tab; return this; }
+  public FormElement<TEntity, TProp> Span(int cols)
+  {
+    _hasSpan = true;
+    dto.Span = cols;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Required(bool required = true)
+  {
+    dto.ExplicitRequired = required;
+    dto.IsRequired = required;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Disabled(bool disabled = true)
+  {
+    dto.IsDisabled = disabled;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Hidden(bool hidden = true)
+  {
+    dto.IsHidden = hidden;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Focus(bool focus = true)
+  {
+    dto.IsFocused = focus;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Placeholder(string placeholder)
+  {
+    dto.Placeholder = placeholder;
+    return this;
+  }
+  public FormElement<TEntity, TProp> Tab(string tab)
+  {
+    dto.Tab = tab;
+    return this;
+  }
 
   public FormElement<TEntity, TProp> Range(double min, double max)
   {
@@ -230,7 +309,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> AsTextarea()
   {
     dto.Model = new FormTextareaModel();
-    if (!_hasSpan) dto.Span = 12;
+    if (!_hasSpan)
+    {
+      dto.Span = 12;
+    }
+
     return this;
   }
 
@@ -304,7 +387,11 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
     dto.IsRightsTree = held == null;
-    if (!_hasSpan) dto.Span = 12;
+    if (!_hasSpan)
+    {
+      dto.Span = 12;
+    }
+
     catalog ??= Air.App.Modules.ModuleCatalog.Instance;
     var nodes = Air.App.Auth.RightsTree.Build(catalog, held);
     dto.Model = new FormCheckboxTreeModel { Nodes = nodes };
@@ -336,6 +423,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     {
       info.IsGrouped = isGrouped;
     }
+
     return this;
   }
 
@@ -380,13 +468,21 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   {
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
-    if (!_hasSpan) dto.Span = 12;
+    if (!_hasSpan)
+    {
+      dto.Span = 12;
+    }
+
     dto.Model = new FormCheckboxSetModel { Options = options?.ToList() ?? [] };
     return this;
   }
   public FormElement<TEntity, TProp> AsCheckboxSet(object? options)
   {
-    if (options is IEnumerable<CheckboxOptionDto> opts) return AsCheckboxSet(opts);
+    if (options is IEnumerable<CheckboxOptionDto> opts)
+    {
+      return AsCheckboxSet(opts);
+    }
+
     return this;
   }
 
@@ -403,6 +499,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     {
       numModel.HasStepper = hasStepper;
     }
+
     return this;
   }
 
@@ -412,12 +509,17 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     {
       numModel.Step = step;
     }
+
     return this;
   }
 
   internal static string? GetMemberName(Expression expr)
   {
-    if (expr is UnaryExpression ue) expr = ue.Operand;
+    if (expr is UnaryExpression ue)
+    {
+      expr = ue.Operand;
+    }
+
     return expr is MemberExpression me ? me.Member.Name : null;
   }
 
@@ -442,6 +544,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     {
       dto.IsRequired = true;
     }
+
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
@@ -461,6 +564,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     {
       dto.IsRequired = true;
     }
+
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
@@ -480,6 +584,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     {
       dto.Label = lbl[..^4] + "s";
     }
+
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
     dto.ReferenceServiceType = typeof(TGridService);
@@ -518,6 +623,7 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
         SourceColumn = ToCamel(sourcePath)
       });
     }
+
     return this;
   }
 
@@ -536,6 +642,7 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
         DraftField = draftPath
       });
     }
+
     return this;
   }
 
@@ -549,17 +656,23 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
       var rule = FilterNode.Rule(sourcePath, FilterOperator.Equals, value);
       selectModel.ReferenceFilter = CombineFilter(selectModel.ReferenceFilter, rule);
     }
+
     return this;
   }
 
   private static FilterNode CombineFilter(FilterNode? existing, FilterNode addition)
   {
-    if (existing is null) return addition;
+    if (existing is null)
+    {
+      return addition;
+    }
+
     if (existing is FilterGroup { Logic: FilterLogic.And } group)
     {
       group.Items.Add(addition);
       return group;
     }
+
     return FilterNode.All(existing, addition);
   }
 
@@ -617,7 +730,20 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
   public bool IsFiles { get; private set; }
   public string Look { get; private set; } = Contracts.FilesLook.Tiles;
 
-  public ChildGridBuilder Key(string key) { DeclaredKey = key; return this; }
-  public ChildGridBuilder Label(string label) { DeclaredLabel = label; return this; }
-  public ChildGridBuilder AsFiles(string look = Contracts.FilesLook.Tiles) { IsFiles = true; Look = look; return this; }
+  public ChildGridBuilder Key(string key)
+  {
+    DeclaredKey = key;
+    return this;
+  }
+  public ChildGridBuilder Label(string label)
+  {
+    DeclaredLabel = label;
+    return this;
+  }
+  public ChildGridBuilder AsFiles(string look = Contracts.FilesLook.Tiles)
+  {
+    IsFiles = true;
+    Look = look;
+    return this;
+  }
 }

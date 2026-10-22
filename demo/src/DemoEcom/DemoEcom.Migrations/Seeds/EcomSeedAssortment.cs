@@ -1,7 +1,3 @@
-using Bogus;
-using DemoEcom.Data;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Migrations.Seeds;
 
 internal static class EcomSeedAssortment

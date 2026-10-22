@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace Air.App.Modules;
@@ -66,7 +64,11 @@ public class Feature
 
   private static string Pluralize(string word)
   {
-    if (string.IsNullOrEmpty(word)) return string.Empty;
+    if (string.IsNullOrEmpty(word))
+    {
+      return string.Empty;
+    }
+
     if (word.EndsWith("y", StringComparison.OrdinalIgnoreCase))
     {
       if (word.EndsWith("ay", StringComparison.OrdinalIgnoreCase) ||
@@ -77,8 +79,10 @@ public class Feature
       {
         return word + "s";
       }
+
       return word[..^1] + "ies";
     }
+
     if (word.EndsWith("s", StringComparison.OrdinalIgnoreCase) ||
         word.EndsWith("x", StringComparison.OrdinalIgnoreCase) ||
         word.EndsWith("z", StringComparison.OrdinalIgnoreCase) ||
@@ -87,6 +91,7 @@ public class Feature
     {
       return word + "es";
     }
+
     return word + "s";
   }
 
@@ -101,10 +106,12 @@ public class Feature
     Path = source.Path;
     IsReadOnly = source.IsReadOnly;
     HasDelete = source.HasDelete;
+    AllowsAgent = source.AllowsAgent;
     foreach (var kv in source._rights)
     {
       _rights[kv.Key] = new Right(kv.Value.Key, kv.Value.Action, this, kv.Value.IsPattern);
     }
+
     if (ServiceType != null)
     {
       FeaturesByServiceType[ServiceType] = this;
@@ -117,6 +124,7 @@ public class Feature
   public Type? ServiceType { get; set; }
   public bool IsReadOnly { get; private set; }
   public bool HasDelete { get; private set; } = true;
+  public bool AllowsAgent { get; private set; }
 
   public string Key => $"{Module}.{CleanName}";
 
@@ -146,6 +154,12 @@ public class Feature
     return this;
   }
 
+  public Feature AllowAgent(bool allow = true)
+  {
+    AllowsAgent = allow;
+    return this;
+  }
+
   public Feature<TAccess> WithAccess<TAccess>() where TAccess : FeatureAccess, new()
   {
     var typed = new Feature<TAccess>(this);
@@ -172,6 +186,12 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
   public new Feature<TAccess> WithoutDelete()
   {
     base.WithoutDelete();
+    return this;
+  }
+
+  public new Feature<TAccess> AllowAgent(bool allow = true)
+  {
+    base.AllowAgent(allow);
     return this;
   }
 }
@@ -214,6 +234,7 @@ public abstract class ModuleDefinition<TSelf> : ModuleDefinition where TSelf : M
         list.Add(feat);
       }
     }
+
     foreach (var prop in typeof(TSelf).GetProperties(BindingFlags.Public | BindingFlags.Static))
     {
       if (typeof(Feature).IsAssignableFrom(prop.PropertyType) && prop.GetValue(null) is Feature feat)
@@ -221,6 +242,7 @@ public abstract class ModuleDefinition<TSelf> : ModuleDefinition where TSelf : M
         list.Add(feat);
       }
     }
+
     return list.AsReadOnly();
   });
 

@@ -1,6 +1,3 @@
-using System.Linq.Expressions;
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Documents;
 
 /// <summary>

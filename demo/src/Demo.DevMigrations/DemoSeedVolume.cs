@@ -1,6 +1,3 @@
-using DemoEcom.Migrations;
-using DemoOrg.Migrations;
-
 namespace Demo.DevMigrations;
 
 public sealed record DemoSeedVolume(OrgSeedVolume Org, EcomSeedVolume Ecom)

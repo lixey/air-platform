@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using Air.Data.Files;
-
 namespace Air.Data.Entities;
 
 public abstract class BaseAppFile : BaseEntity

@@ -1,16 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
-using Air.App.Auth;
-using Air.App.Form;
-using Air.App.Grid;
-using Air.App.Localization;
-using Air.App.Modules;
-using Air.App.Screens;
-using Air.App.TypeScript;
-using Air.Data.Entities;
-using Air.Data.Tenancy;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Air.App.Host;
@@ -103,6 +91,7 @@ public static class PlatformHost
       {
         catalog.Register(m);
       }
+
       ModuleCatalog.Instance = catalog;
       return catalog;
     });

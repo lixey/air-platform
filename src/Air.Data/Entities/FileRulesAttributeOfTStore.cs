@@ -1,5 +1,3 @@
-using Air.Data.Files;
-
 namespace Air.Data.Entities;
 
 public sealed class FileRulesAttribute<TStore>() : FileRulesAttribute(typeof(TStore))

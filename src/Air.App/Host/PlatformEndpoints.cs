@@ -1,12 +1,3 @@
-using System.Globalization;
-using Air.App.Form;
-using Air.App.Grid;
-using Air.App.Localization;
-using Air.App.Screens;
-using Air.Data.Contracts;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-
 namespace Air.App.Host;
 
 public static class PlatformEndpoints
@@ -79,26 +70,47 @@ public static class PlatformEndpoints
     }
   }
 
-  internal static CultureInfo ResolveRequestCulture(HttpRequest req)
+  public static CultureInfo ResolveRequestCulture(HttpRequest req)
   {
     if (req.Query.TryGetValue("lang", out var langVal) && !string.IsNullOrWhiteSpace(langVal))
     {
       var s = langVal.ToString();
-      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return UkCulture;
-      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return EnCulture;
+      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase))
+      {
+        return UkCulture;
+      }
+
+      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase))
+      {
+        return EnCulture;
+      }
     }
 
     if (req.Cookies.TryGetValue("culture", out var cookieVal) && !string.IsNullOrWhiteSpace(cookieVal))
     {
-      if (cookieVal.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return UkCulture;
-      if (cookieVal.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return EnCulture;
+      if (cookieVal.StartsWith("uk", StringComparison.OrdinalIgnoreCase))
+      {
+        return UkCulture;
+      }
+
+      if (cookieVal.StartsWith("en", StringComparison.OrdinalIgnoreCase))
+      {
+        return EnCulture;
+      }
     }
 
     if (req.Headers.TryGetValue("Accept-Language", out var acceptVal) && !string.IsNullOrWhiteSpace(acceptVal))
     {
       var s = acceptVal.ToString();
-      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase)) return UkCulture;
-      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return EnCulture;
+      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase))
+      {
+        return UkCulture;
+      }
+
+      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase))
+      {
+        return EnCulture;
+      }
     }
 
     return UkCulture;

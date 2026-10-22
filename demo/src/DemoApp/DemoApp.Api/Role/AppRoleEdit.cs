@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace DemoApp.Role;
 
 public sealed class AppRoleEdit

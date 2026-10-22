@@ -129,13 +129,9 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
       return base;
     }
     const baseParams =
-      typeof base.screen.params === 'object' && base.screen.params !== null
-        ? (base.screen.params as Record<string, unknown>)
-        : {};
+      typeof base.screen.params === 'object' && base.screen.params !== null ? (base.screen.params as Record<string, unknown>) : {};
     const existingValue =
-      typeof baseParams['value'] === 'object' && baseParams['value'] !== null
-        ? (baseParams['value'] as Record<string, unknown>)
-        : {};
+      typeof baseParams['value'] === 'object' && baseParams['value'] !== null ? (baseParams['value'] as Record<string, unknown>) : {};
     return {
       ...base,
       screen: {
@@ -212,10 +208,7 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
     const picked = options[0] ?? null;
     const path = this.element().referencePath;
     if (path && !this.options()) {
-      this.form.setValueAt(
-        path,
-        this.isMultiple() ? options.map(referenceOfOption) : picked ? referenceOfOption(picked) : null,
-      );
+      this.form.setValueAt(path, this.isMultiple() ? options.map(referenceOfOption) : picked ? referenceOfOption(picked) : null);
     }
     const patches = this.element().selectPatches;
     if (patches && patches.length > 0 && picked?.row && typeof picked.row === 'object') {

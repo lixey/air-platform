@@ -99,9 +99,7 @@ export interface SplitDraft {
 export function splitDraft(value: Readonly<Record<string, unknown>>, elements: readonly FormElementDto[]): SplitDraft {
   const draft = draftOf(value, elements);
   const elementPaths = new Set(elements.map(e => e.path));
-  const referencePaths = new Set(
-    elements.map(e => e.referencePath).filter((p): p is string => Boolean(p) && !elementPaths.has(p!)),
-  );
+  const referencePaths = new Set(elements.map(e => e.referencePath).filter((p): p is string => Boolean(p) && !elementPaths.has(p!)));
   const fields: Record<string, unknown> = {};
   const references: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(draft)) {

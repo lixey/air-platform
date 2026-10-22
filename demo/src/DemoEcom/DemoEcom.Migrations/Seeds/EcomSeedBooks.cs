@@ -1,7 +1,3 @@
-using Bogus;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Migrations.Seeds;
 
 internal sealed class EcomSeedBooks(

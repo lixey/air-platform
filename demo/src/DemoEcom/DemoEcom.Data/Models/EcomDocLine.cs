@@ -1,7 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using DemoApp.Data.Models;
-using DemoOrg.Data.Models;
-
 namespace DemoEcom.Data.Models;
 
 [Index(nameof(TenantId), nameof(DocId), nameof(SortOrder)), Index(nameof(TenantId), nameof(ProductId))]

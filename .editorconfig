@@ -1,0 +1,277 @@
+root = true # Specifies that this EditorConfig file is the root and applies to all project directories
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+tab_width = 2
+trim_trailing_whitespace = true
+insert_final_newline = true
+max_line_length = 140
+
+# C# files
+[*.cs]
+
+#### Basic Indentation Settings ####
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+#### Organize using Directives ####
+dotnet_sort_system_directives_first = true # Place System directives first
+dotnet_separate_import_directive_groups = false # Do not separate using groups with empty lines
+csharp_using_directive_placement = outside_namespace:error # Place using directives outside namespace
+dotnet_diagnostic.IDE0005.severity = warning # A file does not repeat a global using (code-style.md, rule 6)
+resharper_csharp_blank_lines_after_using_list = 1 # Exactly 1 blank line after usings list
+
+#### this. and Member Qualification ####
+dotnet_style_qualification_for_event = false:error # Do not qualify events with this.
+dotnet_style_qualification_for_field = false:error # Do not qualify fields with this.
+dotnet_style_qualification_for_method = false:error # Do not qualify methods with this.
+dotnet_style_qualification_for_property = false:error # Do not qualify properties with this.
+resharper_csharp_use_this_qualifier = false # Do not use this. qualifier in Rider
+
+#### Language Keywords vs BCL Types ####
+dotnet_style_predefined_type_for_locals_parameters_members = true:error # Prefer predefined keywords (int, string) for locals and parameters
+dotnet_style_predefined_type_for_member_access = true:error # Prefer predefined keywords for member access
+
+#### Parentheses Preferences ####
+dotnet_style_parentheses_in_arithmetic_binary_operators = never_if_unnecessary:none # Optional parentheses in arithmetic operations
+dotnet_style_parentheses_in_other_binary_operators = never_if_unnecessary:error # Disallow redundant parentheses in binary operators
+dotnet_style_parentheses_in_other_operators = never_if_unnecessary:error # Disallow redundant parentheses in other operators
+dotnet_style_parentheses_in_relational_binary_operators = never_if_unnecessary:error # Disallow redundant parentheses in relational operators
+resharper_parentheses_redundancy_style = remove # Remove redundant parentheses in Rider
+
+#### Accessibility Modifiers and Order ####
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:error # Require explicit accessibility modifiers for non-interface members
+csharp_preferred_modifier_order = public, private, protected, internal, static, extern, new, virtual, abstract, sealed, override, readonly, unsafe, volatile, async:error # Canonical modifier order
+resharper_modifiers_order = public private protected internal static extern new virtual abstract sealed override readonly unsafe volatile async
+
+#### Expression-Level Preferences ####
+dotnet_style_coalesce_expression = true:error # Prefer ?? over null check
+dotnet_style_null_propagation = true:error # Prefer ?. over null check
+dotnet_style_object_initializer = true:error # Prefer object initializers
+dotnet_style_collection_initializer = true:error # Prefer collection initializers
+dotnet_style_prefer_auto_properties = true:error # Prefer auto-properties
+dotnet_style_prefer_compound_assignment = true:error # Prefer compound assignment operators (+=, -=)
+dotnet_style_prefer_conditional_expression_over_assignment = true:error # Prefer ternary operator over if statement for assignment
+dotnet_style_prefer_conditional_expression_over_return = true:error # Prefer ternary operator over if statement for return
+dotnet_style_prefer_inferred_anonymous_type_member_names = true:error # Prefer inferred anonymous type member names
+dotnet_style_prefer_inferred_tuple_names = true:error # Prefer inferred tuple names
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:error # Prefer is null over ReferenceEquals
+dotnet_style_readonly_field = true:error # Make fields readonly when possible
+
+#### Namespaces (Modern C# File-Scoped) ####
+csharp_style_namespace_declarations = file_scoped:error # Require file-scoped namespaces (namespace Foo.Bar;)
+
+#### Mandatory var Everywhere Possible ####
+csharp_style_var_for_built_in_types = true:error # Require var for built-in types
+csharp_style_var_when_type_is_apparent = true:error # Require var when type is apparent
+csharp_style_var_elsewhere = true:error # Require var in all other cases
+resharper_csharp_use_var_ev_local = true # Rider: use var for local variables
+resharper_csharp_use_var_ev_for = true # Rider: use var in for loops
+resharper_csharp_use_var_ev_foreach = true # Rider: use var in foreach loops
+resharper_csharp_use_var_ev_deconstructing = true # Rider: use var in deconstruction
+resharper_suggest_var_or_type_built_in_types_highlighting = error # Flag missing var for built-in types as error
+resharper_suggest_var_or_type_simple_types_highlighting = error # Flag missing var for simple types as error
+resharper_suggest_var_or_type_elsewhere_highlighting = error # Flag missing var elsewhere as error
+
+#### Mandatory Braces for if, foreach, for, while ####
+csharp_prefer_braces = true:error # Braces are required for all control blocks, even single-line
+resharper_braces_for_ifelse = required # Rider: braces required for if/else
+resharper_braces_for_for = required # Rider: braces required for for
+resharper_braces_for_foreach = required # Rider: braces required for foreach
+resharper_braces_for_while = required # Rider: braces required for while
+resharper_braces_for_do = required # Rider: braces required for do-while
+resharper_braces_for_using = required # Rider: braces required for using blocks
+resharper_braces_redundant = false # Do not consider braces redundant
+
+#### Expression-Bodied Members (=>) ####
+csharp_style_expression_bodied_properties = true:error # Prefer expression body for properties
+csharp_style_expression_bodied_accessors = true:error # Prefer expression body for accessors
+csharp_style_expression_bodied_lambdas = true:error # Prefer expression body for lambdas
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion # Single-line methods via =>
+csharp_style_expression_bodied_constructors = when_on_single_line:suggestion # Single-line constructors via =>
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion # Single-line operators via =>
+csharp_style_expression_bodied_local_functions = when_on_single_line:suggestion # Single-line local functions via =>
+
+#### Pattern Matching and Modern C# ####
+csharp_style_pattern_matching_over_as_with_null_check = true:error # Prefer pattern matching over as with null check
+csharp_style_pattern_matching_over_is_with_cast_check = true:error # Prefer pattern matching over is with cast
+csharp_style_prefer_switch_expression = true:error # Prefer switch expressions
+csharp_prefer_simple_default_expression = true:error # Prefer default over default(T)
+resharper_csharp_default_value_when_type_evident = default_literal # Rider: prefer default over default(T)
+resharper_csharp_default_value_when_type_not_evident = default_literal # Rider: prefer default over default(T)
+csharp_force_attribute_style = join # Join multiple attributes into [Attr1, Attr2]
+resharper_csharp_force_attribute_style = join # Rider: join multiple attributes into [Attr1, Attr2]
+csharp_place_attribute_on_same_line = false # Do not place attributes on same line as member
+resharper_csharp_place_attribute_on_same_line = false # Rider: place attributes on separate line above member
+csharp_prefer_static_local_function = true:error # Prefer static local functions when variables are not captured
+csharp_style_deconstructed_variable_declaration = true:suggestion # Prefer variable deconstruction
+csharp_style_inlined_variable_declaration = true:error # Inline variable declarations (out var)
+csharp_style_throw_expression = true:suggestion # Prefer throw expressions
+csharp_style_prefer_index_operator = true:suggestion # Prefer index operator ^
+csharp_style_prefer_range_operator = true:suggestion # Prefer range operator ..
+
+#### New Lines and Canonical Allman Braces ####
+csharp_new_line_before_open_brace = all # Opening brace { always on a new line
+csharp_new_line_before_else = true # else on a new line
+csharp_new_line_before_catch = true # catch on a new line
+csharp_new_line_before_finally = true # finally on a new line
+csharp_new_line_before_members_in_object_initializers = false # Do not break compact initializers
+csharp_new_line_before_members_in_anonymous_types = false # Do not break compact anonymous types
+csharp_new_line_between_query_expression_clauses = true # Break LINQ query clauses onto new lines
+
+#### C# Indentation ####
+csharp_indent_block_contents = true # Indent block contents
+csharp_indent_braces = false # Do not indent curly braces themselves
+csharp_indent_case_contents = true # Indent case contents
+csharp_indent_case_contents_when_block = true # Indent case block contents
+csharp_indent_switch_labels = true # Indent switch labels
+csharp_indent_labels = one_less_than_current # Indent goto labels one level less
+resharper_csharp_indent_size = 2 # Rider indent size
+resharper_csharp_tab_width = 2 # Rider tab width
+resharper_csharp_initializer_braces = next_line # Rider: place multiline initializer braces on next line
+resharper_csharp_place_simple_initializer_on_single_line = true # Rider: keep simple initializers on single line
+csharp_place_simple_initializer_on_single_line = true # Roslyn/Rider: keep simple initializers on single line
+resharper_csharp_place_simple_anonymous_method_on_single_line = true # Rider: keep simple anonymous methods on single line
+resharper_csharp_align_multiline_array_and_object_initializer = false # Rider: do not align multiline initializers to 'new'
+resharper_csharp_use_continuous_indent_inside_initializer_braces = false # Rider: do not add extra continuous indent inside initializer braces
+
+#### Smart Blank Lines around Code Blocks ####
+# Roslyn rules (dotnet format)
+dotnet_style_allow_multiple_blank_lines_experimental = false:error # Roslyn: avoid multiple blank lines (IDE2000)
+dotnet_style_allow_statement_immediately_after_block_experimental = false:error # Roslyn: blank line required after block statement (IDE2003)
+csharp_style_allow_blank_lines_between_consecutive_braces_experimental = false:error # Roslyn: no blank lines between consecutive closing braces (IDE2002)
+csharp_style_allow_embedded_statements_on_same_line_experimental = false:error # Roslyn: no embedded statements on same line (IDE2001)
+dotnet_diagnostic.IDE2000.severity = error
+dotnet_diagnostic.IDE2001.severity = error
+dotnet_diagnostic.IDE2002.severity = error
+dotnet_diagnostic.IDE2003.severity = error
+
+# ReSharper / Rider rules
+resharper_blank_lines_around_block_statement = 1 # Minimum 1 blank line around block statements (if, foreach, etc.)
+resharper_blank_lines_after_block_statements = 1 # Minimum 1 blank line after block statements
+resharper_csharp_blank_lines_around_multiline_statements = 1 # Minimum 1 blank line around multiline statements
+resharper_csharp_remove_blank_lines_near_braces_in_code = true # Remove redundant blank lines immediately after { and before }
+resharper_csharp_remove_blank_lines_near_braces_in_declarations = true # Remove blank lines at start/end of class body
+resharper_csharp_keep_blank_lines_in_code = 1 # Collapse consecutive blank lines in code to maximum 1
+resharper_csharp_keep_blank_lines_in_declarations = 1 # Collapse consecutive blank lines in declarations to maximum 1
+resharper_csharp_blank_lines_around_invocable = 1 # 1 blank line between methods
+resharper_csharp_blank_lines_around_type = 1 # 1 blank line between types
+resharper_csharp_blank_lines_around_field = 0 # No unnecessary blank lines between fields
+resharper_csharp_blank_lines_around_property = 0 # No unnecessary blank lines between properties
+resharper_csharp_blank_lines_around_auto_property = 0 # No unnecessary blank lines between auto-properties
+resharper_csharp_blank_lines_around_region = 1 # 1 blank line around regions
+resharper_csharp_indent_initializer_braces = false # Do not add extra indent to initializer braces
+
+#### Line Length and Wrapping Rules (140 characters) ####
+resharper_csharp_max_line_length = 140 # Maximum line length is 140 characters
+resharper_csharp_wrap_parameters_style = chop_if_long # Wrap each parameter onto a new line if exceeding 140
+resharper_csharp_wrap_arguments_style = chop_if_long # Wrap each invocation argument onto a new line if exceeding 140
+resharper_csharp_wrap_extends_list_style = chop_if_long # Wrap inheritance list when exceeding limit
+resharper_csharp_wrap_after_declaration_lpar = true # Line break after ( in declaration upon chop
+resharper_csharp_wrap_before_declaration_rpar = true # Line break before ) in declaration upon chop
+resharper_csharp_wrap_after_invocation_lpar = true # Line break after ( in invocation upon chop
+resharper_csharp_wrap_before_invocation_rpar = true # Line break before ) in invocation upon chop
+resharper_wrap_before_primary_constructor_declaration_rpar = true # Line break before ) in primary constructor
+resharper_csharp_wrap_list_pattern = chop_if_long # Wrap list patterns
+resharper_csharp_wrap_object_and_collection_initializer_style = wrap_if_long # Wrap initializer elements
+resharper_csharp_max_initializer_elements_on_line = 10 # Allow up to 10 elements on single line
+resharper_csharp_max_array_initializer_elements_on_line = 10 # Allow up to 10 array elements on single line
+
+#### Spacing Preferences ####
+csharp_space_after_cast = false # No space after cast
+csharp_space_after_colon_in_inheritance_clause = true # Space after colon in inheritance
+csharp_space_after_comma = true # Space after comma
+csharp_space_after_dot = false # No space after dot
+csharp_space_after_keywords_in_control_flow_statements = true # Space after control flow keywords (if, for, while, return)
+csharp_space_after_semicolon_in_for_statement = true # Space after ; in for statement
+csharp_space_around_binary_operators = before_and_after # Spaces around binary operators
+csharp_space_around_declaration_statements = false # No spaces around declaration statements
+csharp_space_before_colon_in_inheritance_clause = true # Space before colon in inheritance
+csharp_space_before_comma = false # No space before comma
+csharp_space_before_dot = false # No space before dot
+csharp_space_before_open_square_brackets = false # No space before [
+csharp_space_before_semicolon_in_for_statement = false # No space before ; in for statement
+csharp_space_between_empty_square_brackets = false # No space between []
+csharp_space_between_method_call_empty_parameter_list_parentheses = false # No space in empty () call
+csharp_space_between_method_call_name_and_opening_parenthesis = false # No space before ( in call
+csharp_space_between_method_call_parameter_list_parentheses = false # No space inside (arg) call
+csharp_space_between_method_declaration_empty_parameter_list_parentheses = false # No space in empty () declaration
+csharp_space_between_method_declaration_name_and_open_parenthesis = false # No space before ( in declaration
+csharp_space_between_method_declaration_parameter_list_parentheses = false # No space inside (param) declaration
+csharp_space_between_parentheses = false # No redundant space inside parentheses
+csharp_space_between_square_brackets = false # No redundant space inside brackets
+resharper_space_within_empty_braces = true # Space in empty braces { } (matches Roslyn is { })
+
+#### Naming Conventions (PascalCase and I Prefix) ####
+dotnet_naming_rule.interface_should_be_begins_with_i.severity = suggestion
+dotnet_naming_rule.interface_should_be_begins_with_i.symbols = interface
+dotnet_naming_rule.interface_should_be_begins_with_i.style = begins_with_i
+
+dotnet_naming_rule.types_should_be_pascal_case.severity = suggestion
+dotnet_naming_rule.types_should_be_pascal_case.symbols = types
+dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case
+
+dotnet_naming_rule.non_field_members_should_be_pascal_case.severity = suggestion
+dotnet_naming_rule.non_field_members_should_be_pascal_case.symbols = non_field_members
+dotnet_naming_rule.non_field_members_should_be_pascal_case.style = pascal_case
+
+dotnet_naming_symbols.interface.applicable_kinds = interface
+dotnet_naming_symbols.interface.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+dotnet_naming_symbols.types.applicable_kinds = class, struct, interface, enum
+dotnet_naming_symbols.types.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+dotnet_naming_symbols.non_field_members.applicable_kinds = property, event, method
+dotnet_naming_symbols.non_field_members.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.begins_with_i.required_prefix = I
+dotnet_naming_style.begins_with_i.capitalization = pascal_case
+
+#### Suppression of Noisy or Irrelevant Diagnostics ####
+dotnet_diagnostic.S1121.severity = none # Allow assignments in sub-expressions
+dotnet_diagnostic.CA1000.severity = none # Allow static members on generic types
+dotnet_diagnostic.CA1014.severity = none # Disable CLSCompliant requirement
+dotnet_diagnostic.CA1030.severity = none # Disable requiring events
+dotnet_diagnostic.CA1040.severity = none # Allow empty marker interfaces
+dotnet_diagnostic.CA1062.severity = none # Disable redundant public method argument validation
+dotnet_diagnostic.CA1711.severity = none # Allow domain-specific identifiers suffixes
+dotnet_diagnostic.CA1716.severity = none # Allow identifiers matching keywords in other languages
+dotnet_diagnostic.CA1724.severity = none # Allow type names matching namespaces
+dotnet_diagnostic.CA1812.severity = none # Allow internal classes instantiated via DI
+dotnet_diagnostic.CA1819.severity = none # Allow properties returning arrays
+dotnet_diagnostic.CA1848.severity = none # Disable requiring LoggerMessage generators
+dotnet_diagnostic.CA2007.severity = none # Disable ConfigureAwait requirement in ASP.NET Core
+dotnet_diagnostic.CA2225.severity = none # Disable named alternates for operator overloads
+dotnet_diagnostic.CA2326.severity = none
+dotnet_diagnostic.CA2327.severity = none
+dotnet_diagnostic.IDE0046.severity = none # Do not force cascading ternary expressions over readable ifs
+dotnet_diagnostic.xUnit1051.severity = none # The test's cancellation token is not passed yet (docs/backlog.md)
+
+# A source linked into several test projects cannot know which of their global usings it repeats (code-style.md, rule 6)
+[tests/Shared/*.cs]
+dotnet_diagnostic.IDE0005.severity = none
+
+# The files migrations are the output of the Entity Framework Core tools, kept as generated and never edited once shipped
+[src/Air.Data.{Postgres,SqlServer}/Migrations/*.cs]
+generated_code = true
+
+#### Non-C# Files in Project ####
+[{*.yaml,*.yml,*.har,*.json,*.jsonc}]
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+[{*.markdown,*.md}]
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+[{*.csproj,*.props,*.targets,*.xml,*.slnx}]
+indent_style = space
+indent_size = 2
+tab_width = 2

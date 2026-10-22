@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using Air.Data.Entities;
-
 namespace DemoApp.User;
 
 public sealed class AppUserEdit

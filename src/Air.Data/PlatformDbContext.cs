@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Air.Data;
@@ -9,8 +10,6 @@ namespace Air.Data;
 /// </summary>
 public abstract class PlatformDbContext : DbContext
 {
-  private readonly ITenantContext? _tenantContext;
-
   protected PlatformDbContext()
   {
   }
@@ -21,10 +20,11 @@ public abstract class PlatformDbContext : DbContext
 
   protected PlatformDbContext(DbContextOptions options, ITenantContext? tenantContext) : base(options)
   {
-    _tenantContext = tenantContext;
+    TenantContext = tenantContext;
   }
 
-  public ITenantContext TenantContext => _tenantContext ?? AsyncLocalTenantContext.Instance;
+  [AllowNull]
+  public ITenantContext TenantContext => field ?? AsyncLocalTenantContext.Instance;
 
   public DbSet<AppLanguage> AppLanguage => Set<AppLanguage>();
   public DbSet<AppPlatformInstallation> AppPlatformInstallation => Set<AppPlatformInstallation>();
@@ -220,7 +220,11 @@ public abstract class PlatformDbContext : DbContext
       else if (entry.State == EntityState.Modified)
       {
         var modified = entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)).ToList();
-        if (modified.Count == 0) continue;
+        if (modified.Count == 0)
+        {
+          continue;
+        }
+
         row.Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Modified;
         row.RowId = ((IEntity)entry.Entity).Id;
         row.Before = SerializeProperties(modified, p => p.OriginalValue);
@@ -250,8 +254,10 @@ public abstract class PlatformDbContext : DbContext
         row.RowId = ((IEntity)entry.Entity).Id;
         row.After = SerializeProperties(entry.Properties, p => p.CurrentValue);
       }
+
       rows.Add(row);
     }
+
     return rows;
   }
 
@@ -287,14 +293,20 @@ public abstract class PlatformDbContext : DbContext
     var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
     foreach (var p in properties)
     {
-      if (p.Metadata.Name is nameof(IHasTimestamps.UpdatedAt)) continue;
+      if (p.Metadata.Name is nameof(IHasTimestamps.UpdatedAt))
+      {
+        continue;
+      }
+
       if (((MemberInfo?)p.Metadata.PropertyInfo ?? p.Metadata.FieldInfo) is { } member &&
           Attribute.IsDefined(member, typeof(SensitiveAttribute), inherit: true))
       {
         continue;
       }
+
       dict[p.Metadata.Name] = val(p);
     }
+
     return System.Text.Json.JsonSerializer.Serialize(dict);
   }
 

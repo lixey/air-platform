@@ -1,13 +1,4 @@
-using System.Collections;
-using System.Globalization;
-using System.Linq.Expressions;
 using System.Numerics;
-using System.Text.Json;
-using Air.App.Components;
-using Air.App.Internal;
-using Air.App.Screens;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
 
 namespace Air.App.Form;
 
@@ -79,21 +70,33 @@ public abstract partial class FormService<TEntity, TInput>
 
     foreach (var el in elements.List)
     {
-      if (string.IsNullOrEmpty(el.Path)) continue;
+      if (string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
 
       var acceptsInput = !el.IsDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
       if (onlyAcceptingInput)
       {
-        if (!acceptsInput) continue;
+        if (!acceptsInput)
+        {
+          continue;
+        }
       }
       else
       {
-        if (acceptsInput || el.IsInputOnly || !el.IsRequired) continue;
+        if (acceptsInput || el.IsInputOnly || !el.IsRequired)
+        {
+          continue;
+        }
       }
 
       var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
       var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
-      if (inputProp == null && entityProp == null) continue;
+      if (inputProp == null && entityProp == null)
+      {
+        continue;
+      }
 
       var val = inputProp != null
         ? PropertyAccessorCache.GetValue(input, inputProp.Name)
@@ -114,10 +117,14 @@ public abstract partial class FormService<TEntity, TInput>
             Type = MessageType.Error
           });
         }
+
         continue;
       }
 
-      if (!onlyAcceptingInput) continue;
+      if (!onlyAcceptingInput)
+      {
+        continue;
+      }
 
       if (val is null)
       {
@@ -131,6 +138,7 @@ public abstract partial class FormService<TEntity, TInput>
             Type = MessageType.Error
           });
         }
+
         continue;
       }
 
@@ -146,6 +154,7 @@ public abstract partial class FormService<TEntity, TInput>
             Type = MessageType.Error
           });
         }
+
         if (el.Constraints.MinLength is { } minLen && text.Length < minLen)
         {
           ruleCtx.Failures.Add(new MessageDto
@@ -196,10 +205,12 @@ public abstract partial class FormService<TEntity, TInput>
         {
           outOfRange = true;
         }
+
         if (el.Constraints.Max is { ValueKind: JsonValueKind.Number } maxEl && maxEl.TryGetDecimal(out var maxDec) && decVal > maxDec)
         {
           outOfRange = true;
         }
+
         if (outOfRange)
         {
           ruleCtx.Failures.Add(new MessageDto
@@ -271,7 +282,7 @@ public abstract partial class FormService<TEntity, TInput>
             ? origTreeEnum.ToHashSet(StringComparer.Ordinal)
             : [];
 
-        if (keyList.Any(k => !allowedKeys.Contains(k) || (disabledKeys.Contains(k) && !origTreeSet.Contains(k))))
+        if (keyList.Any(k => !allowedKeys.Contains(k) || disabledKeys.Contains(k) && !origTreeSet.Contains(k)))
         {
           ruleCtx.Failures.Add(new MessageDto
           {
@@ -288,6 +299,7 @@ public abstract partial class FormService<TEntity, TInput>
           {
             inputProp.SetValue(input, normalized);
           }
+
           if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
           {
             entityProp.SetValue(entity, normalized);
@@ -377,7 +389,7 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       var val = PropertyAccessorCache.GetValue(entity, prop.Name);
-      if (val is null || (val is string str && string.IsNullOrWhiteSpace(str)))
+      if (val is null || val is string str && string.IsNullOrWhiteSpace(str))
       {
         continue;
       }
@@ -504,7 +516,7 @@ public abstract partial class FormService<TEntity, TInput>
         ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? Modules.ModuleCatalog.Instance.FindServiceType(rs) : null);
 
       if (refGridType == null ||
-          Modules.ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, _app) is not Grid.IGridService refGrid)
+          Modules.ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, PlatformApp) is not Grid.IGridService refGrid)
       {
         continue;
       }

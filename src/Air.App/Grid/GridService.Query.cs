@@ -1,11 +1,3 @@
-using System.Linq.Expressions;
-using Air.App.Internal;
-using Air.App.Modules;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Air.Data.Querying;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
@@ -45,7 +37,10 @@ public abstract partial class GridService<TEntity, TRow>
     NamedFilterItem? overrideGroupItem = null)
   {
     var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
-    if (isSelect) return query;
+    if (isSelect)
+    {
+      return query;
+    }
 
     var nfs = gridReq?.NamedFilters ?? [];
 
@@ -103,7 +98,11 @@ public abstract partial class GridService<TEntity, TRow>
       var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 } ? gridReq.ReferenceLabelPaths : ["name"];
       var patchColumns = gridReq?.PatchSourceColumns ?? [];
       var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
-      foreach (var p in patchColumns) preserved.Add(p);
+      foreach (var p in patchColumns)
+      {
+        preserved.Add(p);
+      }
+
       cols.RetainOnly(preserved);
     }
 
@@ -127,7 +126,7 @@ public abstract partial class GridService<TEntity, TRow>
       request.SearchFields = queryDeclaration.SearchFields.ToList();
     }
 
-    if (!isSelect && !(gridReq?.IsDataOnly ?? false) && request.Filter is null && request.ColumnFilter is null && (gridReq?.NamedFilters is not { Count: > 0 }) && queryDeclaration.InitialFilters.Count > 0)
+    if (!isSelect && !(gridReq?.IsDataOnly ?? false) && request.Filter is null && request.ColumnFilter is null && gridReq?.NamedFilters is not { Count: > 0 } && queryDeclaration.InitialFilters.Count > 0)
     {
       request.Filter = queryDeclaration.InitialFilters.Count == 1
         ? queryDeclaration.InitialFilters[0]
@@ -144,6 +143,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         await queryDeclaration.ComputeAction(page.Rows, ct);
       }
+
       var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List, queryDeclaration.RowFlags)).ToList();
       await PopulateCoversAsync(shapedRows, cols.List, ct);
       await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
@@ -235,19 +235,32 @@ public abstract partial class GridService<TEntity, TRow>
 
   private async Task PopulateRowAvailabilityAsync(List<object> shapedRows, Columns columns, CancellationToken ct)
   {
-    if (shapedRows.Count == 0 || columns.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow) return;
+    if (shapedRows.Count == 0 || columns.StatusFlow is not Screens.IRecordStatuses<TEntity> statusFlow)
+    {
+      return;
+    }
+
     var transitionsWithOffers = statusFlow.Transitions.Where(t => t.Offers.Count > 0).ToList();
-    if (transitionsWithOffers.Count == 0) return;
+    if (transitionsWithOffers.Count == 0)
+    {
+      return;
+    }
 
     var rowIds = ExtractRowIds(shapedRows);
-    if (rowIds.Count == 0) return;
+    if (rowIds.Count == 0)
+    {
+      return;
+    }
 
     foreach (var transition in transitionsWithOffers)
     {
       var actionKey = $"status.{transition.Name.ToLowerInvariant()}";
-      for (int i = 0; i < transition.Offers.Count; i++)
+      for (var i = 0; i < transition.Offers.Count; i++)
       {
-        if (transition.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond) continue;
+        if (transition.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond)
+        {
+          continue;
+        }
 
         var passedIds = (await db.Set<TEntity>()
           .Where(e => rowIds.Contains(e.Id))
@@ -257,8 +270,16 @@ public abstract partial class GridService<TEntity, TRow>
 
         foreach (var rowObj in shapedRows)
         {
-          if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null) continue;
-          if (!long.TryParse(idVal.ToString(), out var parsedId)) continue;
+          if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
+          {
+            continue;
+          }
+
+          if (!long.TryParse(idVal.ToString(), out var parsedId))
+          {
+            continue;
+          }
+
           if (!passedIds.Contains(parsedId))
           {
             if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
@@ -266,6 +287,7 @@ public abstract partial class GridService<TEntity, TRow>
               unav = new Dictionary<string, int>(StringComparer.Ordinal);
               dict["unavailable"] = unav;
             }
+
             unav.TryAdd(actionKey, i);
           }
         }
@@ -276,18 +298,24 @@ public abstract partial class GridService<TEntity, TRow>
   private async Task PopulateCoversAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
     var coverCol = columns.FirstOrDefault(c => c.Cell is AddOns.Covers.Contracts.GridCellCoverModel);
-    if (coverCol == null || shapedRows.Count == 0) return;
+    if (coverCol == null || shapedRows.Count == 0)
+    {
+      return;
+    }
 
     var coverCell = (AddOns.Covers.Contracts.GridCellCoverModel)coverCol.Cell!;
     var ownerIds = ExtractRowIds(shapedRows);
-    if (ownerIds.Count == 0) return;
+    if (ownerIds.Count == 0)
+    {
+      return;
+    }
 
     var fileGridType = ModuleCatalog.Instance.FindServiceType(coverCell.Service);
     if (fileGridType != null && typeof(Files.Internal.IFileCoverSource).IsAssignableFrom(fileGridType))
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(fileGridType, db, _app) is Files.Internal.IFileCoverSource coverSource)
+        if (ModuleCatalog.Instance.CreateServiceInstance(fileGridType, db, PlatformApp) is Files.Internal.IFileCoverSource coverSource)
         {
           var covers = await coverSource.CoversAsync(ownerIds, ct);
           foreach (var rowObj in shapedRows)
@@ -310,13 +338,22 @@ public abstract partial class GridService<TEntity, TRow>
 
   private async Task PopulateProjectedColorsAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
-    if (typeof(TRow) == typeof(TEntity) || shapedRows.Count == 0) return;
+    if (typeof(TRow) == typeof(TEntity) || shapedRows.Count == 0)
+    {
+      return;
+    }
 
     var colorCols = columns.Where(c => c.ColorEvaluator != null && !string.IsNullOrEmpty(c.Path)).ToList();
-    if (colorCols.Count == 0) return;
+    if (colorCols.Count == 0)
+    {
+      return;
+    }
 
     var rowIds = ExtractRowIds(shapedRows);
-    if (rowIds.Count == 0) return;
+    if (rowIds.Count == 0)
+    {
+      return;
+    }
 
     var entityQuery = IncludeColumnNavigations(db.Set<TEntity>().AsNoTracking(), colorCols)
       .Where(e => rowIds.Contains(e.Id));
@@ -324,13 +361,23 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var rowObj in shapedRows)
     {
-      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null) continue;
-      if (!long.TryParse(idVal.ToString(), out var parsedId) || !entitiesById.TryGetValue(parsedId, out var entity)) continue;
+      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
+      {
+        continue;
+      }
+
+      if (!long.TryParse(idVal.ToString(), out var parsedId) || !entitiesById.TryGetValue(parsedId, out var entity))
+      {
+        continue;
+      }
 
       foreach (var col in colorCols)
       {
         var hue = col.ColorEvaluator!(entity)?.ToLowerInvariant();
-        if (string.IsNullOrEmpty(hue) || string.IsNullOrEmpty(col.Path)) continue;
+        if (string.IsNullOrEmpty(hue) || string.IsNullOrEmpty(col.Path))
+        {
+          continue;
+        }
 
         var key = ToCamel(col.Path.Split('.')[0]);
         if (dict.TryGetValue(key, out var val))
@@ -374,20 +421,27 @@ public abstract partial class GridService<TEntity, TRow>
         }
       }
     }
+
     return ids;
   }
 
   private static async Task<List<object>?> ComputeSumRowsAsync<TSource>(IQueryable<TSource> filteredQuery, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
     var sumCols = columns.Where(c => c.IsSummed && !string.IsNullOrEmpty(c.Path)).ToList();
-    if (sumCols.Count == 0) return null;
+    if (sumCols.Count == 0)
+    {
+      return null;
+    }
 
     var sumRow = new Dictionary<string, object?>(StringComparer.Ordinal);
     var rowParam = Expression.Parameter(typeof(TSource), "r");
 
     foreach (var col in sumCols)
     {
-      if (string.IsNullOrEmpty(col.Path)) continue;
+      if (string.IsNullOrEmpty(col.Path))
+      {
+        continue;
+      }
 
       Expression? current = rowParam;
       var currentType = typeof(TSource);
@@ -399,11 +453,16 @@ public abstract partial class GridService<TEntity, TRow>
           current = null;
           break;
         }
+
         current = Expression.Property(current, prop);
         currentType = prop.PropertyType;
       }
 
-      if (current == null) continue;
+      if (current == null)
+      {
+        continue;
+      }
+
       var underlying = Nullable.GetUnderlyingType(currentType) ?? currentType;
 
       try
@@ -444,7 +503,10 @@ public abstract partial class GridService<TEntity, TRow>
     var entityType = typeof(TEntity);
     foreach (var col in columns)
     {
-      if (string.IsNullOrEmpty(col.Path)) continue;
+      if (string.IsNullOrEmpty(col.Path))
+      {
+        continue;
+      }
 
       var parts = col.Path.Split('.');
       if (col.ReferenceService != null)
@@ -452,7 +514,11 @@ public abstract partial class GridService<TEntity, TRow>
         var actualNavPath = ResolvePropertyPath(entityType, parts);
         if (actualNavPath != null)
         {
-          try { query = query.Include(actualNavPath); } catch { }
+          try
+          {
+            query = query.Include(actualNavPath);
+          }
+          catch { }
         }
       }
       else if (parts.Length > 1)
@@ -460,7 +526,11 @@ public abstract partial class GridService<TEntity, TRow>
         var actualNavPath = ResolvePropertyPath(entityType, parts[..^1]);
         if (actualNavPath != null)
         {
-          try { query = query.Include(actualNavPath); } catch { }
+          try
+          {
+            query = query.Include(actualNavPath);
+          }
+          catch { }
         }
       }
 
@@ -469,7 +539,11 @@ public abstract partial class GridService<TEntity, TRow>
         var actualColorNavPath = ResolvePropertyPath(entityType, col.ColorNavPath.Split('.'));
         if (actualColorNavPath != null)
         {
-          try { query = query.Include(actualColorNavPath); } catch { }
+          try
+          {
+            query = query.Include(actualColorNavPath);
+          }
+          catch { }
         }
       }
     }
@@ -484,7 +558,11 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var segment in segments)
     {
       var prop = PropertyAccessorCache.GetProperty(currentType, segment);
-      if (prop == null) return null;
+      if (prop == null)
+      {
+        return null;
+      }
+
       validProps.Add(prop.Name);
       currentType = prop.PropertyType;
     }
@@ -508,7 +586,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           try
           {
-            if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, _app) is Form.IFormService formInstance)
+            if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is Form.IFormService formInstance)
             {
               forms ??= new Dictionary<string, object?>(StringComparer.Ordinal);
               forms[formHandle] = formInstance.Overlay(formHandle);
@@ -518,6 +596,7 @@ public abstract partial class GridService<TEntity, TRow>
         }
       }
     }
+
     return forms;
   }
 
@@ -533,7 +612,10 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var col in columns)
     {
-      if (string.IsNullOrEmpty(col.Path)) continue;
+      if (string.IsNullOrEmpty(col.Path))
+      {
+        continue;
+      }
 
       if (col.FilterExpression is not null)
       {
@@ -543,6 +625,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           builder.Field(col.Path, col.FilterExpression, f => f.FilterOnly());
         }
+
         continue;
       }
 
@@ -566,6 +649,7 @@ public abstract partial class GridService<TEntity, TRow>
             builder.Field(col.FilterPath, idExpr);
           }
         }
+
         continue;
       }
 
@@ -622,6 +706,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         return null;
       }
+
       current = Expression.Property(current, prop);
       currentType = prop.PropertyType;
     }
@@ -637,6 +722,7 @@ public abstract partial class GridService<TEntity, TRow>
           return Expression.Lambda(current, entityParam);
         }
       }
+
       return null;
     }
 

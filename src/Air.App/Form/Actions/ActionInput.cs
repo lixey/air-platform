@@ -1,7 +1,3 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using Air.App.Components;
-
 namespace Air.App.Form.Actions;
 
 public sealed class ActionInput<TInput> where TInput : class
@@ -13,7 +9,7 @@ public sealed class ActionInput<TInput> where TInput : class
   public ActionInputElement<TInput, TProp> Add<TProp>(Expression<Func<TInput, TProp>> member)
   {
     ArgumentNullException.ThrowIfNull(member);
-    string propName = "field";
+    var propName = "field";
     if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
     {
       propName = char.ToLowerInvariant(pi.Name[0]) + pi.Name[1..];

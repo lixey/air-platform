@@ -1,5 +1,3 @@
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Migrations.Seeds;
 
 internal sealed record EcomSeedWritten(

@@ -1,11 +1,3 @@
-using System.Linq.Expressions;
-using Air.App.Components;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using DemoOrg.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 public static class EcomDocLines
@@ -24,7 +16,6 @@ public static class EcomDocLines
     DiscountPercent = line.DiscountPercent,
     Amount = line.Amount
   };
-
 
   public static void Load(EcomDocLine entity, EcomDocLineEdit input, bool isNew)
   {

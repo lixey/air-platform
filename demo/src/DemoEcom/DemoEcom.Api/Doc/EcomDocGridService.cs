@@ -1,7 +1,3 @@
-using DemoEcom.DocStatus;
-using DemoEcom.DocType;
-using DemoOrg.Counterparty;
-
 namespace DemoEcom.Doc;
 
 public sealed class EcomDocGridService(EcomDbContext db, EcomService? ecom = null)

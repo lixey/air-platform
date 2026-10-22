@@ -1,7 +1,3 @@
-using Air.App.Metadata;
-using DemoEcom.Data;
-using DemoEcom.Documents;
-
 namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderHistoryGridService(

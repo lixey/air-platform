@@ -1,8 +1,3 @@
-using DemoApp.Migrations.Seeds;
-using DemoOrg.Data;
-using DemoOrg.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoOrg.Migrations.Seeds;
 
 public static class OrgExampleSeed

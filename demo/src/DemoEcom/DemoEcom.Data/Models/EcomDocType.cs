@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace DemoEcom.Data.Models;
 
 [Index(nameof(Handle), IsUnique = true)]

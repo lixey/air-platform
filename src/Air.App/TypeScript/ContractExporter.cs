@@ -1,15 +1,3 @@
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Air.App.Components;
-using Air.App.Form;
-using Air.App.Metadata;
-using Air.App.Nav;
-using Air.App.Overlay;
-using Air.App.Panels;
-using Air.Data.Contracts;
-
 namespace Air.App.TypeScript;
 
 public static class ContractExporter
@@ -42,12 +30,19 @@ public static class ContractExporter
     var types = allAssemblies
       .SelectMany(a =>
       {
-        try { return a.GetExportedTypes(); } catch { return []; }
+        try
+        {
+          return a.GetExportedTypes();
+        }
+        catch
+        {
+          return [];
+        }
       })
       .Where(t => t.IsClass && !(t.IsAbstract && t.IsSealed))
       .Where(t => !baseSlotTypes.Contains(t))
       .Where(t => t.GetCustomAttribute<UiContractAttribute>() != null ||
-                  (!t.IsAbstract && (
+                  !t.IsAbstract && (
                     typeof(PanelModel).IsAssignableFrom(t) ||
                     typeof(CellModel).IsAssignableFrom(t) ||
                     typeof(HeaderModel).IsAssignableFrom(t) ||
@@ -58,7 +53,7 @@ public static class ContractExporter
                     t == typeof(FilterRule) ||
                     t == typeof(PickedValue) ||
                     t == typeof(SortRule) ||
-                    t == typeof(Reference))))
+                    t == typeof(Reference)))
       .Distinct()
       .ToList();
 
@@ -218,12 +213,12 @@ public static class ContractExporter
       var isNullable = nullInfo.WriteState == NullabilityState.Nullable ||
                        nullInfo.ReadState == NullabilityState.Nullable ||
                        Nullable.GetUnderlyingType(prop.PropertyType) != null ||
-                       (jsonIgnore != null && jsonIgnore.Condition == JsonIgnoreCondition.WhenWritingNull);
+                       jsonIgnore != null && jsonIgnore.Condition == JsonIgnoreCondition.WhenWritingNull;
       var propName = char.ToLowerInvariant(prop.Name[0]) + prop.Name[1..];
       var isOptional = isClientOptionalType ||
                        isNullable ||
                        prop.GetCustomAttribute<ClientOptionalAttribute>() != null ||
-                       (jsonIgnore != null && jsonIgnore.Condition == JsonIgnoreCondition.WhenWritingDefault);
+                       jsonIgnore != null && jsonIgnore.Condition == JsonIgnoreCondition.WhenWritingDefault;
       var tsType = ToTsType(prop);
 
       sb.AppendLine($"  {propName}{(isOptional ? "?" : "")}: {(isNullable ? $"{tsType} | null" : tsType)};");
@@ -272,6 +267,7 @@ public static class ContractExporter
       var kind = type.Name.EndsWith("Model") ? type.Name[..^5] : type.Name;
       sb.AppendLine($"  {kind}: {type.Name};");
     }
+
     sb.AppendLine("}");
     sb.AppendLine();
   }
@@ -301,13 +297,32 @@ public static class ContractExporter
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
 
-    if (underlying == typeof(string)) return "string";
-    if (underlying == typeof(bool)) return "boolean";
+    if (underlying == typeof(string))
+    {
+      return "string";
+    }
+
+    if (underlying == typeof(bool))
+    {
+      return "boolean";
+    }
+
     if (underlying == typeof(int) || underlying == typeof(long) ||
         underlying == typeof(float) || underlying == typeof(double) ||
-        underlying == typeof(decimal)) return "number";
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly)) return "string";
-    if (underlying == typeof(object) || underlying == typeof(JsonElement)) return "unknown";
+        underlying == typeof(decimal))
+    {
+      return "number";
+    }
+
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly))
+    {
+      return "string";
+    }
+
+    if (underlying == typeof(object) || underlying == typeof(JsonElement))
+    {
+      return "unknown";
+    }
 
     if (underlying.IsArray)
     {

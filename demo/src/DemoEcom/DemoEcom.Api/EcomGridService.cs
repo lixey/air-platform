@@ -1,8 +1,3 @@
-using Air.App;
-using Air.App.Grid;
-using Air.Data.Entities;
-using DemoEcom.Data;
-
 namespace DemoEcom;
 
 public abstract class EcomGridService<TEntity, TRow>(EcomDbContext db, PlatformAppService? app = null)

@@ -1,5 +1,3 @@
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Documents;
 
 /// <summary>

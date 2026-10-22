@@ -68,6 +68,7 @@ public static class UiIcon
   public const string ArrowRight = "arrow-right";
   public const string ArrowTop = "arrow-top";
   public const string Ban = "ban";
+  public const string Bot = "bot";
   public const string Box = "box";
   public const string Calendar = "calendar";
   public const string Cart = "cart";
@@ -164,7 +165,6 @@ public static class UiIcon
   public const string User = "user";
   public const string Users = "users";
 }
-
 
 [UiContract]
 public sealed class OptionDto

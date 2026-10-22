@@ -1,8 +1,3 @@
-using System.Text.Json;
-using Air.App.Internal;
-using Air.App.Localization;
-using Air.App.Screens;
-
 namespace Air.App.Form.Actions;
 
 public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) : RecordAsk where TInput : class, new()
@@ -32,10 +27,14 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
 
     foreach (var el in built)
     {
-      if (string.IsNullOrEmpty(el.Path)) continue;
+      if (string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
+
       var val = PropertyAccessorCache.GetValue(target, el.Path);
 
-      if (el.IsRequired && (val is null || (val is string s && string.IsNullOrWhiteSpace(s))))
+      if (el.IsRequired && (val is null || val is string s && string.IsNullOrWhiteSpace(s)))
       {
         errors.Add(new MessageDto
         {
@@ -59,6 +58,7 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
             Type = MessageType.Error
           });
         }
+
         if (el.Constraints.MinLength is { } minLen && str.Length < minLen)
         {
           errors.Add(new MessageDto
@@ -74,8 +74,8 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
       if (val != null && TryConvertToDecimal(val, out var decVal))
       {
         var outOfRange =
-          (el.Constraints.Min is { ValueKind: JsonValueKind.Number } minJe && minJe.TryGetDecimal(out var minDec) && decVal < minDec) ||
-          (el.Constraints.Max is { ValueKind: JsonValueKind.Number } maxJe && maxJe.TryGetDecimal(out var maxDec) && decVal > maxDec);
+          el.Constraints.Min is { ValueKind: JsonValueKind.Number } minJe && minJe.TryGetDecimal(out var minDec) && decVal < minDec ||
+          el.Constraints.Max is { ValueKind: JsonValueKind.Number } maxJe && maxJe.TryGetDecimal(out var maxDec) && decVal > maxDec;
         if (outOfRange)
         {
           errors.Add(new MessageDto

@@ -1,5 +1,3 @@
-using DemoApp.Data.Models;
-
 namespace DemoEcom.Data.Models;
 
 [Index(nameof(Handle), IsUnique = true)]

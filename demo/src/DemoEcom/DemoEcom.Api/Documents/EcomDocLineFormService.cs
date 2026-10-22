@@ -1,8 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomService? ecom = null)

@@ -1,6 +1,3 @@
-using DemoApp.Color;
-using DemoEcom.DocType;
-
 namespace DemoEcom.DocStatus;
 
 /// <summary>

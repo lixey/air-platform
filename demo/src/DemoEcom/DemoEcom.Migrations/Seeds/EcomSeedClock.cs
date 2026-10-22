@@ -1,7 +1,3 @@
-using Air.Data;
-using Bogus;
-using DemoApp.Migrations.Seeds;
-
 namespace DemoEcom.Migrations.Seeds;
 
 internal static class EcomSeedClock

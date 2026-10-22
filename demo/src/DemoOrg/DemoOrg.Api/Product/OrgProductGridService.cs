@@ -1,8 +1,3 @@
-using DemoOrg.Brand;
-using DemoOrg.Counterparty;
-using DemoOrg.ProductCategory;
-using DemoOrg.Unit;
-
 namespace DemoOrg.Product;
 
 /// <summary>

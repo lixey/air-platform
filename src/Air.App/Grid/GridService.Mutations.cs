@@ -1,19 +1,4 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using Air.App.Components;
-using Air.App.Form;
-using Air.App.Grid.Export;
-using Air.App.Grid.Selection;
-using Air.App.Internal;
-using Air.App.Localization;
-using Air.App.Mutations;
-using Air.App.Screens;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Air.Data.Querying;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Air.App.Grid;
 
@@ -52,13 +37,18 @@ public abstract partial class GridService<TEntity, TRow>
 
   private static string? ExtractNavigationPath(System.Linq.Expressions.Expression expr)
   {
-    if (expr is System.Linq.Expressions.UnaryExpression ue) expr = ue.Operand;
+    if (expr is System.Linq.Expressions.UnaryExpression ue)
+    {
+      expr = ue.Operand;
+    }
+
     var parts = new List<string>();
     while (expr is System.Linq.Expressions.MemberExpression me)
     {
       parts.Insert(0, me.Member.Name);
       expr = me.Expression!;
     }
+
     return parts.Count > 1 ? string.Join('.', parts.Take(parts.Count - 1)) : null;
   }
 
@@ -92,6 +82,7 @@ public abstract partial class GridService<TEntity, TRow>
         });
       }
     }
+
     return (entities, missing);
   }
 
@@ -151,6 +142,7 @@ public abstract partial class GridService<TEntity, TRow>
         };
       }
     }
+
     var (records, missing) = await LoadSelectedEntitiesAsync(ids, cancellationToken);
     if (missing.Count > 0)
     {
@@ -184,10 +176,12 @@ public abstract partial class GridService<TEntity, TRow>
           Warnings = FormatErrors(ctx.Errors, records, MessageType.Error)
         };
       }
+
       if (db.ChangeTracker.HasChanges())
       {
         await db.SaveChangesAsync(cancellationToken);
       }
+
       await tx.CommitAsync(cancellationToken);
       return new GridActionDto
       {
@@ -224,7 +218,7 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
     }
 
-    object? input = transition.Ask?.Read(body);
+    var input = transition.Ask?.Read(body);
     if (transition.Ask != null)
     {
       var askFailures = transition.Ask.Validate(input, L);
@@ -296,6 +290,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       ids = [request.Id.Value];
     }
+
     if (ids.Count == 0)
     {
       return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
@@ -357,6 +352,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             await h(ctx, ct);
           }
+
           if (ctx.Errors.Count > 0)
           {
             await tx.RollbackAsync(ct);
@@ -367,11 +363,13 @@ public abstract partial class GridService<TEntity, TRow>
               Warnings = FormatErrors(ctx.Errors, entities)
             };
           }
+
           if (db.ChangeTracker.HasChanges())
           {
             await db.SaveChangesAsync(ct);
           }
         }
+
         await tx.CommitAsync(ct);
       }
       catch (DbUpdateException)
@@ -401,7 +399,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var recordMap = records.ToDictionary(r => r.Id);
-    for (int i = 0; i < ids.Count; i++)
+    for (var i = 0; i < ids.Count; i++)
     {
       if (recordMap.TryGetValue(ids[i], out var rec) && rec is IHasVersion versioned && versions[i] > 0 && versioned.Ver != versions[i])
       {
@@ -427,13 +425,19 @@ public abstract partial class GridService<TEntity, TRow>
         string? label = null;
         if (compiledLabel != null)
         {
-          try { label = compiledLabel.DynamicInvoke(rec)?.ToString(); } catch { }
+          try
+          {
+            label = compiledLabel.DynamicInvoke(rec)?.ToString();
+          }
+          catch { }
         }
+
         label ??= (PropertyAccessorCache.GetValue(rec, "Number")
           ?? PropertyAccessorCache.GetValue(rec, "Name")
           ?? PropertyAccessorCache.GetValue(rec, "Title"))?.ToString();
         msg.RecordLabel = !string.IsNullOrWhiteSpace(label) ? label : $"#{e.RecordId.Value}";
       }
+
       return msg;
     }).ToList();
   }
@@ -451,11 +455,16 @@ public abstract partial class GridService<TEntity, TRow>
     if (queryDeclaration.Selector != null)
     {
       var row = await query.Select(queryDeclaration.Selector).FirstOrDefaultAsync(ct);
-      if (row is null) return null;
+      if (row is null)
+      {
+        return null;
+      }
+
       if (queryDeclaration.ComputeAction != null)
       {
         await queryDeclaration.ComputeAction([row], ct);
       }
+
       var shaped = ShapeRow(row, cols.List, queryDeclaration.RowFlags);
       await PopulateCoversAsync([shaped], cols.List, ct);
       await PopulateProjectedColorsAsync([shaped], cols.List, ct);
@@ -464,7 +473,11 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var entity = await query.FirstOrDefaultAsync(ct);
-    if (entity is null) return null;
+    if (entity is null)
+    {
+      return null;
+    }
+
     var shapedEntity = ShapeRow((entity as TRow)!, cols.List, queryDeclaration.RowFlags);
     await PopulateCoversAsync([shapedEntity], cols.List, ct);
     await PopulateRowAvailabilityAsync([shapedEntity], cols, ct);
@@ -495,10 +508,11 @@ public abstract partial class GridService<TEntity, TRow>
     if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
     {
       var form = (IFormService)services.GetRequiredService(formType);
-      if (_app != null)
+      if (PlatformApp != null)
       {
-        form.AttachPlatformApp(_app);
+        form.AttachPlatformApp(PlatformApp);
       }
+
       var formReq = new FormRequest
       {
         Id = request.Id,
@@ -526,6 +540,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       db.Set<TEntity>().Update(entity);
     }
+
     await db.SaveChangesAsync(ct);
 
     var updatedRow = await ReadRowAsync(request.Id.Value, ct);
@@ -588,6 +603,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           await queryDeclaration.ComputeAction(page.Rows, ct);
         }
+
         rowStream = ToAsyncEnumerable(page.Rows.Select(r => ShapeRow(r, cols.List)));
       }
       else

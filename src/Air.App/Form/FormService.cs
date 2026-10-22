@@ -1,22 +1,9 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text.Json;
-using Air.App.Grid;
-using Air.App.Internal;
-using Air.App.Localization;
-using Air.App.Modules;
-using Air.App.Overlay;
-using Air.App.Panels;
-using Air.App.Screens;
-using Air.Data;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Form;
 
 public interface IFormService
 {
   PlatformDbContext DbContext { get; }
+  string Service { get; }
   OverlayModelDto Overlay(string service);
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default);
@@ -31,6 +18,9 @@ public interface IFormService
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default);
   Task<Dictionary<string, int>?> EvaluateUnavailableAsync(long? id, CancellationToken ct = default) => Task.FromResult<Dictionary<string, int>?>(null);
+  Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default);
+  string GetTitle() => string.Empty;
+  string GetRecordCaption(object? entity, long? id) => string.Empty;
   void AttachPlatformApp(PlatformAppService app);
   Feature Feature { get; }
 }
@@ -39,13 +29,12 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   where TEntity : class, IEntity, new()
   where TInput : class, new()
 {
-  private PlatformAppService? _app = app;
   private Elements? _lastElements;
-  public void AttachPlatformApp(PlatformAppService service) => _app ??= service;
+  public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 
   public PlatformDbContext DbContext => db;
-  protected PlatformAppService? PlatformApp => _app;
-  protected Auth.IUserContext? User => _app?.User;
+  protected PlatformAppService? PlatformApp { get; private set; } = app;
+  protected Auth.IUserContext? User => PlatformApp?.User;
 
   public sealed class Elements : Elements<TInput> { }
 
@@ -56,16 +45,23 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   protected virtual string Title => !string.IsNullOrEmpty(Feature.Label) ? Feature.Label : (!string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name);
 
   protected bool IsNew { get; set; }
-  protected virtual bool IsReadOnly => Feature.IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All));
+  protected virtual bool IsReadOnly => Feature.IsReadOnly || User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
   {
     if (ParentId == null || ParentId.Value <= 0)
+    {
       return null;
+    }
+
     var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
-    if (tracked != null) return tracked;
+    if (tracked != null)
+    {
+      return tracked;
+    }
+
     var efModel = db.Model.FindEntityType(typeof(TParent));
     IQueryable<TParent> query = db.Set<TParent>();
     if (efModel != null)
@@ -73,9 +69,12 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       foreach (var nav in efModel.GetNavigations())
       {
         if (!nav.IsCollection)
+        {
           query = query.Include(nav.Name);
+        }
       }
     }
+
     return query.FirstOrDefault(e => e.Id == ParentId.Value);
   }
 
@@ -90,7 +89,11 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
       var expr = member.Body;
-      if (expr is UnaryExpression ue) expr = ue.Operand;
+      if (expr is UnaryExpression ue)
+      {
+        expr = ue.Operand;
+      }
+
       if (expr is MemberExpression me && me.Member is PropertyInfo pi)
       {
         BoundProperty = pi;
@@ -102,7 +105,11 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
       var expr = member.Body;
-      if (expr is UnaryExpression ue) expr = ue.Operand;
+      if (expr is UnaryExpression ue)
+      {
+        expr = ue.Operand;
+      }
+
       if (expr is MemberExpression me && me.Member is PropertyInfo pi)
       {
         BoundProperty = pi;
@@ -123,27 +130,47 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
     public void AfterLoad(Func<FormLoadContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterLoadActions.Add(handler);
     public void AfterLoad(Action<FormLoadContext<TEntity, TInput>> handler) =>
-      AfterLoadActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      AfterLoadActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
 
     public void BeforeValidate(Action<FormSaveContext<TEntity, TInput>> handler) => BeforeValidateActions.Add(handler);
 
     public void BeforeSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => BeforeSaveActions.Add(handler);
     public void BeforeSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
-      BeforeSaveActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      BeforeSaveActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
 
     public void AfterSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterSaveActions.Add(handler);
     public void AfterSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
-      AfterSaveActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      AfterSaveActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
 
     public void BeforeDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<FormDeleteContext<TEntity>> handler) =>
-      BeforeDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      BeforeDeleteActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
     public void ValidateDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
     public void ValidateDelete(Action<FormDeleteContext<TEntity>> handler) => BeforeDelete(handler);
 
     public void AfterDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
     public void AfterDelete(Action<FormDeleteContext<TEntity>> handler) =>
-      AfterDeleteActions.Add((c, ct) => { handler(c); return Task.CompletedTask; });
+      AfterDeleteActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
   }
 
   public sealed class Rules
@@ -159,6 +186,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       {
         path = char.ToLowerInvariant(me.Member.Name[0]) + me.Member.Name[1..];
       }
+
       var builder = new RuleBuilder<TInput, TProp>(ctx => compiled(ctx.Input), path);
       Validators.Add((ctx, rCtx, ct) => builder.ValidateAsync(ctx, rCtx, ct));
       return builder;
@@ -204,6 +232,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     {
       query = query.Where(filter);
     }
+
     return query;
   }
 
@@ -237,6 +266,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     catch
     {
     }
+
     return probe.Children.Any(c => !c.IsFiles);
   }
 
@@ -256,13 +286,14 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     {
       dto.Width = PanelSize.Px(720);
     }
+
     return dto;
   }
 
   protected virtual (string? Width, string? Height) OverlayAsk(Elements elements)
   {
     var declared = Overlay(Service);
-    if ((declared.Presentation != OverlayPresentation.Dialog && declared.Presentation != OverlayPresentation.Popover)
+    if (declared.Presentation != OverlayPresentation.Dialog && declared.Presentation != OverlayPresentation.Popover
         || declared.Width is not null
         || declared.Height is not null)
     {
@@ -293,7 +324,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, _app) is Grid.IGridService gridInst)
+        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, PlatformApp) is Grid.IGridService gridInst)
         {
           label = gridInst.GetRecordLabel(entity);
         }
@@ -304,6 +335,19 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     return string.IsNullOrWhiteSpace(label)
       ? L["FormRecord", title, id]
       : L["FormRecordNamed", title, label];
+  }
+
+  public string GetTitle() => L[Title];
+
+  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity, id);
+
+  public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
+  {
+    var elements = new Elements();
+    await SetElementsAsync(elements, ct);
+    LocalizeAndResolveSelectElements(elements);
+    _lastElements = elements;
+    return (elements.List, elements.Children);
   }
 }
 

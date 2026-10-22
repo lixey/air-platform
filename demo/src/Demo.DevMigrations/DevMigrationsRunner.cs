@@ -1,14 +1,3 @@
-using System.Diagnostics;
-using DemoApp.Data;
-using DemoApp.Migrations;
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Migrations;
-using DemoOrg.Data;
-using DemoOrg.Migrations;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-
 namespace Demo.DevMigrations;
 
 public static class DevMigrationsRunner

@@ -1,8 +1,3 @@
-using Air.App.Grid;
-using Air.App.Modules;
-using DemoApp.Data;
-using DemoApp.Data.Models;
-
 namespace DemoApp.Tenant;
 
 public sealed class AppTenantGridService(AppDbContext db, AppService? app = null)

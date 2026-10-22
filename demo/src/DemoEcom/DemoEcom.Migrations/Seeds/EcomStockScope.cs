@@ -1,5 +1,3 @@
-using Bogus;
-
 namespace DemoEcom.Migrations.Seeds;
 
 /// <summary>

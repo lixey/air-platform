@@ -1,5 +1,3 @@
-using Air.App.Form.Contracts;
-
 namespace Air.App.Files.Internal;
 
 public interface IFormFilesSource
@@ -13,5 +11,12 @@ public interface IFormFilesSource
     long? parentId,
     string look,
     CancellationToken cancellationToken
+  );
+  Task<long?> AttachFileAsync(
+    long parentId,
+    string fileName,
+    string contentType,
+    byte[] content,
+    CancellationToken cancellationToken = default
   );
 }

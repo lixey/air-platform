@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace Air.Data.Entities;
 
 /// <summary>

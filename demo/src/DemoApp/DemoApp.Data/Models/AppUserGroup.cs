@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace DemoApp.Data.Models;
 
 /// <summary>

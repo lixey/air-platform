@@ -1,34 +1,16 @@
-using System.Text.Json;
-using Air.Agent.Providers;
-using Air.Data.Tenancy;
-using Air.Mcp;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-
 namespace Air.Agent;
-
-public sealed record AgentChatRequestDto
-{
-  public string? SessionId { get; init; }
-  public string? Message { get; init; }
-  public IReadOnlyList<string>? AttachmentIds { get; init; }
-  public string? Locale { get; init; }
-  public string? Provider { get; init; }
-  public string? Model { get; init; }
-}
-
-public sealed record AgentResetRequestDto(string? SessionId);
 
 public static class AgentEndpoints
 {
   private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-  public static IServiceCollection AddAirAgent(this IServiceCollection services)
+  public static IServiceCollection AddAirAgent(this IServiceCollection services, Action<AgentOptions>? configure = null)
   {
+    var options = new AgentOptions();
+    configure?.Invoke(options);
+
     services.AddAirMcp();
+    services.TryAddSingleton(options);
     services.TryAddSingleton<AgentStore>();
     services.AddSingleton<IAgentProvider, AgyCliAgentProvider>();
     services.AddSingleton<IAgentProvider, ClaudeCliAgentProvider>();
@@ -37,59 +19,73 @@ public static class AgentEndpoints
     return services;
   }
 
-  public static IServiceCollection AddAgentProposalCommitter<TCommitter>(this IServiceCollection services)
-    where TCommitter : class, IAgentProposalCommitter
-  {
-    services.AddAirAgent();
-    services.AddScoped<IAgentProposalCommitter, TCommitter>();
-    return services;
-  }
-
   public static void MapAirAgent(this IEndpointRouteBuilder app)
   {
-    app.MapAirMcp("/api/mcp");
-
     var group = app.MapGroup("/api/agent");
 
-    group.MapGet("/status", (IEnumerable<IAgentProvider> providers) =>
+    group.MapGet("/status", async (IEnumerable<IAgentProvider> providers, AgentOptions options, CancellationToken ct) =>
     {
-      var list = providers.Select(p => new
+      var enabledProviders = providers
+        .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
+        .ToList();
+
+      var list = enabledProviders.Select(p => new AgentProviderDto
       {
-        handle = p.Handle,
-        name = p.Name,
-        isAvailable = p.IsAvailable
+        Handle = p.Handle,
+        Name = p.Name,
+        IsAvailable = p.IsAvailable
       }).ToList();
 
-      var active = list.FirstOrDefault(p => p.isAvailable)?.handle ?? "Agy";
-      return Results.Ok(new
+      var activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, options.DefaultProvider, StringComparison.OrdinalIgnoreCase) && p.IsAvailable)
+        ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
+        ?? enabledProviders.FirstOrDefault();
+
+      var models = activeProvider is not null
+        ? await activeProvider.GetModelsAsync(ct)
+        : [];
+
+      var defaultModel = models.Any(m => string.Equals(m.Id, options.DefaultModel, StringComparison.OrdinalIgnoreCase))
+        ? options.DefaultModel
+        : (models.FirstOrDefault()?.Id ?? options.DefaultModel);
+
+      return Results.Ok(new AgentStatusDto
       {
-        activeProvider = active,
-        providers = list
+        ActiveProvider = activeProvider?.Handle ?? options.DefaultProvider,
+        DefaultModel = defaultModel,
+        Providers = list,
+        Models = [.. models]
       });
     });
 
-    group.MapPost("/upload", async (HttpRequest req, AgentStore store, CancellationToken ct) =>
+    group.MapPost("/upload", async (HttpContext ctx, AgentStore store, CancellationToken ct) =>
     {
+      var req = ctx.Request;
+      var culture = PlatformEndpoints.ResolveRequestCulture(req);
+      CultureInfo.CurrentCulture = culture;
+      CultureInfo.CurrentUICulture = culture;
+
       if (!req.HasFormContentType)
       {
-        return Results.BadRequest(new { title = "Expected multipart/form-data" });
+        return Results.BadRequest(new { title = Localizer.Instance["RequestInvalid"] });
       }
 
       var form = await req.ReadFormAsync(ct);
       var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
       if (file is null || file.Length == 0)
       {
-        return Results.BadRequest(new { title = "File is empty" });
+        return Results.BadRequest(new { title = Localizer.Instance["FileCountRefused"] });
       }
 
+      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
       await using var stream = file.OpenReadStream();
-      var saved = await store.SaveAttachmentAsync(file.FileName, file.ContentType, stream, ct);
+      var saved = await store.SaveAttachmentAsync(owner, file.FileName, file.ContentType, stream, ct);
       return Results.Ok(saved);
     });
 
-    group.MapGet("/attachments/{id}", (string id, AgentStore store) =>
+    group.MapGet("/attachments/{id}", (string id, HttpContext ctx, AgentStore store) =>
     {
-      var att = store.GetAttachment(id);
+      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+      var att = store.GetAttachment(id, owner);
       if (att is null || !File.Exists(att.LocalPath))
       {
         return Results.NotFound();
@@ -98,12 +94,14 @@ public static class AgentEndpoints
       return Results.File(att.LocalPath, att.ContentType, att.FileName);
     });
 
-    group.MapPost("/reset", (AgentResetRequestDto req, AgentStore store) =>
+    group.MapPost("/reset", (AgentResetRequestDto req, HttpContext ctx, AgentStore store) =>
     {
       if (!string.IsNullOrWhiteSpace(req.SessionId))
       {
-        store.ResetSession(req.SessionId);
+        var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+        store.ResetSession(req.SessionId, owner);
       }
+
       return Results.Ok(new { ok = true });
     });
 
@@ -111,13 +109,17 @@ public static class AgentEndpoints
       string id,
       HttpContext ctx,
       AgentStore store,
-      IEnumerable<IAgentProposalCommitter> committers,
       CancellationToken ct) =>
     {
-      var proposal = store.GetProposal(id);
+      var culture = PlatformEndpoints.ResolveRequestCulture(ctx.Request);
+      CultureInfo.CurrentCulture = culture;
+      CultureInfo.CurrentUICulture = culture;
+
+      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+      var proposal = store.GetProposal(id, owner);
       if (proposal is null)
       {
-        return Results.NotFound(new { title = "Пропозицію не знайдено або вона застаріла." });
+        return Results.NotFound(new { title = Localizer.Instance["AgentProposalNotFound"] });
       }
 
       if (proposal.Status == "committed" && proposal.CommittedRecordId.HasValue)
@@ -127,24 +129,14 @@ public static class AgentEndpoints
           ProposalId = proposal.Id,
           RecordId = proposal.CommittedRecordId.Value,
           RecordLabel = proposal.CommittedLabel ?? $"#{proposal.CommittedRecordId.Value}",
-          FormService = proposal.FormService ?? "fin-expense-form",
-          RefreshServices = ["fin-transaction-grid", "fin-account-grid", "fin-budget-grid", "fin-counterparty-grid"]
+          FormService = proposal.FormService ?? proposal.Service,
+          RefreshServices = []
         });
-      }
-
-      var committer = committers.FirstOrDefault(c => string.Equals(c.Kind, proposal.Kind, StringComparison.OrdinalIgnoreCase));
-      if (committer is null)
-      {
-        return Results.BadRequest(new { title = $"No committer registered for kind '{proposal.Kind}'." });
       }
 
       try
       {
-        var result = await committer.CommitAsync(proposal, ctx.RequestServices, ct);
-        proposal.Status = "committed";
-        proposal.CommittedRecordId = result.RecordId;
-        proposal.CommittedLabel = result.RecordLabel;
-        proposal.FormService = result.FormService;
+        var result = await AirAgentRuntime.CommitProposalAsync(proposal, ctx.RequestServices, ct);
         return Results.Ok(result);
       }
       catch (Exception ex)
@@ -160,36 +152,45 @@ public static class AgentEndpoints
       AgentChatRequestDto body,
       HttpContext ctx,
       AgentStore store,
+      AgentOptions options,
       McpExecutionBridge bridge,
       ITenantContext tenantContext,
       IEnumerable<IAgentProvider> providers,
       CancellationToken ct) =>
     {
+      var culture = !string.IsNullOrWhiteSpace(body.Locale) && body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+        ? CultureInfo.GetCultureInfo("en-US")
+        : PlatformEndpoints.ResolveRequestCulture(ctx.Request);
+      CultureInfo.CurrentCulture = culture;
+      CultureInfo.CurrentUICulture = culture;
+
+      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
       var sessionId = string.IsNullOrWhiteSpace(body.SessionId)
         ? Guid.NewGuid().ToString("N")[..12]
         : body.SessionId;
 
-      var providerHandle = body.Provider ?? "Agy";
-      var provider = providers.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
+      var enabledProviders = providers
+        .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
+        .ToList();
+
+      var providerHandle = body.Provider ?? options.DefaultProvider;
+      var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
+        ?? enabledProviders.FirstOrDefault()
         ?? providers.First();
 
       var attachments = (body.AttachmentIds ?? [])
-        .Select(store.GetAttachment)
+        .Select(id => store.GetAttachment(id, owner))
         .Where(a => a is not null)
         .Cast<AgentAttachmentDto>()
         .ToList();
 
-      var serverBaseUrl = ctx.Connection.LocalPort > 0
-        ? $"http://127.0.0.1:{ctx.Connection.LocalPort}"
-        : $"{ctx.Request.Scheme}://{ctx.Request.Host}";
-
       var turnReq = new AgentTurnRequest
       {
         SessionId = sessionId,
+        Owner = owner,
         Message = body.Message ?? string.Empty,
         Attachments = attachments,
-        Locale = body.Locale ?? "uk",
-        ServerBaseUrl = serverBaseUrl,
+        Locale = culture.TwoLetterISOLanguageName,
         ProviderHandle = provider.Handle,
         Model = body.Model,
         Services = ctx.RequestServices

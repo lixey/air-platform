@@ -1,9 +1,3 @@
-using Air.App.Components;
-using Air.App.Grid;
-using DemoApp.User;
-using DemoEcom.Data;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocHistoryGridService<TDocForm>(EcomDbContext db, EcomService? ecom = null, EcomDocFlowService? flow = null)

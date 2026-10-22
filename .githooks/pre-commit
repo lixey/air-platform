@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PATTERN='([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)'
+
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
+if [[ -z "$STAGED_FILES" ]]; then
+  exit 0
+fi
+
+MATCHES=$(git grep -nI -E "$PATTERN" -- $STAGED_FILES || true)
+if [[ -n "$MATCHES" ]]; then
+  echo "ERROR: Absolute filesystem paths detected in staged files:" >&2
+  echo "$MATCHES" >&2
+  exit 1
+fi

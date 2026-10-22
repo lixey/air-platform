@@ -1,0 +1,12 @@
+global using Air.App.Components;
+global using Air.Data;
+global using Air.Data.Tenancy;
+global using Bogus;
+global using DemoApp.Migrations.Seeds;
+global using DemoEcom.Data;
+global using DemoEcom.Data.Documents;
+global using DemoEcom.Data.Models;
+global using DemoEcom.Migrations.Seeds;
+global using DemoOrg.Data;
+global using DemoOrg.Data.Models;
+global using Microsoft.EntityFrameworkCore;

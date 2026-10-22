@@ -1,6 +1,3 @@
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Auth;
 
 /// <summary>
@@ -16,7 +13,7 @@ public sealed record SecurityInfo(
   public bool CanAccessTenant(long tenantId) =>
     Global ||
     Permissions.Contains("*", StringComparer.OrdinalIgnoreCase) ||
-    (AllowedTenantIds != null && AllowedTenantIds.Contains(tenantId));
+    AllowedTenantIds != null && AllowedTenantIds.Contains(tenantId);
 }
 
 /// <summary>

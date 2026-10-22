@@ -1,5 +1,3 @@
-using System.Linq.Expressions;
-
 namespace Air.App.Screens;
 
 public sealed class RecordAvailability

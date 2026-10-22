@@ -1,11 +1,3 @@
-using Air.Data.Tenancy;
-using Bogus;
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Migrations.Seeds;
 
 /// <summary>

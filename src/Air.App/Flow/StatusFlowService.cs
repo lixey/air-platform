@@ -1,13 +1,3 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using Air.App.Localization;
-using Air.App.Metadata;
-using Air.App.Mutations;
-using Air.App.Screens;
-using Air.Data;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Flow;
 
 public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecordStatuses<TEntity>
@@ -18,7 +8,6 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
   private readonly Dictionary<string, Transition<TEntity>> _transitionsByName = new(StringComparer.OrdinalIgnoreCase);
   private Expression<Func<TEntity, long>>? _statusMember;
   private Action<TEntity, long>? _statusSetter;
-  private OptionDto? _initial;
   private bool _isDeclared;
 
   public virtual Feature Feature => new("", GetType().Name.Replace("FlowService", "").ToLowerInvariant(), GetType());
@@ -48,8 +37,10 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
     get
     {
       EnsureDeclared();
-      return _initial;
+      return field;
     }
+
+    private set;
   }
 
   private readonly List<Transition<TEntity>> _publicTransitions = [];
@@ -107,6 +98,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
     {
       _statusSetter(record, initial.Id);
     }
+
     return record;
   }
 
@@ -216,7 +208,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db) : IRecord
     _statuses.AddRange(flow.DeclaredStatuses);
     if (flow.InitialStatusId.HasValue)
     {
-      _initial = _statuses.FirstOrDefault(s => s.Id == flow.InitialStatusId.Value);
+      Initial = _statuses.FirstOrDefault(s => s.Id == flow.InitialStatusId.Value);
     }
 
     if (flow.StateMember != null)

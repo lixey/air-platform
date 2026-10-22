@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace DemoOrg.Data.Models;
 
 [Index(nameof(Handle), IsUnique = true), Index(nameof(Code), IsUnique = true)]

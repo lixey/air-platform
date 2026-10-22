@@ -1,8 +1,3 @@
-using Bogus;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Migrations.Seeds;
 
 /// <summary>

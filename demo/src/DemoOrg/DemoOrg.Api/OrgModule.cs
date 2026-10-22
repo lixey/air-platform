@@ -1,9 +1,3 @@
-using Air.App.Metadata;
-using Air.App.Modules;
-using Air.Data.Postgres;
-using DemoOrg.Data;
-using Microsoft.AspNetCore.Builder;
-
 namespace DemoOrg;
 
 public sealed class OrgModule : PlatformModule<Org>

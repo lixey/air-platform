@@ -1,20 +1,3 @@
-using System.Globalization;
-using System.Linq.Expressions;
-using System.Reflection;
-using Air.App.Components;
-using Air.App.Form;
-using Air.App.Grid.Selection;
-using Air.App.Localization;
-using Air.App.Modules;
-using Air.App.Mutations;
-using Air.App.Nav;
-using Air.App.Overlay;
-using Air.App.Panels;
-using Air.App.Screens;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
@@ -74,6 +57,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       navStart.AddRange(nav.Pickers);
     }
+
     navStart.AddRange(nav.CustomStart);
 
     var permittedActions = new List<NavActionEntry>();
@@ -144,13 +128,26 @@ public abstract partial class GridService<TEntity, TRow>
           try
           {
             var baseQ = BaseQuery(db);
-            foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
-            if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-            if (item.Predicate != null) baseQ = baseQ.Where(item.Predicate);
+            foreach (var filter in queryDeclaration.Filters)
+            {
+              baseQ = baseQ.Where(filter);
+            }
+
+            if (ParentId.HasValue && parent.FilterFunc != null)
+            {
+              baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+            }
+
+            if (item.Predicate != null)
+            {
+              baseQ = baseQ.Where(item.Predicate);
+            }
+
             badgeVal = (await baseQ.CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
           }
           catch { }
         }
+
         groupItems.Add(new GridNavNamedFilterModel
         {
           Key = item.Key,
@@ -160,6 +157,7 @@ public abstract partial class GridService<TEntity, TRow>
           IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
         });
       }
+
       navElements.Add(new GridNavNamedFilterGroupModel
       {
         Key = group.Key,
@@ -177,9 +175,21 @@ public abstract partial class GridService<TEntity, TRow>
         try
         {
           var baseQ = BaseQuery(db);
-          foreach (var filter in queryDeclaration.Filters) baseQ = baseQ.Where(filter);
-          if (ParentId.HasValue && parent.FilterFunc != null) baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-          if (item.Predicate != null) baseQ = baseQ.Where(item.Predicate);
+          foreach (var filter in queryDeclaration.Filters)
+          {
+            baseQ = baseQ.Where(filter);
+          }
+
+          if (ParentId.HasValue && parent.FilterFunc != null)
+          {
+            baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+          }
+
+          if (item.Predicate != null)
+          {
+            baseQ = baseQ.Where(item.Predicate);
+          }
+
           badgeValue = (await baseQ.CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
         }
         catch { }
@@ -367,7 +377,10 @@ public abstract partial class GridService<TEntity, TRow>
     {
       var fallback = columns.List.FirstOrDefault(c => !string.Equals(c.Path, "id", StringComparison.OrdinalIgnoreCase))
         ?? columns.List.FirstOrDefault();
-      if (fallback != null) matching.Add(fallback);
+      if (fallback != null)
+      {
+        matching.Add(fallback);
+      }
     }
 
     LocalizeAndConfigureColumns(matching);
@@ -405,6 +418,7 @@ public abstract partial class GridService<TEntity, TRow>
                 L.TextOr($"{Feature.Name}.{col.Path}", L[col.Label])))
           : L[col.Label];
       }
+
       if (col.Options is { Count: > 0 })
       {
         col.Options = col.Options.Select(opt => new OptionDto
@@ -414,11 +428,13 @@ public abstract partial class GridService<TEntity, TRow>
           Color = opt.Color
         }).ToList();
       }
+
       if (col.IsFilterable && col.Operators == null)
       {
         var isRefOrSelect = col.ReferenceService != null || col.Options is { Count: > 0 } || col.Cell is GridCellReferenceModel;
         col.Operators = GridFilterOperators.ForField(col.Type, isRefOrSelect, col.TemporalType != null);
       }
+
       if (col.IsFilterable && col.Header == null)
       {
         if (col.Type is UiFieldType.Date or UiFieldType.Datetime)
@@ -436,7 +452,10 @@ public abstract partial class GridService<TEntity, TRow>
   private OverlayModelDto? ResolveFormOverlay(Columns columns)
   {
     var detectedFormService = ResolveFormServicePath(columns);
-    if (detectedFormService is null) return null;
+    if (detectedFormService is null)
+    {
+      return null;
+    }
 
     var formType = ResolveFormServiceType(columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
     return ResolveFormOverlayForType(formType, detectedFormService);
@@ -448,7 +467,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, _app) is IFormService formInstance)
+        if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService formInstance)
         {
           return formInstance.Overlay(formServicePath);
         }
@@ -509,9 +528,7 @@ public abstract partial class GridService<TEntity, TRow>
                 Color = target?.Color,
                 Elements = [.. t.Ask.BuildElements().Select(e =>
                 {
-                  if (!string.IsNullOrEmpty(e.Label)) e.Label = L[e.Label];
-                  return e;
-                })]
+                  if (!string.IsNullOrEmpty(e.Label)) { e.Label = L[e.Label]; } return e; })]
               },
             UnavailableReasons = t.Offers.Count == 0
               ? null
@@ -520,7 +537,10 @@ public abstract partial class GridService<TEntity, TRow>
         };
       }).ToList();
 
-    if (statusMoves.Count == 0) return null;
+    if (statusMoves.Count == 0)
+    {
+      return null;
+    }
 
     return new GridNavStatusModel
     {

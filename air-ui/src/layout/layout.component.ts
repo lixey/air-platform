@@ -1,14 +1,27 @@
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, Injector, signal, viewChild } from '@angular/core';
 import { AppService } from '../app/app.service';
 import { LocaleService } from '../app/locale.service';
-import type { PanelLayoutDto } from '../core/generated/contracts';
+import type { OverlayModelDto, PanelLayoutDto } from '../core/generated/contracts';
+import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayHostComponent } from '../overlay/overlay-host.component';
+import { type OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
 import { PanelsComponent } from '../panels/panels.component';
+import { singlePanelLayout } from '../panels/single-panel-layout';
 import { AGENT_PANEL, MENU_PANEL, TABS_PANEL, WORK_PANEL } from './layout-panel-keys';
 import { LayoutPinsService } from './layout-pins.service';
 import { isTabStripVisible } from './layout-tabs.component';
+
+const AGENT_DIALOG: OverlayModelDto = {
+  key: 'layout.agent',
+  presentation: 'dialog',
+  closesOnEscape: true,
+  closesOnOutside: true,
+  width: '480px',
+  height: '680px',
+  layout: singlePanelLayout(AGENT_PANEL, { kind: 'LayoutAgent' }),
+};
 
 /**
  * The frame's own panels: the navigation beside the work area, and in the work area the strip above whatever the
@@ -101,16 +114,16 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
     @if (overlay.bounds(); as b) {
       <button
         type="button"
-        class="fixed z-40 flex h-9 w-[36px] -translate-y-full cursor-pointer items-center justify-center rounded-bl-lg border-t border-r border-line bg-surface-2 text-muted transition-colors hover:bg-active hover:text-on-active"
+        class="fixed z-40 flex h-9 w-[36px] -translate-y-full cursor-pointer items-center justify-center rounded-bl-lg border border-line bg-surface-2 text-muted transition-colors hover:bg-active hover:text-on-active"
         [class.bg-active!]="isAgentOpen()"
         [class.text-on-active!]="isAgentOpen()"
         [style.left.px]="b.left"
         [style.top.px]="b.top + b.height"
-        title="AI Асистент"
-        aria-label="AI Асистент"
+        [title]="texts.of('AgentTitle')"
+        [attr.aria-label]="texts.of('AgentTitle')"
         (click)="toggleAgent()"
       >
-        <i class="h-4 w-4" [icon]="'star'"></i>
+        <i class="flex items-center justify-center" [icon]="'bot'"></i>
       </button>
     }
     <ui-overlay-host />
@@ -121,11 +134,13 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
 })
 export class LayoutComponent {
   readonly app = inject(AppService);
+  protected readonly texts = inject(TextsService);
 
   private readonly pins = inject(LayoutPinsService);
   /** Constructed with the shell, so the document speaks the session's language after a reload too. */
   private readonly locale = inject(LocaleService);
   protected readonly overlay = inject(OverlayService);
+  private readonly injector = inject(Injector);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -136,15 +151,41 @@ export class LayoutComponent {
    */
   private readonly panels = viewChild(PanelsComponent);
   private readonly isEngineReady = signal(false);
+  private readonly agentDialogRef = signal<OverlayRef | null>(null);
 
   protected readonly layout = SHELL_LAYOUT;
   protected readonly isAgentOpen = computed(() => {
+    if (this.agentDialogRef()) {
+      return true;
+    }
     const panels = this.panels();
     return this.isEngineReady() && !!panels && !panels.isCollapsed(AGENT_PANEL);
   });
 
   protected toggleAgent(): void {
-    this.panels()?.toggle(AGENT_PANEL);
+    const existingDialog = this.agentDialogRef();
+    if (existingDialog) {
+      existingDialog.close();
+      return;
+    }
+
+    const panels = this.panels();
+    if (!panels) {
+      return;
+    }
+
+    if (panels.isNarrow()) {
+      const ref = this.overlay.open(AGENT_DIALOG, this.host.nativeElement, this.injector);
+      this.agentDialogRef.set(ref);
+      ref.closed.subscribe(() => {
+        if (this.agentDialogRef() === ref) {
+          this.agentDialogRef.set(null);
+        }
+      });
+      return;
+    }
+
+    panels.toggle(AGENT_PANEL);
   }
 
   constructor() {
@@ -171,6 +212,11 @@ export class LayoutComponent {
         panels.open(TABS_PANEL);
       } else if (!hasSomethingToShow && !isClosed) {
         panels.close(TABS_PANEL);
+      }
+
+      if (!panels.isNarrow() && this.agentDialogRef()) {
+        this.agentDialogRef()?.close();
+        panels.open(AGENT_PANEL);
       }
     });
   }

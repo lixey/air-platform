@@ -1,8 +1,3 @@
-using Air.Data.Entities;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 
 namespace Air.App.Host;
@@ -41,6 +36,7 @@ internal static class FileEndpoints
           await stream.DisposeAsync();
           return Results.NotFound();
         }
+
         stream.Seek(0, SeekOrigin.Begin);
         type = thumbnail;
         name = Path.GetFileNameWithoutExtension(link.Name) + (thumbnail == FileType.WebP ? ".webp" : ".jpg");

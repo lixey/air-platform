@@ -1,5 +1,3 @@
-using Air.App.Modules;
-
 namespace Air.App.Metadata;
 
 public sealed class ModuleMenuNode

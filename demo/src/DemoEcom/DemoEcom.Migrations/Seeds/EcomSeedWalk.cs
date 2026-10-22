@@ -1,9 +1,3 @@
-using Bogus;
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Migrations.Seeds;
 
 /// <summary>

@@ -1,8 +1,3 @@
-using Air.App.Auth;
-using DemoApp.Data;
-using DemoApp.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoApp.Migrations.Seeds;
 
 public static class AppIdentitySeed
@@ -59,6 +54,7 @@ public static class AppIdentitySeed
           {
             existing.PasswordHash = passwordHash;
           }
+
           if (u.IsRoot && !existing.IsRoot)
           {
             existing.IsRoot = true;

@@ -1,8 +1,3 @@
-using Air.App.Form;
-using Air.App.Localization;
-using Air.App.Modules;
-using Air.Data.Tenancy;
-
 namespace Air.App.Auth;
 
 public static class RightsTree
@@ -15,7 +10,10 @@ public static class RightsTree
     foreach (var module in catalog.Modules)
     {
       var features = module.Features;
-      if (features.Count == 0) continue;
+      if (features.Count == 0)
+      {
+        continue;
+      }
 
       var modL = L.For(module.Handle);
       var featureNodes = new List<CheckboxTreeNodeDto>();
@@ -34,6 +32,7 @@ public static class RightsTree
             rights.Add(Node(feat.Delete.Key, L["Delete"]));
           }
         }
+
         rights.Add(Node(feat.MenuView.Key, L["Menu view"]));
         rights.Add(Node(feat.Export.Key, L["Export"]));
         if (feat.ServiceType != null && typeof(Changes.ChangeGridService).IsAssignableFrom(feat.ServiceType))
@@ -48,6 +47,7 @@ public static class RightsTree
           {
             labelKey = labelKey[0] + labelKey[1..].ToLowerInvariant();
           }
+
           rights.Add(Node(accessRight.Key, modL[labelKey]));
         }
 
@@ -104,6 +104,7 @@ public static class RightsTree
         set.Add(childKey);
       }
     }
+
     return set;
   }
 
@@ -116,11 +117,13 @@ public static class RightsTree
       {
         set.Add(node.Key);
       }
+
       foreach (var childKey in FlattenDisabledKeys(node.Children))
       {
         set.Add(childKey);
       }
     }
+
     return set;
   }
 

@@ -1,5 +1,3 @@
-using Air.Data.Contracts;
-
 namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderProductRow

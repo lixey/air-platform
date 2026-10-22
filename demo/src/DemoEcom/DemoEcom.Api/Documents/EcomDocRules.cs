@@ -1,6 +1,3 @@
-using DemoEcom.Data;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 /// <summary>The rules the document forms share; each answers whether the value passes, and the form gives the message.</summary>

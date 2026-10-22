@@ -1,7 +1,3 @@
-using System.Text.Json;
-using Air.App.Localization;
-using Air.App.TypeScript;
-
 var targetDir = args.Length > 0 ? args[0] : "air-ui/src/core/generated";
 Directory.CreateDirectory(targetDir);
 

@@ -1,5 +1,3 @@
-using DemoApp.Color;
-
 namespace DemoOrg.Organization;
 
 public sealed class OrgOrganizationGridService(OrgDbContext db, OrgService? org = null)

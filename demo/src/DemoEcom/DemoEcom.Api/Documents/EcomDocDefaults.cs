@@ -1,7 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 public static class EcomDocDefaults

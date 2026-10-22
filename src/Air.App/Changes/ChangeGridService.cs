@@ -1,12 +1,3 @@
-using Air.App.Components;
-using Air.App.Grid;
-using Air.App.Modules;
-using Air.Data;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
-
 namespace Air.App.Changes;
 
 /// <summary>
@@ -55,7 +46,10 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
     }
 
     var ids = request.SelectedIds ?? [];
-    if (ids.Count == 0 && request.Id.HasValue) ids = [request.Id.Value];
+    if (ids.Count == 0 && request.Id.HasValue)
+    {
+      ids = [request.Id.Value];
+    }
 
     if (ids.Count == 0)
     {
@@ -122,9 +116,16 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
           var entry = targetDb.Entry(entity);
           foreach (var kvp in beforeDict)
           {
-            if (kvp.Key is "Ver" or "UpdatedAt" or "CreatedAt") continue;
+            if (kvp.Key is "Ver" or "UpdatedAt" or "CreatedAt")
+            {
+              continue;
+            }
+
             var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
-            if (prop == null || prop.Metadata.IsPrimaryKey()) continue;
+            if (prop == null || prop.Metadata.IsPrimaryKey())
+            {
+              continue;
+            }
 
             if (((System.Reflection.MemberInfo?)prop.Metadata.PropertyInfo ?? prop.Metadata.FieldInfo) is { } member &&
                 Attribute.IsDefined(member, typeof(KeepsVersionAttribute), inherit: true))
@@ -184,10 +185,7 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
             foreach (var kvp in beforeDict)
             {
               var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
-              if (prop != null)
-              {
-                prop.CurrentValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
-              }
+              prop?.CurrentValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
             }
 
             if (entity is BaseAppUser restoredUser)
@@ -219,6 +217,7 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
     {
       return JsonSerializer.Deserialize(je.GetRawText(), clrType);
     }
+
     return raw != null ? Convert.ChangeType(raw, targetType) : null;
   }
 
@@ -228,11 +227,22 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
     {
       return db;
     }
+
     var sp = services ?? PlatformApp?.Services;
     if (sp != null)
     {
       var dbTypes = AppDomain.CurrentDomain.GetAssemblies()
-        .SelectMany(a => { try { return a.GetTypes(); } catch { return Type.EmptyTypes; } })
+        .SelectMany(a =>
+        {
+          try
+          {
+            return a.GetTypes();
+          }
+          catch
+          {
+            return Type.EmptyTypes;
+          }
+        })
         .Where(t => typeof(PlatformDbContext).IsAssignableFrom(t) && !t.IsAbstract && t != db.GetType());
 
       foreach (var dbType in dbTypes)
@@ -246,6 +256,7 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
         }
       }
     }
+
     return db;
   }
 }

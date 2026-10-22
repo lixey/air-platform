@@ -1,8 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Documents;
-using DemoEcom.IncomingPayment;
-using DemoEcom.SalesReturn;
-
 namespace DemoEcom.SalesInvoice;
 
 /// <summary>

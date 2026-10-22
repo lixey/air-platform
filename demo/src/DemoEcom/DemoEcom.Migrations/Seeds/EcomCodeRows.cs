@@ -1,9 +1,3 @@
-using Air.App.Components;
-using Air.Data;
-using DemoApp.Migrations.Seeds;
-using DemoEcom.Data;
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Migrations.Seeds;
 
 public static class EcomCodeRows

@@ -1,5 +1,3 @@
-using DemoApp.Color;
-
 namespace DemoOrg.ProductCategory;
 
 public sealed class OrgProductCategoryGridService(OrgDbContext db, OrgService? org = null)

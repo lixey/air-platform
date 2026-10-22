@@ -1,7 +1,3 @@
-using System.Globalization;
-using Air.App.Localization;
-using DemoEcom.Data.Documents;
-
 namespace DemoEcom.Documents;
 
 public sealed class EcomDocTexts

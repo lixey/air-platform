@@ -1,5 +1,3 @@
-using Air.Data.Internal;
-
 namespace Air.Data.Querying;
 
 /// <summary>

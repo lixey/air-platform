@@ -1,13 +1,3 @@
-using Air.App.Auth;
-using Air.App.Localization;
-using Air.App.Metadata;
-using Air.App.Modules;
-using Air.Data;
-using Air.Data.Contracts;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-
 namespace Air.App.Host;
 
 internal static class MetadataEndpoints
@@ -40,6 +30,7 @@ internal static class MetadataEndpoints
             }
           }
         }
+
         var activeTenantId = AsyncLocalTenantContext.Instance.TenantId
           ?? (userContext.IsAuthenticated && userContext.Claim(AuthClaims.Tenant) is { } tc && long.TryParse(tc, out var tId) ? tId : 1);
         var currentTenant = tenants.FirstOrDefault(t => t.Id == activeTenantId) ?? tenants.FirstOrDefault();
@@ -85,7 +76,10 @@ internal static class MetadataEndpoints
             .ToList();
 
           var trimmedNodes = TrimSeparators(visibleNodes);
-          if (trimmedNodes.Count == 0) continue;
+          if (trimmedNodes.Count == 0)
+          {
+            continue;
+          }
 
           var rootItem = new MenuItemDto
           {
@@ -148,7 +142,11 @@ internal static class MetadataEndpoints
 
     if (node.Feature is { } feature)
     {
-      if (node.IsHidden) return null;
+      if (node.IsHidden)
+      {
+        return null;
+      }
+
       if (user.IsAuthenticated && (!user.Can(feature.View) || !user.Can(feature.MenuView)))
       {
         return null;
@@ -178,7 +176,10 @@ internal static class MetadataEndpoints
       .ToList();
 
     var trimmedChildren = TrimSeparators(visibleChildren);
-    if (trimmedChildren.Count == 0) return null;
+    if (trimmedChildren.Count == 0)
+    {
+      return null;
+    }
 
     return new MenuItemDto
     {
@@ -198,12 +199,15 @@ internal static class MetadataEndpoints
       {
         continue;
       }
+
       trimmed.Add(item);
     }
+
     if (trimmed.Count > 0 && trimmed[^1].IsSeparator)
     {
       trimmed.RemoveAt(trimmed.Count - 1);
     }
+
     return trimmed;
   }
 

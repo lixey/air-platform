@@ -1,11 +1,3 @@
-using System.Text.Json;
-using Air.App.Components;
-using Air.App.Mutations;
-using Air.App.Screens;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
@@ -19,7 +11,7 @@ public abstract partial class FormService<TEntity, TInput>
   {
     Request = request;
     var id = request.Id;
-    IsNew = (id is null or 0);
+    IsNew = id is null or 0;
 
     var parent = new Parent();
     SetParent(parent);
@@ -41,6 +33,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         tenantEntity.TenantId = tid;
       }
+
       ApplyBoundParentId(entity, parent, request.ParentId);
       if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
       {
@@ -49,7 +42,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
     else
     {
-      IQueryable<TEntity> query = Reachable(asTracking: true);
+      var query = Reachable(asTracking: true);
       var efModel = db.Model.FindEntityType(typeof(TEntity));
       if (efModel != null)
       {
@@ -108,6 +101,7 @@ public abstract partial class FormService<TEntity, TInput>
         {
           targetName += "Id";
         }
+
         SetPropertyValue(entity, targetName, prop.Value);
         if (!ReferenceEquals(entity, input))
         {
@@ -131,12 +125,12 @@ public abstract partial class FormService<TEntity, TInput>
     var input = JsonSerializer.Deserialize<TInput>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
       ?? new TInput();
 
-    long? id = request?.Id;
-    if ((id is null or <= 0) && input is IEntity inpEntity && inpEntity.Id > 0)
+    var id = request?.Id;
+    if (id is null or <= 0 && input is IEntity inpEntity && inpEntity.Id > 0)
     {
       id = inpEntity.Id;
     }
-    else if ((id is null or <= 0) && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("id", out var idProp))
+    else if (id is null or <= 0 && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("id", out var idProp))
     {
       if (idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var rootId) && rootId > 0)
       {
@@ -148,14 +142,14 @@ public abstract partial class FormService<TEntity, TInput>
       }
     }
 
-    int? clientVer = request?.Ver;
+    var clientVer = request?.Ver;
     if (clientVer is null && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var rootVer))
     {
       clientVer = rootVer;
     }
-    else if (clientVer is null && input is IHasVersion verEntity && verEntity.Ver > 0)
+    else if (clientVer is null && entityJson.ValueKind == JsonValueKind.Object && entityJson.TryGetProperty("ver", out var entityVerProp) && entityVerProp.ValueKind == JsonValueKind.Number && entityVerProp.TryGetInt32(out var entityVer) && entityVer > 0)
     {
-      clientVer = verEntity.Ver;
+      clientVer = entityVer;
     }
 
     request ??= new FormRequest();
@@ -165,13 +159,14 @@ public abstract partial class FormService<TEntity, TInput>
     {
       request.ParentId = jsonPid;
     }
+
     if (string.IsNullOrEmpty(request.ParentService) && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } jsonPs)
     {
       request.ParentService = jsonPs;
     }
 
     Request = request;
-    IsNew = (id is null or 0);
+    IsNew = id is null or 0;
 
     var parent = new Parent();
     SetParent(parent);
@@ -188,6 +183,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         tenantEntity.TenantId = tid;
       }
+
       ApplyBoundParentId(entity, parent, Request.ParentId);
       if (parent.BoundProperty != null && !parent.IsOptional)
       {
@@ -243,6 +239,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         statusFlow.Initialize(entity);
       }
+
       var newLoadInput = new TInput();
       CopyMatchingProperties(entity, newLoadInput);
       var newLoadCtx = new FormLoadContext<TEntity, TInput>
@@ -270,6 +267,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         await h(baselineLoadCtx, ct);
       }
+
       originalValues = SnapshotValues(baselineInput);
     }
 
@@ -281,6 +279,7 @@ public abstract partial class FormService<TEntity, TInput>
     {
       entity.Id = id.Value;
     }
+
     ApplyBoundParentId(entity, parent, Request.ParentId);
     if (parent.BoundProperty != null && !parent.IsOptional)
     {
@@ -299,6 +298,7 @@ public abstract partial class FormService<TEntity, TInput>
           }]);
       }
     }
+
     if (!ReferenceEquals(entity, input))
     {
       CopyMatchingProperties(entity, input, inputOnlyPaths);
@@ -324,6 +324,7 @@ public abstract partial class FormService<TEntity, TInput>
     {
       CopyMatchingProperties(entity, input, inputOnlyPaths);
     }
+
     ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
     if (ruleCtx.Failures.Count > 0)
     {
@@ -342,6 +343,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         db.Set<TEntity>().Update(entity);
       }
+
       await db.SaveChangesAsync(ct);
 
       if (hooks.AfterSaveActions.Count > 0)
@@ -370,6 +372,7 @@ public abstract partial class FormService<TEntity, TInput>
     {
       CopyMatchingProperties(entity, input);
     }
+
     return input;
   }
 
@@ -444,6 +447,7 @@ public abstract partial class FormService<TEntity, TInput>
     {
       SetPropertyValue(entity, path, value);
     }
+
     NormalizeNullableStrings(elements, input);
     if (!ReferenceEquals(entity, input))
     {
@@ -504,6 +508,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         db.Set<TEntity>().Update(entity);
       }
+
       await db.SaveChangesAsync(ct);
 
       if (hooks.AfterSaveActions.Count > 0)
@@ -548,7 +553,7 @@ public abstract partial class FormService<TEntity, TInput>
 
   public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
   {
-    if (!Feature.HasDelete || (User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All)))
+    if (!Feature.HasDelete || User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All))
     {
       throw new FormRefusedException(
         MutationOutcome.Refused,
@@ -669,7 +674,7 @@ public abstract partial class FormService<TEntity, TInput>
       };
     }
 
-    object? input = transition.Ask?.Read(body);
+    var input = transition.Ask?.Read(body);
     if (transition.Ask != null)
     {
       var askFailures = transition.Ask.Validate(input, L);

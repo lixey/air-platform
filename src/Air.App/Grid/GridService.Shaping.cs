@@ -1,9 +1,4 @@
-using System.Globalization;
 using System.Runtime.CompilerServices;
-using Air.App.Internal;
-using Air.App.Localization;
-using Air.Data.Contracts;
-using Air.Data.Entities;
 
 namespace Air.App.Grid;
 
@@ -16,13 +11,17 @@ public abstract partial class GridService<TEntity, TRow>
     IReadOnlyList<GridColumnDto> columns,
     IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null)
   {
-    if (row is null || columns.Count == 0) return row!;
+    if (row is null || columns.Count == 0)
+    {
+      return row!;
+    }
 
     var shaped = new Dictionary<string, object?>(StringComparer.Ordinal);
     if (PropertyAccessorCache.GetValue(row, "Id") is { } idVal)
     {
       shaped["id"] = idVal;
     }
+
     if (PropertyAccessorCache.GetValue(row, "Ver") is { } verVal)
     {
       shaped["ver"] = verVal;
@@ -43,6 +42,7 @@ public abstract partial class GridService<TEntity, TRow>
         }
         catch { }
       }
+
       if (matchedFlags is { Count: > 0 })
       {
         shaped["flags"] = matchedFlags;
@@ -51,7 +51,10 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var column in columns)
     {
-      if (string.IsNullOrEmpty(column.Path)) continue;
+      if (string.IsNullOrEmpty(column.Path))
+      {
+        continue;
+      }
 
       var value = ReadPathValue(row, column.Path);
 
@@ -85,7 +88,7 @@ public abstract partial class GridService<TEntity, TRow>
         value = new Reference { Id = refEntity.Id, Name = L[rawName] };
       }
       else if (value is string strVal && !string.IsNullOrEmpty(strVal) &&
-               ((row is IReadOnlyEntity && string.Equals(column.Path, "name", StringComparison.OrdinalIgnoreCase)) ||
+               (row is IReadOnlyEntity && string.Equals(column.Path, "name", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(column.Path, "type", StringComparison.OrdinalIgnoreCase)))
       {
         value = L[strVal];
@@ -148,8 +151,10 @@ public abstract partial class GridService<TEntity, TRow>
           nested["id"] = existingRef.Id;
           nested["name"] = existingRef.Name;
         }
+
         current[key] = nested;
       }
+
       current = nested;
     }
 
@@ -196,6 +201,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       yield return item;
     }
+
     await Task.CompletedTask;
   }
 }

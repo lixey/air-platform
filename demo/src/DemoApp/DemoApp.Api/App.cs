@@ -1,12 +1,3 @@
-using DemoApp.Change;
-using DemoApp.Color;
-using DemoApp.Language;
-using DemoApp.Role;
-using DemoApp.Session;
-using DemoApp.Tenant;
-using DemoApp.User;
-using DemoApp.UserGroup;
-
 namespace DemoApp;
 
 [Module(AppData.ModuleHandle)]

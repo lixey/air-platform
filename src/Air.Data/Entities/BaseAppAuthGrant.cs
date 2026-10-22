@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.Data.Entities;
 
 [Comment("Role grant: a right's key or a pattern")]

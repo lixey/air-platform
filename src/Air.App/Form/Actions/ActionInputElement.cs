@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Air.App.Form.Actions;
 
 public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
@@ -30,6 +28,7 @@ public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
         dto.Constraints.RejectsBlank = true;
       }
     }
+
     return this;
   }
 

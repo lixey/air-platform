@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace Air.Data.Internal;
 
 internal static class InferredFields

@@ -1,7 +1,3 @@
-using DemoApp.Migrations.Seeds;
-using DemoOrg.Data;
-using DemoOrg.Migrations.Seeds;
-
 namespace DemoOrg.Migrations;
 
 public static class OrgSeed

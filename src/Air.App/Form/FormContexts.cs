@@ -1,9 +1,3 @@
-using System.Collections;
-using System.Linq.Expressions;
-using System.Reflection;
-using Air.App.Internal;
-using Air.Data.Contracts;
-
 namespace Air.App.Form;
 
 public sealed class FormRefusedException(
@@ -42,7 +36,11 @@ public class FormSaveContext<TEntity, TInput>
 
   public TProp Original<TProp>(Expression<Func<TInput, TProp>> property)
   {
-    if (IsNew || OriginalValues is null) return default!;
+    if (IsNew || OriginalValues is null)
+    {
+      return default!;
+    }
+
     var body = property.Body is UnaryExpression ue ? ue.Operand : property.Body;
     if (body is MemberExpression me && me.Member is PropertyInfo pi &&
         OriginalValues.TryGetValue(pi.Name, out var origVal) &&
@@ -50,13 +48,21 @@ public class FormSaveContext<TEntity, TInput>
     {
       return typed;
     }
+
     return default!;
   }
 
   public bool Changed(params Expression<Func<TInput, object?>>[] properties)
   {
-    if (IsNew || OriginalValues is null) return true;
-    if (properties.Length == 0) return true;
+    if (IsNew || OriginalValues is null)
+    {
+      return true;
+    }
+
+    if (properties.Length == 0)
+    {
+      return true;
+    }
 
     foreach (var propExpr in properties)
     {
@@ -77,13 +83,26 @@ public class FormSaveContext<TEntity, TInput>
 
   private static bool ValuesEqual(object? a, object? b)
   {
-    if (ReferenceEquals(a, b)) return true;
-    if (a is string sa && b is null) return string.IsNullOrEmpty(sa);
-    if (a is null && b is string sb) return string.IsNullOrEmpty(sb);
+    if (ReferenceEquals(a, b))
+    {
+      return true;
+    }
+
+    if (a is string sa && b is null)
+    {
+      return string.IsNullOrEmpty(sa);
+    }
+
+    if (a is null && b is string sb)
+    {
+      return string.IsNullOrEmpty(sb);
+    }
+
     if (a is IEnumerable ea and not string and not byte[] && b is IEnumerable eb and not string and not byte[])
     {
       return ea.Cast<object?>().SequenceEqual(eb.Cast<object?>());
     }
+
     return Equals(a, b);
   }
 }

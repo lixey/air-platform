@@ -1,8 +1,3 @@
-using Air.App.Auth;
-using Bogus;
-using DemoApp.Data;
-using DemoApp.Data.Models;
-using Microsoft.EntityFrameworkCore;
 using Gender = Bogus.DataSets.Name.Gender;
 
 namespace DemoApp.Migrations.Seeds;
@@ -88,6 +83,7 @@ public static class AppVolumeSeed
         {
           u.PasswordHash = passwordHash;
         }
+
         await db.SaveChangesAsync(cancellationToken);
       }
     }

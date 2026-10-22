@@ -1,5 +1,3 @@
-using DemoEcom.Documents;
-
 namespace DemoEcom.OutgoingPayment;
 
 public sealed class EcomOutgoingPaymentBasisGridService(EcomDbContext db, EcomService? ecom = null)

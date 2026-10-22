@@ -1,20 +1,119 @@
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
-using Air.Mcp;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Air.Agent.Providers;
 
-public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
+public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) : IAgentProvider
 {
-  private string? _registeredMcpUrl;
-  private readonly SemaphoreSlim _mcpInitLock = new(1, 1);
+  private IReadOnlyList<AgentModelDto>? _cachedModels;
+  private readonly SemaphoreSlim _modelsLock = new(1, 1);
+
+  private static readonly IReadOnlyList<AgentModelDto> FallbackModels =
+  [
+    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)" },
+    new() { Id = "gemini-3.8-flash-medium", Name = "Gemini 3.8 Flash (Medium)" },
+    new() { Id = "gemini-3.8-flash-high", Name = "Gemini 3.8 Flash (High)" },
+    new() { Id = "gemini-4-argon-low", Name = "Gemini 4 Argon (Low)" },
+    new() { Id = "gemini-4-argon-medium", Name = "Gemini 4 Argon (Medium)" },
+    new() { Id = "gemini-4-argon-high", Name = "Gemini 4 Argon (High)" },
+    new() { Id = "claude-sonnet-5-5-low", Name = "Claude Sonnet 5.5 (Low)" },
+    new() { Id = "claude-sonnet-5-5-medium", Name = "Claude Sonnet 5.5 (Medium)" },
+    new() { Id = "claude-sonnet-5-5-high", Name = "Claude Sonnet 5.5 (High)" },
+    new() { Id = "claude-opus-5-5-low", Name = "Claude Opus 5.5 (Low)" },
+    new() { Id = "claude-opus-5-5-medium", Name = "Claude Opus 5.5 (Medium)" },
+    new() { Id = "claude-opus-5-5-high", Name = "Claude Opus 5.5 (High)" },
+    new() { Id = "gpt-oss-120b-medium", Name = "GPT-OSS 120B (Medium)" }
+  ];
 
   public string Handle => "Agy";
   public string Name => "Antigravity CLI (agy)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
+
+  public async Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default)
+  {
+    if (_cachedModels is { Count: > 0 })
+    {
+      return _cachedModels;
+    }
+
+    var agyPath = ResolveExecutablePath();
+    if (agyPath is null)
+    {
+      return FallbackModels;
+    }
+
+    await _modelsLock.WaitAsync(ct);
+    try
+    {
+      if (_cachedModels is { Count: > 0 })
+      {
+        return _cachedModels;
+      }
+
+      var psi = new ProcessStartInfo
+      {
+        FileName = agyPath,
+        WorkingDirectory = store.WorkspaceDirectory,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        StandardOutputEncoding = Encoding.UTF8
+      };
+      psi.ArgumentList.Add("models");
+
+      using var proc = Process.Start(psi);
+      if (proc is null)
+      {
+        return FallbackModels;
+      }
+
+      using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      timeoutCts.CancelAfter(TimeSpan.FromSeconds(8));
+
+      var stdout = await proc.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+      await proc.WaitForExitAsync(timeoutCts.Token);
+
+      var parsed = new List<AgentModelDto>();
+      foreach (var rawLine in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+      {
+        // Strip spinner frames separated by '\r'
+        var line = rawLine.Contains('\r') ? rawLine[(rawLine.LastIndexOf('\r') + 1)..] : rawLine;
+        line = line.Trim();
+        if (string.IsNullOrEmpty(line) || line.StartsWith("Fetching", StringComparison.OrdinalIgnoreCase))
+        {
+          continue;
+        }
+
+        // agy models separates <id> and <name> with tabs (\t) or spaces
+        var firstWs = line.IndexOfAny([' ', '\t']);
+        if (firstWs <= 0)
+        {
+          continue;
+        }
+
+        var id = line[..firstWs].Trim();
+        var name = line[(firstWs + 1)..].Trim();
+        if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(name) && !id.Contains(':'))
+        {
+          parsed.Add(new AgentModelDto { Id = id, Name = name });
+        }
+      }
+
+      if (parsed.Count > 0)
+      {
+        _cachedModels = parsed;
+        return _cachedModels;
+      }
+    }
+    catch
+    {
+      // Fall back to default list if CLI invocation times out or fails
+    }
+    finally
+    {
+      _modelsLock.Release();
+    }
+
+    return FallbackModels;
+  }
 
   public static string? ResolveExecutablePath()
   {
@@ -47,96 +146,42 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
     return null;
   }
 
-  private async Task EnsureMcpRegisteredAsync(string agyPath, string mcpUrl, CancellationToken ct)
-  {
-    if (string.Equals(_registeredMcpUrl, mcpUrl, StringComparison.OrdinalIgnoreCase))
-    {
-      return;
-    }
-
-    await _mcpInitLock.WaitAsync(ct);
-    try
-    {
-      if (string.Equals(_registeredMcpUrl, mcpUrl, StringComparison.OrdinalIgnoreCase))
-      {
-        return;
-      }
-
-      var psi = new ProcessStartInfo
-      {
-        FileName = agyPath,
-        WorkingDirectory = store.WorkspaceDirectory,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true
-      };
-      psi.ArgumentList.Add("mcp");
-      psi.ArgumentList.Add("add");
-      psi.ArgumentList.Add("--type");
-      psi.ArgumentList.Add("http");
-      psi.ArgumentList.Add("air-mcp");
-      psi.ArgumentList.Add(mcpUrl);
-
-      using var proc = Process.Start(psi);
-      if (proc is not null)
-      {
-        await proc.WaitForExitAsync(ct);
-      }
-
-      _registeredMcpUrl = mcpUrl;
-    }
-    catch
-    {
-      // Non-fatal: in-process tool execution fallback remains active.
-    }
-    finally
-    {
-      _mcpInitLock.Release();
-    }
-  }
-
-  public async IAsyncEnumerable<AgentStreamEvent> StreamTurnAsync(
+  public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
   {
+    var L = Localizer.Instance;
     var agyPath = ResolveExecutablePath();
     if (agyPath is null)
     {
-      yield return new AgentStreamEvent
+      yield return new AgentStreamEventDto
       {
         Type = "error",
-        Text = "CLI 'agy' не знайдено у системі."
+        Text = L["AgentErrorCliMissing"]
       };
       yield break;
     }
 
-    var mcpUrl = $"{request.ServerBaseUrl.TrimEnd('/')}/api/mcp";
-    _ = EnsureMcpRegisteredAsync(agyPath, mcpUrl, CancellationToken.None);
+    var existingConvId = store.GetConversationId(request.SessionId, request.Owner);
 
-    var tools = request.Services.GetServices<IMcpTool>().ToList();
-    var existingConvId = store.GetConversationId(request.SessionId);
-
-    // Pre-fetch compact context from any *_get_context tool so the agent has up-to-date IDs immediately
     string? contextJson = null;
-    var contextTool = tools.FirstOrDefault(t => t.Name.EndsWith("_get_context", StringComparison.OrdinalIgnoreCase));
-    if (contextTool is not null)
+    try
     {
-      try
-      {
-        var ctxObj = await contextTool.ExecuteAsync(JsonSerializer.SerializeToElement(new { }), request.Services, ct);
-        contextJson = JsonSerializer.Serialize(ctxObj, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-      }
-      catch
-      {
-        // Ignore context prefetch errors
-      }
+      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct);
+      contextJson = JsonSerializer.Serialize(ctxObj, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
+    catch
+    {
+      // Ignore context prefetch errors
     }
 
-    var prompt = BuildPrompt(request, existingConvId is null, contextJson, tools);
-    var selectedModel = string.IsNullOrWhiteSpace(request.Model)
-      ? "gemini-3.8-flash-low"
+    var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson);
+    var rawModel = string.IsNullOrWhiteSpace(request.Model)
+      ? options.DefaultModel
       : request.Model.Trim();
+
+    var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
+      ?? options.DefaultModel;
 
     var psi = new ProcessStartInfo
     {
@@ -169,14 +214,17 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
 
     using var process = new Process { StartInfo = psi };
     process.Start();
+    var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
-    yield return new AgentStreamEvent
+    yield return new AgentStreamEventDto
     {
       Type = "status",
-      Text = request.Attachments.Count > 0 ? "Аналізую фото чека та дані…" : "Аналізую запит…"
+      Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"]
     };
 
     var fullAssistantText = new StringBuilder();
+    var emittedProposals = 0;
+    var emittedError = false;
 
     try
     {
@@ -210,7 +258,22 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
 
           if (evt == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
           {
-            store.SetConversationId(request.SessionId, cid);
+            store.SetConversationId(request.SessionId, request.Owner, cid);
+          }
+          else if (evt == "error")
+          {
+            var errMsg = root.TryGetProperty("error", out var errProp) && errProp.ValueKind == JsonValueKind.String
+              ? errProp.GetString()
+              : (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String ? msgProp.GetString() : null);
+            if (!string.IsNullOrWhiteSpace(errMsg))
+            {
+              emittedError = true;
+              yield return new AgentStreamEventDto
+              {
+                Type = "error",
+                Text = errMsg
+              };
+            }
           }
           else if (evt == "step_update" && root.TryGetProperty("step_update", out var step))
           {
@@ -221,7 +284,7 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
               if (!string.IsNullOrEmpty(delta))
               {
                 fullAssistantText.Append(delta);
-                yield return new AgentStreamEvent
+                yield return new AgentStreamEventDto
                 {
                   Type = "delta",
                   Text = delta
@@ -230,18 +293,18 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
             }
             else if (stepType is "tool_call" or "mcp_tool_call")
             {
-              yield return new AgentStreamEvent
+              yield return new AgentStreamEventDto
               {
                 Type = "status",
-                Text = "Формую операцію…"
+                Text = L["AgentStatusPreparing"]
               };
             }
           }
 
-          // Emit any proposals staged via MCP tool call during this step
-          foreach (var staged in store.DrainPendingProposals(request.SessionId))
+          foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
           {
-            yield return new AgentStreamEvent
+            emittedProposals++;
+            yield return new AgentStreamEventDto
             {
               Type = "proposal",
               Proposal = staged
@@ -254,145 +317,47 @@ public sealed class AgyCliAgentProvider(AgentStore store) : IAgentProvider
     {
       if (!process.HasExited)
       {
-        try { process.Kill(entireProcessTree: true); } catch { }
+        try
+        {
+          process.Kill(entireProcessTree: true);
+        }
+        catch { }
       }
     }
 
-    // Also check if the assistant emitted an inline <air_tool_call> block (fallback if it didn't invoke HTTP MCP directly)
     var completeText = fullAssistantText.ToString();
-    var inlineProposals = await TryExecuteInlineToolCallsAsync(completeText, request, tools, ct);
-    foreach (var p in inlineProposals)
-    {
-      yield return new AgentStreamEvent
-      {
-        Type = "proposal",
-        Proposal = p
-      };
-    }
+    await AgentPromptBuilder.StageInlineProposalsAsync(completeText, request, ct);
 
-    foreach (var staged in store.DrainPendingProposals(request.SessionId))
+    foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
     {
-      yield return new AgentStreamEvent
+      emittedProposals++;
+      yield return new AgentStreamEventDto
       {
         Type = "proposal",
         Proposal = staged
       };
     }
 
-    yield return new AgentStreamEvent
+    if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && !ct.IsCancellationRequested)
+    {
+      string? stderr = null;
+      try
+      {
+        stderr = (await stderrTask).Trim();
+      }
+      catch { }
+
+      yield return new AgentStreamEventDto
+      {
+        Type = "error",
+        Text = !string.IsNullOrWhiteSpace(stderr) ? stderr : L["AgentErrorRequest"]
+      };
+    }
+
+    yield return new AgentStreamEventDto
     {
       Type = "done",
       SessionId = request.SessionId
     };
-  }
-
-  private static async Task<List<AgentProposalDto>> TryExecuteInlineToolCallsAsync(
-    string text,
-    AgentTurnRequest request,
-    IReadOnlyList<IMcpTool> tools,
-    CancellationToken ct)
-  {
-    var results = new List<AgentProposalDto>();
-    const string startTag = "<air_proposal>";
-    const string endTag = "</air_proposal>";
-
-    var idx = 0;
-    while (idx < text.Length)
-    {
-      var start = text.IndexOf(startTag, idx, StringComparison.OrdinalIgnoreCase);
-      if (start < 0) break;
-      var end = text.IndexOf(endTag, start + startTag.Length, StringComparison.OrdinalIgnoreCase);
-      if (end < 0) break;
-
-      var json = text[(start + startTag.Length)..end].Trim();
-      idx = end + endTag.Length;
-
-      var proposeTool = tools.FirstOrDefault(t => t.Name == "fin_propose_transaction");
-      if (proposeTool is not null && !string.IsNullOrWhiteSpace(json))
-      {
-        try
-        {
-          using var doc = JsonDocument.Parse(json);
-          await proposeTool.ExecuteAsync(doc.RootElement.Clone(), request.Services, ct);
-        }
-        catch
-        {
-          // Ignore malformed JSON block
-        }
-      }
-    }
-
-    return results;
-  }
-
-  private static string BuildPrompt(
-    AgentTurnRequest request,
-    bool isFirstTurn,
-    string? contextJson,
-    IReadOnlyList<IMcpTool> tools)
-  {
-    var sb = new StringBuilder();
-
-    sb.AppendLine("[SYSTEM INSTRUCTIONS FOR FINANCIAL ASSISTANT]");
-    sb.AppendLine($"SessionId: {request.SessionId}");
-    sb.AppendLine($"Preferred Language: {(request.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "English" : "Ukrainian (Українська)")}");
-    sb.AppendLine("You are the built-in AI assistant of the MyPort Finance application.");
-    sb.AppendLine("Your job is to help the user create financial transactions (Expenses, Incomes, Transfers) from text or receipt photos.");
-    sb.AppendLine("IMPORTANT RULES:");
-    sb.AppendLine("1. NEVER save transactions directly without user confirmation. Instead, prepare a transaction proposal.");
-    sb.AppendLine("2. If the user attached receipt image file(s) listed below, you MUST first call `view_file` on each absolute file path to read the receipt store name, date, total amount, and line items (name, qty, price, amount).");
-    sb.AppendLine("3. Match the store/merchant against `counterparties` in the Context JSON below:");
-    sb.AppendLine("   - If an existing counterparty matches (e.g. 'Сільпо', 'АТБ', 'Rozetka', 'OKKO'), use its `id` (`counterpartyId`) and its `defaultCategoryId` (unless another category fits better).");
-    sb.AppendLine("   - If the counterparty is NOT in `counterparties`, set `counterpartyId: null` and set `newCounterpartyName` to the clean merchant name from the receipt/text so a new counterparty will be created upon confirmation!");
-    sb.AppendLine("4. If the user did not specify an account, pick the most appropriate account from `accounts` (e.g. the primary card/account in the matching currency) and mention it in your brief comment.");
-    sb.AppendLine("5. To display the confirmation card with the 'Підтверджую' button in the UI, output a short friendly message (1-3 sentences) AND include an `<air_proposal>` JSON block at the end of your response with this exact schema:");
-    sb.AppendLine("""
-<air_proposal>
-{
-  "sessionId": "<SessionId>",
-  "kind": "Expense",
-  "date": "YYYY-MM-DD",
-  "accountId": 1,
-  "toAccountId": null,
-  "amount": 125.50,
-  "counterpartyId": 3,
-  "newCounterpartyName": null,
-  "categoryId": 5,
-  "memberId": null,
-  "tagIds": [],
-  "note": "Optional comment",
-  "attachmentIds": ["<attachmentId>"],
-  "lines": [
-    { "name": "Item name", "qty": 1, "price": 125.50, "amount": 125.50, "categoryId": 5 }
-  ]
-}
-</air_proposal>
-""");
-    sb.AppendLine("Do NOT wrap `<air_proposal>` in markdown code fences (` ``` `) — output `<air_proposal>{...}</air_proposal>` directly so the UI renders it as an interactive confirmation card.");
-
-    if (!string.IsNullOrWhiteSpace(contextJson))
-    {
-      sb.AppendLine();
-      sb.AppendLine("[CURRENT DATABASE CONTEXT (Accounts, Categories, Counterparties, Members, Tags)]");
-      sb.AppendLine(contextJson);
-    }
-
-    if (request.Attachments.Count > 0)
-    {
-      sb.AppendLine();
-      sb.AppendLine("[ATTACHED RECEIPT FILES — USE view_file TO INSPECT]");
-      foreach (var att in request.Attachments)
-      {
-        sb.AppendLine($"- AttachmentId: \"{att.Id}\", FileName: \"{att.FileName}\", AbsolutePath: \"{att.LocalPath}\"");
-      }
-    }
-
-    sb.AppendLine();
-    sb.AppendLine("[USER MESSAGE]");
-    sb.AppendLine(string.IsNullOrWhiteSpace(request.Message)
-      ? "Розбери прикріплений чек та підготуй операцію."
-      : request.Message);
-
-    return sb.ToString();
   }
 }

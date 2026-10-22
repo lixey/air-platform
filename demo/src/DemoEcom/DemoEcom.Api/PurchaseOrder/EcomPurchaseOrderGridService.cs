@@ -1,10 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Documents;
-using DemoEcom.OutgoingPayment;
-using DemoEcom.SupplierInvoice;
-using DemoOrg.Counterparty;
-
 namespace DemoEcom.PurchaseOrder;
 
 /// <summary>

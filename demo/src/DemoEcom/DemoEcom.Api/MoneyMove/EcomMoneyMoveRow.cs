@@ -1,5 +1,3 @@
-using Air.App.Components;
-
 namespace DemoEcom.MoneyMove;
 
 public sealed class EcomMoneyMoveRow

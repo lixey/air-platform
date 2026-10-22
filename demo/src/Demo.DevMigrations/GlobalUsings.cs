@@ -1,0 +1,11 @@
+global using System.Diagnostics;
+global using Demo.DevMigrations;
+global using DemoApp.Data;
+global using DemoApp.Migrations;
+global using DemoApp.Migrations.Seeds;
+global using DemoEcom.Data;
+global using DemoEcom.Migrations;
+global using DemoOrg.Data;
+global using DemoOrg.Migrations;
+global using Microsoft.EntityFrameworkCore;
+global using Microsoft.Extensions.Configuration;

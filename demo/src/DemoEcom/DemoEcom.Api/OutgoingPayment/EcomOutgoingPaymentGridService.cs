@@ -1,7 +1,3 @@
-using Air.App.Grid;
-using DemoEcom.Data;
-using DemoEcom.Documents;
-
 namespace DemoEcom.OutgoingPayment;
 
 /// <summary>

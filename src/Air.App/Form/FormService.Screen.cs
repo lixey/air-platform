@@ -1,21 +1,3 @@
-using System.Collections;
-using System.ComponentModel.DataAnnotations;
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text.Json;
-using Air.App.Components;
-using Air.App.Grid;
-using Air.App.Internal;
-using Air.App.Modules;
-using Air.App.Mutations;
-using Air.App.Nav;
-using Air.App.Overlay;
-using Air.App.Panels;
-using Air.App.Screens;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
@@ -29,7 +11,7 @@ public abstract partial class FormService<TEntity, TInput>
   {
     Request = request;
     var id = request.Id;
-    IsNew = (id is null or 0);
+    IsNew = id is null or 0;
 
     var parent = new Parent();
     SetParent(parent);
@@ -58,6 +40,7 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
     }
+
     if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
     {
       foreach (var prop in presetJson.EnumerateObject())
@@ -66,6 +49,7 @@ public abstract partial class FormService<TEntity, TInput>
         {
           continue;
         }
+
         var targetName = prop.Name;
         var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
         if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
@@ -74,6 +58,7 @@ public abstract partial class FormService<TEntity, TInput>
         {
           targetName += "Id";
         }
+
         var targetCamel = Elements.ToCamelPath(targetName);
         foreach (var el in elements.List)
         {
@@ -84,6 +69,7 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
     }
+
     LocalizeAndResolveSelectElements(elements);
     await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
     _lastElements = elements;
@@ -205,7 +191,7 @@ public abstract partial class FormService<TEntity, TInput>
 
       foreach (var el in elements.List)
       {
-        if ((statusMemberName != null && string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase))
+        if (statusMemberName != null && string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase)
             || el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
             || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
@@ -228,6 +214,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         el.SeparatorLabel = L[el.SeparatorLabel];
       }
+
       if (!string.IsNullOrEmpty(el.Label))
       {
         el.Label = !string.IsNullOrEmpty(el.Path)
@@ -236,14 +223,17 @@ public abstract partial class FormService<TEntity, TInput>
                 L.TextOr($"{Feature.Name}.{el.Path}", L[el.Label])))
           : L[el.Label];
       }
+
       if (!string.IsNullOrEmpty(el.Placeholder))
       {
         el.Placeholder = L[el.Placeholder];
       }
+
       if (!string.IsNullOrEmpty(el.Help))
       {
         el.Help = L[el.Help];
       }
+
       if (el.Model is FormSelectModel select)
       {
         if (select.Options is { Count: > 0 })
@@ -258,13 +248,13 @@ public abstract partial class FormService<TEntity, TInput>
         if (!string.IsNullOrEmpty(select.ReferenceService))
         {
           var targetServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
-          if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || (select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name"))
+          if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name")
           {
             if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
             {
               try
               {
-                if (ModuleCatalog.Instance.CreateServiceInstance(targetServiceType, db, _app) is IGridService gridInst)
+                if (ModuleCatalog.Instance.CreateServiceInstance(targetServiceType, db, PlatformApp) is IGridService gridInst)
                 {
                   var customPaths = gridInst.GetReferenceLabelPaths();
                   if (customPaths is { Count: > 0 })
@@ -293,7 +283,7 @@ public abstract partial class FormService<TEntity, TInput>
               var featType = targetServiceType ?? createFormType;
               if (Feature.FeaturesByServiceType.TryGetValue(featType, out var targetFeat))
               {
-                if (targetFeat.IsReadOnly || (User != null && User.IsAuthenticated && !User.Can(targetFeat.Edit) && !User.Can(targetFeat.All) && !User.Can("*")))
+                if (targetFeat.IsReadOnly || User != null && User.IsAuthenticated && !User.Can(targetFeat.Edit) && !User.Can(targetFeat.All) && !User.Can("*"))
                 {
                   canCreate = false;
                 }
@@ -304,12 +294,13 @@ public abstract partial class FormService<TEntity, TInput>
                 var createServicePath = ServicePathResolver.Resolve(createFormType);
                 try
                 {
-                  if (ModuleCatalog.Instance.CreateServiceInstance(createFormType, db, _app) is IFormService createFormInst)
+                  if (ModuleCatalog.Instance.CreateServiceInstance(createFormType, db, PlatformApp) is IFormService createFormInst)
                   {
                     select.CreateOverlay = createFormInst.Overlay(createServicePath);
                   }
                 }
                 catch { }
+
                 select.CreateOverlay ??= OverlayModel.Dialog($"{createServicePath}.modal").Screen(createServicePath).Build();
               }
             }
@@ -327,21 +318,17 @@ public abstract partial class FormService<TEntity, TInput>
   private async Task ResolveTimeZoneInheritLabelsAsync(Elements elements, TEntity? entity, CancellationToken ct)
   {
     var tzModels = elements.List.Select(e => e.Model).OfType<FormTimeZoneModel>().ToList();
-    if (tzModels.Count == 0) return;
+    if (tzModels.Count == 0)
+    {
+      return;
+    }
 
     var isTenantForm = typeof(BaseAppTenant).IsAssignableFrom(typeof(TEntity));
-    long? startTenantId;
-    if (isTenantForm)
-    {
-      startTenantId = entity is BaseAppTenant tenantEntity ? tenantEntity.ParentId : ParentId;
-    }
-    else
-    {
-      startTenantId = entity is IHasTenant hasTenant && hasTenant.TenantId > 0
+    var startTenantId = isTenantForm
+      ? entity is BaseAppTenant tenantEntity ? tenantEntity.ParentId : ParentId
+      : entity is IHasTenant hasTenant && hasTenant.TenantId > 0
         ? hasTenant.TenantId
         : db.TenantContext.TenantId;
-    }
-
     string? resolvedZone = null;
     if (startTenantId is > 0)
     {
@@ -363,12 +350,17 @@ public abstract partial class FormService<TEntity, TInput>
               .Where(t => t.Id == currentId.Value)
               .Select(t => new { t.ParentId, t.TimeZone })
               .FirstOrDefaultAsync(ct);
-            if (row == null) break;
+            if (row == null)
+            {
+              break;
+            }
+
             if (!string.IsNullOrWhiteSpace(row.TimeZone))
             {
               resolvedZone = row.TimeZone;
               break;
             }
+
             currentId = row.ParentId;
           }
         }
@@ -393,7 +385,10 @@ public abstract partial class FormService<TEntity, TInput>
 
     foreach (var el in elements.List)
     {
-      if (string.IsNullOrEmpty(el.Path)) continue;
+      if (string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
 
       var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
       var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
@@ -445,6 +440,7 @@ public abstract partial class FormService<TEntity, TInput>
                 el.Constraints.RejectsBlank = true;
               }
             }
+
             break;
           case StringLengthAttribute strLen:
             el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
@@ -454,6 +450,7 @@ public abstract partial class FormService<TEntity, TInput>
             {
               el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, strLen.MinimumLength);
             }
+
             el.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
             break;
           case MaxLengthAttribute maxLen when maxLen.Length >= 0:
@@ -513,6 +510,7 @@ public abstract partial class FormService<TEntity, TInput>
             hasCoverFile = typeof(IHasCoverFile).IsAssignableFrom(fileEntity);
             break;
           }
+
           cur = cur.BaseType;
         }
       }
@@ -712,6 +710,7 @@ public abstract partial class FormService<TEntity, TInput>
         {
           continue;
         }
+
         if (transition.From.Contains(currentStatus))
         {
           var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
@@ -741,6 +740,7 @@ public abstract partial class FormService<TEntity, TInput>
                   {
                     e.Label = L[e.Label];
                   }
+
                   return e;
                 }).ToList()
               },
@@ -756,7 +756,11 @@ public abstract partial class FormService<TEntity, TInput>
 
   public virtual async Task<Dictionary<string, int>?> EvaluateUnavailableAsync(long? id, CancellationToken ct = default)
   {
-    if (id is not > 0) return null;
+    if (id is not > 0)
+    {
+      return null;
+    }
+
     if (_lastElements == null)
     {
       var elements = new Elements();
@@ -765,13 +769,20 @@ public abstract partial class FormService<TEntity, TInput>
       _lastElements = elements;
     }
 
-    if (_lastElements.StatusFlow is not IRecordStatuses<TEntity> statusFlow) return null;
+    if (_lastElements.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
+    {
+      return null;
+    }
 
     Dictionary<string, int>? unavailable = null;
     foreach (var transition in statusFlow.Transitions)
     {
-      if (transition.Offers.Count == 0) continue;
-      for (int i = 0; i < transition.Offers.Count; i++)
+      if (transition.Offers.Count == 0)
+      {
+        continue;
+      }
+
+      for (var i = 0; i < transition.Offers.Count; i++)
       {
         if (transition.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
@@ -820,7 +831,11 @@ public abstract partial class FormService<TEntity, TInput>
     object? entity,
     CancellationToken ct = default)
   {
-    if (entity == null) return;
+    if (entity == null)
+    {
+      return;
+    }
+
     if (_lastElements == null)
     {
       var elements = new Elements();
@@ -828,6 +843,7 @@ public abstract partial class FormService<TEntity, TInput>
       LocalizeAndResolveSelectElements(elements);
       _lastElements = elements;
     }
+
     await PopulateReferencesCoreAsync(dict, entity, _lastElements.List, ct);
   }
 
@@ -837,10 +853,16 @@ public abstract partial class FormService<TEntity, TInput>
     ScreenDto screen,
     CancellationToken ct = default)
   {
-    if (entity == null || screen.Layout?.Root == null) return;
+    if (entity == null || screen.Layout?.Root == null)
+    {
+      return;
+    }
 
     var formModel = FindFormModel(screen.Layout.Root);
-    if (formModel == null) return;
+    if (formModel == null)
+    {
+      return;
+    }
 
     await PopulateReferencesCoreAsync(dict, entity, formModel.Elements, ct);
   }
@@ -856,7 +878,11 @@ public abstract partial class FormService<TEntity, TInput>
 
     foreach (var el in elements)
     {
-      if (string.IsNullOrEmpty(el.ReferencePath)) continue;
+      if (string.IsNullOrEmpty(el.ReferencePath))
+      {
+        continue;
+      }
+
       refPaths.Add(el.ReferencePath);
 
       var selectModel = el.Model as FormSelectModel;
@@ -871,16 +897,28 @@ public abstract partial class FormService<TEntity, TInput>
           {
             foreach (var item in jeArr.EnumerateArray())
             {
-              if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var jeId) && jeId > 0) keys.Add(jeId);
+              if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var jeId) && jeId > 0)
+              {
+                keys.Add(jeId);
+              }
             }
           }
           else if (multiRaw is IEnumerable enumerable and not string)
           {
             foreach (var item in enumerable)
             {
-              if (item is long l && l > 0) keys.Add(l);
-              else if (item is int i && i > 0) keys.Add(i);
-              else if (item != null && long.TryParse(item.ToString(), out var parsed) && parsed > 0) keys.Add(parsed);
+              if (item is long l && l > 0)
+              {
+                keys.Add(l);
+              }
+              else if (item is int i && i > 0)
+              {
+                keys.Add(i);
+              }
+              else if (item != null && long.TryParse(item.ToString(), out var parsed) && parsed > 0)
+              {
+                keys.Add(parsed);
+              }
             }
           }
         }
@@ -894,7 +932,7 @@ public abstract partial class FormService<TEntity, TInput>
           var refEntityType = refServiceType != null ? ResolveServiceEntityType(refServiceType) : null;
           var targetDb = refEntityType != null && db.Model.FindEntityType(refEntityType) != null
             ? db
-            : (refServiceType != null ? (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, _app) as IGridService)?.DbContext : null) ?? db;
+            : (refServiceType != null ? (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService)?.DbContext : null) ?? db;
 
           foreach (var k in keys)
           {
@@ -908,6 +946,7 @@ public abstract partial class FormService<TEntity, TInput>
               }
               catch { }
             }
+
             refs.Add(new Reference { Id = k, Name = !string.IsNullOrEmpty(itemCaption) ? L[itemCaption] : $"#{k}" });
           }
         }
@@ -921,12 +960,27 @@ public abstract partial class FormService<TEntity, TInput>
       {
         if (rawVal is JsonElement je)
         {
-          if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var jeId)) key = jeId;
-          else if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out var jeParsed)) key = jeParsed;
+          if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var jeId))
+          {
+            key = jeId;
+          }
+          else if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out var jeParsed))
+          {
+            key = jeParsed;
+          }
         }
-        else if (rawVal is long l) key = l;
-        else if (rawVal is int i) key = i;
-        else if (long.TryParse(rawVal.ToString(), out var parsedId)) key = parsedId;
+        else if (rawVal is long l)
+        {
+          key = l;
+        }
+        else if (rawVal is int i)
+        {
+          key = i;
+        }
+        else if (long.TryParse(rawVal.ToString(), out var parsedId))
+        {
+          key = parsedId;
+        }
       }
 
       if (key == null || key <= 0)
@@ -963,7 +1017,7 @@ public abstract partial class FormService<TEntity, TInput>
             {
               var targetDb = db.Model.FindEntityType(refEntityType) != null
                 ? db
-                : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, _app) as IGridService)?.DbContext ?? db;
+                : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService)?.DbContext ?? db;
               var loaded = await targetDb.FindAsync(refEntityType, [key.Value], ct);
               refName = ReadDisplayCaption(loaded, labelPaths);
             }
@@ -986,6 +1040,7 @@ public abstract partial class FormService<TEntity, TInput>
       {
         allowedKeys.Add(el.Path);
       }
+
       if (!string.IsNullOrEmpty(el.ReferencePath))
       {
         allowedKeys.Add(el.ReferencePath);
@@ -1014,7 +1069,11 @@ public abstract partial class FormService<TEntity, TInput>
 
   private static string? ReadDisplayCaption(object? target, IReadOnlyList<string>? labelPaths = null)
   {
-    if (target == null) return null;
+    if (target == null)
+    {
+      return null;
+    }
+
     if (labelPaths is { Count: > 0 })
     {
       var parts = new List<string>(labelPaths.Count);
@@ -1025,17 +1084,20 @@ public abstract partial class FormService<TEntity, TInput>
         {
           continue;
         }
+
         var partVal = rawPart.ToString();
         if (!string.IsNullOrWhiteSpace(partVal))
         {
           parts.Add(partVal);
         }
       }
+
       if (parts.Count > 0)
       {
         return string.Join(" ", parts);
       }
     }
+
     var val = PropertyAccessorCache.GetValue(target, "Name")
       ?? PropertyAccessorCache.GetValue(target, "Title")
       ?? PropertyAccessorCache.GetValue(target, "Number")
@@ -1056,22 +1118,32 @@ public abstract partial class FormService<TEntity, TInput>
           return cur.GetGenericArguments()[0];
         }
       }
+
       cur = cur.BaseType;
     }
+
     return null;
   }
 
   private static FormModel? FindFormModel(PanelNodeDto node)
   {
-    if (node.Model is FormModel fm) return fm;
+    if (node.Model is FormModel fm)
+    {
+      return fm;
+    }
+
     if (node.Children != null)
     {
       foreach (var child in node.Children)
       {
         var res = FindFormModel(child);
-        if (res != null) return res;
+        if (res != null)
+        {
+          return res;
+        }
       }
     }
+
     return null;
   }
 }

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MSG_FILE="$1"
+FIRST_LINE=$(head -n 1 "$MSG_FILE" | tr -d '\r')
+
+if [[ ! "$FIRST_LINE" =~ ^(add|upd|del|fix|style|chore):[[:space:]].+ ]]; then
+  echo "ERROR: Commit message subject must match '<type>: <summary>' where type is one of: add, upd, del, fix, style, chore." >&2
+  echo "Actual: $FIRST_LINE" >&2
+  exit 1
+fi
+
+if (( ${#FIRST_LINE} > 80 )); then
+  echo "ERROR: Commit message subject exceeds 80 characters (${#FIRST_LINE} chars)." >&2
+  echo "Actual: $FIRST_LINE" >&2
+  exit 1
+fi
+
+if grep -qiE '^(Co-Authored-By|Signed-off-by):' "$MSG_FILE"; then
+  echo "ERROR: Commit message must not contain Co-Authored-By or Signed-off-by trailers." >&2
+  exit 1
+fi

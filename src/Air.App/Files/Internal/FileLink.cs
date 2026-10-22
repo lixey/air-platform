@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace Air.App.Files.Internal;
 
 internal sealed record FileLink(

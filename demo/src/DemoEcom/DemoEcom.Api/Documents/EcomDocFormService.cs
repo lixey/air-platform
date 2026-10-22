@@ -1,8 +1,3 @@
-using Air.App.Overlay;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = null)
@@ -36,6 +31,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
     {
       elements.UseStatusOf(Flow);
     }
+
     Statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
     Doc = IsNew ? null : await Reachable().FirstOrDefaultAsync(doc => doc.Id == Request.Id, cancellationToken);
     Status = IsNew ? (Statuses.Count > 0 ? Statuses[0] : null) : Doc?.DocStatus;
@@ -52,11 +48,13 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
       {
         c.Entity.DocTypeId = Type;
       }
+
       var status = Status ?? (Statuses.Count > 0 ? Statuses[0] : null);
       if (c.Entity.DocStatusId == 0 && status != null)
       {
         c.Entity.DocStatusId = status.Id;
       }
+
       return EcomDocActions.SaveAsync(db, c, User?.UserId, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
     });
     hooks.BeforeDelete((c, _) =>
@@ -65,6 +63,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
       {
         c.AddError(EcomDocActions.NotEditable, EcomDocTexts.Of(L).NotEditable, null);
       }
+
       return Task.CompletedTask;
     });
   }

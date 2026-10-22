@@ -1,9 +1,3 @@
-using Air.App.Components;
-using Air.Data;
-using Air.Data.Entities;
-using DemoApp.Data;
-using DemoApp.Data.Models;
-
 namespace DemoApp.Migrations.Seeds;
 
 public static class AppCodeRows

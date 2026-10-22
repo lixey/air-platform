@@ -1,5 +1,3 @@
-using Air.Data.Contracts;
-
 namespace Air.App.Grid;
 
 [ClientOptional]

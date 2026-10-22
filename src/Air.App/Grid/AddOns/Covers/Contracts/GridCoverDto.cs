@@ -1,6 +1,3 @@
-using System.Text.Json.Serialization;
-using Air.Data.Contracts;
-
 namespace Air.App.Grid.AddOns.Covers.Contracts;
 
 [UiContract]

@@ -1,16 +1,3 @@
-using DemoEcom.CustomerOrder;
-using DemoEcom.Data;
-using DemoEcom.IncomingPayment;
-using DemoEcom.OutgoingPayment;
-using DemoEcom.PurchaseOrder;
-using DemoEcom.SalesInvoice;
-using DemoEcom.SalesReturn;
-using DemoEcom.StockIssue;
-using DemoEcom.StockReceipt;
-using DemoEcom.StockTransfer;
-using DemoEcom.SupplierInvoice;
-using DemoEcom.SupplierReturn;
-
 namespace DemoEcom.Doc;
 
 public static class EcomDocForms

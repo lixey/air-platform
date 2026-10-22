@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using DemoApp.Data.Models;
-
 namespace DemoOrg.Data.Models;
 
 [Index(nameof(TenantId), nameof(SupplierId), nameof(BrandId), nameof(Article), IsUnique = true), Index(nameof(TenantId), nameof(Name))]

@@ -1,7 +1,3 @@
-using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.Reflection;
-
 namespace Air.App.Internal;
 
 internal static class PropertyAccessorCache
@@ -33,7 +29,10 @@ internal static class PropertyAccessorCache
     GetterByName.GetOrAdd((type, name), static key =>
     {
       var prop = GetProperty(key.Type, key.Name);
-      if (prop is null || !prop.CanRead || prop.GetIndexParameters().Length > 0) return null;
+      if (prop is null || !prop.CanRead || prop.GetIndexParameters().Length > 0)
+      {
+        return null;
+      }
 
       var targetParam = Expression.Parameter(typeof(object), "target");
       var typedTarget = Expression.Convert(targetParam, key.Type);
@@ -49,7 +48,10 @@ internal static class PropertyAccessorCache
     SetterByName.GetOrAdd((type, name), static key =>
     {
       var prop = GetProperty(key.Type, key.Name);
-      if (prop is null || !prop.CanWrite || prop.GetIndexParameters().Length > 0) return null;
+      if (prop is null || !prop.CanWrite || prop.GetIndexParameters().Length > 0)
+      {
+        return null;
+      }
 
       var targetParam = Expression.Parameter(typeof(object), "target");
       var valueParam = Expression.Parameter(typeof(object), "value");
@@ -62,19 +64,30 @@ internal static class PropertyAccessorCache
 
   public static object? GetValue(object? target, string propertyName)
   {
-    if (target is null || string.IsNullOrEmpty(propertyName)) return null;
+    if (target is null || string.IsNullOrEmpty(propertyName))
+    {
+      return null;
+    }
+
     var getter = GetGetter(target.GetType(), propertyName);
     return getter?.Invoke(target);
   }
 
   public static object? GetPathValue(object? target, string path)
   {
-    if (target is null || string.IsNullOrEmpty(path)) return null;
+    if (target is null || string.IsNullOrEmpty(path))
+    {
+      return null;
+    }
 
     var current = target;
     foreach (var segment in path.Split('.'))
     {
-      if (current is null) return null;
+      if (current is null)
+      {
+        return null;
+      }
+
       if (current is IDictionary<string, object?> dict)
       {
         dict.TryGetValue(segment, out current);
@@ -82,7 +95,11 @@ internal static class PropertyAccessorCache
       }
 
       var getter = GetGetter(current.GetType(), segment);
-      if (getter is null) return null;
+      if (getter is null)
+      {
+        return null;
+      }
+
       current = getter(current);
     }
 

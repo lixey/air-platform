@@ -1,8 +1,3 @@
-using Bogus;
-using DemoApp.Migrations.Seeds;
-using DemoOrg.Data;
-using DemoOrg.Data.Models;
-using Microsoft.EntityFrameworkCore;
 using Gender = Bogus.DataSets.Name.Gender;
 
 namespace DemoOrg.Migrations.Seeds;

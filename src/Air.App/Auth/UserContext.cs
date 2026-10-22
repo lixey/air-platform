@@ -1,7 +1,4 @@
-using System.Globalization;
 using System.Security.Claims;
-using Air.Data.Tenancy;
-using Microsoft.AspNetCore.Http;
 
 namespace Air.App.Auth;
 

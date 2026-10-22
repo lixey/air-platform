@@ -14,6 +14,7 @@ public abstract class EcomDocGridService(EcomDbContext db, EcomService? ecom = n
       col.AsSelect(Flow.Statuses);
       columns.UseStatusOf(Flow);
     }
+
     return col;
   }
 

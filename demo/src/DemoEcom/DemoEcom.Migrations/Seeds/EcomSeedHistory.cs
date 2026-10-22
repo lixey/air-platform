@@ -1,6 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Data.Models;
-
 namespace DemoEcom.Migrations.Seeds;
 
 internal static class EcomSeedHistory

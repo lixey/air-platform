@@ -1,7 +1,3 @@
-using Air.App.Metadata;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Air.App.Modules;
 
 public interface IPlatformModule
@@ -96,6 +92,7 @@ public sealed class ModuleCatalog
       {
         clean = clean[..^"Service".Length];
       }
+
       _servicesByPath[clean] = st;
 
       if (path.EndsWith("-grid", StringComparison.OrdinalIgnoreCase))
@@ -140,7 +137,11 @@ public sealed class ModuleCatalog
 
   public Feature? FindFeature(string path)
   {
-    if (string.IsNullOrWhiteSpace(path)) return null;
+    if (string.IsNullOrWhiteSpace(path))
+    {
+      return null;
+    }
+
     return _featuresByPath.GetValueOrDefault(path)
       ?? _featuresByPath.GetValueOrDefault(path.Replace('/', '-'))
       ?? _featuresByPath.GetValueOrDefault(path.Replace('-', '/'))
@@ -150,7 +151,11 @@ public sealed class ModuleCatalog
 
   public Type? FindServiceType(string path)
   {
-    if (string.IsNullOrWhiteSpace(path)) return null;
+    if (string.IsNullOrWhiteSpace(path))
+    {
+      return null;
+    }
+
     return _servicesByPath.GetValueOrDefault(path)
       ?? _servicesByPath.GetValueOrDefault(path.Replace('/', '-'))
       ?? _servicesByPath.GetValueOrDefault(path.Replace('-', '/'))
@@ -161,7 +166,10 @@ public sealed class ModuleCatalog
   public object? CreateServiceInstance(Type serviceType, params object?[] availableServices)
   {
     var ctor = serviceType.GetConstructors().FirstOrDefault();
-    if (ctor is null) return null;
+    if (ctor is null)
+    {
+      return null;
+    }
 
     var serviceProvider = availableServices.OfType<IServiceProvider>().FirstOrDefault()
       ?? availableServices.OfType<PlatformAppService>().FirstOrDefault()?.Services;
@@ -192,9 +200,16 @@ public sealed class ModuleCatalog
     var instance = ctor.Invoke(args);
     if (appService is not null)
     {
-      if (instance is Grid.IGridService grid) grid.AttachPlatformApp(appService);
-      else if (instance is Form.IFormService form) form.AttachPlatformApp(appService);
+      if (instance is Grid.IGridService grid)
+      {
+        grid.AttachPlatformApp(appService);
+      }
+      else if (instance is Form.IFormService form)
+      {
+        form.AttachPlatformApp(appService);
+      }
     }
+
     return instance;
   }
 

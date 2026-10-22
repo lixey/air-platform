@@ -1,5 +1,3 @@
-using Air.App.Contracts;
-
 namespace Air.App.Auth;
 
 [UiContract]

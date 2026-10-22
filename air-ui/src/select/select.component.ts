@@ -9,14 +9,7 @@ import { isFormData } from '../form/form-value';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayService } from '../overlay/overlay.service';
 import { ScreenMutations } from '../screen/screen-mutations';
-import {
-  FIELD_FOCUS_WITHIN,
-  FIELD_HOVER,
-  INNER_CONTROL_HOVER,
-  INVALID_EDGE,
-  PICK_CHIP,
-  SEGMENT_LAST,
-} from '../theme/css-classes';
+import { FIELD_FOCUS_WITHIN, FIELD_HOVER, INNER_CONTROL_HOVER, INVALID_EDGE, PICK_CHIP, SEGMENT_LAST } from '../theme/css-classes';
 import { optionOfRow, type SelectOption } from './select-option';
 import type { SelectSource } from './select-source';
 import { SelectService } from './select.service';

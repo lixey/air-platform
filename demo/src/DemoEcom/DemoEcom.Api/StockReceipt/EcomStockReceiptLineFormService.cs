@@ -28,6 +28,7 @@ public sealed class EcomStockReceiptLineFormService(EcomDbContext db, EcomServic
       {
         return EcomDocLines.PriceAsync(db, doc, c.Entity, c.Input, c.IsNew, product => product.PurchasePrice, cancellationToken);
       }
+
       c.Entity.Amount = Math.Round(c.Entity.Qty * c.Entity.Price, 2);
       return Task.CompletedTask;
     });

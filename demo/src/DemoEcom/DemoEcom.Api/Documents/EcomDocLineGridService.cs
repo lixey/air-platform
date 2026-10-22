@@ -1,10 +1,3 @@
-using Air.App.Grid;
-using Air.App.Security;
-using DemoEcom.Data;
-using DemoEcom.Data.Documents;
-using DemoEcom.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomService? ecom = null)

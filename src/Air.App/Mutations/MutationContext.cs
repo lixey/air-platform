@@ -1,9 +1,5 @@
 using System.Buffers.Binary;
-using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
-using Air.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace Air.App.Mutations;
 
@@ -45,8 +41,15 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
 
   internal static async Task AcquireLocksAsync(PlatformDbContext? db, Type lockedType, IEnumerable<long[]> keys, CancellationToken ct)
   {
-    if (db == null || db.Database.CurrentTransaction == null) return;
-    if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true) return;
+    if (db == null || db.Database.CurrentTransaction == null)
+    {
+      return;
+    }
+
+    if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true)
+    {
+      return;
+    }
 
     var lockKeys = keys.Select(k => LockKeyOf(lockedType, k)).Distinct().OrderBy(k => k).ToList();
     foreach (var lockKey in lockKeys)

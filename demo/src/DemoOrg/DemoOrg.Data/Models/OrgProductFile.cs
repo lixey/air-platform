@@ -1,7 +1,3 @@
-using Air.Data.Entities;
-using DemoApp.Data.Models;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoOrg.Data.Models;
 
 [Index(nameof(TenantId), nameof(ProductId))]

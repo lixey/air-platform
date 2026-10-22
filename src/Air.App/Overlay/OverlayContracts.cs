@@ -1,6 +1,3 @@
-using Air.App.Components;
-using Air.App.Panels;
-
 namespace Air.App.Overlay;
 
 public static class OverlayPresentation
@@ -72,11 +69,23 @@ public sealed class OverlayBuilder(string key, string presentation, PanelLayoutD
     return this;
   }
 
-  public OverlayBuilder Width(string width) { _dto.Width = width; return this; }
+  public OverlayBuilder Width(string width)
+  {
+    _dto.Width = width;
+    return this;
+  }
   public OverlayBuilder Width(int px) => Width(PanelSize.Px(px));
-  public OverlayBuilder Height(string height) { _dto.Height = height; return this; }
+  public OverlayBuilder Height(string height)
+  {
+    _dto.Height = height;
+    return this;
+  }
   public OverlayBuilder Height(int px) => Height(PanelSize.Px(px));
-  public OverlayBuilder MaxWidth(int px) { _dto.MaxWidth = PanelSize.Px(px); return this; }
+  public OverlayBuilder MaxWidth(int px)
+  {
+    _dto.MaxWidth = PanelSize.Px(px);
+    return this;
+  }
   public OverlayBuilder Fill()
   {
     _dto.Width = PanelSize.Fill;

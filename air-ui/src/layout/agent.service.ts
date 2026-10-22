@@ -1,48 +1,25 @@
 import { inject, Service, signal } from '@angular/core';
 import { AlertService } from '../app/alert/alert.service';
 import { LocaleService } from '../app/locale.service';
+import type {
+  AgentAttachmentDto,
+  AgentCommitResultDto,
+  AgentModelDto,
+  AgentProposalDto,
+  AgentProposalFieldDto,
+  AgentProposalLineDto,
+  AgentStatusDto,
+  AgentStreamEventDto,
+} from '../core/generated/contracts';
+import { TextsService } from '../core/texts.service';
 import { GridService } from '../grid/grid.service';
 import { OverlayService } from '../overlay/overlay.service';
 
-export interface AgentAttachment {
-  readonly id: string;
-  readonly fileName: string;
-  readonly contentType: string;
-  readonly size: number;
-  readonly previewUrl: string;
-}
-
-export interface AgentProposalField {
-  readonly label: string;
-  readonly value: string;
-  readonly badge?: string | null;
-  readonly color?: string | null;
-}
-
-export interface AgentProposalLine {
-  readonly name: string;
-  readonly qty: number;
-  readonly price: number;
-  readonly amount: number;
-  readonly category?: string | null;
-}
-
-export interface AgentProposal {
-  readonly id: string;
-  readonly sessionId: string;
-  readonly kind: string;
-  readonly title: string;
-  readonly subtitle?: string | null;
-  readonly badge?: string | null;
-  readonly badgeColor?: string | null;
-  readonly fields: readonly AgentProposalField[];
-  readonly lines: readonly AgentProposalLine[];
-  readonly attachmentIds: readonly string[];
-  status: 'pending' | 'confirming' | 'committed';
-  committedRecordId?: number | null;
-  committedLabel?: string | null;
-  formService?: string | null;
-}
+export type AgentAttachment = AgentAttachmentDto;
+export type AgentProposalField = AgentProposalFieldDto;
+export type AgentProposalLine = AgentProposalLineDto;
+export type AgentProposal = AgentProposalDto;
+export type AgentModel = AgentModelDto;
 
 export interface AgentChatMessage {
   readonly id: string;
@@ -52,21 +29,6 @@ export interface AgentChatMessage {
   readonly attachments: readonly AgentAttachment[];
   readonly proposals: AgentProposal[];
   readonly createdAt: Date;
-}
-
-interface AgentStreamEventDto {
-  readonly type: 'status' | 'delta' | 'proposal' | 'done' | 'error';
-  readonly text?: string | null;
-  readonly proposal?: AgentProposal | null;
-  readonly sessionId?: string | null;
-}
-
-interface AgentCommitResultDto {
-  readonly proposalId: string;
-  readonly recordId: number;
-  readonly recordLabel: string;
-  readonly formService: string;
-  readonly refreshServices?: readonly string[];
 }
 
 function stripProposalBlocks(raw: string): string {
@@ -81,16 +43,46 @@ export class AgentService {
   private readonly overlay = inject(OverlayService);
   private readonly alert = inject(AlertService);
   private readonly locale = inject(LocaleService);
+  private readonly texts = inject(TextsService);
 
   private abortController: AbortController | null = null;
   private nextId = 0;
+  private statusLoaded = false;
 
   readonly sessionId = signal<string>(Math.random().toString(36).slice(2, 12));
-  readonly model = signal<string>('gemini-3.8-flash-low');
+  readonly models = signal<readonly AgentModelDto[]>([]);
+  readonly model = signal<string>('');
+  readonly activeProvider = signal<string>('Agy');
   readonly messages = signal<readonly AgentChatMessage[]>([]);
   readonly pendingAttachments = signal<readonly AgentAttachment[]>([]);
   readonly isUploading = signal(false);
   readonly isStreaming = signal(false);
+
+  async ensureStatusLoaded(): Promise<void> {
+    if (this.statusLoaded) {
+      return;
+    }
+    this.statusLoaded = true;
+    try {
+      const res = await fetch('/api/agent/status', { credentials: 'include' });
+      if (!res.ok) {
+        return;
+      }
+      const status = (await res.json()) as AgentStatusDto;
+      if (status.activeProvider) {
+        this.activeProvider.set(status.activeProvider);
+      }
+      if (status.models?.length) {
+        this.models.set(status.models);
+      }
+      const curModel = this.model();
+      if (!curModel || (status.models?.length && !status.models.some(m => m.id === curModel))) {
+        this.model.set(status.defaultModel || status.models?.[0]?.id || '');
+      }
+    } catch {
+      this.statusLoaded = false;
+    }
+  }
 
   async uploadFiles(files: FileList | readonly File[]): Promise<void> {
     const list = Array.from(files);
@@ -109,13 +101,13 @@ export class AgentService {
           credentials: 'include',
         });
         if (!res.ok) {
-          throw new Error('Не вдалося завантажити файл.');
+          throw new Error(this.texts.of('AgentErrorUpload'));
         }
         const saved = (await res.json()) as AgentAttachment;
         this.pendingAttachments.update(prev => [...prev, saved]);
       }
     } catch (err) {
-      this.alert.error(err instanceof Error ? err.message : 'Помилка завантаження файлу');
+      this.alert.error(err instanceof Error ? err.message : this.texts.of('AgentErrorUpload'));
     } finally {
       this.isUploading.set(false);
     }
@@ -137,7 +129,7 @@ export class AgentService {
     const userMsg: AgentChatMessage = {
       id: `m-${++this.nextId}`,
       role: 'user',
-      text: text || (attachments.length > 0 ? 'Розбери фото чека' : ''),
+      text: text || (attachments.length > 0 ? this.texts.of('AgentDefaultPhotoPrompt') : ''),
       attachments,
       proposals: [],
       createdAt: new Date(),
@@ -148,7 +140,7 @@ export class AgentService {
       id: assistantMsgId,
       role: 'assistant',
       text: '',
-      statusText: attachments.length > 0 ? 'Читаю фото чека…' : 'Аналізую…',
+      statusText: attachments.length > 0 ? this.texts.of('AgentStatusReadingPhoto') : this.texts.of('AgentStatusAnalyzing'),
       attachments: [],
       proposals: [],
       createdAt: new Date(),
@@ -178,7 +170,7 @@ export class AgentService {
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Помилка сервера (${response.status})`);
+        throw new Error(`${this.texts.of('RequestFailed')} (${response.status})`);
       }
 
       const reader = response.body.getReader();
@@ -221,7 +213,7 @@ export class AgentService {
                   statusText: null,
                 }));
               } else if (evt.type === 'proposal' && evt.proposal) {
-                const incoming = { ...evt.proposal, status: 'pending' as const };
+                const incoming: AgentProposal = { ...evt.proposal, status: 'pending' };
                 this.patchAssistant(assistantMsgId, m => {
                   const exists = m.proposals.some(p => p.id === incoming.id);
                   return {
@@ -233,7 +225,7 @@ export class AgentService {
               } else if (evt.type === 'error') {
                 this.patchAssistant(assistantMsgId, m => ({
                   ...m,
-                  text: m.text || (evt.text ?? 'Помилка виконання запиту.'),
+                  text: m.text || (evt.text ?? this.texts.of('RequestFailed')),
                   statusText: null,
                 }));
               } else if (evt.type === 'done') {
@@ -253,7 +245,7 @@ export class AgentService {
       if ((err as Error)?.name !== 'AbortError') {
         this.patchAssistant(assistantMsgId, m => ({
           ...m,
-          text: m.text || 'Не вдалося отримати відповідь від AI агента.',
+          text: m.text || this.texts.of('AgentErrorRequest'),
           statusText: null,
         }));
       }
@@ -284,35 +276,43 @@ export class AgentService {
 
       if (!res.ok) {
         const errBody = (await res.json().catch(() => null)) as { title?: string } | null;
-        throw new Error(errBody?.title || 'Не вдалося зберегти операцію.');
+        throw new Error(errBody?.title || this.texts.of('AgentErrorSave'));
       }
 
       const committed = (await res.json()) as AgentCommitResultDto;
-      this.updateProposal(messageId, proposalId, p => ({
-        ...p,
-        status: 'committed',
-        committedRecordId: committed.recordId,
-        committedLabel: committed.recordLabel,
-        formService: committed.formService,
-      }));
+      this.applyCommitResult(committed);
+
+      if (committed.alsoCommitted) {
+        for (const extra of committed.alsoCommitted) {
+          this.applyCommitResult(extra);
+        }
+      }
 
       GridService.reloadServices(committed.refreshServices);
     } catch (err) {
       this.updateProposal(messageId, proposalId, p => ({ ...p, status: 'pending' }));
-      this.alert.error(err instanceof Error ? err.message : 'Помилка збереження');
+      this.alert.error(err instanceof Error ? err.message : this.texts.of('AgentErrorSave'));
     }
   }
 
-  openRecord(formService: string | null | undefined, recordId: number | null | undefined): void {
+  openRecord(proposal: AgentProposal): void {
+    const formService = proposal.formService ?? proposal.service;
+    const recordId = proposal.committedRecordId ?? proposal.recordId;
     if (!formService || !recordId) {
       return;
     }
 
-    const ref = this.overlay.open({
+    const baseOverlay = proposal.overlay ?? {
       key: formService,
-      presentation: 'drawer',
+      presentation: 'popover' as const,
+      width: '720px',
       closesOnEscape: true,
+    };
+
+    const ref = this.overlay.open({
+      ...baseOverlay,
       screen: {
+        ...(baseOverlay.screen ?? {}),
         service: formService,
         params: { id: recordId },
       },
@@ -336,15 +336,30 @@ export class AgentService {
     }).catch(() => undefined);
   }
 
+  private applyCommitResult(result: AgentCommitResultDto): void {
+    this.messages.update(list =>
+      list.map(m => ({
+        ...m,
+        proposals: m.proposals.map(p =>
+          p.id === result.proposalId
+            ? {
+                ...p,
+                status: 'committed',
+                committedRecordId: result.recordId,
+                committedLabel: result.recordLabel,
+                formService: result.formService,
+              }
+            : p,
+        ),
+      })),
+    );
+  }
+
   private patchAssistant(messageId: string, updater: (msg: AgentChatMessage) => AgentChatMessage): void {
     this.messages.update(list => list.map(m => (m.id === messageId ? updater(m) : m)));
   }
 
-  private updateProposal(
-    messageId: string,
-    proposalId: string,
-    updater: (proposal: AgentProposal) => AgentProposal,
-  ): void {
+  private updateProposal(messageId: string, proposalId: string, updater: (proposal: AgentProposal) => AgentProposal): void {
     this.patchAssistant(messageId, m => ({
       ...m,
       proposals: m.proposals.map(p => (p.id === proposalId ? updater(p) : p)),

@@ -1,6 +1,3 @@
-using DemoApp.Color;
-using DemoEcom.DocType;
-
 namespace DemoEcom.DocStatus;
 
 /// <summary>A status of a document type, read only: a row of code.</summary>

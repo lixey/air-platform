@@ -1,10 +1,5 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using Air.App.Files.Internal;
-using Air.Data.Entities;
-using Air.Data.Files;
 
 namespace Air.App.Files;
 
@@ -44,10 +39,16 @@ public sealed class FileLinks
 
   internal FileLink? Read(string? token)
   {
-    if (string.IsNullOrEmpty(token) || token.Length > MaxTokenLength) return null;
+    if (string.IsNullOrEmpty(token) || token.Length > MaxTokenLength)
+    {
+      return null;
+    }
 
     var dot = token.IndexOf('.');
-    if (dot <= 0 || dot != token.LastIndexOf('.')) return null;
+    if (dot <= 0 || dot != token.LastIndexOf('.'))
+    {
+      return null;
+    }
 
     var payload = token[..dot];
     byte[] mac;

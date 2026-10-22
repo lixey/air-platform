@@ -1,10 +1,3 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using Air.App.Components;
-using Air.App.Localization;
-using Air.Data.Contracts;
-using Air.Data.Internal;
-
 namespace Air.App.Grid;
 
 public class Columns
@@ -70,13 +63,14 @@ public class Columns
   internal static string ToCamelPath(string path)
   {
     var parts = path.Split('.');
-    for (int i = 0; i < parts.Length; i++)
+    for (var i = 0; i < parts.Length; i++)
     {
       if (parts[i].Length > 0)
       {
         parts[i] = char.ToLowerInvariant(parts[i][0]) + parts[i][1..];
       }
     }
+
     return string.Join('.', parts);
   }
 
@@ -91,36 +85,80 @@ public class Columns
         last = navCandidate;
       }
     }
+
     if (last.Length > 0)
     {
       last = char.ToUpperInvariant(last[0]) + last[1..];
     }
+
     return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
   }
 
   private static string ResolveFieldType(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(bool)) return UiFieldType.Checkbox;
-    if (underlying == typeof(DateOnly)) return UiFieldType.Date;
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return UiFieldType.Datetime;
-    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return UiFieldType.Time;
+    if (underlying == typeof(bool))
+    {
+      return UiFieldType.Checkbox;
+    }
+
+    if (underlying == typeof(DateOnly))
+    {
+      return UiFieldType.Date;
+    }
+
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
+    {
+      return UiFieldType.Datetime;
+    }
+
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
+    {
+      return UiFieldType.Time;
+    }
+
     if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte) ||
-        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float)) return UiFieldType.Number;
+        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+    {
+      return UiFieldType.Number;
+    }
+
     return UiFieldType.Text;
   }
 
   private static CellModel ResolveDefaultCell(Type type)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(bool)) return new GridCellCheckboxModel();
-    if (underlying == typeof(DateOnly)) return new GridCellDateModel();
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset)) return new GridCellDatetimeModel();
-    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan)) return new GridCellTimeModel();
+    if (underlying == typeof(bool))
+    {
+      return new GridCellCheckboxModel();
+    }
+
+    if (underlying == typeof(DateOnly))
+    {
+      return new GridCellDateModel();
+    }
+
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
+    {
+      return new GridCellDatetimeModel();
+    }
+
+    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
+    {
+      return new GridCellTimeModel();
+    }
+
     if (underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
+    {
       return new GridCellNumberModel { Decimals = 2, IsGrouped = true };
+    }
+
     if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte))
+    {
       return new GridCellNumberModel { Decimals = 0, IsGrouped = true };
+    }
+
     return new GridCellTextModel();
   }
 }
@@ -148,17 +186,43 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Label = label;
     return this;
   }
-  public GridColumn<TProp> Width(int px) { dto.Width = px; return this; }
+  public GridColumn<TProp> Width(int px)
+  {
+    dto.Width = px;
+    return this;
+  }
   public GridColumn<TProp> Width(string width)
   {
     dto.Width = int.TryParse(width.Replace("px", "").Trim(), out var px) ? px : 100;
     return this;
   }
-  public GridColumn<TProp> Sortable(bool sortable = true) { dto.IsSortable = sortable; return this; }
-  public GridColumn<TProp> Filterable(bool filterable = true) { dto.IsFilterable = filterable; return this; }
-  public GridColumn<TProp> Computed() { dto.IsComputed = true; dto.IsSortable = false; dto.IsFilterable = false; return this; }
-  public GridColumn<TProp> Hidden(bool hidden = true) { dto.IsHidden = hidden; return this; }
-  public GridColumn<TProp> Cell(CellModel cell) { dto.Cell = cell; return this; }
+  public GridColumn<TProp> Sortable(bool sortable = true)
+  {
+    dto.IsSortable = sortable;
+    return this;
+  }
+  public GridColumn<TProp> Filterable(bool filterable = true)
+  {
+    dto.IsFilterable = filterable;
+    return this;
+  }
+  public GridColumn<TProp> Computed()
+  {
+    dto.IsComputed = true;
+    dto.IsSortable = false;
+    dto.IsFilterable = false;
+    return this;
+  }
+  public GridColumn<TProp> Hidden(bool hidden = true)
+  {
+    dto.IsHidden = hidden;
+    return this;
+  }
+  public GridColumn<TProp> Cell(CellModel cell)
+  {
+    dto.Cell = cell;
+    return this;
+  }
 
   private void StripDefaultIdLabel()
   {
@@ -288,6 +352,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     {
       dto.NumberEdit = new GridNumberEditDto { Step = 1, HasStepper = false };
     }
+
     return this;
   }
 
@@ -302,6 +367,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     {
       dto.FilterPath = dto.Path + "Id";
     }
+
     return this;
   }
 
@@ -316,6 +382,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     {
       dto.FilterPath = dto.Path + "Id";
     }
+
     return this;
   }
 
@@ -329,12 +396,17 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   internal static FilterNode CombineFilter(FilterNode? existing, FilterNode addition)
   {
-    if (existing is null) return addition;
+    if (existing is null)
+    {
+      return addition;
+    }
+
     if (existing is FilterGroup { Logic: FilterLogic.And } group)
     {
       group.Items.Add(addition);
       return group;
     }
+
     return FilterNode.All(existing, addition);
   }
 
@@ -394,8 +466,16 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     {
       if (obj is TEntity entity)
       {
-        try { return compiled(entity); } catch { return null; }
+        try
+        {
+          return compiled(entity);
+        }
+        catch
+        {
+          return null;
+        }
       }
+
       return null;
     };
     dto.ColorNavPath = ExtractNavigationPath(colorSelector.Body);
@@ -417,25 +497,59 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
       parts.Add(me.Member.Name);
       current = me.Expression;
     }
+
     if (parts.Count > 1)
     {
       parts.Reverse();
       return string.Join('.', parts.Take(parts.Count - 1));
     }
+
     return null;
   }
 }
 
 public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : GridColumn<TProp>(dto, owner)
 {
-  public new GridColumn<TEntity, TProp> Label(string label) { base.Label(label); return this; }
-  public new GridColumn<TEntity, TProp> Width(int px) { base.Width(px); return this; }
-  public new GridColumn<TEntity, TProp> Width(string width) { base.Width(width); return this; }
-  public new GridColumn<TEntity, TProp> Sortable(bool sortable = true) { base.Sortable(sortable); return this; }
-  public new GridColumn<TEntity, TProp> Filterable(bool filterable = true) { base.Filterable(filterable); return this; }
-  public new GridColumn<TEntity, TProp> Computed() { base.Computed(); return this; }
-  public new GridColumn<TEntity, TProp> Hidden(bool hidden = true) { base.Hidden(hidden); return this; }
-  public new GridColumn<TEntity, TProp> AsOpenForm<TFormService>() where TFormService : class { base.AsOpenForm<TFormService>(); return this; }
+  public new GridColumn<TEntity, TProp> Label(string label)
+  {
+    base.Label(label);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Width(int px)
+  {
+    base.Width(px);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Width(string width)
+  {
+    base.Width(width);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Sortable(bool sortable = true)
+  {
+    base.Sortable(sortable);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Filterable(bool filterable = true)
+  {
+    base.Filterable(filterable);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Computed()
+  {
+    base.Computed();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Hidden(bool hidden = true)
+  {
+    base.Hidden(hidden);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsOpenForm<TFormService>() where TFormService : class
+  {
+    base.AsOpenForm<TFormService>();
+    return this;
+  }
   public GridColumn<TEntity, TProp> OpenForm(Func<TEntity, Type?> resolver)
   {
     Dto.Cell = new GridCellOpenFormModel();
@@ -444,23 +558,91 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     Dto.FormServiceResolver = row => row is TEntity typed ? resolver(typed) : null;
     return this;
   }
-  public new GridColumn<TEntity, TProp> AsCheckbox() { base.AsCheckbox(); return this; }
-  public new GridColumn<TEntity, TProp> AsSelect(IEnumerable<OptionDto> options) { base.AsSelect(options); return this; }
-  public new GridColumn<TEntity, TProp> AsDate() { base.AsDate(); return this; }
-  public new GridColumn<TEntity, TProp> AsDatetime() { base.AsDatetime(); return this; }
-  public new GridColumn<TEntity, TProp> AsNumber() { base.AsNumber(); return this; }
-  public new GridColumn<TEntity, TProp> AsMoney(string? currency = null) { base.AsMoney(currency); return this; }
-  public new GridColumn<TEntity, TProp> AsPercent() { base.AsPercent(); return this; }
-  public new GridColumn<TEntity, TProp> AsPhone() { base.AsPhone(); return this; }
-  public new GridColumn<TEntity, TProp> AsEmail() { base.AsEmail(); return this; }
-  public new GridColumn<TEntity, TProp> AsUrl() { base.AsUrl(); return this; }
-  public new GridColumn<TEntity, TProp> Sum() { base.Sum(); return this; }
-  public new GridColumn<TEntity, TProp> Stepper(bool hasStepper = true) { base.Stepper(hasStepper); return this; }
-  public new GridColumn<TEntity, TProp> Step(double step) { base.Step(step); return this; }
-  public new GridColumn<TEntity, TProp> Min(double min) { base.Min(min); return this; }
-  public new GridColumn<TEntity, TProp> Max(double max) { base.Max(max); return this; }
-  public new GridColumn<TEntity, TProp> Editable(bool isEditable = true) { base.Editable(isEditable); return this; }
-  public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() where TFileGrid : class { base.AsCover<TFileGrid>(); return this; }
+  public new GridColumn<TEntity, TProp> AsCheckbox()
+  {
+    base.AsCheckbox();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsSelect(IEnumerable<OptionDto> options)
+  {
+    base.AsSelect(options);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsDate()
+  {
+    base.AsDate();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsDatetime()
+  {
+    base.AsDatetime();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsNumber()
+  {
+    base.AsNumber();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsMoney(string? currency = null)
+  {
+    base.AsMoney(currency);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsPercent()
+  {
+    base.AsPercent();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsPhone()
+  {
+    base.AsPhone();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsEmail()
+  {
+    base.AsEmail();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsUrl()
+  {
+    base.AsUrl();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Sum()
+  {
+    base.Sum();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Stepper(bool hasStepper = true)
+  {
+    base.Stepper(hasStepper);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Step(double step)
+  {
+    base.Step(step);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Min(double min)
+  {
+    base.Min(min);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Max(double max)
+  {
+    base.Max(max);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Editable(bool isEditable = true)
+  {
+    base.Editable(isEditable);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() where TFileGrid : class
+  {
+    base.AsCover<TFileGrid>();
+    return this;
+  }
   public new GridReferenceColumn<TEntity, TProp, TProp> AsReference<TGridService>()
   {
     base.AsReference<TGridService>();
@@ -471,7 +653,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.AsReference<TGridService, TSource>();
     return new GridReferenceColumn<TEntity, TSource, TProp>(Dto, owner);
   }
-  public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value) { base.Where(sourceMember, value); return this; }
+  public new GridColumn<TEntity, TProp> Where<TSource, TVal>(Expression<Func<TSource, TVal>> sourceMember, TVal value)
+  {
+    base.Where(sourceMember, value);
+    return this;
+  }
   public GridColumn<TEntity, TProp> FilterBy<TFilterVal>(Expression<Func<TEntity, TFilterVal>> filterExpression)
   {
     Dto.FilterExpression = filterExpression;

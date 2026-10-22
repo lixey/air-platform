@@ -1,14 +1,3 @@
-using Air.App.Components;
-using Air.App.Form;
-using Air.App.Modules;
-using Air.App.Overlay;
-using DemoApp.Data;
-using DemoApp.Data.Models;
-using DemoApp.Language;
-using DemoApp.Session;
-using DemoApp.UserGroup;
-using Microsoft.EntityFrameworkCore;
-
 namespace DemoApp.User;
 
 public class AppUserFormService(AppDbContext db, AppService? app = null)
@@ -99,15 +88,12 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       }
     });
 
-    hooks.AfterLoad(async (c, cancellationToken) =>
-    {
-      c.Input.RoleIds = c.IsNew
+    hooks.AfterLoad(async (c, cancellationToken) => c.Input.RoleIds = c.IsNew
         ? []
         : await db.Set<AppAuthAssignment>()
             .Where(r => r.UserId == c.Entity.Id && r.IsActive && _offered.Contains(r.AuthRoleId))
             .Select(r => r.AuthRoleId)
-            .ToArrayAsync(cancellationToken);
-    });
+            .ToArrayAsync(cancellationToken));
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {

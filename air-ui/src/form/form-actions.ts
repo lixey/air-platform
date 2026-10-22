@@ -4,14 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import type { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { serviceUrl } from '../core/api';
-import type {
-  FormActionDto,
-  FormDataDto,
-  FormModel,
-  FormNavActionModel,
-  MessageDto,
-  OverlayModelDto,
-} from '../core/generated/contracts';
+import type { FormActionDto, FormDataDto, FormModel, FormNavActionModel, MessageDto, OverlayModelDto } from '../core/generated/contracts';
 import { classifyMutationFailure } from '../core/mutation-failure';
 import { type AskService, ownMessages } from '../overlay/ask.service';
 import type { ConfirmationService } from '../overlay/confirmation.service';

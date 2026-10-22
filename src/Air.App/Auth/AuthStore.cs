@@ -1,7 +1,3 @@
-using Air.Data;
-using Air.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-
 namespace Air.App.Auth;
 
 /// <summary>

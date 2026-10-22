@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 
 namespace Air.App.Auth;
 
@@ -28,6 +27,7 @@ public static class SessionTokenService
     {
       return SHA256.HashData(Encoding.UTF8.GetBytes(envSecret));
     }
+
     var entropy = $"{Environment.MachineName}:{Environment.ProcessPath}:{AppContext.BaseDirectory}:AirPlatform.SessionKey";
     return SHA256.HashData(Encoding.UTF8.GetBytes(entropy));
   }
@@ -53,7 +53,10 @@ public static class SessionTokenService
     {
       var raw = Encoding.UTF8.GetString(Convert.FromBase64String(token));
       var parts = raw.Split(':');
-      if (parts.Length is not (4 or 5)) return false;
+      if (parts.Length is not (4 or 5))
+      {
+        return false;
+      }
 
       if (!long.TryParse(parts[0], out sessionId) ||
           !long.TryParse(parts[1], out userId))
@@ -71,6 +74,7 @@ public static class SessionTokenService
         {
           return false;
         }
+
         payload = $"{parts[0]}:{parts[1]}:{parts[2]}:{parts[3]}";
         sigPart = parts[4];
       }
@@ -80,6 +84,7 @@ public static class SessionTokenService
         {
           return false;
         }
+
         payload = $"{parts[0]}:{parts[1]}:{parts[2]}";
         sigPart = parts[3];
       }

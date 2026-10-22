@@ -1,8 +1,3 @@
-using DemoEcom.Data.Models;
-using DemoEcom.Documents;
-using DemoOrg.Data.Models;
-using DemoOrg.Product;
-
 namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderLineFormService(EcomDbContext db, EcomService? ecom = null)
@@ -35,6 +30,7 @@ public sealed class EcomCustomerOrderLineFormService(EcomDbContext db, EcomServi
       {
         return EcomDocLines.PriceAsync(db, doc, c.Entity, c.Input, c.IsNew, product => product.Price, ct);
       }
+
       c.Entity.Amount = Math.Round(c.Entity.Qty * c.Entity.Price * (1m - (c.Entity.DiscountPercent / 100m)), 2);
       return Task.CompletedTask;
     });

@@ -1,7 +1,3 @@
-using Air.App.Auth;
-using Air.Data.Tenancy;
-using Microsoft.AspNetCore.Http;
-
 namespace Air.App.Host;
 
 /// <summary>

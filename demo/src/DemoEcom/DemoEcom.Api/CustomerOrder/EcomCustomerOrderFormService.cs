@@ -1,16 +1,3 @@
-using Air.App.Metadata;
-using DemoApp.User;
-using DemoEcom.Data;
-using DemoEcom.Documents;
-using DemoOrg.Counterparty;
-using DemoOrg.Customer;
-using DemoOrg.Data.Models;
-using DemoOrg.DeliveryType;
-using DemoOrg.Organization;
-using DemoOrg.PaymentMethod;
-using DemoOrg.PaymentTerm;
-using DemoOrg.Warehouse;
-
 namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderFormService(

@@ -1,7 +1,3 @@
-using DemoEcom.Data;
-using DemoEcom.Documents;
-using DemoOrg.Data.Models;
-
 namespace DemoEcom.IncomingPayment;
 
 public sealed class EcomIncomingPaymentFormService(

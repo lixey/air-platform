@@ -1,18 +1,3 @@
-using Air.App.Modules;
-using DemoOrg.Brand;
-using DemoOrg.Counterparty;
-using DemoOrg.Currency;
-using DemoOrg.Customer;
-using DemoOrg.DeliveryType;
-using DemoOrg.MoneyAccount;
-using DemoOrg.Organization;
-using DemoOrg.PaymentMethod;
-using DemoOrg.PaymentTerm;
-using DemoOrg.Product;
-using DemoOrg.ProductCategory;
-using DemoOrg.Unit;
-using DemoOrg.Warehouse;
-
 namespace DemoOrg;
 
 [Module(OrgData.ModuleHandle)]

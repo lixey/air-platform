@@ -1,19 +1,3 @@
-using System.Reflection;
-using System.Text.Json;
-using Air.App.Auth;
-using Air.App.Form;
-using Air.App.Grid;
-using Air.App.Localization;
-using Air.App.Modules;
-using Air.App.Screens;
-using Air.Data.Contracts;
-using Air.Data.Entities;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Air.App.Host;
 
 internal static class ServiceEndpoints
@@ -82,6 +66,7 @@ internal static class ServiceEndpoints
             {
               return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
+
             return Results.Ok(await screenService.BuildScreenAsync(serviceName, ct));
           }
         }
@@ -106,133 +91,164 @@ internal static class ServiceEndpoints
     {
       grid.AttachPlatformApp(appInstance);
     }
+
     var userContext = services.GetService<IUserContext>();
 
     switch (method.ToLowerInvariant())
     {
       case "get-data":
-      {
-        var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-        var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-        if (!isPicker && !CanView(feat, userContext))
         {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
-        }
-        var page = await grid.GetDataAsync(req, ct);
-        if (req.IsDataOnly)
-        {
-          return Results.Ok(new ScreenDto { Data = page });
-        }
+          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
+          if (!isPicker && !CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
 
-        var screen = await grid.BuildScreenAsync(serviceName, req, ct);
-        screen.Data = page;
-        return Results.Ok(screen);
-      }
+          var page = await grid.GetDataAsync(req, ct);
+          if (req.IsDataOnly)
+          {
+            return Results.Ok(new ScreenDto { Data = page });
+          }
+
+          var screen = await grid.BuildScreenAsync(serviceName, req, ct);
+          screen.Data = page;
+          return Results.Ok(screen);
+        }
 
       case "get-count":
-      {
-        var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-        var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-        if (!isPicker && !CanView(feat, userContext))
         {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
+          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
+          if (!isPicker && !CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
+          return Results.Ok(await grid.GetCountAsync(req, ct));
         }
-        return Results.Ok(await grid.GetCountAsync(req, ct));
-      }
 
       case "get-one":
-      {
-        var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-        if (!CanView(feat, userContext))
         {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
+          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          if (!CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
+          if (req.Id is not > 0)
+          {
+            return Results.NotFound();
+          }
+
+          var row = await grid.ReadRowAsync(req.Id.Value, ct);
+          return row is null ? Results.NotFound() : Results.Ok(row);
         }
-        if (req.Id is not > 0)
-        {
-          return Results.NotFound();
-        }
-        var row = await grid.ReadRowAsync(req.Id.Value, ct);
-        return row is null ? Results.NotFound() : Results.Ok(row);
-      }
 
       case "delete":
-      {
-        var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-        return PlatformEndpoints.ToMutationResult(await grid.Delete(req, ct));
-      }
+        {
+          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          return PlatformEndpoints.ToMutationResult(await grid.Delete(req, ct));
+        }
 
       case "save-cell":
-      {
-        var req = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
-        return PlatformEndpoints.ToMutationResult(await grid.SaveCellAsync(req, services, ct));
-      }
+        {
+          var req = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
+          return PlatformEndpoints.ToMutationResult(await grid.SaveCellAsync(req, services, ct));
+        }
 
       case "move-status":
-      {
-        GridRequest? req = null;
-        JsonElement? bodyElement = null;
-        if (httpRequest.ContentLength > 0)
         {
-          try
+          GridRequest? req = null;
+          JsonElement? bodyElement = null;
+          if (httpRequest.ContentLength > 0)
           {
-            using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-            bodyElement = doc.RootElement.Clone();
-            req = JsonSerializer.Deserialize<GridRequest>(bodyElement.Value.GetRawText(), PlatformJsonOptions.DefaultOptions);
+            try
+            {
+              using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+              bodyElement = doc.RootElement.Clone();
+              req = JsonSerializer.Deserialize<GridRequest>(bodyElement.Value.GetRawText(), PlatformJsonOptions.DefaultOptions);
+            }
+            catch { }
           }
-          catch { }
+
+          req ??= new GridRequest();
+          ApplyGridQueryParams(httpRequest, req);
+          return PlatformEndpoints.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", bodyElement, ct));
         }
-        req ??= new GridRequest();
-        ApplyGridQueryParams(httpRequest, req);
-        return PlatformEndpoints.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", bodyElement, ct));
-      }
 
       case "export":
-      {
-        if (!CanExport(feat, userContext))
         {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
-        }
-        var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-        return await grid.ExportAsync(req, ct);
-      }
-
-      case "upload":
-      {
-        var uploadMethod = serviceType.GetMethod("Upload");
-        if (uploadMethod != null && httpRequest.HasFormContentType)
-        {
-          if (!IsCustomActionPermitted(uploadMethod, feat, userContext))
+          if (!CanExport(feat, userContext))
           {
-            return Results.UnprocessableEntity(new
-            {
-              outcome = MutationOutcome.Refused,
-              title = Localizer.Instance["MutationRefused"],
-              messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error } }
-            });
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
-          var formCollection = await httpRequest.ReadFormAsync(ct);
-          var uploadReq = new Files.Contracts.GridUploadRequest();
-          if (formCollection.TryGetValue("parentService", out var psVal)) uploadReq.ParentService = psVal;
-          if (formCollection.TryGetValue("parentId", out var pidVal) && long.TryParse(pidVal, out var parsedPid)) uploadReq.ParentId = parsedPid;
-          if (formCollection.TryGetValue("afterId", out var aidVal) && long.TryParse(aidVal, out var parsedAid)) uploadReq.AfterId = parsedAid;
-          if (formCollection.TryGetValue("metadata", out var metaVal)) uploadReq.Metadata = metaVal;
-          if (httpRequest.Query.TryGetValue("parentId", out var qPid) && long.TryParse(qPid, out var parsedQPid)) uploadReq.ParentId = parsedQPid;
-          if (httpRequest.Query.TryGetValue("parentService", out var qPs)) uploadReq.ParentService = qPs;
-
-          return await InvokeServiceMethodAsync(uploadMethod, grid, [uploadReq, formCollection.Files, ct]);
+          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          return await grid.ExportAsync(req, ct);
         }
-        break;
-      }
+
+      case "upload":
+        {
+          var uploadMethod = serviceType.GetMethod("Upload");
+          if (uploadMethod != null && httpRequest.HasFormContentType)
+          {
+            if (!IsCustomActionPermitted(uploadMethod, feat, userContext))
+            {
+              return Results.UnprocessableEntity(new
+              {
+                outcome = MutationOutcome.Refused,
+                title = Localizer.Instance["MutationRefused"],
+                messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error } }
+              });
+            }
+
+            var formCollection = await httpRequest.ReadFormAsync(ct);
+            var uploadReq = new Files.Contracts.GridUploadRequest();
+            if (formCollection.TryGetValue("parentService", out var psVal))
+            {
+              uploadReq.ParentService = psVal;
+            }
+
+            if (formCollection.TryGetValue("parentId", out var pidVal) && long.TryParse(pidVal, out var parsedPid))
+            {
+              uploadReq.ParentId = parsedPid;
+            }
+
+            if (formCollection.TryGetValue("afterId", out var aidVal) && long.TryParse(aidVal, out var parsedAid))
+            {
+              uploadReq.AfterId = parsedAid;
+            }
+
+            if (formCollection.TryGetValue("metadata", out var metaVal))
+            {
+              uploadReq.Metadata = metaVal;
+            }
+
+            if (httpRequest.Query.TryGetValue("parentId", out var qPid) && long.TryParse(qPid, out var parsedQPid))
+            {
+              uploadReq.ParentId = parsedQPid;
+            }
+
+            if (httpRequest.Query.TryGetValue("parentService", out var qPs))
+            {
+              uploadReq.ParentService = qPs;
+            }
+
+            return await InvokeServiceMethodAsync(uploadMethod, grid, [uploadReq, formCollection.Files, ct]);
+          }
+
+          break;
+        }
     }
 
     var actionMethod = serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
       .Where(m => !m.IsSpecialName
                   && m.DeclaringType != typeof(object)
                   && m.DeclaringType != typeof(IGridService)
-                  && (!m.DeclaringType!.IsGenericType || (
+                  && (!m.DeclaringType!.IsGenericType ||
                     m.DeclaringType.GetGenericTypeDefinition() != typeof(GridService<,>) &&
-                    m.DeclaringType.GetGenericTypeDefinition() != typeof(GridService<>))))
+                    m.DeclaringType.GetGenericTypeDefinition() != typeof(GridService<>)))
       .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
     if (actionMethod == null)
@@ -255,12 +271,21 @@ internal static class ServiceEndpoints
     var customReq = await ReadGridRequestAsync(httpRequest, pickReqType, ct);
 
     var args = new object?[parameters.Length];
-    for (int i = 0; i < parameters.Length; i++)
+    for (var i = 0; i < parameters.Length; i++)
     {
       var pType = parameters[i].ParameterType;
-      if (pType == typeof(CancellationToken)) args[i] = ct;
-      else if (typeof(GridRequest).IsAssignableFrom(pType)) args[i] = customReq;
-      else if (pType == typeof(long) && customReq.Id.HasValue) args[i] = customReq.Id.Value;
+      if (pType == typeof(CancellationToken))
+      {
+        args[i] = ct;
+      }
+      else if (typeof(GridRequest).IsAssignableFrom(pType))
+      {
+        args[i] = customReq;
+      }
+      else if (pType == typeof(long) && customReq.Id.HasValue)
+      {
+        args[i] = customReq.Id.Value;
+      }
     }
 
     return await InvokeServiceMethodAsync(actionMethod, grid, args);
@@ -282,168 +307,174 @@ internal static class ServiceEndpoints
     {
       form.AttachPlatformApp(appInstance);
     }
+
     var userContext = services.GetService<IUserContext>();
 
     switch (method.ToLowerInvariant())
     {
       case "get-data":
-      {
-        if (!CanView(feat, userContext))
         {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
-        }
-        var req = await ReadFormRequestAsync(httpRequest, ct);
-        var screen = await form.BuildScreenAsync(serviceName, req, ct);
-        var entity = await form.GetModelAsync(req, ct);
-        var entityId = (entity as IEntity)?.Id ?? req.Id;
-        var ver = (entity as IHasVersion)?.Ver ?? 1;
-
-        var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
-        var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-        if (entity is IReadOnlyEntity && dict.TryGetValue("name", out var nameObj) && nameObj != null)
-        {
-          var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
-          if (!string.IsNullOrEmpty(nameStr))
+          if (!CanView(feat, userContext))
           {
-            dict["name"] = Localizer.Instance[nameStr];
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
+
+          var req = await ReadFormRequestAsync(httpRequest, ct);
+          var screen = await form.BuildScreenAsync(serviceName, req, ct);
+          var entity = await form.GetModelAsync(req, ct);
+          var entityId = (entity as IEntity)?.Id ?? req.Id;
+          var ver = (entity as IHasVersion)?.Ver ?? 1;
+
+          var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
+          var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+          if (entity is IReadOnlyEntity && dict.TryGetValue("name", out var nameObj) && nameObj != null)
+          {
+            var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
+            if (!string.IsNullOrEmpty(nameStr))
+            {
+              dict["name"] = Localizer.Instance[nameStr];
+            }
+          }
+
+          await form.PopulateReferencesAsync(dict, entity, screen, ct);
+          var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
+
+          screen.Data = new FormDataDto
+          {
+            Id = entityId > 0 ? entityId : null,
+            Ver = entityId > 0 ? ver : null,
+            Value = dict,
+            Unavailable = unavailable
+          };
+
+          return Results.Ok(screen);
         }
-        await form.PopulateReferencesAsync(dict, entity, screen, ct);
-        var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
-
-        screen.Data = new FormDataDto
-        {
-          Id = entityId > 0 ? entityId : null,
-          Ver = entityId > 0 ? ver : null,
-          Value = dict,
-          Unavailable = unavailable
-        };
-
-        return Results.Ok(screen);
-      }
 
       case "save":
-      {
-        using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-        var req = BindFormRequest(httpRequest, doc.RootElement);
+        {
+          using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+          var req = BindFormRequest(httpRequest, doc.RootElement);
 
-        object entity;
-        try
-        {
-          entity = await form.SaveAsync(doc.RootElement, req, ct);
-        }
-        catch (FormRefusedException ex)
-        {
-          return ex.Outcome == MutationOutcome.Conflict
-            ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
-            : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-          return Results.Conflict(new
+          object entity;
+          try
           {
-            outcome = MutationOutcome.Conflict,
-            title = Localizer.Instance["MutationConflict"],
-            messages = new[] { new MessageDto { Detail = Localizer.Instance["FormRecordChanged"], Type = MessageType.Error } }
+            entity = await form.SaveAsync(doc.RootElement, req, ct);
+          }
+          catch (FormRefusedException ex)
+          {
+            return ex.Outcome == MutationOutcome.Conflict
+              ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
+              : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
+          }
+          catch (DbUpdateConcurrencyException)
+          {
+            return Results.Conflict(new
+            {
+              outcome = MutationOutcome.Conflict,
+              title = Localizer.Instance["MutationConflict"],
+              messages = new[] { new MessageDto { Detail = Localizer.Instance["FormRecordChanged"], Type = MessageType.Error } }
+            });
+          }
+          catch (DbUpdateException)
+          {
+            return Results.UnprocessableEntity(new
+            {
+              outcome = MutationOutcome.Refused,
+              title = Localizer.Instance["MutationRefused"],
+              messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationConstraint"], Type = MessageType.Error } }
+            });
+          }
+
+          var entityId = (entity as IEntity)?.Id;
+          var ver = (entity as IHasVersion)?.Ver;
+
+          var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
+          var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+          await form.PopulateReferencesAsync(dict, entity, ct);
+          var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
+
+          return Results.Ok(new FormDataDto
+          {
+            Id = entityId,
+            Ver = ver,
+            Value = dict,
+            Outcome = MutationOutcome.Committed,
+            Unavailable = unavailable
           });
         }
-        catch (DbUpdateException)
-        {
-          return Results.UnprocessableEntity(new
-          {
-            outcome = MutationOutcome.Refused,
-            title = Localizer.Instance["MutationRefused"],
-            messages = new[] { new MessageDto { Detail = Localizer.Instance["MutationConstraint"], Type = MessageType.Error } }
-          });
-        }
-
-        var entityId = (entity as IEntity)?.Id;
-        var ver = (entity as IHasVersion)?.Ver;
-
-        var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
-        var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-        await form.PopulateReferencesAsync(dict, entity, ct);
-        var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
-
-        return Results.Ok(new FormDataDto
-        {
-          Id = entityId,
-          Ver = ver,
-          Value = dict,
-          Outcome = MutationOutcome.Committed,
-          Unavailable = unavailable
-        });
-      }
 
       case "move-status" when subMethod != null:
-      {
-        long? id = null;
-        int? ver = null;
-        JsonElement? bodyElement = null;
-        using var jsonDoc = httpRequest.ContentLength > 0
-          ? await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct)
-          : null;
-
-        if (jsonDoc != null)
         {
-          bodyElement = jsonDoc.RootElement;
-          if (bodyElement.Value.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var parsedId))
+          long? id = null;
+          int? ver = null;
+          JsonElement? bodyElement = null;
+          using var jsonDoc = httpRequest.ContentLength > 0
+            ? await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct)
+            : null;
+
+          if (jsonDoc != null)
           {
-            id = parsedId;
+            bodyElement = jsonDoc.RootElement;
+            if (bodyElement.Value.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var parsedId))
+            {
+              id = parsedId;
+            }
+
+            if (bodyElement.Value.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var parsedVer))
+            {
+              ver = parsedVer;
+            }
           }
-          if (bodyElement.Value.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var parsedVer))
+
+          if (id == null && httpRequest.Query.TryGetValue("id", out var qIdStr) && long.TryParse(qIdStr, out var qId))
           {
-            ver = parsedVer;
+            id = qId;
           }
-        }
 
-        if (id == null && httpRequest.Query.TryGetValue("id", out var qIdStr) && long.TryParse(qIdStr, out var qId))
-        {
-          id = qId;
-        }
-        if (ver == null && httpRequest.Query.TryGetValue("ver", out var qVerStr) && int.TryParse(qVerStr, out var qVer))
-        {
-          ver = qVer;
-        }
+          if (ver == null && httpRequest.Query.TryGetValue("ver", out var qVerStr) && int.TryParse(qVerStr, out var qVer))
+          {
+            ver = qVer;
+          }
 
-        if (id == null)
-        {
-          return Results.BadRequest(new { detail = "Record id is required for move-status." });
-        }
+          if (id == null)
+          {
+            return Results.BadRequest(new { detail = "Record id is required for move-status." });
+          }
 
-        var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ver, ct);
-        return PlatformEndpoints.ToMutationResult(result);
-      }
+          var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ver, ct);
+          return PlatformEndpoints.ToMutationResult(result);
+        }
 
       case "delete":
-      {
-        var ids = await ExtractIdsAsync(httpRequest, ct);
-        int deleted = 0;
-        try
         {
-          foreach (var id in ids)
+          var ids = await ExtractIdsAsync(httpRequest, ct);
+          var deleted = 0;
+          try
           {
-            await form.DeleteAsync(id, ct);
-            deleted++;
+            foreach (var id in ids)
+            {
+              await form.DeleteAsync(id, ct);
+              deleted++;
+            }
           }
-        }
-        catch (FormRefusedException ex)
-        {
-          return ex.Outcome == MutationOutcome.Conflict
-            ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
-            : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
-        }
-        catch (DbUpdateException)
-        {
-          return Results.UnprocessableEntity(new
+          catch (FormRefusedException ex)
           {
-            outcome = MutationOutcome.Refused,
-            title = Localizer.Instance["DeleteRefused"],
-            messages = new[] { new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error } }
-          });
+            return ex.Outcome == MutationOutcome.Conflict
+              ? Results.Conflict(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages })
+              : Results.UnprocessableEntity(new { outcome = ex.Outcome, title = ex.Title, messages = ex.Messages });
+          }
+          catch (DbUpdateException)
+          {
+            return Results.UnprocessableEntity(new
+            {
+              outcome = MutationOutcome.Refused,
+              title = Localizer.Instance["DeleteRefused"],
+              messages = new[] { new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error } }
+            });
+          }
+
+          return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
         }
-        return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
-      }
 
       default:
         return Results.NotFound();
@@ -534,21 +565,29 @@ internal static class ServiceEndpoints
     {
       return await taskResult;
     }
+
     if (resultTask is Task<GridActionDto> actionTask)
     {
       return PlatformEndpoints.ToMutationResult(await actionTask);
     }
+
     if (resultTask is Task task)
     {
       await task.ConfigureAwait(false);
       var result = task.GetType().GetProperty("Result")?.GetValue(task);
-      if (result is IResult r) return r;
+      if (result is IResult r)
+      {
+        return r;
+      }
+
       return PlatformEndpoints.ToMutationResult(result ?? new GridActionDto { Outcome = MutationOutcome.Committed });
     }
+
     if (resultTask is IResult immediateResult)
     {
       return immediateResult;
     }
+
     return PlatformEndpoints.ToMutationResult(resultTask ?? new GridActionDto { Outcome = MutationOutcome.Committed });
   }
 
@@ -558,8 +597,13 @@ internal static class ServiceEndpoints
     T? req = null;
     if (httpRequest.ContentLength > 0)
     {
-      try { req = await httpRequest.ReadFromJsonAsync<T>(cancellationToken: ct); } catch { }
+      try
+      {
+        req = await httpRequest.ReadFromJsonAsync<T>(cancellationToken: ct);
+      }
+      catch { }
     }
+
     req ??= new T();
     ApplyGridQueryParams(httpRequest, req);
     return req;
@@ -570,8 +614,13 @@ internal static class ServiceEndpoints
     GridRequest? req = null;
     if (httpRequest.ContentLength > 0)
     {
-      try { req = (GridRequest?)await httpRequest.ReadFromJsonAsync(requestType, cancellationToken: ct); } catch { }
+      try
+      {
+        req = (GridRequest?)await httpRequest.ReadFromJsonAsync(requestType, cancellationToken: ct);
+      }
+      catch { }
     }
+
     req ??= (GridRequest)Activator.CreateInstance(requestType)!;
     ApplyGridQueryParams(httpRequest, req);
     return req;
@@ -579,9 +628,20 @@ internal static class ServiceEndpoints
 
   private static void ApplyGridQueryParams(HttpRequest httpRequest, GridRequest req)
   {
-    if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal)) req.Id = idVal;
-    if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal)) req.ParentId = pidVal;
-    if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
+    if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal))
+    {
+      req.Id = idVal;
+    }
+
+    if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal))
+    {
+      req.ParentId = pidVal;
+    }
+
+    if (httpRequest.Query.TryGetValue("parentService", out var psStr))
+    {
+      req.ParentService = psStr;
+    }
   }
 
   private static async Task<FormRequest> ReadFormRequestAsync(HttpRequest httpRequest, CancellationToken ct)
@@ -595,23 +655,54 @@ internal static class ServiceEndpoints
       }
       catch { }
     }
+
     return BindFormRequest(httpRequest, default);
   }
 
   private static FormRequest BindFormRequest(HttpRequest httpRequest, JsonElement root)
   {
     var req = new FormRequest();
-    if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId)) req.Id = parsedId;
-    if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid)) req.ParentId = parsedPid;
-    if (httpRequest.Query.TryGetValue("parentService", out var psStr)) req.ParentService = psStr;
+    if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
+    {
+      req.Id = parsedId;
+    }
+
+    if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid))
+    {
+      req.ParentId = parsedPid;
+    }
+
+    if (httpRequest.Query.TryGetValue("parentService", out var psStr))
+    {
+      req.ParentService = psStr;
+    }
 
     if (root.ValueKind == JsonValueKind.Object)
     {
-      if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId)) req.Id = bodyId;
-      if (root.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var bodyVer)) req.Ver = bodyVer;
-      if (root.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid)) req.ParentId = bodyPid;
-      if (root.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } bodyPs) req.ParentService = bodyPs;
-      if (root.TryGetProperty("value", out var valProp) && valProp.ValueKind == JsonValueKind.Object) req.Value = valProp.Clone();
+      if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId))
+      {
+        req.Id = bodyId;
+      }
+
+      if (root.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var bodyVer))
+      {
+        req.Ver = bodyVer;
+      }
+
+      if (root.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid))
+      {
+        req.ParentId = bodyPid;
+      }
+
+      if (root.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } bodyPs)
+      {
+        req.ParentService = bodyPs;
+      }
+
+      if (root.TryGetProperty("value", out var valProp) && valProp.ValueKind == JsonValueKind.Object)
+      {
+        req.Value = valProp.Clone();
+      }
     }
 
     return req;
@@ -635,14 +726,26 @@ internal static class ServiceEndpoints
         {
           foreach (var item in sel.EnumerateArray())
           {
-            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var id)) ids.Add(id);
-            else if (item.ValueKind == JsonValueKind.String && long.TryParse(item.GetString(), out var sid)) ids.Add(sid);
+            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var id))
+            {
+              ids.Add(id);
+            }
+            else if (item.ValueKind == JsonValueKind.String && long.TryParse(item.GetString(), out var sid))
+            {
+              ids.Add(sid);
+            }
           }
         }
         else if (doc.RootElement.TryGetProperty("id", out var idProp))
         {
-          if (idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var id)) ids.Add(id);
-          else if (idProp.ValueKind == JsonValueKind.String && long.TryParse(idProp.GetString(), out var sid)) ids.Add(sid);
+          if (idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var id))
+          {
+            ids.Add(id);
+          }
+          else if (idProp.ValueKind == JsonValueKind.String && long.TryParse(idProp.GetString(), out var sid))
+          {
+            ids.Add(sid);
+          }
         }
       }
       catch { }
