@@ -2,7 +2,7 @@ import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, i
 import type { EChartsCoreOption } from 'echarts/core';
 import { LocaleService } from '../app/locale.service';
 import type { ReportChartDto } from '../core/generated/contracts';
-import { formatCellAmount, moneyFormatOf } from '../grid/cell/grid-cell-format';
+import { formatCellNumber } from '../grid/cell/grid-cell-format';
 import { ThemeService } from '../theme/theme.service';
 import { type ChartHandle, ChartService, resolveHueHex } from './chart.service';
 
@@ -59,12 +59,7 @@ function buildEChartsOptions(chart: ReportChartDto, isDark: boolean, locale: str
   const surfaceColor = isDark ? '#0f172a' : '#ffffff';
   const borderColor = isDark ? '#334155' : '#e2e8f0';
 
-  const formatValue = (val: number): string => {
-    if (chart.currency) {
-      return formatCellAmount(val, locale, moneyFormatOf({ currency: chart.currency, decimals: 2 }));
-    }
-    return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(val);
-  };
+  const formatValue = (val: number): string => formatCellNumber(val, locale, 0, true);
 
   const compactFormat = (val: number): string => {
     const abs = Math.abs(val);

@@ -55,17 +55,13 @@ public abstract partial class FormService<TEntity, TInput>
     {
       converted = val.ValueKind == JsonValueKind.Number ? val.GetDecimal() : decimal.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var d) ? d : 0m;
     }
-    else if (targetType == typeof(double))
-    {
-      converted = val.ValueKind == JsonValueKind.Number ? val.GetDouble() : double.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var d) ? d : 0d;
-    }
-    else if (targetType == typeof(float))
-    {
-      converted = val.ValueKind == JsonValueKind.Number ? val.GetSingle() : float.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var f) ? f : 0f;
-    }
     else
     {
-      converted = targetType == typeof(int)
+      converted = targetType == typeof(double)
+        ? val.ValueKind == JsonValueKind.Number ? val.GetDouble() : double.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var d) ? d : 0d
+        : targetType == typeof(float)
+        ? val.ValueKind == JsonValueKind.Number ? val.GetSingle() : float.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var f) ? f : 0f
+        : targetType == typeof(int)
         ? val.ValueKind == JsonValueKind.Number ? val.GetInt32() : int.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var i) ? i : 0
         : targetType == typeof(long)
         ? val.ValueKind == JsonValueKind.Number ? val.GetInt64() : long.TryParse(val.GetString(), CultureInfo.InvariantCulture, out var l) ? l : 0L

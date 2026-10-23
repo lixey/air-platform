@@ -15,7 +15,7 @@ import type {
 } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { TemporalBoxComponent } from '../datepicker/temporal-box.component';
-import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { formatCellAmount, formatCellNumber, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { UI_COLORS } from '../theme/ui-color';
 
 @Component({
@@ -296,10 +296,7 @@ export class ReportComponent {
     if (kpi.isPercent) {
       return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
     }
-    if (kpi.isCount) {
-      return formatCellNumber(kpi.value, loc, 0, true);
-    }
-    return formatCellAmount(kpi.value, loc, moneyFormatOf({ currency: kpi.currency, decimals: 2 }));
+    return formatCellNumber(kpi.value, loc, 0, true);
   }
 
   protected formatCell(col: ReportColumnDto, raw: unknown): string {
@@ -310,14 +307,11 @@ export class ReportComponent {
       return raw;
     }
     const loc = this.currentLocale();
-    if (col.kind === 'money') {
-      return formatCellAmount(raw, loc, moneyFormatOf({ currency: col.currency, decimals: 2 }));
+    if (col.kind === 'money' || col.kind === 'number') {
+      return formatCellNumber(raw, loc, 0, true);
     }
     if (col.kind === 'percent') {
       return formatCellAmount(raw, loc, percentFormatOf({ decimals: 1 }));
-    }
-    if (col.kind === 'number') {
-      return formatCellNumber(raw, loc, 0, true);
     }
     return String(raw);
   }
