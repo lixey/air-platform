@@ -16,6 +16,7 @@ public static class AgentEndpoints
     services.AddSingleton<IAgentProvider, ClaudeCliAgentProvider>();
     services.AddSingleton<IAgentProvider, CodexCliAgentProvider>();
     services.AddSingleton<IAgentProvider, OpenAiCompatibleAgentProvider>();
+    services.TryAddSingleton<IAgentModelSynchronizer, AgentModelSynchronizer>();
     return services;
   }
 
@@ -23,7 +24,11 @@ public static class AgentEndpoints
   {
     var group = app.MapGroup("/api/agent");
 
-    group.MapGet("/status", async (IEnumerable<IAgentProvider> providers, AgentOptions options, CancellationToken ct) =>
+    group.MapGet("/status", async (
+      HttpContext ctx,
+      IEnumerable<IAgentProvider> providers,
+      AgentOptions options,
+      CancellationToken ct) =>
     {
       var enabledProviders = providers
         .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
@@ -40,20 +45,61 @@ public static class AgentEndpoints
         ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
         ?? enabledProviders.FirstOrDefault();
 
-      var models = activeProvider is not null
-        ? await activeProvider.GetModelsAsync(ct)
-        : [];
+      var db = ctx.RequestServices.GetService<PlatformDbContext>();
+      List<AgentModelDto> models;
+      string defaultModel;
 
-      var defaultModel = models.Any(m => string.Equals(m.Id, options.DefaultModel, StringComparison.OrdinalIgnoreCase))
-        ? options.DefaultModel
-        : (models.FirstOrDefault()?.Id ?? options.DefaultModel);
+      if (db is not null)
+      {
+        await AgentModelCatalog.EnsureSeededAsync(db, ct);
+        var dbModels = await db.AppAgentModel
+          .AsNoTracking()
+          .Where(m => m.IsActive)
+          .OrderBy(m => m.SortOrder)
+          .ThenBy(m => m.Id)
+          .ToListAsync(ct);
+
+        if (dbModels.Count == 0)
+        {
+          dbModels = [.. AgentModelCatalog.DefaultRows()];
+        }
+
+        var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
+        models = dbModels.Select(m => new AgentModelDto
+        {
+          Id = m.ModelId,
+          Name = multiProvider ? $"{m.Name} [{m.ProviderHandle}]" : m.Name,
+          Provider = m.ProviderHandle,
+          IsDefault = m.IsDefault
+        }).ToList();
+
+        var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
+        defaultModel = defRow?.ModelId ?? options.DefaultModel;
+        if (defRow is not null)
+        {
+          activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, defRow.ProviderHandle, StringComparison.OrdinalIgnoreCase))
+            ?? activeProvider;
+        }
+      }
+      else
+      {
+        var fallback = AgentModelCatalog.DefaultRows();
+        models = fallback.Select(m => new AgentModelDto
+        {
+          Id = m.ModelId,
+          Name = m.Name,
+          Provider = m.ProviderHandle,
+          IsDefault = m.IsDefault
+        }).ToList();
+        defaultModel = AgentModelCatalog.DefaultModelId;
+      }
 
       return Results.Ok(new AgentStatusDto
       {
         ActiveProvider = activeProvider?.Handle ?? options.DefaultProvider,
         DefaultModel = defaultModel,
         Providers = list,
-        Models = [.. models]
+        Models = models
       });
     });
 

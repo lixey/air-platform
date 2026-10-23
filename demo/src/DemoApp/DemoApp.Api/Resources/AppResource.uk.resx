@@ -193,4 +193,49 @@
   <data name="The root user cannot be deactivated." xml:space="preserve">
     <value>Головного користувача не можна деактивувати.</value>
   </data>
+  <data name="Agent Models" xml:space="preserve">
+    <value>Моделі ШІ</value>
+  </data>
+  <data name="Agent Model" xml:space="preserve">
+    <value>Модель ШІ</value>
+  </data>
+  <data name="New Agent Model" xml:space="preserve">
+    <value>Нова модель ШІ</value>
+  </data>
+  <data name="Model ID" xml:space="preserve">
+    <value>ID моделі</value>
+  </data>
+  <data name="Provider" xml:space="preserve">
+    <value>Провайдер</value>
+  </data>
+  <data name="Provider name" xml:space="preserve">
+    <value>Назва провайдера</value>
+  </data>
+  <data name="Sort Order" xml:space="preserve">
+    <value>Порядок</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>За замовчуванням</value>
+  </data>
+  <data name="Refresh models" xml:space="preserve">
+    <value>Оновити моделі</value>
+  </data>
+  <data name="Set as default" xml:space="preserve">
+    <value>За замовчуванням</value>
+  </data>
+  <data name="Toggle active" xml:space="preserve">
+    <value>Увімк. / Вимк.</value>
+  </data>
+  <data name="Active" xml:space="preserve">
+    <value>Активні</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>Вимкнені</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>Всі</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Статус</value>
+  </data>
 </root>

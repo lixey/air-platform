@@ -62,8 +62,8 @@ export class AgentService {
   readonly isUploading = signal(false);
   readonly isStreaming = signal(false);
 
-  async ensureStatusLoaded(): Promise<void> {
-    if (this.statusLoaded) {
+  async ensureStatusLoaded(force = false): Promise<void> {
+    if (this.statusLoaded && !force) {
       return;
     }
     this.statusLoaded = true;
@@ -81,7 +81,12 @@ export class AgentService {
       }
       const curModel = this.model();
       if (!curModel || (status.models?.length && !status.models.some(m => m.id === curModel))) {
-        this.model.set(status.defaultModel || status.models?.[0]?.id || '');
+        const nextModel = status.defaultModel || status.models?.[0]?.id || '';
+        this.model.set(nextModel);
+        const matched = status.models?.find(m => m.id === nextModel);
+        if (matched?.provider) {
+          this.activeProvider.set(matched.provider);
+        }
       }
     } catch {
       this.statusLoaded = false;

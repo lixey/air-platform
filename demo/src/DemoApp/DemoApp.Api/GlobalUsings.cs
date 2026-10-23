@@ -14,6 +14,7 @@ global using Air.App.Panels;
 global using Air.Data.Entities;
 global using Air.Data.Postgres;
 global using Air.Data.Tenancy;
+global using DemoApp.AgentModel;
 global using DemoApp.Change;
 global using DemoApp.Color;
 global using DemoApp.Data;

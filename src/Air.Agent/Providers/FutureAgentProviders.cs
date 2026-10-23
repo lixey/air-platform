@@ -10,6 +10,13 @@ public sealed class ClaudeCliAgentProvider : IAgentProvider
   public string Name => "Claude CLI (claude)";
   public bool IsAvailable => false;
 
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false) =>
+    Task.FromResult<IReadOnlyList<AgentModelDto>>(
+    [
+      new() { Id = "claude-opus-4-6", Name = "Claude Opus 4.6", Provider = Handle },
+      new() { Id = "claude-sonnet-4-6", Name = "Claude Sonnet 4.6", Provider = Handle }
+    ]);
+
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
@@ -32,6 +39,13 @@ public sealed class CodexCliAgentProvider : IAgentProvider
   public string Name => "Codex CLI (codex)";
   public bool IsAvailable => false;
 
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false) =>
+    Task.FromResult<IReadOnlyList<AgentModelDto>>(
+    [
+      new() { Id = "gpt-5.3-codex", Name = "GPT-5.3 Codex", Provider = Handle },
+      new() { Id = "o4-mini-high", Name = "OpenAI o4-mini (High)", Provider = Handle }
+    ]);
+
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
@@ -53,6 +67,12 @@ public sealed class OpenAiCompatibleAgentProvider : IAgentProvider
   public string Handle => "LmStudio";
   public string Name => "LM Studio / Local OpenAI";
   public bool IsAvailable => false;
+
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false) =>
+    Task.FromResult<IReadOnlyList<AgentModelDto>>(
+    [
+      new() { Id = "qwen3-coder-32b", Name = "Qwen 3 Coder 32B (Local)", Provider = Handle }
+    ]);
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,

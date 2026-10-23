@@ -419,6 +419,8 @@ export interface AgentCommitResultDto {
 export interface AgentModelDto {
   id: string;
   name: string;
+  provider?: string | null;
+  isDefault: boolean;
 }
 
 export interface AgentProposalDto {

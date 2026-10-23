@@ -7,28 +7,28 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
 
   private static readonly IReadOnlyList<AgentModelDto> FallbackModels =
   [
-    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)" },
-    new() { Id = "gemini-3.8-flash-medium", Name = "Gemini 3.8 Flash (Medium)" },
-    new() { Id = "gemini-3.8-flash-high", Name = "Gemini 3.8 Flash (High)" },
-    new() { Id = "gemini-4-argon-low", Name = "Gemini 4 Argon (Low)" },
-    new() { Id = "gemini-4-argon-medium", Name = "Gemini 4 Argon (Medium)" },
-    new() { Id = "gemini-4-argon-high", Name = "Gemini 4 Argon (High)" },
-    new() { Id = "claude-sonnet-5-5-low", Name = "Claude Sonnet 5.5 (Low)" },
-    new() { Id = "claude-sonnet-5-5-medium", Name = "Claude Sonnet 5.5 (Medium)" },
-    new() { Id = "claude-sonnet-5-5-high", Name = "Claude Sonnet 5.5 (High)" },
-    new() { Id = "claude-opus-5-5-low", Name = "Claude Opus 5.5 (Low)" },
-    new() { Id = "claude-opus-5-5-medium", Name = "Claude Opus 5.5 (Medium)" },
-    new() { Id = "claude-opus-5-5-high", Name = "Claude Opus 5.5 (High)" },
-    new() { Id = "gpt-oss-120b-medium", Name = "GPT-OSS 120B (Medium)" }
+    new() { Id = "gemini-4-argon-high", Name = "Gemini 4 Argon (High)", Provider = "Agy", IsDefault = true },
+    new() { Id = "gemini-3.8-flash-high", Name = "Gemini 3.8 Flash (High)", Provider = "Agy" },
+    new() { Id = "claude-opus-5-5-high", Name = "Claude Opus 5.5 (High)", Provider = "Agy" },
+    new() { Id = "claude-sonnet-5-5-high", Name = "Claude Sonnet 5.5 (High)", Provider = "Agy" },
+    new() { Id = "gemini-4-argon-medium", Name = "Gemini 4 Argon (Medium)", Provider = "Agy" },
+    new() { Id = "gemini-4-argon-low", Name = "Gemini 4 Argon (Low)", Provider = "Agy" },
+    new() { Id = "gemini-3.8-flash-medium", Name = "Gemini 3.8 Flash (Medium)", Provider = "Agy" },
+    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)", Provider = "Agy" },
+    new() { Id = "claude-opus-5-5-medium", Name = "Claude Opus 5.5 (Medium)", Provider = "Agy" },
+    new() { Id = "claude-opus-5-5-low", Name = "Claude Opus 5.5 (Low)", Provider = "Agy" },
+    new() { Id = "claude-sonnet-5-5-medium", Name = "Claude Sonnet 5.5 (Medium)", Provider = "Agy" },
+    new() { Id = "claude-sonnet-5-5-low", Name = "Claude Sonnet 5.5 (Low)", Provider = "Agy" },
+    new() { Id = "gpt-oss-120b-medium", Name = "GPT-OSS 120B (Medium)", Provider = "Agy" }
   ];
 
   public string Handle => "Agy";
   public string Name => "Antigravity CLI (agy)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
 
-  public async Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default)
+  public async Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
   {
-    if (_cachedModels is { Count: > 0 })
+    if (!forceRefresh && _cachedModels is { Count: > 0 })
     {
       return _cachedModels;
     }
@@ -42,7 +42,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     await _modelsLock.WaitAsync(ct);
     try
     {
-      if (_cachedModels is { Count: > 0 })
+      if (!forceRefresh && _cachedModels is { Count: > 0 })
       {
         return _cachedModels;
       }

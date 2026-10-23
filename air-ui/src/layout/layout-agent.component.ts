@@ -402,7 +402,7 @@ export class LayoutAgentComponent {
   });
 
   constructor() {
-    void this.agent.ensureStatusLoaded();
+    void this.agent.ensureStatusLoaded(true);
 
     const subscription = this.select.committed.subscribe(options => {
       const picked = options[0];
@@ -412,6 +412,9 @@ export class LayoutAgentComponent {
       const model = this.agent.models()[picked.id];
       if (model) {
         this.agent.model.set(model.id);
+        if (model.provider) {
+          this.agent.activeProvider.set(model.provider);
+        }
       }
     });
     inject(DestroyRef).onDestroy(() => subscription.unsubscribe());

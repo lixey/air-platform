@@ -14,6 +14,7 @@ public static class AppSeed
     tenants ??= AppCodeRows.Tenants();
 
     await AppCodeRows.SyncAsync(db, tenants, cancellationToken);
+    await AgentModelCatalog.EnsureSeededAsync(db, cancellationToken);
     await AppIdentitySeed.RunAsync(db, tenants, cancellationToken);
     await AppVolumeSeed.RunAsync(db, userGroupsCount, usersCount, randomSeed, tenants, cancellationToken);
   }
