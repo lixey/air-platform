@@ -61,7 +61,7 @@ public static class AgentEndpoints
 
         if (dbModels.Count == 0)
         {
-          dbModels = [.. AgentModelCatalog.DefaultRows()];
+          dbModels = [.. AgentModelCatalog.DefaultRows().Where(m => m.IsActive)];
         }
 
         var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
@@ -83,7 +83,7 @@ public static class AgentEndpoints
       }
       else
       {
-        var fallback = AgentModelCatalog.DefaultRows();
+        var fallback = AgentModelCatalog.DefaultRows().Where(m => m.IsActive);
         models = fallback.Select(m => new AgentModelDto
         {
           Id = m.ModelId,

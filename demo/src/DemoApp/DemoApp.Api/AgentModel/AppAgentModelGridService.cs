@@ -31,9 +31,9 @@ public sealed class AppAgentModelGridService(
     query.RecordLabel(e => e.Name);
     query.SearchBy(r => r.Id, r => r.Name, r => r.ModelId, r => r.ProviderHandle, r => r.ProviderName);
     query.NamedFilter("state", L["Status"])
-      .Item("active", L["Active"], r => r.IsActive).Color(UiColor.Emerald).Badge().Default()
-      .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate).Badge()
-      .All(L["All"]).Badge();
+      .All(L["All"]).Badge().Default()
+      .Item("active", L["Active"], r => r.IsActive).Color(UiColor.Emerald).Badge()
+      .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate).Badge();
   }
 
   protected override void SetNav(Nav nav)
