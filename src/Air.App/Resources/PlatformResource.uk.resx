@@ -1270,4 +1270,19 @@
   <data name="AgentErrorRequest" xml:space="preserve">
     <value>Не вдалося отримати відповідь від AI асистента.</value>
   </data>
+  <data name="AgentCopyMessage" xml:space="preserve">
+    <value>Скопіювати</value>
+  </data>
+  <data name="AgentCopied" xml:space="preserve">
+    <value>Скопійовано</value>
+  </data>
+  <data name="AgentReturnToInput" xml:space="preserve">
+    <value>Повернути в чат</value>
+  </data>
+  <data name="AgentRetryMessage" xml:space="preserve">
+    <value>Запустити повторно</value>
+  </data>
+  <data name="AgentDurationSec" xml:space="preserve">
+    <value>{0} с</value>
+  </data>
 </root>

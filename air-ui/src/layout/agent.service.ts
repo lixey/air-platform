@@ -32,6 +32,9 @@ export interface AgentChatMessage {
   readonly attachments: readonly AgentAttachment[];
   readonly proposals: AgentProposal[];
   readonly createdAt: Date;
+  readonly durationMs?: number;
+  readonly promptText?: string;
+  readonly promptAttachments?: readonly AgentAttachment[];
 }
 
 function stripProposalBlocks(raw: string): string {
@@ -126,25 +129,31 @@ export class AgentService {
     this.pendingAttachments.update(prev => prev.filter(a => a.id !== id));
   }
 
-  async send(rawText: string): Promise<void> {
+  async send(rawText: string, explicitAttachments?: readonly AgentAttachment[]): Promise<void> {
     const text = rawText.trim();
-    const attachments = this.pendingAttachments();
+    const attachments = explicitAttachments ?? this.pendingAttachments();
     if ((!text && attachments.length === 0) || this.isStreaming()) {
       return;
     }
 
-    this.pendingAttachments.set([]);
+    if (!explicitAttachments) {
+      this.pendingAttachments.set([]);
+    }
 
+    const effectivePrompt = text || (attachments.length > 0 ? this.texts.of('AgentDefaultPhotoPrompt') : '');
     const userMsg: AgentChatMessage = {
       id: `m-${++this.nextId}`,
       role: 'user',
-      text: text || (attachments.length > 0 ? this.texts.of('AgentDefaultPhotoPrompt') : ''),
+      text: effectivePrompt,
       attachments,
       proposals: [],
       createdAt: new Date(),
+      promptText: effectivePrompt,
+      promptAttachments: attachments,
     };
 
     const assistantMsgId = `m-${++this.nextId}`;
+    const startedAt = performance.now();
     const assistantMsg: AgentChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -153,6 +162,9 @@ export class AgentService {
       attachments: [],
       proposals: [],
       createdAt: new Date(),
+      durationMs: 0,
+      promptText: effectivePrompt,
+      promptAttachments: attachments,
     };
 
     this.messages.update(prev => [...prev, userMsg, assistantMsg]);
@@ -160,6 +172,12 @@ export class AgentService {
 
     const controller = new AbortController();
     this.abortController = controller;
+    const durationTimer = setInterval(() => {
+      this.patchAssistant(assistantMsgId, m => ({
+        ...m,
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      }));
+    }, 200);
 
     let rawAccumulated = '';
 
@@ -170,7 +188,7 @@ export class AgentService {
         credentials: 'include',
         body: JSON.stringify({
           sessionId: this.sessionId(),
-          message: text,
+          message: effectivePrompt,
           attachmentIds: attachments.map(a => a.id),
           locale: this.locale.current(),
           model: this.model(),
@@ -273,13 +291,61 @@ export class AgentService {
         });
       }
     } finally {
+      clearInterval(durationTimer);
+      const finalDuration = Math.max(0, Math.round(performance.now() - startedAt));
       this.patchAssistant(assistantMsgId, m => ({
         ...m,
         statusText: null,
+        durationMs: finalDuration,
+        createdAt: new Date(),
       }));
       this.isStreaming.set(false);
       this.abortController = null;
     }
+  }
+
+  async retryMessage(messageId: string): Promise<void> {
+    if (this.isStreaming()) {
+      return;
+    }
+
+    const list = this.messages();
+    const idx = list.findIndex(m => m.id === messageId);
+    if (idx < 0) {
+      return;
+    }
+
+    const target = list[idx];
+    if (target.role === 'assistant') {
+      const prevUser = idx > 0 && list[idx - 1]?.role === 'user' ? list[idx - 1] : null;
+      const promptText = target.promptText ?? prevUser?.text ?? '';
+      const promptAttachments = target.promptAttachments ?? prevUser?.attachments ?? [];
+      if (!promptText && promptAttachments.length === 0) {
+        return;
+      }
+
+      const removeIds = new Set<string>([target.id]);
+      if (prevUser) {
+        removeIds.add(prevUser.id);
+      }
+      this.messages.update(prev => prev.filter(m => !removeIds.has(m.id)));
+      await this.send(promptText, promptAttachments);
+      return;
+    }
+
+    const promptText = target.text;
+    const promptAttachments = target.attachments;
+    if (!promptText && promptAttachments.length === 0) {
+      return;
+    }
+
+    const nextAssistant = idx + 1 < list.length && list[idx + 1]?.role === 'assistant' ? list[idx + 1] : null;
+    if (nextAssistant && idx + 1 === list.length - 1) {
+      const removeIds = new Set<string>([target.id, nextAssistant.id]);
+      this.messages.update(prev => prev.filter(m => !removeIds.has(m.id)));
+    }
+
+    await this.send(promptText, promptAttachments);
   }
 
   stop(): void {

@@ -32,7 +32,7 @@ import { PANELS } from '../panels/panels-tokens';
 import type { SelectOption } from '../select/select-option';
 import { SelectService } from '../select/select.service';
 import { fieldClasses } from '../theme/css-classes';
-import { AgentService, type AgentProposal } from './agent.service';
+import { type AgentChatMessage, type AgentProposal, AgentService } from './agent.service';
 
 const MAX_PROMPT_HEIGHT = 160;
 
@@ -124,7 +124,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
 
       @for (msg of agent.messages(); track msg.id) {
         @if (msg.role === 'user') {
-          <div class="ml-6 flex flex-col items-end gap-1.5">
+          <div class="ml-6 flex flex-col items-end gap-1">
             @if (msg.attachments.length > 0) {
               <div class="flex flex-wrap justify-end gap-1.5">
                 @for (att of msg.attachments; track att.id) {
@@ -145,6 +145,40 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                 {{ msg.text }}
               </div>
             }
+            <div class="flex items-center justify-end gap-0.5 text-[11px] text-muted">
+              <span class="px-1 tabular-nums" [title]="formatFullDateTime(msg.createdAt)">
+                {{ formatShortDateTime(msg.createdAt) }}
+              </span>
+              @if (msg.text) {
+                <button
+                  type="button"
+                  class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink"
+                  [class.bg-hover]="copiedId() === msg.id"
+                  [class.text-ink]="copiedId() === msg.id"
+                  [title]="copiedId() === msg.id ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
+                  (click)="copyMessage(msg)"
+                >
+                  <i class="flex scale-85 items-center justify-center" [icon]="copiedId() === msg.id ? 'checkmark' : 'copy'"></i>
+                </button>
+                <button
+                  type="button"
+                  class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink"
+                  [title]="texts.of('AgentReturnToInput')"
+                  (click)="returnToInput(msg.text)"
+                >
+                  <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
+                </button>
+              }
+              <button
+                type="button"
+                class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+                [title]="texts.of('AgentRetryMessage')"
+                [disabled]="agent.isStreaming()"
+                (click)="agent.retryMessage(msg.id)"
+              >
+                <i class="flex scale-85 items-center justify-center" [icon]="'refresh'"></i>
+              </button>
+            </div>
           </div>
         } @else {
           <div class="mr-3 flex flex-col items-start gap-2 min-w-0">
@@ -179,8 +213,11 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
 
             @if (msg.statusText) {
               <div class="flex items-center gap-2 px-1 text-xs text-muted">
-                <i class="h-3.5 w-3.5 text-mark" [icon]="'spinner'"></i>
+                <i class="flex h-3.5 w-3.5 items-center justify-center text-mark" [icon]="'spinner'"></i>
                 <span>{{ msg.statusText }}</span>
+                @if (msg.durationMs !== undefined && msg.durationMs > 0) {
+                  <span class="tabular-nums opacity-75">· {{ formatDuration(msg.durationMs) }}</span>
+                }
               </div>
             }
 
@@ -274,6 +311,50 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                 </div>
               </div>
             }
+
+            @if (!msg.statusText && (msg.text || msg.proposals.length > 0)) {
+              <div class="flex items-center gap-0.5 text-[11px] text-muted">
+                @if (msg.text) {
+                  <button
+                    type="button"
+                    class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-ink"
+                    [class.bg-hover]="copiedId() === msg.id"
+                    [class.text-ink]="copiedId() === msg.id"
+                    [title]="copiedId() === msg.id ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
+                    (click)="copyMessage(msg)"
+                  >
+                    <i class="flex scale-85 items-center justify-center" [icon]="copiedId() === msg.id ? 'checkmark' : 'copy'"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-ink"
+                    [title]="texts.of('AgentReturnToInput')"
+                    (click)="returnToInput(msg.text)"
+                  >
+                    <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
+                  </button>
+                }
+                <button
+                  type="button"
+                  class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+                  [title]="texts.of('AgentRetryMessage')"
+                  [disabled]="agent.isStreaming()"
+                  (click)="agent.retryMessage(msg.id)"
+                >
+                  <i class="flex scale-85 items-center justify-center" [icon]="'refresh'"></i>
+                </button>
+                <span class="ml-1 tabular-nums" [title]="formatFullDateTime(msg.createdAt)">
+                  {{ formatShortDateTime(msg.createdAt) }}
+                </span>
+                @if (msg.durationMs !== undefined && msg.durationMs > 0) {
+                  <span class="flex items-center gap-1 tabular-nums">
+                    <span>·</span>
+                    <i class="flex scale-75 items-center justify-center opacity-75" [icon]="'clock'"></i>
+                    <span>{{ formatDuration(msg.durationMs) }}</span>
+                  </span>
+                }
+              </div>
+            }
           </div>
         }
       }
@@ -354,7 +435,9 @@ export class LayoutAgentComponent {
   readonly path = input<string>('');
   protected readonly draft = signal('');
   protected readonly isDragging = signal(false);
+  protected readonly copiedId = signal<string | null>(null);
   protected readonly fieldClasses = fieldClasses;
+  private copyTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly canExpandPanel = computed(() => !this.overlayRef && !!this.path() && !!this.panelsState);
 
@@ -537,6 +620,68 @@ export class LayoutAgentComponent {
 
   protected openCommitted(proposal: AgentProposal): void {
     this.agent.openRecord(proposal);
+  }
+
+  protected copyMessage(msg: AgentChatMessage): void {
+    if (!msg.text || typeof navigator === 'undefined' || !navigator.clipboard) {
+      return;
+    }
+    void navigator.clipboard.writeText(msg.text).then(() => {
+      this.copiedId.set(msg.id);
+      if (this.copyTimer) {
+        clearTimeout(this.copyTimer);
+      }
+      this.copyTimer = setTimeout(() => {
+        if (this.copiedId() === msg.id) {
+          this.copiedId.set(null);
+        }
+      }, 1500);
+    });
+  }
+
+  protected returnToInput(text: string): void {
+    if (!text) {
+      return;
+    }
+    this.draft.set(text);
+    queueMicrotask(() => {
+      const area = this.promptInput()?.nativeElement;
+      if (area) {
+        fitPromptToText(area);
+        area.focus();
+        area.setSelectionRange(area.value.length, area.value.length);
+      }
+    });
+  }
+
+  protected formatShortDateTime(date: Date): string {
+    const d = date instanceof Date ? date : new Date(date);
+    const now = new Date();
+    const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    if (sameDay) {
+      return `${hh}:${mm}`;
+    }
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = String(d.getMonth() + 1).padStart(2, '0');
+    return `${day}.${mon} ${hh}:${mm}`;
+  }
+
+  protected formatFullDateTime(date: Date): string {
+    const d = date instanceof Date ? date : new Date(date);
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = String(d.getMonth() + 1).padStart(2, '0');
+    const yr = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${day}.${mon}.${yr} ${hh}:${mm}:${ss}`;
+  }
+
+  protected formatDuration(durationMs: number): string {
+    const sec = (durationMs / 1000).toFixed(1);
+    return this.texts.of('AgentDurationSec', sec);
   }
 
   protected asColor(color: string | null | undefined): UiColor {

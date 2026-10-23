@@ -87,6 +87,7 @@ public static class UiIcon
   public const string Close = "close";
   public const string Columns = "columns";
   public const string Compose = "compose";
+  public const string Copy = "copy";
   public const string Desktop = "desktop";
   public const string Dots = "dots";
   public const string Download = "download";
@@ -140,7 +141,9 @@ public static class UiIcon
   public const string Plus = "plus";
   public const string Print = "print";
   public const string Question = "question";
+  public const string Refresh = "refresh";
   public const string Reload = "reload";
+  public const string Reply = "reply";
   public const string Rows = "rows";
   public const string Save = "save";
   public const string Search = "search";
