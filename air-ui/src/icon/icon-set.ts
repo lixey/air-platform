@@ -47,7 +47,7 @@ export const ICON_SET = {
   'ellipsis-vertical': `<svg viewBox="0 0 24 24"><circle cx="11" cy="4" r="1" stroke-width="2"/><circle cx="11" cy="12" r="1" stroke-width="2"/><circle cx="11" cy="20" r="1"  stroke-width="2"/></svg>`,
   'ellipsis-vertical-horizontal': `<svg viewBox="0 0 24 34"><circle cx="12" cy="5" r="1"/><circle cx="19" cy="5" r="1"/><circle cx="5" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="12" cy="19" r="1"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="19" r="1"/></svg>`,
   telephone: `<svg viewBox="0 0 32 32"><path d="M3 12 C3 5 10 5 16 5 22 5 29 5 29 12 29 20 22 11 22 11 L10 11 C10 11 3 20 3 12 Z M11 14 C11 14 6 19 6 28 L26 28 C26 19 21 14 21 14 L11 14 Z"/><circle cx="16" cy="21" r="4"/></svg>`,
-  reload: `<svg viewBox="0 0 32 32"><path d="M29 16 C29 22 24 29 16 29 8 29 3 22 3 16 3 10 8 3 16 3 21 3 25 6 27 9 M20 10 L27 9 28 2"/></svg>`,
+  reload: `<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
   external: `<svg viewBox="0 0 32 32"><path d="M14 9 L3 9 3 29 23 29 23 18 M18 4 L28 4 28 14 M28 4 L14 18"/></svg>`,
   gift: `<svg viewBox="0 0 32 32"><path d="M4 14 L4 30 28 30 28 14 M2 9 L2 14 30 14 30 9 Z M16 9 C 16 9 14 0 8 3 2 6 16 9 16 9 16 9 18 0 24 3 30 6 16 9 16 9 M16 9 L16 30"/></svg>`,
   cart: `<svg viewBox="0 0 32 32"><path d="M6 6 L30 6 27 19 9 19 M27 23 L10 23 5 2 2 2"/><circle cx="25" cy="27" r="2"/><circle cx="12" cy="27" r="2"/></svg>`,
@@ -112,7 +112,7 @@ export const ICON_SET = {
     '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
   edit: '<svg viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>',
   spinner:
-    '<svg viewBox="0 0 24 24" class="animate-spin"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>',
+    '<svg viewBox="0 0 24 24" class="animate-spin"><circle class="opacity-25" cx="12" cy="12" r="9"/><path d="M21 12a9 9 0 0 0-9-9"/></svg>',
   chart:
     '<svg viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><rect x="15" y="5" width="4" height="12" rx="1"/><rect x="7" y="8" width="4" height="9" rx="1"/></svg>',
   kanban: '<svg viewBox="0 0 24 24"><path d="M6 5v11"/><path d="M12 5v6"/><path d="M18 5v14"/></svg>',

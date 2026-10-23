@@ -97,9 +97,9 @@ export const SLATE_GHOST_ICON_BTN_CLASSES = btnClassesOf({
   imports: [UiIconDirective],
   template: `
     @if (loading()) {
-      <i icon="spinner" class="shrink-0"></i>
+      <i icon="spinner" class="flex items-center justify-center shrink-0"></i>
     } @else if (view().icon; as icon) {
-      <i [icon]="icon" class="shrink-0"></i>
+      <i [icon]="icon" class="flex items-center justify-center shrink-0"></i>
     }
 
     @if (view().label; as label) {
