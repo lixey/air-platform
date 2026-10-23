@@ -116,28 +116,16 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
     @if (overlay.bounds(); as b) {
       <button
         type="button"
-        class="group pointer-events-none fixed z-40 h-[50px] w-[50px] -translate-y-full select-none focus:outline-none"
+        class="fixed z-40 flex h-10 w-10 -translate-y-full cursor-pointer items-center justify-center rounded-tr-xl rounded-bl-xl border border-slate-400 bg-slate-200 text-mark transition-colors hover:bg-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:hover:bg-slate-600"
+        [class.bg-slate-300!]="isAgentOpen()"
+        [class.dark:bg-slate-600!]="isAgentOpen()"
         [style.left.px]="b.left"
         [style.top.px]="b.top + b.height"
         [title]="texts.of('AgentTitle')"
         [attr.aria-label]="texts.of('AgentTitle')"
         (click)="toggleAgent()"
       >
-        <svg viewBox="0 0 50 50" width="50" height="50" class="pointer-events-none absolute inset-0 block" aria-hidden="true">
-          <path
-            d="M 0.5 0 A 10 10 0 0 0 10.5 10 L 28 10 A 12 12 0 0 1 40 22 L 40 39.5 A 10 10 0 0 0 50 49.5 L 12.5 49.5 A 12 12 0 0 1 0.5 37.5 Z"
-            class="pointer-events-auto cursor-pointer fill-slate-200 stroke-slate-400 transition-colors group-hover:fill-slate-300 dark:fill-slate-700 dark:stroke-slate-600 dark:group-hover:fill-slate-600"
-            [class.fill-slate-500!]="isAgentOpen()"
-            [class.group-hover:fill-slate-600!]="isAgentOpen()"
-            stroke-width="1"
-          />
-        </svg>
-        <span
-          class="pointer-events-none absolute bottom-0 left-0 flex h-[40px] w-[40px] items-center justify-center text-slate-600 transition-colors group-hover:text-slate-800 dark:text-slate-200 dark:group-hover:text-slate-50"
-          [class.text-white!]="isAgentOpen()"
-        >
-          <i class="flex items-center justify-center" [icon]="isAgentOpen() ? 'close' : 'bot'"></i>
-        </span>
+        <i class="flex items-center justify-center text-mark" [icon]="'bot'"></i>
       </button>
     }
     <ui-overlay-host />
