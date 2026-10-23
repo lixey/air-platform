@@ -114,39 +114,31 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
   template: `
     <ui-panels [layout]="layout" [attr.inert]="overlay.hasModal() ? '' : null" />
     @if (overlay.bounds(); as b) {
-      <div
-        class="pointer-events-none fixed z-40 h-[50px] w-[50px] -translate-y-full select-none"
+      <button
+        type="button"
+        class="group pointer-events-none fixed z-40 h-[50px] w-[50px] -translate-y-full select-none focus:outline-none"
         [style.left.px]="b.left"
         [style.top.px]="b.top + b.height"
+        [title]="texts.of('AgentTitle')"
+        [attr.aria-label]="texts.of('AgentTitle')"
+        (click)="toggleAgent()"
       >
         <svg viewBox="0 0 50 50" width="50" height="50" class="pointer-events-none absolute inset-0 block" aria-hidden="true">
           <path
-            d="M 0 0 L 0.5 0 A 10 10 0 0 0 10.5 10 L 27.5 10 A 12 12 0 0 1 39.5 22 L 39.5 39.5 A 10 10 0 0 0 49.5 49.5 L 50 49.5 L 50 50 L 0 50 Z"
-            fill="var(--panel-page)"
-          />
-          <path
-            d="M 0.5 0 A 10 10 0 0 0 10.5 10 L 27.5 10 A 12 12 0 0 1 39.5 22 L 39.5 39.5 A 10 10 0 0 0 49.5 49.5 L 50 49.5"
-            fill="none"
-            stroke="light-dark(var(--color-slate-400), var(--color-slate-600))"
+            d="M 0.5 0 A 10 10 0 0 0 10.5 10 L 28 10 A 12 12 0 0 1 40 22 L 40 39.5 A 10 10 0 0 0 50 49.5 L 12.5 49.5 A 12 12 0 0 1 0.5 37.5 Z"
+            class="pointer-events-auto cursor-pointer fill-slate-200 stroke-slate-400 transition-colors group-hover:fill-slate-300 dark:fill-slate-700 dark:stroke-slate-600 dark:group-hover:fill-slate-600"
+            [class.fill-slate-500!]="isAgentOpen()"
+            [class.group-hover:fill-slate-600!]="isAgentOpen()"
             stroke-width="1"
           />
         </svg>
-        <button
-          type="button"
-          class="group pointer-events-auto absolute bottom-0 left-0 flex h-[40px] w-[40px] cursor-pointer items-center justify-center rounded-tr-xl text-on-active/85 transition-colors hover:text-on-active"
-          [class.text-on-active]="isAgentOpen()"
-          [title]="texts.of('AgentTitle')"
-          [attr.aria-label]="texts.of('AgentTitle')"
-          (click)="toggleAgent()"
+        <span
+          class="pointer-events-none absolute bottom-0 left-0 flex h-[40px] w-[40px] items-center justify-center text-slate-600 transition-colors group-hover:text-slate-800 dark:text-slate-200 dark:group-hover:text-slate-50"
+          [class.text-white!]="isAgentOpen()"
         >
-          <span
-            class="flex h-8 w-8 items-center justify-center rounded-lg transition-colors group-hover:bg-white/15"
-            [class.bg-white/20]="isAgentOpen()"
-          >
-            <i class="flex items-center justify-center" [icon]="isAgentOpen() ? 'close' : 'bot'"></i>
-          </span>
-        </button>
-      </div>
+          <i class="flex items-center justify-center" [icon]="isAgentOpen() ? 'close' : 'bot'"></i>
+        </span>
+      </button>
     }
     <ui-overlay-host />
   `,
