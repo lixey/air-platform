@@ -211,6 +211,16 @@ public static class AgentContextQueryService
             }
           }
 
+          foreach (var rawRow in probePage.Rows.Take(25))
+          {
+            if (CleanGridRow(rawRow) is { } clean &&
+                TryGetRowId(clean, out var rid) &&
+                seenIds.Add(rid))
+            {
+              matchedRows.Add(clean);
+            }
+          }
+
           dictionaries[refSvc] = matchedRows;
           largeDictionaries[refSvc] = new
           {
