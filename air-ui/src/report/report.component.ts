@@ -112,7 +112,10 @@ import { UI_COLORS } from '../theme/ui-color';
                 <thead>
                   <tr class="bg-surface-2 border-b border-line text-ink font-medium select-none">
                     @for (col of table.columns; track col.key) {
-                      <th [class]="headerCellClass(col)" [style.min-width.px]="col.width ?? (col.kind === 'text' ? 180 : 108)">
+                      <th
+                        [class]="headerCellClass(col, table.columns.length)"
+                        [style.min-width.px]="col.width ?? (col.kind === 'text' ? 180 : 108)"
+                      >
                         {{ col.label }}
                       </th>
                     }
@@ -122,7 +125,7 @@ import { UI_COLORS } from '../theme/ui-color';
                   @for (row of table.rows; track $index; let idx = $index) {
                     <tr [class]="idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'">
                       @for (col of table.columns; track col.key) {
-                        <td [class]="bodyCellClass(col, row)">
+                        <td [class]="bodyCellClass(col, row, table.columns.length)">
                           {{ formatCell(col, row[col.key]) }}
                         </td>
                       }
@@ -134,7 +137,7 @@ import { UI_COLORS } from '../theme/ui-color';
                     @for (row of table.bottomRows; track $index) {
                       <tr class="bg-surface-2 border-t border-line font-semibold">
                         @for (col of table.columns; track col.key) {
-                          <td [class]="footerCellClass(col, row)">
+                          <td [class]="footerCellClass(col, row, table.columns.length)">
                             {{ formatCell(col, row[col.key]) }}
                           </td>
                         }
@@ -341,19 +344,21 @@ export class ReportComponent {
     return '@3xl/panel:col-span-6';
   }
 
-  protected headerCellClass(col: ReportColumnDto): string {
+  protected headerCellClass(col: ReportColumnDto, colCount = 0): string {
     const align = col.kind === 'text' ? 'text-left' : 'text-right';
+    const pad = colCount > 10 ? 'px-2 text-xs' : 'px-3';
     const sticky =
       col.sticky === 'left'
         ? 'sticky left-0 z-10 bg-surface-2'
         : col.sticky === 'right'
           ? 'sticky right-0 z-10 bg-surface-2 border-l border-line'
           : '';
-    return `h-9 px-3 border-r border-line whitespace-nowrap ${align} ${sticky}`;
+    return `h-9 ${pad} border-r border-line whitespace-nowrap ${align} ${sticky}`;
   }
 
-  protected bodyCellClass(col: ReportColumnDto, row: Record<string, unknown>): string {
+  protected bodyCellClass(col: ReportColumnDto, row: Record<string, unknown>, colCount = 0): string {
     const align = col.kind === 'text' ? 'text-left font-medium' : 'text-right tabular-nums';
+    const pad = colCount > 10 ? 'px-2 text-xs' : 'px-3';
     const sticky =
       col.sticky === 'left'
         ? 'sticky left-0 z-10 bg-inherit'
@@ -364,11 +369,12 @@ export class ReportComponent {
       (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
     const hue = asUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
-    return `h-9 px-3 border-r border-b border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
+    return `h-9 ${pad} border-r border-b border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
   }
 
-  protected footerCellClass(col: ReportColumnDto, row: Record<string, unknown>): string {
+  protected footerCellClass(col: ReportColumnDto, row: Record<string, unknown>, colCount = 0): string {
     const align = col.kind === 'text' ? 'text-left' : 'text-right tabular-nums';
+    const pad = colCount > 10 ? 'px-2 text-xs' : 'px-3';
     const sticky =
       col.sticky === 'left'
         ? 'sticky left-0 z-10 bg-surface-2'
@@ -379,7 +385,7 @@ export class ReportComponent {
       (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
     const hue = asUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
-    return `h-9 px-3 border-r border-t border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
+    return `h-9 ${pad} border-r border-t border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
   }
 }
 
