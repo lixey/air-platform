@@ -18,8 +18,8 @@ const AGENT_DIALOG: OverlayModelDto = {
   presentation: 'dialog',
   closesOnEscape: true,
   closesOnOutside: true,
-  width: '480px',
-  height: '680px',
+  width: '100%',
+  height: '100%',
   layout: singlePanelLayout(AGENT_PANEL, { kind: 'LayoutAgent' }),
 };
 
@@ -48,9 +48,10 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
       {
         key: AGENT_PANEL,
         model: { kind: 'LayoutAgent' },
-        size: '380px',
-        minSize: '300px',
-        maxSize: '560px',
+        size: '420px',
+        minSize: '320px',
+        maxSize: '1200px',
+        hideUnder: 1024,
         isResizable: true,
         isCollapsed: true,
       },

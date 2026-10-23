@@ -1,4 +1,6 @@
 import { inject, Service, signal } from '@angular/core';
+import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from '../agent/agent-block-models';
+import { parseAgentBlocks } from '../agent/agent-block-parser';
 import { AlertService } from '../app/alert/alert.service';
 import { LocaleService } from '../app/locale.service';
 import type {
@@ -25,6 +27,7 @@ export interface AgentChatMessage {
   readonly id: string;
   readonly role: 'user' | 'assistant';
   text: string;
+  readonly blocks?: readonly AgentContentBlock[];
   statusText?: string | null;
   readonly attachments: readonly AgentAttachment[];
   readonly proposals: AgentProposal[];
@@ -44,6 +47,7 @@ export class AgentService {
   private readonly alert = inject(AlertService);
   private readonly locale = inject(LocaleService);
   private readonly texts = inject(TextsService);
+  private readonly blockPlugins = inject(AGENT_BLOCK_PLUGINS);
 
   private abortController: AbortController | null = null;
   private nextId = 0;
@@ -207,9 +211,11 @@ export class AgentService {
               } else if (evt.type === 'delta' && evt.text) {
                 rawAccumulated += evt.text;
                 const cleanText = stripProposalBlocks(rawAccumulated);
+                const blocks = parseAgentBlocks(cleanText, this.blockPlugins, assistantMsgId);
                 this.patchAssistant(assistantMsgId, m => ({
                   ...m,
                   text: cleanText,
+                  blocks,
                   statusText: null,
                 }));
               } else if (evt.type === 'proposal' && evt.proposal) {
@@ -223,17 +229,25 @@ export class AgentService {
                   };
                 });
               } else if (evt.type === 'error') {
-                this.patchAssistant(assistantMsgId, m => ({
-                  ...m,
-                  text: m.text || (evt.text ?? this.texts.of('RequestFailed')),
-                  statusText: null,
-                }));
+                this.patchAssistant(assistantMsgId, m => {
+                  const nextText = m.text || (evt.text ?? this.texts.of('RequestFailed'));
+                  return {
+                    ...m,
+                    text: nextText,
+                    blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
+                    statusText: null,
+                  };
+                });
               } else if (evt.type === 'done') {
-                this.patchAssistant(assistantMsgId, m => ({
-                  ...m,
-                  text: stripProposalBlocks(rawAccumulated) || m.text,
-                  statusText: null,
-                }));
+                this.patchAssistant(assistantMsgId, m => {
+                  const nextText = stripProposalBlocks(rawAccumulated) || m.text;
+                  return {
+                    ...m,
+                    text: nextText,
+                    blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
+                    statusText: null,
+                  };
+                });
               }
             } catch {
               // Ignore malformed SSE frame
@@ -243,11 +257,15 @@ export class AgentService {
       }
     } catch (err) {
       if ((err as Error)?.name !== 'AbortError') {
-        this.patchAssistant(assistantMsgId, m => ({
-          ...m,
-          text: m.text || this.texts.of('AgentErrorRequest'),
-          statusText: null,
-        }));
+        this.patchAssistant(assistantMsgId, m => {
+          const nextText = m.text || this.texts.of('AgentErrorRequest');
+          return {
+            ...m,
+            text: nextText,
+            blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
+            statusText: null,
+          };
+        });
       }
     } finally {
       this.patchAssistant(assistantMsgId, m => ({

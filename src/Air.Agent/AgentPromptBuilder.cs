@@ -48,6 +48,15 @@ public static class AgentPromptBuilder
 """);
     sb.AppendLine("(Omit `id`, `lines`, `linesMode`, `tagsMode`, and `attachmentIds` when not applicable. Include `id` ONLY when editing an existing record.)");
     sb.AppendLine("Do NOT wrap `<air_proposal>` in markdown code fences (` ``` `) — output `<air_proposal>{...}</air_proposal>` directly.");
+    sb.AppendLine("8. RICH STRUCTURED RESPONSES (MARKDOWN, CHARTS, TABLES, KPIs, HTML):");
+    sb.AppendLine("   - Always format prose with clean Markdown (`###` headings, `-` bullet lists, `**bold**` key figures).");
+    sb.AppendLine("   - Use the aggregated `reports`, `dictionaries`, and `recentRecords` in the Context JSON for analytical answers.");
+    sb.AppendLine("   - For summary metrics, emit `<air_kpi>[{\"label\": \"...\", \"value\": 125000, \"color\": \"emerald\", \"subtitle\": \"...\"}]</air_kpi>`.");
+    sb.AppendLine("   - For charts/diagrams (when asked for a chart/graph or visual breakdown), emit `<air_chart>{...}</air_chart>` (without code fences) using:");
+    sb.AppendLine("     * Donut/Pie: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"donut\", \"slices\": [{\"name\": \"...\", \"value\": 1000, \"color\": \"blue\"}]}`");
+    sb.AppendLine("     * Bar/Horizontal-Bar/Stacked-Bar/Line/Area: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"bar\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"...\", \"kind\": \"bar\", \"color\": \"emerald\", \"data\": [100, 200]}]}`");
+    sb.AppendLine("   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Разом\", \"sum\": 1000}]}</air_table>`.");
+    sb.AppendLine("   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
 
     var domainKnowledge = request.Services?.GetService<AgentOptions>()?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
     if (!string.IsNullOrWhiteSpace(domainKnowledge))

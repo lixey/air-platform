@@ -129,6 +129,7 @@ public static class AgentContextQueryService
       ct);
 
     var recentRecords = await LoadRecentRecordsAsync(dictionaries.Keys, userMessage, searchTokens, db, app, ct);
+    var reports = await LoadReportsSummaryAsync(db, app, ct);
 
     return new
     {
@@ -136,7 +137,8 @@ public static class AgentContextQueryService
       forms,
       dictionaries,
       largeDictionaries = largeDictionaries.Count > 0 ? largeDictionaries : null,
-      recentRecords
+      recentRecords,
+      reports = reports.Count > 0 ? reports : null
     };
   }
 
@@ -423,6 +425,57 @@ public static class AgentContextQueryService
           }
 
           result[gridPath] = rows;
+        }
+      }
+      catch { }
+    }
+
+    return result;
+  }
+
+  private static async Task<Dictionary<string, object>> LoadReportsSummaryAsync(
+    PlatformDbContext db,
+    PlatformAppService app,
+    CancellationToken ct)
+  {
+    var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var feat in ModuleCatalog.Instance.AllFeatures)
+    {
+      if (!AgentFeatureRegistry.CanViewFeature(feat, app) ||
+          feat.ServiceType == null ||
+          !typeof(IReportService).IsAssignableFrom(feat.ServiceType))
+      {
+        continue;
+      }
+
+      var reportPath = ServicePathResolver.Resolve(feat.ServiceType);
+      if (result.ContainsKey(reportPath))
+      {
+        continue;
+      }
+
+      try
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(feat.ServiceType, db, app) is IReportService reportSvc)
+        {
+          var data = await reportSvc.GetReportAsync(new ReportRequest { IsDataOnly = true }, ct);
+          result[reportPath] = new
+          {
+            title = Localizer.Instance.For(feat.Module)[feat.Name],
+            activeFilters = data.ActiveFilters,
+            kpis = data.Kpis,
+            charts = data.Charts,
+            table = data.Table == null
+              ? null
+              : new
+              {
+                title = data.Table.Title,
+                columns = data.Table.Columns,
+                rows = data.Table.Rows.Take(35).ToList(),
+                bottomRows = data.Table.BottomRows
+              }
+          };
         }
       }
       catch { }

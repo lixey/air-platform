@@ -108,7 +108,7 @@ export function resolveOverlay(
   const isOutOfSight = !anchor || !overlaps(anchor, viewport);
   const anchored: OverlayPresentation = isAnchored(model.presentation) && isOutOfSight ? 'dialog' : model.presentation;
 
-  if (viewport.width < OVERLAY_NARROW_WIDTH) {
+  if (viewport.width < OVERLAY_NARROW_WIDTH || (model.key === 'layout.agent' && viewport.width < 1024)) {
     return fill(anchored, viewport);
   }
 

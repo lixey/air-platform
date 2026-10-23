@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, NgComponentOutlet } from '@angular/common';
 import {
   afterRenderEffect,
   Component,
@@ -12,6 +12,13 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import {
+  AgentChartBlockComponent,
+  AgentHtmlBlockComponent,
+  AgentKpiBlockComponent,
+  AgentMarkdownBlockComponent,
+  AgentTableBlockComponent,
+} from '../agent/agent-blocks.component';
 import { BadgeComponent } from '../badge/badge.component';
 import { BtnComponent } from '../btn/btn.component';
 import type { UiColor } from '../core/generated/contracts';
@@ -19,6 +26,8 @@ import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
+import { parseSize } from '../panels/panel-size';
+import { PanelsState } from '../panels/panels-state';
 import { PANELS } from '../panels/panels-tokens';
 import type { SelectOption } from '../select/select-option';
 import { SelectService } from '../select/select.service';
@@ -42,7 +51,19 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
 
 @Component({
   selector: 'ui-layout-agent',
-  imports: [DecimalPipe, BtnComponent, BadgeComponent, NavComponent, UiIconDirective],
+  imports: [
+    DecimalPipe,
+    NgComponentOutlet,
+    BtnComponent,
+    BadgeComponent,
+    NavComponent,
+    UiIconDirective,
+    AgentMarkdownBlockComponent,
+    AgentChartBlockComponent,
+    AgentTableBlockComponent,
+    AgentKpiBlockComponent,
+    AgentHtmlBlockComponent,
+  ],
   providers: [SelectService],
   template: `
     <ui-nav class="shrink-0 border-b border-line bg-surface-2">
@@ -62,6 +83,14 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
 
       <ng-container ngProjectAs="[end]">
         <ui-btn variant="ghost" icon="reload" [title]="texts.of('AgentNewChat')" [disabled]="agent.isStreaming()" (click)="agent.reset()" />
+        @if (canExpandPanel()) {
+          <ui-btn
+            variant="ghost"
+            [icon]="isExpandedPanel() ? 'fullscreen-exit' : 'fullscreen'"
+            [title]="texts.of(isExpandedPanel() ? 'ActualSize' : 'FitToScreen')"
+            (click)="toggleExpandPanel()"
+          />
+        }
         @if (canClose()) {
           <ui-btn variant="ghost" icon="close" [title]="texts.of('Close')" (click)="closePanel()" />
         }
@@ -118,11 +147,34 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
             }
           </div>
         } @else {
-          <div class="mr-3 flex flex-col items-start gap-2">
-            @if (msg.text) {
-              <div class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm whitespace-pre-wrap text-ink break-words">
-                {{ msg.text }}
-              </div>
+          <div class="mr-3 flex flex-col items-start gap-2 min-w-0">
+            @if (msg.blocks && msg.blocks.length > 0) {
+              @for (block of msg.blocks; track block.id) {
+                @switch (block.kind) {
+                  @case ('markdown') {
+                    <ui-agent-markdown-block [content]="$any(block).content" />
+                  }
+                  @case ('chart') {
+                    <ui-agent-chart-block [chart]="$any(block).chart" />
+                  }
+                  @case ('table') {
+                    <ui-agent-table-block [table]="$any(block).table" />
+                  }
+                  @case ('kpi') {
+                    <ui-agent-kpi-block [kpis]="$any(block).kpis" />
+                  }
+                  @case ('html') {
+                    <ui-agent-html-block [html]="$any(block).html" />
+                  }
+                  @default {
+                    @if ($any(block).component; as comp) {
+                      <ng-container [ngComponentOutlet]="comp" [ngComponentOutletInputs]="{ block }" />
+                    }
+                  }
+                }
+              }
+            } @else if (msg.text) {
+              <ui-agent-markdown-block [content]="msg.text" />
             }
 
             @if (msg.statusText) {
@@ -294,6 +346,7 @@ export class LayoutAgentComponent {
   readonly agent = inject(AgentService);
   protected readonly texts = inject(TextsService);
   private readonly panels = inject(PANELS, { optional: true });
+  private readonly panelsState = inject(PanelsState, { optional: true });
   private readonly overlayRef = inject(OverlayRef, { optional: true });
   private readonly select = inject(SelectService);
   private readonly injector = inject(Injector);
@@ -302,6 +355,18 @@ export class LayoutAgentComponent {
   protected readonly draft = signal('');
   protected readonly isDragging = signal(false);
   protected readonly fieldClasses = fieldClasses;
+
+  protected readonly canExpandPanel = computed(() => !this.overlayRef && !!this.path() && !!this.panelsState);
+
+  protected readonly isExpandedPanel = computed(() => {
+    const p = this.path();
+    const stored = p ? this.panelsState?.prefs()[p]?.size : undefined;
+    if (!stored) {
+      return false;
+    }
+    const parsed = parseSize(stored);
+    return parsed.unit === 'px' && parsed.value >= 700;
+  });
 
   private readonly scrollContainer = viewChild<ElementRef<HTMLElement>>('scrollContainer');
   private readonly promptInput = viewChild<ElementRef<HTMLTextAreaElement>>('promptInput');
@@ -378,6 +443,14 @@ export class LayoutAgentComponent {
 
   protected canClose(): boolean {
     return !!this.overlayRef || (!!this.path() && !!this.panels);
+  }
+
+  protected toggleExpandPanel(): void {
+    const p = this.path();
+    if (!p || !this.panelsState) {
+      return;
+    }
+    this.panelsState.setSize(p, this.isExpandedPanel() ? '420px' : '920px');
   }
 
   protected closePanel(): void {

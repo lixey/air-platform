@@ -15,6 +15,7 @@ global using Air.App.Grid;
 global using Air.App.Host;
 global using Air.App.Localization;
 global using Air.App.Modules;
+global using Air.App.Report;
 global using Air.Data;
 global using Air.Data.Contracts;
 global using Air.Data.Entities;

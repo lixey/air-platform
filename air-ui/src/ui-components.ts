@@ -1,3 +1,4 @@
+import { AgentBlockOverlayComponent, type AgentBlockOverlayModel } from './agent/agent-blocks.component';
 import { defineComponents } from './core/dynamic-component/component-map';
 import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
 import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
@@ -186,6 +187,7 @@ export interface GridHeaderSelectionModel {
 interface ClientPanelKinds {
   LayoutMenu: LayoutMenuModel;
   LayoutAgent: LayoutAgentModel;
+  AgentBlockOverlay: AgentBlockOverlayModel;
   LayoutTabs: LayoutTabsModel;
   LayoutRouteScreen: LayoutRouteScreenModel;
   LayoutMegaMenuBody: LayoutMegaMenuBodyModel;
@@ -220,6 +222,7 @@ export type ClientKind = keyof ClientPanelKinds | keyof ClientHeaderKinds;
 export const UI_COMPONENTS = defineComponents({
   LayoutMenu: LayoutMenuComponent,
   LayoutAgent: LayoutAgentComponent,
+  AgentBlockOverlay: AgentBlockOverlayComponent,
   LayoutTabs: LayoutTabsComponent,
   LayoutRouteScreen: LayoutRouteScreenComponent,
   LayoutMegaMenuBody: LayoutMegaMenuBodyComponent,
