@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.FileProviders;
 
 namespace Air.App.Host;
 
@@ -78,7 +79,17 @@ public static class PlatformHost
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
     builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
-    builder.Services.TryAddSingleton<Files.IFileStores>(_ => new Files.DefaultFileStores(new Data.Files.LocalFileStorage()));
+    var filesPath = builder.Configuration["Files:Path"];
+    if (string.IsNullOrWhiteSpace(filesPath))
+    {
+      filesPath = Path.Combine(builder.Environment.ContentRootPath, "air_files");
+    }
+    else if (!Path.IsPathRooted(filesPath))
+    {
+      filesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, filesPath));
+    }
+
+    builder.Services.TryAddSingleton<Files.IFileStores>(_ => new Files.DefaultFileStores(new Data.Files.LocalFileStorage(filesPath)));
     builder.Services.TryAddScoped<IUserContext, UserContext>();
     builder.Services.TryAddScoped<PlatformAppService>();
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
@@ -190,6 +201,33 @@ public static class PlatformHost
     ModuleCatalog.Instance = catalog;
     app.UsePlatformAuth();
     app.MapPlatformEndpoints();
+
+    var webRoot = new[]
+      {
+        app.Environment.WebRootPath,
+        Path.Combine(app.Environment.ContentRootPath, "wwwroot"),
+        Path.Combine(AppContext.BaseDirectory, "wwwroot")
+      }
+      .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p) && File.Exists(Path.Combine(p, "index.html")));
+
+    if (webRoot != null)
+    {
+      var provider = new PhysicalFileProvider(Path.GetFullPath(webRoot));
+      var indexFile = Path.Combine(provider.Root, "index.html");
+      app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = provider });
+      app.UseStaticFiles(new StaticFileOptions { FileProvider = provider });
+      app.MapFallback(context =>
+      {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+          context.Response.StatusCode = StatusCodes.Status404NotFound;
+          return Task.CompletedTask;
+        }
+
+        context.Response.ContentType = "text/html; charset=utf-8";
+        return context.Response.SendFileAsync(indexFile);
+      });
+    }
   }
 
   public static async Task RunAsync(

@@ -35,3 +35,4 @@ Thumbs.db
 .env.*.local
 demo/.local/
 demo/src/Demo.Api/appsettings.Development.json
+**/air_files/
