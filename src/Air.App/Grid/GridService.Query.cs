@@ -680,7 +680,7 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var segment in segments)
     {
       var prop = PropertyAccessorCache.GetProperty(currentType, segment);
-      if (prop == null)
+      if (prop == null || IsScalarType(prop.PropertyType))
       {
         return null;
       }
