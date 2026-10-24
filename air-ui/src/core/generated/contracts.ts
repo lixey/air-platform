@@ -446,6 +446,9 @@ export interface AgentProposalDto {
   committedLabel?: string | null;
   formService?: string | null;
   overlay?: OverlayModelDto | null;
+  duplicateWarning?: string | null;
+  duplicateRecordId?: number | null;
+  duplicateFormService?: string | null;
 }
 
 export interface AgentProposalFieldDto {

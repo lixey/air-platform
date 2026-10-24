@@ -1282,4 +1282,10 @@
   <data name="AgentDurationSec" xml:space="preserve">
     <value>{0} s</value>
   </data>
+  <data name="AgentDuplicateFileWarning" xml:space="preserve">
+    <value>This receipt file is already attached to record {0}</value>
+  </data>
+  <data name="AgentDuplicateReceiptWarning" xml:space="preserve">
+    <value>A record with this date and amount already exists: {0}</value>
+  </data>
 </root>

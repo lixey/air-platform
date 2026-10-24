@@ -11,6 +11,9 @@ public sealed class AgentAttachmentDto
 
   [JsonIgnore]
   public string LocalPath { get; set; } = string.Empty;
+
+  [JsonIgnore]
+  public string? Sha256 { get; set; }
 }
 
 [UiContract]
@@ -85,6 +88,15 @@ public sealed class AgentProposalDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public Overlay.OverlayModelDto? Overlay { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? DuplicateWarning { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public long? DuplicateRecordId { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? DuplicateFormService { get; set; }
 }
 
 [UiContract]

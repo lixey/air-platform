@@ -1285,4 +1285,10 @@
   <data name="AgentDurationSec" xml:space="preserve">
     <value>{0} с</value>
   </data>
+  <data name="AgentDuplicateFileWarning" xml:space="preserve">
+    <value>Такий файл чека вже прикріплено до запису {0}</value>
+  </data>
+  <data name="AgentDuplicateReceiptWarning" xml:space="preserve">
+    <value>Запис із цією датою та сумою вже існує: {0}</value>
+  </data>
 </root>

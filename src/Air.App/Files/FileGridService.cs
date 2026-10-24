@@ -881,6 +881,38 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     return entity.Id;
   }
 
+  async Task<long?> IFormFilesSource.FindExistingParentIdByHashAsync(
+    string sha256,
+    CancellationToken cancellationToken
+  )
+  {
+    if (string.IsNullOrWhiteSpace(sha256))
+    {
+      return null;
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+    if (parent.BoundProperty == null)
+    {
+      return null;
+    }
+
+    var existing = await db.Set<TFile>()
+      .AsNoTracking()
+      .Where(f => f.Sha256 == sha256)
+      .OrderByDescending(f => f.Id)
+      .FirstOrDefaultAsync(cancellationToken);
+
+    if (existing == null || parent.BoundProperty.GetValue(existing) is not { } rawParent)
+    {
+      return null;
+    }
+
+    var parentKey = Convert.ToInt64(rawParent, CultureInfo.InvariantCulture);
+    return parentKey > 0 ? parentKey : null;
+  }
+
   async Task<IReadOnlyDictionary<long, GridCoverDto>> IFileCoverSource.CoversAsync(
     IReadOnlyCollection<long> owners,
     CancellationToken cancellationToken

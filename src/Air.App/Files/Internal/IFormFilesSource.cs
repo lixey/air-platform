@@ -19,4 +19,8 @@ public interface IFormFilesSource
     byte[] content,
     CancellationToken cancellationToken = default
   );
+  Task<long?> FindExistingParentIdByHashAsync(
+    string sha256,
+    CancellationToken cancellationToken = default
+  );
 }

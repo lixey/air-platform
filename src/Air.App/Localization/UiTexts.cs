@@ -17,6 +17,8 @@ public static class UiTexts
     ["AgentCopyMessage"] = "Copy",
     ["AgentDefaultPhotoPrompt"] = "Analyze the attached photo",
     ["AgentDropHint"] = "Drop photo or document here",
+    ["AgentDuplicateFileWarning"] = "This receipt file is already attached to record {0}",
+    ["AgentDuplicateReceiptWarning"] = "A record with this date and amount already exists: {0}",
     ["AgentDurationSec"] = "{0} s",
     ["AgentEditBadge"] = "Edit",
     ["AgentEmptyDescription"] = "Describe what you want to create or edit, or drop a photo/receipt (drag & drop or press \u2318V).",

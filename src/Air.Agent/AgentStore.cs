@@ -93,15 +93,17 @@ public sealed class AgentStore
       await content.CopyToAsync(fs, ct);
     }
 
-    var fileInfo = new FileInfo(localPath);
+    var fileBytes = await File.ReadAllBytesAsync(localPath, ct);
+    var sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(fileBytes));
     var dto = new AgentAttachmentDto
     {
       Id = id,
       FileName = string.IsNullOrWhiteSpace(fileName) ? safeFileName : fileName,
       ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
-      Size = fileInfo.Length,
+      Size = fileBytes.LongLength,
       PreviewUrl = $"/api/agent/attachments/{id}",
-      LocalPath = localPath
+      LocalPath = localPath,
+      Sha256 = sha256
     };
 
     _attachments[id] = new OwnedAttachment(dto, owner, DateTimeOffset.UtcNow);

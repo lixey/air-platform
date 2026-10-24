@@ -397,9 +397,9 @@ export class AgentService {
     }
   }
 
-  openRecord(proposal: AgentProposal): void {
-    const formService = proposal.formService ?? proposal.service;
-    const recordId = proposal.committedRecordId ?? proposal.recordId;
+  openRecord(proposal: AgentProposal, explicitId?: number, explicitService?: string): void {
+    const formService = explicitService ?? proposal.formService ?? proposal.service;
+    const recordId = explicitId ?? proposal.committedRecordId ?? proposal.recordId;
     if (!formService || !recordId) {
       return;
     }

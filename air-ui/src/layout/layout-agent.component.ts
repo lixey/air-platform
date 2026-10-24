@@ -238,6 +238,27 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                   }
                 </div>
 
+                @if (proposal.duplicateWarning && proposal.status !== 'committed') {
+                  <div
+                    class="flex items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+                  >
+                    <div class="flex min-w-0 items-start gap-1.5">
+                      <i class="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center" [icon]="'warning'"></i>
+                      <span class="font-medium break-words">{{ proposal.duplicateWarning }}</span>
+                    </div>
+                    @if (proposal.duplicateRecordId) {
+                      <ui-btn
+                        size="small"
+                        variant="ghost"
+                        color="amber"
+                        icon="external"
+                        [label]="texts.of('Open')"
+                        (click)="openDuplicate(proposal)"
+                      />
+                    }
+                  </div>
+                }
+
                 <div class="divide-y divide-line/60 px-3 py-1.5 text-xs">
                   @for (field of proposal.fields; track field.label) {
                     <div class="flex items-center justify-between gap-2 py-1">
@@ -632,6 +653,12 @@ export class LayoutAgentComponent {
 
   protected openCommitted(proposal: AgentProposal): void {
     this.agent.openRecord(proposal);
+  }
+
+  protected openDuplicate(proposal: AgentProposal): void {
+    if (proposal.duplicateRecordId) {
+      this.agent.openRecord(proposal, proposal.duplicateRecordId, proposal.duplicateFormService ?? undefined);
+    }
   }
 
   protected copyMessage(msg: AgentChatMessage): void {
