@@ -20,5 +20,7 @@ public class AppAgentModel : BaseEntity, IHasIsActive
 
   public bool IsDefault { get; set; }
 
+  public bool IsForPhotos { get; set; }
+
   public bool IsActive { get; set; } = true;
 }

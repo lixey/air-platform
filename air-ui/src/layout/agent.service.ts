@@ -33,6 +33,8 @@ export interface AgentChatMessage {
   readonly proposals: AgentProposal[];
   readonly createdAt: Date;
   readonly durationMs?: number;
+  readonly modelId?: string;
+  readonly modelName?: string;
   readonly promptText?: string;
   readonly promptAttachments?: readonly AgentAttachment[];
 }
@@ -154,6 +156,11 @@ export class AgentService {
 
     const assistantMsgId = `m-${++this.nextId}`;
     const startedAt = performance.now();
+    const modelsList = this.models();
+    const activeModelObj =
+      attachments.length > 0
+        ? (modelsList.find(m => m.isForPhotos) ?? modelsList.find(m => m.id === this.model()))
+        : modelsList.find(m => m.id === this.model());
     const assistantMsg: AgentChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -163,6 +170,8 @@ export class AgentService {
       proposals: [],
       createdAt: new Date(),
       durationMs: 0,
+      modelId: activeModelObj?.id || this.model(),
+      modelName: activeModelObj?.name || this.model(),
       promptText: effectivePrompt,
       promptAttachments: attachments,
     };
@@ -230,6 +239,8 @@ export class AgentService {
                 this.patchAssistant(assistantMsgId, m => ({
                   ...m,
                   statusText: evt.text ?? null,
+                  modelId: evt.modelId ?? m.modelId,
+                  modelName: evt.modelName ?? m.modelName,
                 }));
               } else if (evt.type === 'delta' && evt.text) {
                 rawAccumulated += evt.text;
@@ -269,6 +280,8 @@ export class AgentService {
                     text: nextText,
                     blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
                     statusText: null,
+                    modelId: evt.modelId ?? m.modelId,
+                    modelName: evt.modelName ?? m.modelName,
                   };
                 });
               }

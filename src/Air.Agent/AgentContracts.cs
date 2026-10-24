@@ -23,6 +23,7 @@ public sealed record AgentTurnRequest
   public string Locale { get; init; } = "uk";
   public string? ProviderHandle { get; init; }
   public string? Model { get; init; }
+  public string? ModelName { get; init; }
   public IServiceProvider Services { get; init; } = null!;
 }
 

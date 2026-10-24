@@ -212,11 +212,14 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
             }
 
             @if (msg.statusText) {
-              <div class="flex items-center gap-2 px-1 text-xs text-muted">
+              <div class="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted">
                 <i class="flex h-3.5 w-3.5 items-center justify-center text-mark" [icon]="'spinner'"></i>
                 <span>{{ msg.statusText }}</span>
                 @if (msg.durationMs !== undefined && msg.durationMs > 0) {
                   <span class="tabular-nums opacity-75">· {{ formatDuration(msg.durationMs) }}</span>
+                }
+                @if (msg.modelName) {
+                  <span class="truncate opacity-75">· {{ msg.modelName }}</span>
                 }
               </div>
             }
@@ -351,6 +354,12 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                     <span>·</span>
                     <i class="flex scale-75 items-center justify-center opacity-75" [icon]="'clock'"></i>
                     <span>{{ formatDuration(msg.durationMs) }}</span>
+                  </span>
+                }
+                @if (msg.modelName) {
+                  <span class="flex items-center gap-1 truncate">
+                    <span>·</span>
+                    <span class="truncate">{{ msg.modelName }}</span>
                   </span>
                 }
               </div>
@@ -519,7 +528,10 @@ export class LayoutAgentComponent {
       return;
     }
     const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
-    const options: SelectOption[] = list.map((m, idx) => ({ id: idx, label: m.name }));
+    const options: SelectOption[] = list.map((m, idx) => ({
+      id: idx,
+      label: m.isForPhotos ? `${m.name} · 📷` : m.name,
+    }));
     const currentIdx = Math.max(
       0,
       list.findIndex(m => m.id === this.agent.model()),

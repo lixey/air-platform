@@ -13,9 +13,10 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
     elements.Add(e => e.ModelId).Label("Model ID").Span(6);
     elements.Add(e => e.ProviderHandle).Label("Provider").Span(6);
     elements.Add(e => e.ProviderName).Label("Provider name").Span(6);
-    elements.Add(e => e.SortOrder).Label("Sort Order").Span(4);
-    elements.Add(e => e.IsDefault).Label("Default").AsCheckbox().Span(4);
-    elements.Add(e => e.IsActive).AsCheckbox().Span(4);
+    elements.Add(e => e.SortOrder).Label("Sort Order").Span(3);
+    elements.Add(e => e.IsDefault).Label("Default").AsCheckbox().Span(3);
+    elements.Add(e => e.IsForPhotos).Label("For photos").AsCheckbox().Span(3);
+    elements.Add(e => e.IsActive).AsCheckbox().Span(3);
   }
 
   protected override void SetHooks(Hooks hooks)
@@ -36,7 +37,7 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
     hooks.BeforeSave((c, _) =>
     {
       CodeRows.EnsurePascalCaseHandle(c.Entity.ProviderHandle, nameof(AppAgentModel));
-      if (c.Entity.IsDefault)
+      if (c.Entity.IsDefault || c.Entity.IsForPhotos)
       {
         c.Entity.IsActive = true;
       }
@@ -49,6 +50,11 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
       if (c.Entity.IsDefault)
       {
         await AgentModelCatalog.SetDefaultModelAsync(db, c.Entity.Id, ct);
+      }
+
+      if (c.Entity.IsForPhotos)
+      {
+        await AgentModelCatalog.SetPhotoModelAsync(db, c.Entity.Id, ct);
       }
     });
   }

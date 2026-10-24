@@ -113,6 +113,12 @@ public sealed class AgentStreamEventDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? SessionId { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? ModelId { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? ModelName { get; set; }
 }
 
 [UiContract]
@@ -156,6 +162,8 @@ public sealed class AgentModelDto
   public string? Provider { get; set; }
 
   public bool IsDefault { get; set; }
+
+  public bool IsForPhotos { get; set; }
 }
 
 [UiContract]
@@ -171,6 +179,10 @@ public sealed class AgentStatusDto
 {
   public string ActiveProvider { get; set; } = string.Empty;
   public string DefaultModel { get; set; } = string.Empty;
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? PhotoModel { get; set; }
+
   public List<AgentProviderDto> Providers { get; set; } = [];
   public List<AgentModelDto> Models { get; set; } = [];
 }

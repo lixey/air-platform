@@ -48,6 +48,7 @@ public static class AgentEndpoints
       var db = ctx.RequestServices.GetService<PlatformDbContext>();
       List<AgentModelDto> models;
       string defaultModel;
+      string? photoModel;
 
       if (db is not null)
       {
@@ -70,11 +71,16 @@ public static class AgentEndpoints
           Id = m.ModelId,
           Name = multiProvider ? $"{m.Name} [{m.ProviderHandle}]" : m.Name,
           Provider = m.ProviderHandle,
-          IsDefault = m.IsDefault
+          IsDefault = m.IsDefault,
+          IsForPhotos = m.IsForPhotos
         }).ToList();
 
         var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
         defaultModel = defRow?.ModelId ?? options.DefaultModel;
+        var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos)
+          ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, AgentModelCatalog.DefaultPhotoModelId, StringComparison.OrdinalIgnoreCase))
+          ?? defRow;
+        photoModel = photoRow?.ModelId ?? AgentModelCatalog.DefaultPhotoModelId;
         if (defRow is not null)
         {
           activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, defRow.ProviderHandle, StringComparison.OrdinalIgnoreCase))
@@ -89,15 +95,18 @@ public static class AgentEndpoints
           Id = m.ModelId,
           Name = m.Name,
           Provider = m.ProviderHandle,
-          IsDefault = m.IsDefault
+          IsDefault = m.IsDefault,
+          IsForPhotos = m.IsForPhotos
         }).ToList();
         defaultModel = AgentModelCatalog.DefaultModelId;
+        photoModel = AgentModelCatalog.DefaultPhotoModelId;
       }
 
       return Results.Ok(new AgentStatusDto
       {
         ActiveProvider = activeProvider?.Handle ?? options.DefaultProvider,
         DefaultModel = defaultModel,
+        PhotoModel = photoModel,
         Providers = list,
         Models = models
       });
@@ -230,6 +239,56 @@ public static class AgentEndpoints
         .Cast<AgentAttachmentDto>()
         .ToList();
 
+      var selectedModel = body.Model;
+      string? selectedModelName = null;
+      var db = ctx.RequestServices.GetService<PlatformDbContext>();
+      if (db is not null)
+      {
+        await AgentModelCatalog.EnsureSeededAsync(db, ct);
+        var dbModels = await db.AppAgentModel.AsNoTracking().ToListAsync(ct);
+        if (attachments.Count > 0)
+        {
+          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos && m.IsActive)
+            ?? dbModels.FirstOrDefault(m => m.IsForPhotos)
+            ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, AgentModelCatalog.DefaultPhotoModelId, StringComparison.OrdinalIgnoreCase));
+          if (photoRow is not null)
+          {
+            selectedModel = photoRow.ModelId;
+            selectedModelName = photoRow.Name;
+            provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, photoRow.ProviderHandle, StringComparison.OrdinalIgnoreCase))
+              ?? provider;
+          }
+        }
+        else if (!string.IsNullOrWhiteSpace(selectedModel))
+        {
+          var matchedRow = dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
+          if (matchedRow is not null)
+          {
+            selectedModelName = matchedRow.Name;
+          }
+        }
+        else
+        {
+          var defRow = dbModels.FirstOrDefault(m => m.IsDefault && m.IsActive) ?? dbModels.FirstOrDefault(m => m.IsActive);
+          if (defRow is not null)
+          {
+            selectedModel = defRow.ModelId;
+            selectedModelName = defRow.Name;
+          }
+        }
+      }
+
+      if (string.IsNullOrWhiteSpace(selectedModelName))
+      {
+        var effectiveId = !string.IsNullOrWhiteSpace(selectedModel)
+          ? selectedModel
+          : (attachments.Count > 0 ? AgentModelCatalog.DefaultPhotoModelId : options.DefaultModel);
+        selectedModel = effectiveId;
+        selectedModelName = AgentModelCatalog.DefaultRows()
+          .FirstOrDefault(m => string.Equals(m.ModelId, effectiveId, StringComparison.OrdinalIgnoreCase))?.Name
+          ?? effectiveId;
+      }
+
       var turnReq = new AgentTurnRequest
       {
         SessionId = sessionId,
@@ -238,7 +297,8 @@ public static class AgentEndpoints
         Attachments = attachments,
         Locale = culture.TwoLetterISOLanguageName,
         ProviderHandle = provider.Handle,
-        Model = body.Model,
+        Model = selectedModel,
+        ModelName = selectedModelName,
         Services = ctx.RequestServices
       };
 

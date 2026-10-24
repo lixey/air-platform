@@ -424,6 +424,7 @@ export interface AgentModelDto {
   name: string;
   provider?: string | null;
   isDefault: boolean;
+  isForPhotos: boolean;
 }
 
 export interface AgentProposalDto {
@@ -475,6 +476,7 @@ export interface AgentResetRequestDto {
 export interface AgentStatusDto {
   activeProvider: string;
   defaultModel: string;
+  photoModel?: string | null;
   providers: AgentProviderDto[];
   models: AgentModelDto[];
 }
@@ -484,6 +486,8 @@ export interface AgentStreamEventDto {
   text?: string | null;
   proposal?: AgentProposalDto | null;
   sessionId?: string | null;
+  modelId?: string | null;
+  modelName?: string | null;
 }
 
 export interface AppMetadataDto {

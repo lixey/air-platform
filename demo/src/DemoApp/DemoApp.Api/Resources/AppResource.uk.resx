@@ -223,6 +223,12 @@
   <data name="Set as default" xml:space="preserve">
     <value>За замовчуванням</value>
   </data>
+  <data name="For photos" xml:space="preserve">
+    <value>Для фото/чеків</value>
+  </data>
+  <data name="Set for photos" xml:space="preserve">
+    <value>Для фото/чеків</value>
+  </data>
   <data name="Toggle active" xml:space="preserve">
     <value>Увімк. / Вимк.</value>
   </data>

@@ -8,6 +8,7 @@ public interface IAgentModelSynchronizer
 public static class AgentModelCatalog
 {
   public const string DefaultModelId = "gemini-4-argon-high";
+  public const string DefaultPhotoModelId = "gemini-3.8-flash-low";
 
   public static AppAgentModel[] DefaultRows() =>
   [
@@ -87,9 +88,10 @@ public static class AgentModelCatalog
       ProviderName = "Antigravity CLI (agy)",
       ModelId = "gemini-3.8-flash-low",
       Name = "Gemini 3.8 Flash (Low)",
-      SortOrder = 80,
+      SortOrder = 25,
       IsDefault = false,
-      IsActive = false
+      IsForPhotos = true,
+      IsActive = true
     },
     new()
     {
@@ -195,29 +197,58 @@ public static class AgentModelCatalog
 
   public static async Task EnsureSeededAsync(PlatformDbContext db, CancellationToken ct = default)
   {
+    try
+    {
+      if (db.Database.IsRelational())
+      {
+        await db.Database.ExecuteSqlRawAsync(
+          "ALTER TABLE app.agent_models ADD COLUMN IF NOT EXISTS is_for_photos boolean NOT NULL DEFAULT false;",
+          ct);
+      }
+    }
+    catch
+    {
+      // Ignore if provider is not PostgreSQL or column already exists
+    }
+
     var existing = await db.AppAgentModel.ToListAsync(ct);
-    var added = false;
+    var changed = false;
 
     foreach (var seed in DefaultRows())
     {
-      var found = existing.Any(e =>
+      var found = existing.FirstOrDefault(e =>
         string.Equals(e.ProviderHandle, seed.ProviderHandle, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(e.ModelId, seed.ModelId, StringComparison.OrdinalIgnoreCase));
 
-      if (!found)
+      if (found == null)
       {
         if (seed.IsDefault && existing.Any(e => e.IsDefault))
         {
           seed.IsDefault = false;
         }
 
+        if (seed.IsForPhotos && existing.Any(e => e.IsForPhotos))
+        {
+          seed.IsForPhotos = false;
+        }
+
         db.AppAgentModel.Add(seed);
         existing.Add(seed);
-        added = true;
+        changed = true;
       }
     }
 
-    if (added)
+    if (existing.Count > 0 && !existing.Any(e => e.IsForPhotos))
+    {
+      var photoRow = existing.FirstOrDefault(e => string.Equals(e.ModelId, DefaultPhotoModelId, StringComparison.OrdinalIgnoreCase))
+        ?? existing.FirstOrDefault(e => e.IsDefault)
+        ?? existing[0];
+      photoRow.IsForPhotos = true;
+      photoRow.IsActive = true;
+      changed = true;
+    }
+
+    if (changed)
     {
       await db.SaveChangesAsync(ct);
     }
@@ -239,6 +270,28 @@ public static class AgentModelCatalog
       else if (row.IsDefault)
       {
         row.IsDefault = false;
+      }
+    }
+
+    await db.SaveChangesAsync(ct);
+  }
+
+  public static async Task SetPhotoModelAsync(
+    PlatformDbContext db,
+    long modelRowId,
+    CancellationToken ct = default)
+  {
+    var all = await db.AppAgentModel.ToListAsync(ct);
+    foreach (var row in all)
+    {
+      if (row.Id == modelRowId)
+      {
+        row.IsForPhotos = true;
+        row.IsActive = true;
+      }
+      else if (row.IsForPhotos)
+      {
+        row.IsForPhotos = false;
       }
     }
 

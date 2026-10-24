@@ -6,7 +6,8 @@ public static class AgentContextQueryService
     IServiceProvider services,
     string? userMessage = null,
     CancellationToken ct = default,
-    bool includeReports = true)
+    bool includeReports = true,
+    bool includeRecentRecords = true)
   {
     var db = services.GetService<PlatformDbContext>();
     var app = services.GetService<PlatformAppService>();
@@ -129,7 +130,9 @@ public static class AgentContextQueryService
       app,
       ct);
 
-    var recentRecords = await LoadRecentRecordsAsync(dictionaries.Keys, userMessage, searchTokens, db, app, ct);
+    var recentRecords = includeRecentRecords
+      ? await LoadRecentRecordsAsync(dictionaries.Keys, userMessage, searchTokens, db, app, ct)
+      : [];
     var reports = includeReports ? await LoadReportsSummaryAsync(db, app, ct) : [];
 
     return new
@@ -138,7 +141,7 @@ public static class AgentContextQueryService
       forms,
       dictionaries,
       largeDictionaries = largeDictionaries.Count > 0 ? largeDictionaries : null,
-      recentRecords,
+      recentRecords = recentRecords.Count > 0 ? recentRecords : null,
       reports = reports.Count > 0 ? reports : null
     };
   }
@@ -769,8 +772,9 @@ public static class AgentContextQueryService
   {
     "додай", "додати", "створи", "створити", "зміни", "змінити", "відредагуй", "редагуй",
     "операцію", "операція", "витрату", "витрата", "дохід", "переказ", "запис", "суму", "сума",
+    "розбери", "прикріплене", "фото", "чек", "чека", "скріншот", "підготуй", "записи",
     "грн", "uah", "usd", "eur", "на", "в", "у", "за", "від", "до", "та", "і", "й", "або", "що", "це", "як", "по", "із", "зі",
-    "add", "create", "edit", "update", "change", "record", "transaction", "expense", "income", "transfer", "amount", "for", "from", "to", "in", "on", "at", "the", "and", "with"
+    "add", "create", "edit", "update", "change", "record", "transaction", "expense", "income", "transfer", "amount", "for", "from", "to", "in", "on", "at", "the", "and", "with", "parse", "attached", "photo", "receipt", "image"
   };
 
   private static IReadOnlyList<string> ExtractSearchTokens(string? message)

@@ -20,7 +20,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     new() { Id = "gemini-4-argon-medium", Name = "Gemini 4 Argon (Medium)", Provider = "Agy" },
     new() { Id = "gemini-4-argon-low", Name = "Gemini 4 Argon (Low)", Provider = "Agy" },
     new() { Id = "gemini-3.8-flash-medium", Name = "Gemini 3.8 Flash (Medium)", Provider = "Agy" },
-    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)", Provider = "Agy" },
+    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)", Provider = "Agy", IsForPhotos = true },
     new() { Id = "claude-opus-5-5-medium", Name = "Claude Opus 5.5 (Medium)", Provider = "Agy" },
     new() { Id = "claude-opus-5-5-low", Name = "Claude Opus 5.5 (Low)", Provider = "Agy" },
     new() { Id = "claude-sonnet-5-5-medium", Name = "Claude Sonnet 5.5 (Medium)", Provider = "Agy" },
@@ -173,14 +173,16 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     string? contextJson = null;
     try
     {
-      var includeReports = request.Attachments.Count == 0;
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports);
+      var hasPhoto = request.Attachments.Count > 0;
+      var includeReports = !hasPhoto;
+      var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
+      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
       if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 34_000)
       {
         var fullPath = Path.Combine(store.WorkspaceDirectory, $"context-{request.SessionId}.json");
         await File.WriteAllTextAsync(fullPath, contextJson, Encoding.UTF8, ct);
-        var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false);
+        var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false, includeRecentRecords);
         contextJson = JsonSerializer.Serialize(compactObj, PromptJsonOptions);
       }
     }
@@ -191,11 +193,14 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
 
     var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
     var rawModel = string.IsNullOrWhiteSpace(request.Model)
-      ? options.DefaultModel
+      ? (request.Attachments.Count > 0 ? AgentModelCatalog.DefaultPhotoModelId : options.DefaultModel)
       : request.Model.Trim();
 
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
       ?? options.DefaultModel;
+    var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
+      ? request.ModelName
+      : (FallbackModels.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
 
     var psi = new ProcessStartInfo
     {
@@ -217,10 +222,16 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     psi.ArgumentList.Add("--disable-slash-commands");
     psi.ArgumentList.Add("--model");
     psi.ArgumentList.Add(selectedModel);
+    if (request.Attachments.Count > 0)
+    {
+      psi.ArgumentList.Add("--effort");
+      psi.ArgumentList.Add("low");
+    }
+
     psi.ArgumentList.Add("--add-dir");
     psi.ArgumentList.Add(store.WorkspaceDirectory);
 
-    if (!string.IsNullOrWhiteSpace(existingConvId))
+    if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
     {
       psi.ArgumentList.Add("--conversation");
       psi.ArgumentList.Add(existingConvId);
@@ -233,7 +244,9 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     yield return new AgentStreamEventDto
     {
       Type = "status",
-      Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"]
+      Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
+      ModelId = selectedModel,
+      ModelName = modelDisplayName
     };
 
     var fullAssistantText = new StringBuilder();
@@ -371,7 +384,9 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     yield return new AgentStreamEventDto
     {
       Type = "done",
-      SessionId = request.SessionId
+      SessionId = request.SessionId,
+      ModelId = selectedModel,
+      ModelName = modelDisplayName
     };
   }
 }
