@@ -1,4 +1,4 @@
-.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch check-ts gate prepare reset db-prepare db-reset agent-up agent-down agent-restart mcp-check
+.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch check-ts gate prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
 
 VOLUME ?= default
 WEB := demo/web
@@ -41,7 +41,8 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 	 errs.extend([f"{cs}: multiple top-level types" for t in [set(re.findall(r"^(?:public|internal|file)\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+([A-Za-z0-9_]+)", txt, re.M))] if "/Migrations/" not in cs and len(t) > 1]) or \
 	 errs.extend([f"{cs}: extension method in non-Extensions file"] if re.search(r"static\s+[^\(\n]+\(\s*this\s+", txt) and not cs.endswith("Extensions.cs") else []) or \
 	 errs.extend([f"{cs}: internal type must be in Internals/"] if cs.startswith("src/") and re.search(r"^internal\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+", txt, re.M) and "/Internals/" not in cs else []) or \
-	 errs.extend([f"{cs}: contract type must be in Contracts/"] if cs.startswith("src/") and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b", txt, re.M) and "/Contracts/" not in cs else []) \
+	 errs.extend([f"{cs}: contract type must be in Contracts/"] if cs.startswith("src/") and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b", txt, re.M) and "/Contracts/" not in cs else []) or \
+	 errs.extend([f"{cs}: forbidden domain hardcoding {m.group(0)}" for m in [re.search(r"\"(?:mccCode|DocStatus|counterpartyId|toAccountId)\"", txt)] if cs.startswith("src/") and m]) \
 	 for cs in sorted(glob.glob("**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs and not cs.endswith(".Designer.cs") and os.path.basename(cs) not in ("GlobalUsings.cs", "Program.cs") for txt in [open(cs, encoding="utf-8").read()]]; \
 	[errs.extend([f"{rx}: missing in .uk.resx: {sorted(b - u)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())) if os.path.exists(rx[:-5] + ".uk.resx") else set())] if b - u]) for rx in sorted(glob.glob("**/*.resx", recursive=True)) if not rx.endswith(".uk.resx")]; \
 	ui_keys = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*:", open("air-ui/src/ui-components.ts", encoding="utf-8").read(), re.M)); \
@@ -75,6 +76,9 @@ agent-down: ## Stop Demo backend (5191) and frontend (4400) on dedicated agent p
 agent-restart: ## Restart Demo backend (5191) and frontend (4400) on dedicated agent ports
 	@$(MAKE) --no-print-directory agent-down
 	@$(MAKE) --no-print-directory agent-up
+
+logs-err: ## Show recent errors/exceptions from agent backend log
+	@grep -E -C 3 "fail:|Exception" /tmp/air-platform-agent-api.log 2>/dev/null | tail -n 60 || echo "No recent errors in /tmp/air-platform-agent-api.log"
 
 mcp-check: ## Check JetBrains Rider (64482) and WebStorm (64542) MCP endpoints
 	@lsof -iTCP:64482 -sTCP:LISTEN -P -n >/dev/null 2>&1 && echo "Rider MCP (64482):    [READY]" || echo "Rider MCP (64482):    [OFFLINE]"

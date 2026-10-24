@@ -250,28 +250,6 @@ public static class ServiceEndpointsExtensions
       return true;
     }
 
-    if (actionMethod.Name == "FileMetadata" && feat != null && feat.HasAction("FileMetadata"))
-    {
-      return userContext.Can(feat.Action("FileMetadata")) ||
-             userContext.Can(feat.All) ||
-             userContext.Can("*");
-    }
-
-    if (actionMethod.Name is "GetInfo" or "FileMetadata" or "DownloadAll")
-    {
-      return CanView(feat, userContext);
-    }
-
-    if (actionMethod.Name == "Restore" && feat != null)
-    {
-      return userContext.Can(feat.Restore) ||
-             userContext.Can(feat.All) ||
-             userContext.Can("*") ||
-             userContext.Permissions.Any(p =>
-               p.EndsWith(".Restore", StringComparison.OrdinalIgnoreCase) ||
-               p.EndsWith(".*", StringComparison.Ordinal));
-    }
-
     var reqAttr = actionMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true);
     if (reqAttr != null)
     {
@@ -282,11 +260,33 @@ public static class ServiceEndpointsExtensions
     }
 
     var reqAction = actionMethod.GetCustomAttribute<RequireActionAttribute>(inherit: true);
-    if (reqAction != null && feat != null)
+    if (reqAction != null)
     {
-      return userContext.Can(feat.Action(reqAction.ActionName)) ||
-             userContext.Can(feat.All) ||
-             userContext.Can("*");
+      if (string.Equals(reqAction.ActionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase))
+      {
+        return CanView(feat, userContext);
+      }
+
+      if (string.Equals(reqAction.ActionName, nameof(EndpointAction.Restore), StringComparison.OrdinalIgnoreCase))
+      {
+        return feat != null && (userContext.Can(feat.Restore) || userContext.Can(feat.All)) ||
+               userContext.Can("*") ||
+               userContext.Permissions.Any(p =>
+                 p.EndsWith(".Restore", StringComparison.OrdinalIgnoreCase) ||
+                 p.EndsWith(".*", StringComparison.Ordinal));
+      }
+
+      if (reqAction.FallbackToView && (feat == null || !feat.HasAction(reqAction.ActionName)))
+      {
+        return CanView(feat, userContext);
+      }
+
+      if (feat != null)
+      {
+        return userContext.Can(feat.Action(reqAction.ActionName)) ||
+               userContext.Can(feat.All) ||
+               userContext.Can("*");
+      }
     }
 
     var targetKey = feat?.Edit?.Key;

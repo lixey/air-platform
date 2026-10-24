@@ -46,12 +46,25 @@ public abstract partial class FormService<TEntity, TInput>
       var efModel = db.Model.FindEntityType(typeof(TEntity));
       if (efModel != null)
       {
-        var refNames = elements.List
-          .Where(e => !string.IsNullOrEmpty(e.ReferencePath))
-          .Select(e => e.ReferencePath!)
-          .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        refNames.Add("DocStatus");
-        refNames.Add("Status");
+        var refNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var el in elements.List)
+        {
+          if (!string.IsNullOrEmpty(el.ReferencePath))
+          {
+            refNames.Add(el.ReferencePath);
+          }
+          else if (!string.IsNullOrEmpty(el.Path) && el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 2)
+          {
+            refNames.Add(el.Path[..^2]);
+          }
+        }
+
+        if (elements.StatusFlow is IRecordStatuses<TEntity> sf &&
+            (sf.StatusMember.Body as MemberExpression ?? (sf.StatusMember.Body as UnaryExpression)?.Operand as MemberExpression)?.Member.Name is { Length: > 2 } statusProp &&
+            statusProp.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
+        {
+          refNames.Add(statusProp[..^2]);
+        }
 
         foreach (var nav in efModel.GetNavigations())
         {

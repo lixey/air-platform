@@ -93,17 +93,77 @@ public sealed class ModuleCatalog
     }
   }
 
-  public Feature? FindFeature(string path)
+  public Feature? FindFeature(string? path)
   {
     if (string.IsNullOrWhiteSpace(path))
     {
       return null;
     }
 
-    return _featuresByPath.GetValueOrDefault(path)
+    var feat = _featuresByPath.GetValueOrDefault(path)
       ?? _featuresByPath.GetValueOrDefault(path.Replace('/', '-'))
       ?? _featuresByPath.GetValueOrDefault(path.Replace('-', '/'))
       ?? _featuresByPath.GetValueOrDefault(path.Replace("-", ""));
+    if (feat is null && FindServiceType(path) is { } serviceType)
+    {
+      Feature.FeaturesByServiceType.TryGetValue(serviceType, out feat);
+    }
+
+    return feat;
+  }
+
+  public Feature? FindFeature(Type? serviceType) =>
+    serviceType != null && Feature.FeaturesByServiceType.TryGetValue(serviceType, out var feat)
+      ? feat
+      : null;
+
+  public Feature? FindFeatureForEntity(Type? entityType, string? tableName = null)
+  {
+    if (entityType != null)
+    {
+      foreach (var feat in AllFeatures)
+      {
+        if (feat.ServiceType != null && GetServiceEntityType(feat.ServiceType) == entityType)
+        {
+          return feat;
+        }
+      }
+
+      foreach (var kv in Feature.FeaturesByServiceType)
+      {
+        if (GetServiceEntityType(kv.Key) == entityType)
+        {
+          return kv.Value;
+        }
+      }
+    }
+
+    if (!string.IsNullOrWhiteSpace(tableName))
+    {
+      return AllFeatures.FirstOrDefault(f =>
+        string.Equals(f.CleanName, tableName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    return null;
+  }
+
+  public static Type? GetServiceEntityType(Type? serviceType)
+  {
+    var cur = serviceType?.BaseType;
+    while (cur != null && cur != typeof(object))
+    {
+      if (cur.IsGenericType &&
+          cur.GetGenericArguments() is [var firstArg, ..] &&
+          typeof(IEntity).IsAssignableFrom(firstArg) &&
+          !firstArg.IsAbstract)
+      {
+        return firstArg;
+      }
+
+      cur = cur.BaseType;
+    }
+
+    return null;
   }
 
   public Type? FindServiceType(string path)

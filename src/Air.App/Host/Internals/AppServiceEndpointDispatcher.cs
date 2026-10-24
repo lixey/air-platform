@@ -101,19 +101,17 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
-          if (grid is ChangeGridService changeGrid && req.Id is > 0 && !req.IsDataOnly)
-          {
-            return Results.Ok(await changeGrid.BuildDiffScreenAsync(serviceName, req, ct));
-          }
-
-          var page = await grid.GetDataAsync(req, ct);
           if (req.IsDataOnly)
           {
-            return Results.Ok(new ScreenDto { Data = page });
+            return Results.Ok(new ScreenDto { Data = await grid.GetDataAsync(req, ct) });
           }
 
           var screen = await grid.BuildScreenAsync(serviceName, req, ct);
-          screen.Data = page;
+          if (req.Id is not > 0)
+          {
+            screen.Data = await grid.GetDataAsync(req, ct);
+          }
+
           return Results.Ok(screen);
         }
 
@@ -619,8 +617,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       var parentFeat = ModuleCatalog.Instance.FindFeature(req.ParentService);
       if (parentFeat == null && ModuleCatalog.Instance.FindServiceType(req.ParentService) is { } parentServiceType)
       {
-        Feature.FeaturesByServiceType.TryGetValue(parentServiceType, out parentFeat);
-        parentFeat ??= (services.GetService(parentServiceType) as IPlatformService)?.Feature;
+        parentFeat = (services.GetService(parentServiceType) as IPlatformService)?.Feature;
       }
 
       if (parentFeat is { HasHistory: true })
