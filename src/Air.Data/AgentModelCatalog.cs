@@ -202,7 +202,7 @@ public static class AgentModelCatalog
       if (db.Database.IsRelational())
       {
         await db.Database.ExecuteSqlRawAsync(
-          "ALTER TABLE app.agent_models ADD COLUMN IF NOT EXISTS is_for_photos boolean NOT NULL DEFAULT false;",
+          """ALTER TABLE "AppAgentModel" ADD COLUMN IF NOT EXISTS "IsForPhotos" boolean NOT NULL DEFAULT false;""",
           ct);
       }
     }
