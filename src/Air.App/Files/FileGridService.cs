@@ -11,15 +11,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   bool IFileCoverSource.HasCovers => HasCovers;
 
-  string IFileCoverSource.ParentService
-  {
-    get
-    {
-      var parent = new Parent();
-      SetParent(parent);
-      return parent.BoundParentService ?? string.Empty;
-    }
-  }
+  string IFileCoverSource.ParentService => GetParent().BoundParentService ?? string.Empty;
 
   int IFormFilesSource.PageSize => 25;
 
@@ -212,8 +204,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   public virtual async Task<IResult> DownloadAll(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
     var parentId = request.ParentId ?? ParentId;
     ParentId = parentId;
 
@@ -311,8 +302,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       return null;
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
     if (parent.BoundProperty == null)
     {
       return null;
@@ -343,8 +333,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       return new Dictionary<long, GridCoverDto>();
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
     if (parent.BoundProperty == null)
     {
       return new Dictionary<long, GridCoverDto>();

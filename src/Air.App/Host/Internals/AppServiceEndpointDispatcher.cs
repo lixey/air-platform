@@ -96,7 +96,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         {
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (userContext is { IsAuthenticated: false } || !isPicker && !CanViewGrid(serviceType, feat, req, services, userContext))
+          if (userContext is { IsAuthenticated: false } || !isPicker && !grid.CanView(req, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -119,7 +119,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         {
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (userContext is { IsAuthenticated: false } || !isPicker && !CanViewGrid(serviceType, feat, req, services, userContext))
+          if (userContext is { IsAuthenticated: false } || !isPicker && !grid.CanView(req, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -320,30 +320,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var req = await ReadFormRequestAsync(httpRequest, ct);
           var screen = await form.BuildScreenAsync(serviceName, req, ct);
           var entity = await form.GetModelAsync(req, ct);
-          var entityId = (entity as IEntity)?.Id ?? req.Id;
-          var ver = (entity as IHasVersion)?.Ver ?? 1;
-
-          var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
-          var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-          if (entity is IReadOnlyEntity && dict.TryGetValue("name", out var nameObj) && nameObj != null)
-          {
-            var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
-            if (!string.IsNullOrEmpty(nameStr))
-            {
-              dict["name"] = Localizer.Instance[nameStr];
-            }
-          }
-
-          await form.PopulateReferencesAsync(dict, entity, screen, ct);
-          var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
-
-          screen.Data = new FormDataDto
-          {
-            Id = entityId > 0 ? entityId : null,
-            Ver = entityId > 0 ? ver : null,
-            Value = dict,
-            Unavailable = unavailable
-          };
+          screen.Data = await form.BuildFormDataAsync(entity, screen, ct: ct);
 
           return Results.Ok(screen);
         }
@@ -388,23 +365,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             });
           }
 
-          var entityId = (entity as IEntity)?.Id;
-          var ver = (entity as IHasVersion)?.Ver;
-
-          var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
-          var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-          await form.PopulateReferencesAsync(dict, entity, ct);
-          var unavailable = await form.EvaluateUnavailableAsync(entityId, ct);
-
-          return Results.Ok(new FormDataDto
-          {
-            Id = entityId,
-            Ver = ver,
-            Value = dict,
-            Outcome = MutationOutcome.Committed,
-            Unavailable = unavailable,
-            Warnings = form.GetLastSaveWarnings()?.ToList()
-          });
+          return Results.Ok(await form.BuildFormDataAsync(entity, outcome: MutationOutcome.Committed, ct: ct));
         }
 
       case "get-action-input":
@@ -596,40 +557,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
   private static bool CanView(Feature? feat, IUserContext? userContext) =>
     ServiceEndpointsExtensions.CanView(feat, userContext);
-
-  private static bool CanViewGrid(
-    Type serviceType,
-    Feature? feat,
-    GridRequest req,
-    IServiceProvider services,
-    IUserContext? userContext)
-  {
-    if (CanView(feat, userContext))
-    {
-      return true;
-    }
-
-    if (typeof(ChangeGridService).IsAssignableFrom(serviceType) &&
-        !string.IsNullOrEmpty(req.ParentService) &&
-        req.ParentId is > 0 &&
-        userContext != null)
-    {
-      var parentFeat = ModuleCatalog.Instance.FindFeature(req.ParentService);
-      if (parentFeat == null && ModuleCatalog.Instance.FindServiceType(req.ParentService) is { } parentServiceType)
-      {
-        parentFeat = (services.GetService(parentServiceType) as IPlatformService)?.Feature;
-      }
-
-      if (parentFeat is { HasHistory: true })
-      {
-        return userContext.Can(parentFeat.History) ||
-               userContext.Can(parentFeat.All) ||
-               userContext.Can("*");
-      }
-    }
-
-    return false;
-  }
 
   private static bool CanExport(Feature? feat, IUserContext? userContext) =>
     ServiceEndpointsExtensions.CanExport(feat, userContext);

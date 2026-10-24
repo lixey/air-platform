@@ -17,6 +17,7 @@ public interface IGridService : IPlatformService
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   string? GetRecordLabel(object? entity) => null;
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
+  bool CanView(GridRequest request, IUserContext? user) => ServiceEndpointsExtensions.CanView(Feature, user);
   new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }
 }

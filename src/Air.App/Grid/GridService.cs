@@ -24,6 +24,36 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected internal long? ParentId { get; set; }
   protected IReadOnlyList<long> SelectedIds { get; set; } = [];
 
+  private Parent? _cachedParent;
+  private Hooks? _cachedHooks;
+
+  protected Parent GetParent()
+  {
+    if (_cachedParent != null)
+    {
+      return _cachedParent;
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+    return _cachedParent = parent;
+  }
+
+  protected Hooks GetHooks()
+  {
+    if (_cachedHooks != null)
+    {
+      return _cachedHooks;
+    }
+
+    var hooks = new Hooks();
+    SetHooks(hooks);
+    return _cachedHooks = hooks;
+  }
+
+  public virtual bool CanView(GridRequest request, IUserContext? user) =>
+    ServiceEndpointsExtensions.CanView(Feature, user);
+
   protected IQueryable<TEntity> Reachable(bool asTracking = false)
   {
     var q = RestrictedQuery();

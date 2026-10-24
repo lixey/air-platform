@@ -13,8 +13,7 @@ public abstract partial class FormService<TEntity, TInput>
     var id = request.Id;
     IsNew = id is null or 0;
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var elements = _lastElements;
     if (elements == null)
@@ -92,8 +91,7 @@ public abstract partial class FormService<TEntity, TInput>
       await PopulateJoinedReferencesAsync(elements, entity, input, ct);
     }
 
-    var hooks = new Hooks();
-    SetHooks(hooks);
+    var hooks = GetHooks();
 
     var loadCtx = new FormLoadContext<TEntity, TInput>
     {
@@ -129,6 +127,48 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     return input;
+  }
+
+  public virtual async Task<FormDataDto> BuildFormDataAsync(
+    object? entity,
+    ScreenDto? screen = null,
+    string? outcome = null,
+    CancellationToken ct = default)
+  {
+    var entityId = (entity as IEntity)?.Id ?? (outcome == null ? Request.Id : null);
+    var ver = (entity as IHasVersion)?.Ver ?? (outcome == null && entityId > 0 ? 1 : null);
+
+    var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
+    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    if (outcome == null && entity is IReadOnlyEntity && dict.TryGetValue("name", out var nameObj) && nameObj != null)
+    {
+      var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
+      if (!string.IsNullOrEmpty(nameStr))
+      {
+        dict["name"] = Localizer.Instance[nameStr];
+      }
+    }
+
+    if (screen != null)
+    {
+      await PopulateReferencesAsync(dict, entity, screen, ct);
+    }
+    else
+    {
+      await PopulateReferencesAsync(dict, entity, ct);
+    }
+
+    var unavailable = await EvaluateUnavailableAsync(entityId, ct);
+
+    return new FormDataDto
+    {
+      Id = outcome == null ? (entityId > 0 ? entityId : null) : entityId,
+      Ver = outcome == null ? (entityId > 0 ? ver : null) : ver,
+      Value = dict,
+      Outcome = outcome,
+      Unavailable = unavailable,
+      Warnings = !string.IsNullOrEmpty(outcome) ? GetLastSaveWarnings()?.ToList() : null
+    };
   }
 
   public virtual Task<object> SaveAsync(JsonElement json, CancellationToken ct = default) =>
@@ -186,11 +226,9 @@ public abstract partial class FormService<TEntity, TInput>
     Request = request;
     IsNew = id is null or 0;
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
-    var hooks = new Hooks();
-    SetHooks(hooks);
+    var hooks = GetHooks();
 
     TEntity entity;
     Dictionary<string, object?>? originalValues = null;
@@ -411,8 +449,7 @@ public abstract partial class FormService<TEntity, TInput>
     Request = request;
     IsNew = false;
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
@@ -453,8 +490,7 @@ public abstract partial class FormService<TEntity, TInput>
       await PopulateJoinedReferencesAsync(elements, entity, input, ct);
     }
 
-    var hooks = new Hooks();
-    SetHooks(hooks);
+    var hooks = GetHooks();
 
     var loadCtx = new FormLoadContext<TEntity, TInput>
     {
@@ -595,8 +631,7 @@ public abstract partial class FormService<TEntity, TInput>
     Request = new FormRequest { Id = id };
     IsNew = false;
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
@@ -614,8 +649,7 @@ public abstract partial class FormService<TEntity, TInput>
         [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
     }
 
-    var hooks = new Hooks();
-    SetHooks(hooks);
+    var hooks = GetHooks();
 
     var deleteCtx = new FormDeleteContext<TEntity> { Entity = entity };
     foreach (var h in hooks.BeforeDeleteActions)
@@ -676,8 +710,7 @@ public abstract partial class FormService<TEntity, TInput>
     Request = new FormRequest { Id = id, Ver = ver };
     IsNew = false;
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);

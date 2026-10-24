@@ -13,8 +13,7 @@ public abstract partial class FormService<TEntity, TInput>
     var id = request.Id;
     IsNew = id is null or 0;
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     TEntity? entity = null;
     if (id is not null && id > 0)

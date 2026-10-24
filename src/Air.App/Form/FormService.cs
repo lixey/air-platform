@@ -5,9 +5,35 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   where TInput : class, new()
 {
   private Elements? _lastElements;
+  private Parent? _cachedParent;
+  private Hooks? _cachedHooks;
   private List<MessageDto>? _lastSaveWarnings;
   public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _lastSaveWarnings;
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
+
+  protected Parent GetParent()
+  {
+    if (_cachedParent != null)
+    {
+      return _cachedParent;
+    }
+
+    var parent = new Parent();
+    SetParent(parent);
+    return _cachedParent = parent;
+  }
+
+  protected Hooks GetHooks()
+  {
+    if (_cachedHooks != null)
+    {
+      return _cachedHooks;
+    }
+
+    var hooks = new Hooks();
+    SetHooks(hooks);
+    return _cachedHooks = hooks;
+  }
 
   public PlatformDbContext DbContext => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
@@ -402,8 +428,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       };
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == request.Id.Value, cancellationToken)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);

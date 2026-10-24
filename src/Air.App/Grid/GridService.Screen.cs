@@ -11,8 +11,7 @@ public abstract partial class GridService<TEntity, TRow>
   {
     ParentService = request?.ParentService;
     ParentId = request?.ParentId;
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var columns = CreateColumns();
 

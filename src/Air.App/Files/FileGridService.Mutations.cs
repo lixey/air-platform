@@ -124,8 +124,7 @@ public abstract partial class FileGridService<TFile>
       }
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
     var parentId = request.ParentId ?? ParentId;
     ParentId = parentId;
 
@@ -277,8 +276,7 @@ public abstract partial class FileGridService<TFile>
     var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
     var storage = Stores.Of(storeKey);
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
     var parentsLosingCover = new HashSet<object>();
 
     foreach (var item in list)
@@ -361,8 +359,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     if (parent.BoundProperty != null)
     {
@@ -416,8 +413,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto { Outcome = MutationOutcome.Committed };
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var siblingsQuery = RestrictedQuery().Where(f => f.Id != target.Id);
     if (parent.BoundProperty != null && parent.BoundProperty.GetValue(target) is { } parentVal)
@@ -520,8 +516,7 @@ public abstract partial class FileGridService<TFile>
     var normalizedType = FileTypeTable.Normalize(contentType) ?? "application/octet-stream";
     var sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
     ParentId = parentId;
 
     List<TFile>? siblings = null;

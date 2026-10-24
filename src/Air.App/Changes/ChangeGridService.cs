@@ -8,6 +8,36 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 {
   protected override bool IsReadOnly => true;
 
+  public override bool CanView(GridRequest request, IUserContext? user)
+  {
+    if (base.CanView(request, user))
+    {
+      return true;
+    }
+
+    if (!string.IsNullOrEmpty(request.ParentService) &&
+        request.ParentId is > 0 &&
+        user != null)
+    {
+      var parentFeat = ModuleCatalog.Instance.FindFeature(request.ParentService);
+      if (parentFeat == null &&
+          services != null &&
+          ModuleCatalog.Instance.FindServiceType(request.ParentService) is { } parentServiceType)
+      {
+        parentFeat = (services.GetService(parentServiceType) as IPlatformService)?.Feature;
+      }
+
+      if (parentFeat is { HasHistory: true })
+      {
+        return user.Can(parentFeat.History) ||
+               user.Can(parentFeat.All) ||
+               user.Can("*");
+      }
+    }
+
+    return false;
+  }
+
   protected override OverlayDto? ResolveFormOverlay(Columns columns)
   {
     var servicePath = ServicePathResolver.Resolve(GetType());

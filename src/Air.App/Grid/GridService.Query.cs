@@ -6,8 +6,7 @@ public abstract partial class GridService<TEntity, TRow>
 {
   private IQueryable<TEntity> BuildBaseEntityQuery(GridRequest? gridReq, out Parent parent, out Query queryDeclaration)
   {
-    parent = new Parent();
-    SetParent(parent);
+    parent = GetParent();
 
     ParentService = gridReq?.ParentService;
     ParentId = gridReq?.ParentId;

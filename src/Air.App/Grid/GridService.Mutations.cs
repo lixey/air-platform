@@ -6,11 +6,8 @@ public abstract partial class GridService<TEntity, TRow>
 {
   protected IQueryable<TEntity> RestrictedQuery()
   {
-    var parent = new Parent();
-    SetParent(parent);
-
-    var queryDeclaration = new Query();
-    SetQuery(queryDeclaration);
+    var parent = GetParent();
+    var queryDeclaration = GetQueryDeclaration();
 
     var query = BaseQuery(db);
     var restrictions = new UserRestrictions();
@@ -152,8 +149,7 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     var target = factory();
     if (target is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
@@ -290,8 +286,7 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var parent = new Parent();
-    SetParent(parent);
+    var parent = GetParent();
 
     TEntity target;
     if (isAttach)
@@ -647,8 +642,7 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var hooks = new Hooks();
-    SetHooks(hooks);
+    var hooks = GetHooks();
 
     return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
