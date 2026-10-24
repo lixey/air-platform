@@ -96,7 +96,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         {
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (userContext is { IsAuthenticated: false } || !isPicker && !CanView(feat, userContext))
+          if (userContext is { IsAuthenticated: false } || !isPicker && !CanViewGrid(serviceType, feat, req, services, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -116,7 +116,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         {
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (userContext is { IsAuthenticated: false } || !isPicker && !CanView(feat, userContext))
+          if (userContext is { IsAuthenticated: false } || !isPicker && !CanViewGrid(serviceType, feat, req, services, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -593,6 +593,41 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
   private static bool CanView(Feature? feat, IUserContext? userContext) =>
     ServiceEndpointsExtensions.CanView(feat, userContext);
+
+  private static bool CanViewGrid(
+    Type serviceType,
+    Feature? feat,
+    GridRequest req,
+    IServiceProvider services,
+    IUserContext? userContext)
+  {
+    if (CanView(feat, userContext))
+    {
+      return true;
+    }
+
+    if (typeof(ChangeGridService).IsAssignableFrom(serviceType) &&
+        !string.IsNullOrEmpty(req.ParentService) &&
+        req.ParentId is > 0 &&
+        userContext != null)
+    {
+      var parentFeat = ModuleCatalog.Instance.FindFeature(req.ParentService);
+      if (parentFeat == null && ModuleCatalog.Instance.FindServiceType(req.ParentService) is { } parentServiceType)
+      {
+        Feature.FeaturesByServiceType.TryGetValue(parentServiceType, out parentFeat);
+        parentFeat ??= (services.GetService(parentServiceType) as IPlatformService)?.Feature;
+      }
+
+      if (parentFeat is { HasHistory: true })
+      {
+        return userContext.Can(parentFeat.History) ||
+               userContext.Can(parentFeat.All) ||
+               userContext.Can("*");
+      }
+    }
+
+    return false;
+  }
 
   private static bool CanExport(Feature? feat, IUserContext? userContext) =>
     ServiceEndpointsExtensions.CanExport(feat, userContext);

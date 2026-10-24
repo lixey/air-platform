@@ -221,7 +221,13 @@ public abstract class PlatformDbContext : DbContext
       }
       else if (entry.State == EntityState.Modified)
       {
-        var modified = entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)).ToList();
+        var auditMeta = EntityAuditMetadata.For(entry.Metadata.ClrType);
+        var modified = entry.Properties
+          .Where(p => p.IsModified &&
+                      !Equals(p.OriginalValue, p.CurrentValue) &&
+                      p.Metadata.Name != nameof(IHasVersion.Ver) &&
+                      !auditMeta.ExcludedProperties.Contains(p.Metadata.Name))
+          .ToList();
         if (modified.Count == 0)
         {
           continue;
@@ -229,14 +235,14 @@ public abstract class PlatformDbContext : DbContext
 
         row.Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Modified;
         row.RowId = ((IEntity)entry.Entity).Id;
-        row.Before = SerializeProperties(modified, p => p.OriginalValue);
-        row.After = SerializeProperties(modified, p => p.CurrentValue);
+        row.Before = SerializeProperties(entry.Metadata.ClrType, modified, p => p.OriginalValue);
+        row.After = SerializeProperties(entry.Metadata.ClrType, modified, p => p.CurrentValue);
       }
       else if (entry.State == EntityState.Deleted)
       {
         row.Operation = Entities.ChangeOperations.Deleted;
         row.RowId = ((IEntity)entry.Entity).Id;
-        row.Before = SerializeProperties(entry.Properties, p => p.OriginalValue);
+        row.Before = SerializeProperties(entry.Metadata.ClrType, entry.Properties, p => p.OriginalValue);
       }
 
       journalSnapshots.Add((entry, row));
@@ -254,7 +260,7 @@ public abstract class PlatformDbContext : DbContext
       if (row.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored && row.RowId == 0)
       {
         row.RowId = ((IEntity)entry.Entity).Id;
-        row.After = SerializeProperties(entry.Properties, p => p.CurrentValue);
+        row.After = SerializeProperties(entry.Metadata.ClrType, entry.Properties, p => p.CurrentValue);
       }
 
       rows.Add(row);
@@ -271,11 +277,20 @@ public abstract class PlatformDbContext : DbContext
     }
   }
 
-  private static bool IsJournaled(EntityEntry entry) =>
-    entry.Entity is IEntity and not Entities.AppPlatformChange and not BaseAppAuthSession &&
-    !ChangesLoginCountersOnly(entry) &&
-    (entry.State != EntityState.Modified ||
-     entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue) && p.Metadata.Name is not nameof(IHasTimestamps.UpdatedAt) and not nameof(IHasVersion.Ver)));
+  private static bool IsJournaled(EntityEntry entry)
+  {
+    var auditMeta = EntityAuditMetadata.For(entry.Metadata.ClrType);
+    if (!auditMeta.IsEntityAudited || ChangesLoginCountersOnly(entry))
+    {
+      return false;
+    }
+
+    return entry.State != EntityState.Modified ||
+           entry.Properties.Any(p => p.IsModified &&
+                                     !Equals(p.OriginalValue, p.CurrentValue) &&
+                                     p.Metadata.Name != nameof(IHasVersion.Ver) &&
+                                     !auditMeta.ExcludedProperties.Contains(p.Metadata.Name));
+  }
 
   private static bool ChangesLoginCountersOnly(EntityEntry entry) =>
     entry.Entity is BaseAppUser &&
@@ -283,25 +298,42 @@ public abstract class PlatformDbContext : DbContext
     entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)) &&
     entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)).All(p => BaseAppUser.LoginCounters.Contains(p.Metadata.Name));
 
-  private static bool ChangesKeepsVersionOnly(EntityEntry entry) =>
-    entry.State == EntityState.Modified &&
-    entry.Properties.Any(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue)) &&
-    entry.Properties.Where(p => p.IsModified && !Equals(p.OriginalValue, p.CurrentValue))
-      .All(p => ((MemberInfo?)p.Metadata.PropertyInfo ?? p.Metadata.FieldInfo) is { } m &&
-                Attribute.IsDefined(m, typeof(KeepsVersionAttribute), inherit: true));
-
-  private static string SerializeProperties(IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
+  private static bool ChangesKeepsVersionOnly(EntityEntry entry)
   {
+    if (entry.State != EntityState.Modified)
+    {
+      return false;
+    }
+
+    var keepsProps = EntityAuditMetadata.For(entry.Metadata.ClrType).KeepsVersionProperties;
+    if (keepsProps.Count == 0)
+    {
+      return false;
+    }
+
+    var hasModified = false;
+    foreach (var p in entry.Properties)
+    {
+      if (p.IsModified && !Equals(p.OriginalValue, p.CurrentValue))
+      {
+        hasModified = true;
+        if (!keepsProps.Contains(p.Metadata.Name))
+        {
+          return false;
+        }
+      }
+    }
+
+    return hasModified;
+  }
+
+  private static string SerializeProperties(Type clrType, IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
+  {
+    var excluded = EntityAuditMetadata.For(clrType).ExcludedProperties;
     var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
     foreach (var p in properties)
     {
-      if (p.Metadata.Name is nameof(IHasTimestamps.UpdatedAt))
-      {
-        continue;
-      }
-
-      if (((MemberInfo?)p.Metadata.PropertyInfo ?? p.Metadata.FieldInfo) is { } member &&
-          Attribute.IsDefined(member, typeof(SensitiveAttribute), inherit: true))
+      if (excluded.Contains(p.Metadata.Name))
       {
         continue;
       }

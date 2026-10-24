@@ -1000,6 +1000,9 @@
   <data name="Restore" xml:space="preserve">
     <value>Restore</value>
   </data>
+  <data name="History" xml:space="preserve">
+    <value>History</value>
+  </data>
   <data name="RestoreConfirm" xml:space="preserve">
     <value>Restore the selected journal rows?</value>
   </data>

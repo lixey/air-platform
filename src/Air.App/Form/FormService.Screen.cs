@@ -768,17 +768,20 @@ public abstract partial class FormService<TEntity, TInput>
       });
     }
 
-    var navEnd = new List<NavElementModel>
+    var navEnd = new List<NavElementModel>();
+    if (BuildHistoryOverlay(servicePath) is { } historyOverlay)
     {
-      new NavCloseModel
-      {
-        Key = "close",
-        Icon = UiIcon.Close,
-        Color = UiColor.Slate,
-        Variant = ButtonVariant.Ghost,
-        Title = L["Close"]
-      }
-    };
+      navEnd.Add(historyOverlay);
+    }
+
+    navEnd.Add(new NavCloseModel
+    {
+      Key = "close",
+      Icon = UiIcon.Close,
+      Color = UiColor.Slate,
+      Variant = ButtonVariant.Ghost,
+      Title = L["Close"]
+    });
 
     return new NavModel
     {
@@ -786,6 +789,53 @@ public abstract partial class FormService<TEntity, TInput>
       Start = navStart,
       Elements = navElements,
       End = navEnd
+    };
+  }
+
+  private NavOverlayModel? BuildHistoryOverlay(string servicePath)
+  {
+    if (IsNew || Request.Id is not > 0 || !Feature.HasHistory)
+    {
+      return null;
+    }
+
+    if (typeof(AppPlatformChange).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(BaseAppAuthSession).IsAssignableFrom(typeof(TEntity)) ||
+        Attribute.IsDefined(typeof(TEntity), typeof(NoAuditAttribute), inherit: true))
+    {
+      return null;
+    }
+
+    var changeFeature = ModuleCatalog.Instance.AllFeatures
+      .FirstOrDefault(f => f.ServiceType != null && typeof(ChangeGridService).IsAssignableFrom(f.ServiceType));
+    if (changeFeature?.ServiceType == null)
+    {
+      return null;
+    }
+
+    if (User is { IsAuthenticated: true } &&
+        !User.Can(Feature.History) &&
+        !User.Can(Feature.All) &&
+        !User.Can(changeFeature.View) &&
+        !User.Can(changeFeature.All) &&
+        !User.Can("*"))
+    {
+      return null;
+    }
+
+    var changeServicePath = ServicePathResolver.Resolve(changeFeature.ServiceType);
+    return new NavOverlayModel
+    {
+      Key = "history",
+      Icon = UiIcon.Clock,
+      Color = UiColor.Slate,
+      Variant = ButtonVariant.Ghost,
+      Title = L["History"],
+      Overlay = OverlayModel.Dialog($"{servicePath}.history")
+        .Screen(changeServicePath, new { parentService = servicePath, parentId = Request.Id.Value })
+        .Width(1040)
+        .Height(640)
+        .Build()
     };
   }
 

@@ -1000,6 +1000,9 @@
   <data name="Restore" xml:space="preserve">
     <value>Відновити</value>
   </data>
+  <data name="History" xml:space="preserve">
+    <value>Історія</value>
+  </data>
   <data name="RestoreConfirm" xml:space="preserve">
     <value>Відновити вибрані рядки журналу?</value>
   </data>

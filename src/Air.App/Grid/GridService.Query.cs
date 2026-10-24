@@ -9,6 +9,7 @@ public abstract partial class GridService<TEntity, TRow>
     parent = new Parent();
     SetParent(parent);
 
+    ParentService = gridReq?.ParentService;
     ParentId = gridReq?.ParentId;
 
     queryDeclaration = GetQueryDeclaration();

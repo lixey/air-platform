@@ -86,6 +86,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   }
 
   protected virtual void SetParent(Parent parent) { }
+  protected internal string? ParentService { get; set; }
   protected internal long? ParentId { get; set; }
   protected IReadOnlyList<long> SelectedIds { get; set; } = [];
 
@@ -501,18 +502,18 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return null;
   }
 
-  private (long? ParentId, Query Value)? _cachedQuery;
+  private (string? ParentService, long? ParentId, Query Value)? _cachedQuery;
 
   private Query GetQueryDeclaration()
   {
-    if (_cachedQuery is { } cached && cached.ParentId == ParentId)
+    if (_cachedQuery is { } cached && cached.ParentService == ParentService && cached.ParentId == ParentId)
     {
       return cached.Value;
     }
 
     var q = new Query();
     SetQuery(q);
-    _cachedQuery = (ParentId, q);
+    _cachedQuery = (ParentService, ParentId, q);
     return q;
   }
 

@@ -9,6 +9,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
   {
+    ParentService = request?.ParentService;
     ParentId = request?.ParentId;
     var parent = new Parent();
     SetParent(parent);
@@ -349,7 +350,18 @@ public abstract partial class GridService<TEntity, TRow>
         Key = $"{servicePath}.nav",
         Start = navStart,
         Elements = navElements,
-        End = [],
+        End = ParentId is > 0 && !string.IsNullOrEmpty(ParentService)
+          ? [
+              new NavCloseModel
+              {
+                Key = "close",
+                Icon = UiIcon.Close,
+                Color = UiColor.Slate,
+                Variant = ButtonVariant.Ghost,
+                Title = L["Close"]
+              }
+            ]
+          : [],
         More = canExport
           ? [
               new GridNavActionModel

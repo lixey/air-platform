@@ -72,6 +72,7 @@ public class Feature
     Path = source.Path;
     IsReadOnly = source.IsReadOnly;
     HasDelete = source.HasDelete;
+    HasHistory = source.HasHistory;
     AllowsAgent = source.AllowsAgent;
     foreach (var kv in source._rights)
     {
@@ -90,6 +91,7 @@ public class Feature
   public Type? ServiceType { get; set; }
   public bool IsReadOnly { get; private set; }
   public bool HasDelete { get; private set; } = true;
+  public bool HasHistory { get; private set; } = true;
   public bool AllowsAgent { get; private set; }
 
   public string Key => $"{Module}.{CleanName}";
@@ -99,6 +101,7 @@ public class Feature
   public Right Edit => Action("Edit");
   public Right Delete => Action("Delete");
   public Right Export => Action("Export");
+  public Right History => Action("History");
   public Right All => Action("*");
 
   public IReadOnlyDictionary<string, Right> Rights => _rights;
@@ -117,6 +120,12 @@ public class Feature
   public Feature WithoutDelete()
   {
     HasDelete = false;
+    return this;
+  }
+
+  public Feature WithoutHistory()
+  {
+    HasHistory = false;
     return this;
   }
 

@@ -39,6 +39,10 @@ public static class RightsTree
         {
           rights.Add(Node(feat.Action("Restore").Key, L["Restore"]));
         }
+        else if (feat.HasHistory)
+        {
+          rights.Add(Node(feat.History.Key, L["History"]));
+        }
 
         foreach (var accessRight in GetContainerRights(feat))
         {
@@ -104,7 +108,7 @@ public static class RightsTree
 
   private static readonly HashSet<string> StandardActions = new(StringComparer.OrdinalIgnoreCase)
   {
-    "View", "MenuView", "Edit", "Delete", "Export", "*"
+    "View", "MenuView", "Edit", "Delete", "Export", "History", "*"
   };
 
   private static IEnumerable<Right> DiscoverFeatureActionRights(IPlatformModule module, Feature feature)

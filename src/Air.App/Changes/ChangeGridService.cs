@@ -11,8 +11,12 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
     columns.Add(r => r.At).AsDatetime();
     columns.Add(r => r.UserId);
     columns.Add(r => r.Operation);
-    columns.Add(r => r.Table);
-    columns.Add(r => r.RowId);
+    if (string.IsNullOrEmpty(ParentService))
+    {
+      columns.Add(r => r.Table);
+      columns.Add(r => r.RowId);
+    }
+
     columns.Add(r => r.Before);
     columns.Add(r => r.After);
     columns.Add(r => r.CorrelationId);
@@ -20,8 +24,45 @@ public abstract class ChangeGridService(PlatformDbContext db, IServiceProvider? 
 
   protected override void SetQuery(Query query)
   {
+    if (!string.IsNullOrEmpty(ParentService) && ParentId is > 0)
+    {
+      var tableName = ResolveParentTableName(ParentService);
+      var rowId = ParentId.Value;
+      query.Where(r => r.Table == tableName && r.RowId == rowId);
+    }
+
     query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
-    query.SearchBy(r => r.Table, r => r.Operation, r => r.CorrelationId);
+    query.SearchBy(r => r.Table, r => r.Operation, r => r.Before, r => r.After, r => r.CorrelationId);
+  }
+
+  private string ResolveParentTableName(string parentService)
+  {
+    var serviceType = ModuleCatalog.Instance.FindServiceType(parentService);
+    var cur = serviceType?.BaseType;
+    Type? entityType = null;
+    while (cur != null && cur != typeof(object))
+    {
+      if (cur.IsGenericType)
+      {
+        var def = cur.GetGenericTypeDefinition();
+        if (def == typeof(FormService<,>) || def == typeof(GridService<,>))
+        {
+          entityType = cur.GetGenericArguments()[0];
+          break;
+        }
+      }
+
+      cur = cur.BaseType;
+    }
+
+    if (entityType == null)
+    {
+      return string.Empty;
+    }
+
+    var targetDb = GetDbContextForTable(entityType.Name);
+    var efEntity = targetDb.Model.FindEntityType(entityType);
+    return efEntity?.GetTableName() ?? entityType.Name;
   }
 
   protected override void SetNav(Nav nav)

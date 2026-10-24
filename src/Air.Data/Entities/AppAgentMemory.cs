@@ -25,7 +25,9 @@ public class AppAgentMemory : BaseEntity, IHasIsActive, IInheritedByChildTenants
 
   public bool IsActive { get; set; } = true;
 
+  [NoAudit]
   public int HitCount { get; set; }
 
+  [NoAudit]
   public DateTimeOffset? LastUsedAt { get; set; }
 }
