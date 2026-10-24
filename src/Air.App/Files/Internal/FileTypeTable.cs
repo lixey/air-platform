@@ -72,9 +72,13 @@ internal static class FileTypeTable
     Extensions.TryGetValue(contentType, out var extensions) &&
     extensions.Contains(Path.GetExtension(name).ToLowerInvariant(), StringComparer.Ordinal);
 
-  public static IEnumerable<string> ExtensionsOf(IEnumerable<string> contentTypes) =>
+  public static IEnumerable<string> TypesOf(IEnumerable<string> contentTypes) =>
     contentTypes
       .SelectMany(t => FileTypeGroup.TypesOf(t) ?? [t])
+      .Distinct(StringComparer.Ordinal);
+
+  public static IEnumerable<string> ExtensionsOf(IEnumerable<string> contentTypes) =>
+    TypesOf(contentTypes)
       .SelectMany(t => Extensions.TryGetValue(t, out var extensions) ? extensions : [])
       .Distinct(StringComparer.Ordinal);
 

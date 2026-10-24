@@ -587,7 +587,7 @@ public abstract partial class FormService<TEntity, TInput>
       var limits = rules != null
         ? new Files.Contracts.FileUploadLimitsDto
         {
-          Accept = [.. rules.ContentTypes],
+          Accept = [.. Files.Internal.FileTypeTable.TypesOf(rules.ContentTypes)],
           Extensions = [.. Files.Internal.FileTypeTable.ExtensionsOf(rules.ContentTypes)],
           MaxBytes = rules.MaxBytes,
           SourceMaxBytes = rules.SourceMaxBytes > 0 ? rules.SourceMaxBytes : rules.MaxBytes,

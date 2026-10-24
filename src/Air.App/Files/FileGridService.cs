@@ -93,7 +93,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
   public static FileUploadLimitsDto LimitsOf(FileRulesAttribute rules) =>
     new()
     {
-      Accept = [.. rules.ContentTypes],
+      Accept = [.. FileTypeTable.TypesOf(rules.ContentTypes)],
       Extensions = [.. FileTypeTable.ExtensionsOf(rules.ContentTypes)],
       MaxBytes = rules.MaxBytes,
       SourceMaxBytes = rules.SourceMaxBytes > 0 ? rules.SourceMaxBytes : rules.MaxBytes,
@@ -179,8 +179,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
       };
     }
 
-    var allowedTypes = rules.ContentTypes
-      .SelectMany(t => FileTypeGroup.TypesOf(t) ?? [t])
+    var allowedTypes = FileTypeTable.TypesOf(rules.ContentTypes)
       .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     var normalizedType = FileTypeTable.Normalize(file.ContentType) ?? "application/octet-stream";
@@ -189,7 +188,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["FileTypeRefused", string.Join(", ", rules.ContentTypes)], Code = "file.type", Type = MessageType.Error }]
+        Warnings = [new MessageDto { Detail = L["FileTypeRefused", string.Join(", ", allowedTypes)], Code = "file.type", Type = MessageType.Error }]
       };
     }
 
