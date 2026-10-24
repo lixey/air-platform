@@ -8,7 +8,7 @@ public interface IAgentModelSynchronizer
 public static class AgentModelCatalog
 {
   public const string DefaultModelId = "gemini-4-argon-high";
-  public const string DefaultPhotoModelId = "gemini-3.8-flash-low";
+  public const string DefaultPhotoModelId = "gemini-3.8-flash-high";
 
   public static AppAgentModel[] DefaultRows() =>
   [
@@ -30,6 +30,7 @@ public static class AgentModelCatalog
       Name = "Gemini 3.8 Flash (High)",
       SortOrder = 20,
       IsDefault = false,
+      IsForPhotos = true,
       IsActive = true
     },
     new()
@@ -78,9 +79,9 @@ public static class AgentModelCatalog
       ProviderName = "Antigravity CLI (agy)",
       ModelId = "gemini-3.8-flash-medium",
       Name = "Gemini 3.8 Flash (Medium)",
-      SortOrder = 70,
+      SortOrder = 22,
       IsDefault = false,
-      IsActive = false
+      IsActive = true
     },
     new()
     {
@@ -90,7 +91,7 @@ public static class AgentModelCatalog
       Name = "Gemini 3.8 Flash (Low)",
       SortOrder = 25,
       IsDefault = false,
-      IsForPhotos = true,
+      IsForPhotos = false,
       IsActive = true
     },
     new()

@@ -14,13 +14,13 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
   private static readonly IReadOnlyList<AgentModelDto> FallbackModels =
   [
     new() { Id = "gemini-4-argon-high", Name = "Gemini 4 Argon (High)", Provider = "Agy", IsDefault = true },
-    new() { Id = "gemini-3.8-flash-high", Name = "Gemini 3.8 Flash (High)", Provider = "Agy" },
+    new() { Id = "gemini-3.8-flash-high", Name = "Gemini 3.8 Flash (High)", Provider = "Agy", IsForPhotos = true },
     new() { Id = "claude-opus-5-5-high", Name = "Claude Opus 5.5 (High)", Provider = "Agy" },
     new() { Id = "claude-sonnet-5-5-high", Name = "Claude Sonnet 5.5 (High)", Provider = "Agy" },
     new() { Id = "gemini-4-argon-medium", Name = "Gemini 4 Argon (Medium)", Provider = "Agy" },
     new() { Id = "gemini-4-argon-low", Name = "Gemini 4 Argon (Low)", Provider = "Agy" },
     new() { Id = "gemini-3.8-flash-medium", Name = "Gemini 3.8 Flash (Medium)", Provider = "Agy" },
-    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)", Provider = "Agy", IsForPhotos = true },
+    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)", Provider = "Agy" },
     new() { Id = "claude-opus-5-5-medium", Name = "Claude Opus 5.5 (Medium)", Provider = "Agy" },
     new() { Id = "claude-opus-5-5-low", Name = "Claude Opus 5.5 (Low)", Provider = "Agy" },
     new() { Id = "claude-sonnet-5-5-medium", Name = "Claude Sonnet 5.5 (Medium)", Provider = "Agy" },
@@ -222,12 +222,6 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     psi.ArgumentList.Add("--disable-slash-commands");
     psi.ArgumentList.Add("--model");
     psi.ArgumentList.Add(selectedModel);
-    if (request.Attachments.Count > 0)
-    {
-      psi.ArgumentList.Add("--effort");
-      psi.ArgumentList.Add("low");
-    }
-
     psi.ArgumentList.Add("--add-dir");
     psi.ArgumentList.Add(store.WorkspaceDirectory);
 
