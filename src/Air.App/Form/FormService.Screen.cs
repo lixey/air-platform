@@ -270,9 +270,12 @@ public abstract partial class FormService<TEntity, TInput>
 
       foreach (var el in elements.List)
       {
-        if (statusMemberName != null && string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase)
-            || el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
-            || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase))
+        var isStatusField = statusMemberName != null
+          ? string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase)
+          : el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
+            || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase);
+
+        if (isStatusField)
         {
           el.IsDisabled = true;
           el.IsServerOwned = true;
@@ -808,7 +811,9 @@ public abstract partial class FormService<TEntity, TInput>
         if (transition.From.Contains(currentStatus))
         {
           var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
-          var verbLabel = L.TextOr($"Ecom: {transition.Name}", L[transition.Name]);
+          var verbLabel = !string.IsNullOrEmpty(Feature.Module)
+            ? L.TextOr($"{Feature.Module}: {transition.Name}", L[transition.Name])
+            : L[transition.Name];
           var targetLabel = targetStatus != null ? L[targetStatus.Name] : verbLabel;
           var confirmMessage = transition.Confirm != null ? L[transition.Confirm] : null;
           var action = new FormNavActionModel
@@ -1051,19 +1056,15 @@ public abstract partial class FormService<TEntity, TInput>
             ? db
             : (refServiceType != null ? (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService)?.DbContext : null) ?? db;
 
+          var loadedById = refEntityType != null
+            ? await LoadEntitiesByIdsAsync(targetDb, refEntityType, keys, ct)
+            : [];
+
           foreach (var k in keys)
           {
-            string? itemCaption = null;
-            if (refEntityType != null)
-            {
-              try
-              {
-                var loaded = await targetDb.FindAsync(refEntityType, [k], ct);
-                itemCaption = ReadDisplayCaption(loaded, labelPaths);
-              }
-              catch { }
-            }
-
+            var itemCaption = loadedById.TryGetValue(k, out var loaded)
+              ? ReadDisplayCaption(loaded, labelPaths)
+              : null;
             refs.Add(new Reference { Id = k, Name = !string.IsNullOrEmpty(itemCaption) ? L[itemCaption] : $"#{k}" });
           }
         }
@@ -1182,6 +1183,46 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
     }
+  }
+
+  private static readonly MethodInfo LoadEntitiesByIdsGenericMethod =
+    typeof(FormService<TEntity, TInput>).GetMethod(nameof(LoadEntitiesByIdsCoreAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+  private static async Task<Dictionary<long, object>> LoadEntitiesByIdsAsync(
+    DbContext targetDb,
+    Type entityType,
+    IReadOnlyList<long> ids,
+    CancellationToken ct)
+  {
+    if (ids.Count == 0 || !typeof(IEntity).IsAssignableFrom(entityType))
+    {
+      return [];
+    }
+
+    try
+    {
+      var task = (Task<Dictionary<long, object>>)LoadEntitiesByIdsGenericMethod
+        .MakeGenericMethod(entityType)
+        .Invoke(null, [targetDb, ids, ct])!;
+      return await task;
+    }
+    catch
+    {
+      return [];
+    }
+  }
+
+  private static async Task<Dictionary<long, object>> LoadEntitiesByIdsCoreAsync<TRefEntity>(
+    DbContext targetDb,
+    IReadOnlyList<long> ids,
+    CancellationToken ct)
+    where TRefEntity : class, IEntity
+  {
+    var rows = await targetDb.Set<TRefEntity>()
+      .AsNoTracking()
+      .Where(e => ids.Contains(e.Id))
+      .ToListAsync(ct);
+    return rows.ToDictionary(r => r.Id, r => (object)r);
   }
 
   private static string? ReadDisplayCaption(object? target, IReadOnlyList<string>? labelPaths = null)

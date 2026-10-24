@@ -11,8 +11,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     ParentId = gridReq?.ParentId;
 
-    queryDeclaration = new Query();
-    SetQuery(queryDeclaration);
+    queryDeclaration = GetQueryDeclaration();
 
     var query = BaseQuery(db);
     var restrictions = new UserRestrictions();
@@ -156,7 +155,7 @@ public abstract partial class GridService<TEntity, TRow>
       await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
       await PopulateRowAvailabilityAsync(shapedRows, cols, ct);
       var filteredEntities = dataProvider.Filter(request);
-      var bottomRows = !isSelect ? await ComputeSumRowsAsync(filteredEntities.Select(queryDeclaration.Selector), cols.List, ct) : null;
+      var bottomRows = !isSelect ? await ComputeSumRowsAsync(filteredEntities, queryDeclaration.Selector, cols.List, ct) : null;
       return new GridPageDto<object>
       {
         Rows = shapedRows,
@@ -174,7 +173,7 @@ public abstract partial class GridService<TEntity, TRow>
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
-    var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), cols.List, ct) : null;
+    var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), null, cols.List, ct) : null;
 
     return new GridPageDto<object>
     {
@@ -478,7 +477,11 @@ public abstract partial class GridService<TEntity, TRow>
     return ids;
   }
 
-  private static async Task<List<object>?> ComputeSumRowsAsync<TSource>(IQueryable<TSource> filteredQuery, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  private static async Task<List<object>?> ComputeSumRowsAsync(
+    IQueryable<TEntity> filteredEntities,
+    Expression<Func<TEntity, TRow>>? selector,
+    IReadOnlyList<GridColumnDto> columns,
+    CancellationToken ct)
   {
     var sumCols = columns.Where(c => c.IsSummed && !string.IsNullOrEmpty(c.Path)).ToList();
     if (sumCols.Count == 0)
@@ -487,7 +490,8 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var sumRow = new Dictionary<string, object?>(StringComparer.Ordinal);
-    var rowParam = Expression.Parameter(typeof(TSource), "r");
+    var rowType = selector != null ? typeof(TRow) : typeof(TEntity);
+    var rowParam = Expression.Parameter(rowType, "r");
 
     foreach (var col in sumCols)
     {
@@ -497,7 +501,7 @@ public abstract partial class GridService<TEntity, TRow>
       }
 
       Expression? current = rowParam;
-      var currentType = typeof(TSource);
+      var currentType = rowType;
       foreach (var seg in col.Path.Split('.'))
       {
         var prop = PropertyAccessorCache.GetProperty(currentType, seg);
@@ -517,31 +521,95 @@ public abstract partial class GridService<TEntity, TRow>
       }
 
       var underlying = Nullable.GetUnderlyingType(currentType) ?? currentType;
+      var entityPred = col.SumPredicate as Expression<Func<TEntity, bool>>;
 
       try
       {
         if (underlying == typeof(decimal))
         {
-          var expr = Expression.Lambda<Func<TSource, decimal?>>(
-            currentType == typeof(decimal?) ? current : Expression.Convert(current, typeof(decimal?)),
-            rowParam);
-          var total = await filteredQuery.SumAsync(expr, ct) ?? 0m;
+          var body = currentType == typeof(decimal?) ? current : Expression.Convert(current, typeof(decimal?));
+          decimal total;
+          var usedFallback = false;
+
+          if (selector != null)
+          {
+            var expr = Expression.Lambda<Func<TRow, decimal?>>(body, rowParam);
+            if (entityPred != null)
+            {
+              var predSum = await filteredEntities.Where(entityPred).Select(selector).SumAsync(expr, ct);
+              if (predSum.HasValue)
+              {
+                total = predSum.Value;
+              }
+              else
+              {
+                var fallbackSum = await filteredEntities.Select(selector).SumAsync(expr, ct);
+                total = fallbackSum ?? 0m;
+                usedFallback = fallbackSum.HasValue;
+              }
+            }
+            else
+            {
+              total = await filteredEntities.Select(selector).SumAsync(expr, ct) ?? 0m;
+            }
+          }
+          else
+          {
+            var expr = Expression.Lambda<Func<TEntity, decimal?>>(body, rowParam);
+            if (entityPred != null)
+            {
+              var predSum = await filteredEntities.Where(entityPred).SumAsync(expr, ct);
+              if (predSum.HasValue)
+              {
+                total = predSum.Value;
+              }
+              else
+              {
+                var fallbackSum = await filteredEntities.SumAsync(expr, ct);
+                total = fallbackSum ?? 0m;
+                usedFallback = fallbackSum.HasValue;
+              }
+            }
+            else
+            {
+              total = await filteredEntities.SumAsync(expr, ct) ?? 0m;
+            }
+          }
+
           PutValue(sumRow, col.Path.Split('.'), total);
+          if (col.SumColorEvaluator != null)
+          {
+            var sumColor = col.SumColorEvaluator(total, usedFallback);
+            if (!string.IsNullOrEmpty(sumColor))
+            {
+              sumRow[$"{col.Path}Color"] = sumColor;
+            }
+          }
         }
         else if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short))
         {
-          var expr = Expression.Lambda<Func<TSource, long?>>(
-            currentType == typeof(long?) ? current : Expression.Convert(current, typeof(long?)),
-            rowParam);
-          var total = await filteredQuery.SumAsync(expr, ct) ?? 0L;
+          var body = currentType == typeof(long?) ? current : Expression.Convert(current, typeof(long?));
+          var sourceEntities = entityPred != null ? filteredEntities.Where(entityPred) : filteredEntities;
+          var total = selector != null
+            ? await sourceEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, long?>>(body, rowParam), ct) ?? 0L
+            : await sourceEntities.SumAsync(Expression.Lambda<Func<TEntity, long?>>(body, rowParam), ct) ?? 0L;
           PutValue(sumRow, col.Path.Split('.'), total);
+          if (col.SumColorEvaluator != null)
+          {
+            var sumColor = col.SumColorEvaluator(total, false);
+            if (!string.IsNullOrEmpty(sumColor))
+            {
+              sumRow[$"{col.Path}Color"] = sumColor;
+            }
+          }
         }
         else if (underlying == typeof(double) || underlying == typeof(float))
         {
-          var expr = Expression.Lambda<Func<TSource, double?>>(
-            currentType == typeof(double?) ? current : Expression.Convert(current, typeof(double?)),
-            rowParam);
-          var total = await filteredQuery.SumAsync(expr, ct) ?? 0d;
+          var body = currentType == typeof(double?) ? current : Expression.Convert(current, typeof(double?));
+          var sourceEntities = entityPred != null ? filteredEntities.Where(entityPred) : filteredEntities;
+          var total = selector != null
+            ? await sourceEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, double?>>(body, rowParam), ct) ?? 0d
+            : await sourceEntities.SumAsync(Expression.Lambda<Func<TEntity, double?>>(body, rowParam), ct) ?? 0d;
           PutValue(sumRow, col.Path.Split('.'), total);
         }
       }

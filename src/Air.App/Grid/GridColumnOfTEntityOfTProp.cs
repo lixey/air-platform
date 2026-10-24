@@ -139,6 +139,23 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Sum();
     return this;
   }
+  public new GridColumn<TEntity, TProp> Sum(Func<decimal, string?> colorSelector)
+  {
+    base.Sum(colorSelector);
+    return this;
+  }
+  public GridColumn<TEntity, TProp> Sum(Expression<Func<TEntity, bool>> predicate, Func<decimal, bool, string?>? colorSelector = null)
+  {
+    Dto.IsSummed = true;
+    Dto.SumPredicate = predicate;
+    if (colorSelector != null)
+    {
+      Dto.SumColorEvaluator = colorSelector;
+      ApplyColorPath();
+    }
+
+    return this;
+  }
   public new GridColumn<TEntity, TProp> Stepper(bool hasStepper = true)
   {
     base.Stepper(hasStepper);

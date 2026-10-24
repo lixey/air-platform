@@ -475,12 +475,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public virtual Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
     DeleteAsync(request, cancellationToken);
 
-  public virtual IReadOnlyList<string>? GetReferenceLabelPaths()
-  {
-    var q = new Query();
-    SetQuery(q);
-    return q.ReferenceLabelPaths;
-  }
+  public virtual IReadOnlyList<string>? GetReferenceLabelPaths() =>
+    GetQueryDeclaration().ReferenceLabelPaths;
 
   public virtual string? GetRecordLabel(object? entity)
   {
@@ -489,8 +485,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return null;
     }
 
-    var q = new Query();
-    SetQuery(q);
+    var q = GetQueryDeclaration();
     if (q.LabelSelector != null)
     {
       try
@@ -504,6 +499,21 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     return null;
+  }
+
+  private (long? ParentId, Query Value)? _cachedQuery;
+
+  private Query GetQueryDeclaration()
+  {
+    if (_cachedQuery is { } cached && cached.ParentId == ParentId)
+    {
+      return cached.Value;
+    }
+
+    var q = new Query();
+    SetQuery(q);
+    _cachedQuery = (ParentId, q);
+    return q;
   }
 
   protected virtual void SetQuery(Query query) { }

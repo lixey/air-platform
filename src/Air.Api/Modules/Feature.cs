@@ -12,7 +12,7 @@ public class Feature
     Label = PascalToSpaced(name);
     Name = PascalToSpaced(Pluralize(name));
     ServiceType = serviceType;
-    Path = $"{module.ToKebabCase()}/{name.ToKebabCase()}";
+    Path = $"{ServicePathResolver.ToKebabCase(module)}/{ServicePathResolver.ToKebabCase(name)}";
     configure?.Invoke(this);
     if (serviceType != null)
     {

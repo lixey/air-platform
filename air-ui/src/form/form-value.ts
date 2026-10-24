@@ -143,19 +143,37 @@ export function inputModelOf(elements: readonly FormElementDto[]): FormModel {
  * is its day on the clock of `zone`, the user's, as the form shows it.
  */
 export function canonicalJson(value: Record<string, unknown>, elements: readonly FormElementDto[], zone: string): string {
-  return JSON.stringify(
-    elements
-      .filter(e => !e.isDisabled && !e.isServerOwned && !isSecret(e))
-      .map(element => {
-        let field = value[element.path];
-        if (element.valueKind === 'list' && Array.isArray(field)) {
-          field = [...new Set(field.map(item => JSON.stringify(stable(item))))].sort();
-        } else if (element.temporalType && typeof field === 'string') {
-          field = temporalKey(field, element, zone);
-        }
-        return [element.path, Object.hasOwn(value, element.path), stable(field)];
-      }),
-  );
+  const elementPaths = new Set(elements.map(e => e.path));
+  const ignoredPaths = new Set<string>();
+  for (const e of elements) {
+    if (e.isDisabled || e.isServerOwned || isSecret(e)) {
+      ignoredPaths.add(e.path);
+    }
+    if (e.referencePath && !elementPaths.has(e.referencePath)) {
+      ignoredPaths.add(e.referencePath);
+    }
+  }
+
+  const entries: unknown[] = elements
+    .filter(e => !e.isDisabled && !e.isServerOwned && !isSecret(e))
+    .map(element => {
+      let field = value[element.path];
+      if (element.valueKind === 'list' && Array.isArray(field)) {
+        field = [...new Set(field.map(item => JSON.stringify(stable(item))))].sort();
+      } else if (element.temporalType && typeof field === 'string') {
+        field = temporalKey(field, element, zone);
+      }
+      return [element.path, Object.hasOwn(value, element.path), stable(field)];
+    });
+
+  const extraKeys = Object.keys(value)
+    .filter(k => !elementPaths.has(k) && !ignoredPaths.has(k))
+    .sort();
+  for (const key of extraKeys) {
+    entries.push([key, true, stable(value[key])]);
+  }
+
+  return JSON.stringify(entries);
 }
 
 function stable(value: unknown): unknown {

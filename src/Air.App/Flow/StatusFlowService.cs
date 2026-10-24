@@ -78,6 +78,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
   private readonly List<ChildRule> _childRules = [];
   private readonly Dictionary<string, Transition<TEntity>> _transitionsByName = new(StringComparer.OrdinalIgnoreCase);
   private Expression<Func<TEntity, long>>? _statusMember;
+  private Func<TEntity, long>? _statusReader;
   private Action<TEntity, long>? _statusSetter;
   private bool _isDeclared;
 
@@ -129,7 +130,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       return this;
     }
 
-    internal async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken ct)
+    internal virtual async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken ct)
     {
       await executor(context, records, ct);
       if (context.Errors.Count > 0 || _followEffects.Count == 0)
@@ -198,7 +199,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       return this;
     }
 
-    internal new async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> parents, CancellationToken ct)
+    internal override async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> parents, CancellationToken ct)
     {
       if (parents.Count == 0)
       {
@@ -225,7 +226,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
           .ToListAsync(ct);
 
         var byParent = allChildren.ToLookup(keyCompiled);
-        var childStatusReader = _childFlow.StatusMember.Compile();
+        var childStatusReader = _childFlow._statusReader ?? _childFlow.StatusMember.Compile();
 
         foreach (var parent in parents)
         {
@@ -310,12 +311,12 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
   public bool Allows(TEntity record, Transition<TEntity> transition)
   {
     EnsureDeclared();
-    if (_statusMember == null)
+    if (_statusReader == null)
     {
       return false;
     }
 
-    var currentStatus = _statusMember.Compile()(record);
+    var currentStatus = _statusReader(record);
     return transition.From.Contains(currentStatus);
   }
 
@@ -353,16 +354,8 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     ChildRule rule,
     IMutationContext context,
     IReadOnlyList<TEntity> records,
-    CancellationToken ct)
-  {
-    var specific = rule.GetType().GetMethod("ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-    if (specific != null)
-    {
-      return (Task)specific.Invoke(rule, [context, records, ct])!;
-    }
-
-    return rule.ExecuteAsync(context, records, ct);
-  }
+    CancellationToken ct) =>
+    rule.ExecuteAsync(context, records, ct);
 
   public async Task FollowMovesAsync(
     IMutationContext context,
@@ -530,7 +523,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
 
     await LockAsync(context, records, cancellationToken);
 
-    var statusReader = _statusMember!.Compile();
+    var statusReader = _statusReader ??= _statusMember!.Compile();
     foreach (var record in records)
     {
       var currentStatus = statusReader(record);
@@ -542,16 +535,29 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         context.AddError("status.transition", refusal, record.Id);
         return;
       }
+    }
 
+    if (transition.Availability.Count > 0)
+    {
+      var recordIds = records.Select(r => r.Id).ToList();
       foreach (var offer in transition.Availability)
       {
         if (offer.Condition is Expression<Func<TEntity, bool>> cond)
         {
-          var passes = await Db.Set<TEntity>().Where(e => e.Id == record.Id).AnyAsync(cond, cancellationToken);
-          if (!passes)
+          var passedIds = (await Db.Set<TEntity>()
+            .Where(e => recordIds.Contains(e.Id))
+            .Where(cond)
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+          foreach (var record in records)
           {
-            context.AddError("status.availability", L[offer.Reason], record.Id);
-            return;
+            if (!passedIds.Contains(record.Id))
+            {
+              context.AddError("status.availability", L[offer.Reason], record.Id);
+              return;
+            }
           }
         }
       }
@@ -673,6 +679,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     if (flow.StateMember != null)
     {
       _statusMember = flow.StateMember;
+      _statusReader = _statusMember.Compile();
       if (_statusMember.Body is MemberExpression me && me.Member is PropertyInfo pi)
       {
         _statusSetter = (entity, val) => pi.SetValue(entity, val);

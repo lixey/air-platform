@@ -1,7 +1,11 @@
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Service, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from '../agent/agent-block-models';
 import { parseAgentBlocks } from '../agent/agent-block-parser';
 import { AlertService } from '../app/alert/alert.service';
+import { shownByCaller } from '../app/alert/error-alert.interceptor';
+import { PLATFORM_CLIENT_HEADER, PLATFORM_TIME_ZONE_HEADER } from '../app/auth/credentials.interceptor';
 import { LocaleService } from '../app/locale.service';
 import type {
   AgentAttachmentDto,
@@ -14,8 +18,10 @@ import type {
   AgentStreamEventDto,
 } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import { browserZone } from '../core/time-zone';
 import { GridService } from '../grid/grid.service';
 import { OverlayService } from '../overlay/overlay.service';
+import { ReportComponent } from '../report/report.component';
 
 export type AgentAttachment = AgentAttachmentDto;
 export type AgentProposalField = AgentProposalFieldDto;
@@ -43,11 +49,14 @@ function stripProposalBlocks(raw: string): string {
   return raw
     .replace(/<air_proposal>[\s\S]*?(?:<\/air_proposal>|$)/gi, '')
     .replace(/```(?:json|xml)?\s*<air_proposal>[\s\S]*$/gi, '')
+    .replace(/<air_memory>[\s\S]*?(?:<\/air_memory>|$)/gi, '')
+    .replace(/```(?:json|xml)?\s*<air_memory>[\s\S]*$/gi, '')
     .trim();
 }
 
 @Service()
 export class AgentService {
+  private readonly http = inject(HttpClient);
   private readonly overlay = inject(OverlayService);
   private readonly alert = inject(AlertService);
   private readonly locale = inject(LocaleService);
@@ -73,11 +82,7 @@ export class AgentService {
     }
     this.statusLoaded = true;
     try {
-      const res = await fetch('/api/agent/status', { credentials: 'include' });
-      if (!res.ok) {
-        return;
-      }
-      const status = (await res.json()) as AgentStatusDto;
+      const status = await firstValueFrom(this.http.get<AgentStatusDto>('/api/agent/status', shownByCaller()));
       if (status.activeProvider) {
         this.activeProvider.set(status.activeProvider);
       }
@@ -109,19 +114,17 @@ export class AgentService {
       for (const file of list) {
         const form = new FormData();
         form.append('file', file, file.name);
-        const res = await fetch('/api/agent/upload', {
-          method: 'POST',
-          body: form,
-          credentials: 'include',
-        });
-        if (!res.ok) {
-          throw new Error(this.texts.of('AgentErrorUpload'));
-        }
-        const saved = (await res.json()) as AgentAttachment;
+        const saved = await firstValueFrom(this.http.post<AgentAttachment>('/api/agent/upload', form, shownByCaller()));
         this.pendingAttachments.update(prev => [...prev, saved]);
       }
     } catch (err) {
-      this.alert.error(err instanceof Error ? err.message : this.texts.of('AgentErrorUpload'));
+      const msg =
+        err instanceof HttpErrorResponse && err.error?.title
+          ? String(err.error.title)
+          : err instanceof Error
+            ? err.message
+            : this.texts.of('AgentErrorUpload');
+      this.alert.error(msg);
     } finally {
       this.isUploading.set(false);
     }
@@ -193,7 +196,11 @@ export class AgentService {
     try {
       const response = await fetch('/api/agent/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          [PLATFORM_CLIENT_HEADER]: 'browser',
+          [PLATFORM_TIME_ZONE_HEADER]: browserZone(),
+        },
         credentials: 'include',
         body: JSON.stringify({
           sessionId: this.sessionId(),
@@ -371,17 +378,9 @@ export class AgentService {
     this.updateProposal(messageId, proposalId, p => ({ ...p, status: 'confirming' }));
 
     try {
-      const res = await fetch(`/api/agent/proposals/${encodeURIComponent(proposalId)}/confirm`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (!res.ok) {
-        const errBody = (await res.json().catch(() => null)) as { title?: string } | null;
-        throw new Error(errBody?.title || this.texts.of('AgentErrorSave'));
-      }
-
-      const committed = (await res.json()) as AgentCommitResultDto;
+      const committed = await firstValueFrom(
+        this.http.post<AgentCommitResultDto>(`/api/agent/proposals/${encodeURIComponent(proposalId)}/confirm`, {}, shownByCaller()),
+      );
       this.applyCommitResult(committed);
 
       if (committed.alsoCommitted) {
@@ -391,9 +390,16 @@ export class AgentService {
       }
 
       GridService.reloadServices(committed.refreshServices);
+      ReportComponent.reloadAll();
     } catch (err) {
       this.updateProposal(messageId, proposalId, p => ({ ...p, status: 'pending' }));
-      this.alert.error(err instanceof Error ? err.message : this.texts.of('AgentErrorSave'));
+      const msg =
+        err instanceof HttpErrorResponse && err.error?.title
+          ? String(err.error.title)
+          : err instanceof Error
+            ? err.message
+            : this.texts.of('AgentErrorSave');
+      this.alert.error(msg);
     }
   }
 
@@ -420,7 +426,12 @@ export class AgentService {
       },
     });
 
-    ref.closed.subscribe(() => GridService.reloadServices());
+    ref.closed.subscribe(result => {
+      if (result !== undefined) {
+        GridService.reloadServices(proposal.service ? [proposal.service] : undefined);
+        ReportComponent.reloadAll();
+      }
+    });
   }
 
   async reset(): Promise<void> {
@@ -430,12 +441,7 @@ export class AgentService {
     this.pendingAttachments.set([]);
     this.sessionId.set(Math.random().toString(36).slice(2, 12));
 
-    await fetch('/api/agent/reset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ sessionId: oldSessionId }),
-    }).catch(() => undefined);
+    await firstValueFrom(this.http.post('/api/agent/reset', { sessionId: oldSessionId }, shownByCaller())).catch(() => undefined);
   }
 
   private applyCommitResult(result: AgentCommitResultDto): void {

@@ -103,7 +103,6 @@ public sealed class ModuleCatalog
     return _featuresByPath.GetValueOrDefault(path)
       ?? _featuresByPath.GetValueOrDefault(path.Replace('/', '-'))
       ?? _featuresByPath.GetValueOrDefault(path.Replace('-', '/'))
-      ?? _featuresByPath.GetValueOrDefault(path.Replace("demo/", ""))
       ?? _featuresByPath.GetValueOrDefault(path.Replace("-", ""));
   }
 
@@ -117,7 +116,6 @@ public sealed class ModuleCatalog
     return _servicesByPath.GetValueOrDefault(path)
       ?? _servicesByPath.GetValueOrDefault(path.Replace('/', '-'))
       ?? _servicesByPath.GetValueOrDefault(path.Replace('-', '/'))
-      ?? _servicesByPath.GetValueOrDefault(path.Replace("demo/", ""))
       ?? _servicesByPath.GetValueOrDefault(path.Replace("-", ""));
   }
 

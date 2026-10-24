@@ -15,7 +15,8 @@ import type {
 } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { TemporalBoxComponent } from '../datepicker/temporal-box.component';
-import { formatCellAmount, formatCellNumber, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
 
 @Component({
@@ -155,15 +156,28 @@ import { UI_COLORS } from '../theme/ui-color';
   host: { class: 'flex flex-col w-full h-full min-w-0 min-h-0 overflow-hidden' },
 })
 export class ReportComponent {
+  private static readonly liveReports = new Set<ReportComponent>();
+
+  static reloadAll(): void {
+    for (const report of ReportComponent.liveReports) {
+      const current = report.reportData();
+      if (current) {
+        report.applyFilters(current.activeFilters);
+      }
+    }
+  }
+
   private readonly api = inject(Api);
   protected readonly texts = inject(TextsService);
   private readonly locale = inject(LocaleService).current;
   private readonly destroyRef = inject(DestroyRef);
+  private readonly mutations = inject(ScreenMutations, { optional: true });
 
   readonly model = input<ReportModel>();
   readonly data = input<unknown>();
 
   private activeSub: Subscription | null = null;
+  private unsubscribeMutations: (() => void) | null = null;
   protected readonly isLoading = signal(false);
 
   protected readonly reportData = linkedSignal<unknown, ReportDataDto | null>({
@@ -174,9 +188,31 @@ export class ReportComponent {
   protected readonly currentLocale = computed(() => this.locale());
 
   constructor() {
+    ReportComponent.liveReports.add(this);
+    this.subscribeMutations();
     this.destroyRef.onDestroy(() => {
+      ReportComponent.liveReports.delete(this);
+      this.unsubscribeMutations?.();
+      this.unsubscribeMutations = null;
       this.activeSub?.unsubscribe();
       this.activeSub = null;
+    });
+  }
+
+  private subscribeMutations(): void {
+    this.unsubscribeMutations?.();
+    if (!this.mutations) {
+      return;
+    }
+    this.unsubscribeMutations = this.mutations.subscribe({
+      accepts: () => true,
+      refresh: () => {
+        const current = this.reportData();
+        if (current) {
+          this.applyFilters(current.activeFilters);
+        }
+      },
+      invalidate: () => this.subscribeMutations(),
     });
   }
 
@@ -299,6 +335,9 @@ export class ReportComponent {
     if (kpi.isPercent) {
       return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
     }
+    if (kpi.currency) {
+      return formatCellAmount(kpi.value, loc, moneyFormatOf({ decimals: 0, currency: kpi.currency }));
+    }
     return formatCellNumber(kpi.value, loc, 0, true);
   }
 
@@ -310,7 +349,12 @@ export class ReportComponent {
       return raw;
     }
     const loc = this.currentLocale();
-    if (col.kind === 'money' || col.kind === 'number') {
+    if (col.kind === 'money') {
+      return col.currency
+        ? formatCellAmount(raw, loc, moneyFormatOf({ decimals: 0, currency: col.currency }))
+        : formatCellNumber(raw, loc, 0, true);
+    }
+    if (col.kind === 'number') {
       return formatCellNumber(raw, loc, 0, true);
     }
     if (col.kind === 'percent') {

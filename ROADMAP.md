@@ -163,7 +163,7 @@ To allow the platform to power not only rich backoffice admin applications (`Air
 
 ---
 
-## Phase 5: Core Engine Performance, Decomposition & `air-ui` Cleanup
+## Phase 5: Core Engine Performance, Decomposition & `air-ui` Cleanup (COMPLETED)
 
 ### 5.1 Backend Query & Performance Fixes (`GridService`, `FormService`, `StatusFlowService`, `Air.Data`)
 1. **Fix Badge Count Leak & Duplicate Counting (`GridService.Screen.cs:147-218`)**:

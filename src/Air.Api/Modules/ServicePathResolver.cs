@@ -2,6 +2,8 @@ namespace Platform.Api.Modules;
 
 public static class ServicePathResolver
 {
+  private static readonly ConcurrentDictionary<Assembly, string[]> AssemblyPrefixes = new();
+
   public static string Resolve(Type serviceType)
   {
     var name = serviceType.Name;
@@ -10,9 +12,26 @@ public static class ServicePathResolver
       name = name[..^"Service".Length];
     }
 
+    var assemblyHandles = AssemblyPrefixes.GetOrAdd(serviceType.Assembly, static asm =>
+    {
+      try
+      {
+        return asm.GetTypes()
+          .Select(t => t.GetCustomAttribute<ModuleAttribute>()?.Handle)
+          .Where(h => !string.IsNullOrWhiteSpace(h))
+          .Select(h => h!)
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .ToArray();
+      }
+      catch
+      {
+        return [];
+      }
+    });
+
     var prefixes = ModuleCatalog.Instance.Modules
       .Select(m => m.Handle)
-      .Concat(["App", "Org", "Ecom", "Doc"])
+      .Concat(assemblyHandles)
       .Where(p => !string.IsNullOrWhiteSpace(p))
       .Distinct(StringComparer.OrdinalIgnoreCase);
 
@@ -23,14 +42,14 @@ public static class ServicePathResolver
           char.IsUpper(name[prefix.Length]))
       {
         var rest = name[prefix.Length..];
-        return $"{prefix.ToLowerInvariant()}/{rest.ToKebabCase()}";
+        return $"{prefix.ToLowerInvariant()}/{ToKebabCase(rest)}";
       }
     }
 
-    return name.ToKebabCase();
+    return ToKebabCase(name);
   }
 
-  public static string ToKebabCase(this string? input)
+  public static string ToKebabCase(string? input)
   {
     if (string.IsNullOrEmpty(input))
     {

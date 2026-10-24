@@ -133,8 +133,7 @@ public abstract partial class GridService<TEntity, TRow>
         .Build()
     });
 
-    var queryDeclaration = new Query();
-    SetQuery(queryDeclaration);
+    var queryDeclaration = GetQueryDeclaration();
     foreach (var group in queryDeclaration.NamedFilterGroups)
     {
       var chosenKey = request?.NamedFilters?.FirstOrDefault(k =>
@@ -148,7 +147,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           try
           {
-            var baseQ = BaseQuery(db);
+            var baseQ = RestrictedQuery();
             foreach (var filter in queryDeclaration.Filters)
             {
               baseQ = baseQ.Where(filter);
@@ -196,7 +195,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         try
         {
-          var baseQ = BaseQuery(db);
+          var baseQ = RestrictedQuery();
           foreach (var filter in queryDeclaration.Filters)
           {
             baseQ = baseQ.Where(filter);
@@ -531,7 +530,9 @@ public abstract partial class GridService<TEntity, TRow>
       .Select(t =>
       {
         var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
-        var verbLabel = L.TextOr($"Ecom: {t.Name}", L[t.Name]);
+        var verbLabel = !string.IsNullOrEmpty(Feature.Module)
+          ? L.TextOr($"{Feature.Module}: {t.Name}", L[t.Name])
+          : L[t.Name];
         var targetLabel = target != null ? L[target.Name] : verbLabel;
         var confirmMessage = t.Confirm != null ? L[t.Confirm] : null;
         return new GridNavStatusMoveDto

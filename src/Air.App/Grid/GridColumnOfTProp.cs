@@ -195,6 +195,14 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> Sum(Func<decimal, string?> colorSelector)
+  {
+    dto.IsSummed = true;
+    dto.SumColorEvaluator = (val, _) => colorSelector(val);
+    ApplyColorPath();
+    return this;
+  }
+
   public GridColumn<TProp> Stepper(bool hasStepper = true)
   {
     dto.NumberEdit ??= new GridNumberEditDto();
@@ -242,7 +250,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Cell = new GridCellPickerModel
     {
       ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TSource)),
-      Method = method.Method.Name,
+      Method = Platform.Api.Modules.ServicePathResolver.ToKebabCase(method.Method.Name),
       MinLength = minLength
     };
     return this;
@@ -382,7 +390,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     ApplyColorPath();
   }
 
-  private void ApplyColorPath()
+  protected void ApplyColorPath()
   {
     var isRef = dto.Cell is GridCellReferenceModel || dto.ReferenceService != null || typeof(Reference).IsAssignableFrom(dto.MemberType);
     dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : $"{dto.Path}Color";

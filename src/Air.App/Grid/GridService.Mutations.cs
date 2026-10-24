@@ -443,14 +443,21 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (navAction is { Offers.Count: > 0 } && records.Count > 0)
     {
-      foreach (var record in records)
+      var recordIds = records.Select(r => r.Id).ToList();
+      foreach (var offer in navAction.Offers)
       {
-        foreach (var offer in navAction.Offers)
+        if (offer.Condition is Expression<Func<TEntity, bool>> cond)
         {
-          if (offer.Condition is Expression<Func<TEntity, bool>> cond)
+          var passedIds = (await db.Set<TEntity>()
+            .Where(e => recordIds.Contains(e.Id))
+            .Where(cond)
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+          foreach (var record in records)
           {
-            var passes = await db.Set<TEntity>().Where(e => e.Id == record.Id).AnyAsync(cond, cancellationToken);
-            if (!passes)
+            if (!passedIds.Contains(record.Id))
             {
               return new GridActionDto
               {
@@ -727,8 +734,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   private List<MessageDto> FormatErrors(IEnumerable<MutationError> errors, IReadOnlyList<TEntity> records, string defaultType = MessageType.Warning)
   {
-    var queryDeclaration = new Query();
-    SetQuery(queryDeclaration);
+    var queryDeclaration = GetQueryDeclaration();
     var compiledLabel = queryDeclaration.LabelSelector?.Compile();
     var byId = records.ToDictionary(r => r.Id);
 
@@ -759,8 +765,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<object?> ReadRowAsync(long id, CancellationToken ct = default)
   {
-    var queryDeclaration = new Query();
-    SetQuery(queryDeclaration);
+    var queryDeclaration = GetQueryDeclaration();
 
     var cols = CreateColumns();
 

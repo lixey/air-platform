@@ -59,6 +59,8 @@ public static class AgentPromptBuilder
     sb.AppendLine("     * Bar/Horizontal-Bar/Stacked-Bar/Line/Area: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"bar\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"...\", \"kind\": \"bar\", \"color\": \"emerald\", \"data\": [100, 200]}]}`");
     sb.AppendLine("   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Разом\", \"sum\": 1000}]}</air_table>`.");
     sb.AppendLine("   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
+    sb.AppendLine("9. PERSISTENT MEMORY & RULES (`<air_memory>`):");
+    sb.AppendLine("   - When the user explicitly asks you to remember a rule, policy, preference, or domain fact for future sessions, confirm in your message AND emit `<air_memory>{\"kind\": \"Rule\", \"title\": \"Short title\", \"content\": \"Clear rule or fact\"}</air_memory>` (where `kind` is `\"Rule\"`, `\"Preference\"`, or `\"Fact\"`).");
 
     if (request.Attachments.Count > 0)
     {
@@ -298,6 +300,128 @@ public static class AgentPromptBuilder
       catch
       {
         // Ignore staging errors for invalid inline blocks
+      }
+    }
+
+    await SaveInlineMemoriesAsync(text, request, ct);
+  }
+
+  public static async Task SaveInlineMemoriesAsync(
+    string text,
+    AgentTurnRequest request,
+    CancellationToken ct)
+  {
+    const string startTag = "<air_memory>";
+    const string endTag = "</air_memory>";
+    if (string.IsNullOrWhiteSpace(text) || text.IndexOf(startTag, StringComparison.OrdinalIgnoreCase) < 0)
+    {
+      return;
+    }
+
+    var db = request.Services?.GetService<PlatformDbContext>();
+    if (db is null)
+    {
+      return;
+    }
+
+    var jsonOpts = new JsonDocumentOptions
+    {
+      AllowTrailingCommas = true,
+      CommentHandling = JsonCommentHandling.Skip
+    };
+
+    var idx = 0;
+    var hasChanges = false;
+    while (idx < text.Length)
+    {
+      var start = text.IndexOf(startTag, idx, StringComparison.OrdinalIgnoreCase);
+      if (start < 0)
+      {
+        break;
+      }
+
+      var end = text.IndexOf(endTag, start + startTag.Length, StringComparison.OrdinalIgnoreCase);
+      if (end < 0)
+      {
+        break;
+      }
+
+      var json = text[(start + startTag.Length)..end].Trim();
+      idx = end + endTag.Length;
+
+      if (string.IsNullOrWhiteSpace(json))
+      {
+        continue;
+      }
+
+      try
+      {
+        using var doc = JsonDocument.Parse(json, jsonOpts);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+          continue;
+        }
+
+        var title = root.TryGetProperty("title", out var tProp) && tProp.ValueKind == JsonValueKind.String
+          ? tProp.GetString()?.Trim()
+          : null;
+        var content = root.TryGetProperty("content", out var cProp) && cProp.ValueKind == JsonValueKind.String
+          ? cProp.GetString()?.Trim()
+          : null;
+        var rawKind = root.TryGetProperty("kind", out var kProp) && kProp.ValueKind == JsonValueKind.String
+          ? kProp.GetString()?.Trim()
+          : null;
+
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(content))
+        {
+          continue;
+        }
+
+        var kind = string.Equals(rawKind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase)
+          ? AgentMemoryKinds.Rule
+          : string.Equals(rawKind, AgentMemoryKinds.Preference, StringComparison.OrdinalIgnoreCase)
+            ? AgentMemoryKinds.Preference
+            : AgentMemoryKinds.Fact;
+
+        var existing = await db.AppAgentMemory
+          .FirstOrDefaultAsync(m => m.Title == title, ct);
+        if (existing is not null)
+        {
+          existing.Kind = kind;
+          existing.Content = content;
+          existing.IsActive = true;
+        }
+        else
+        {
+          db.AppAgentMemory.Add(new AppAgentMemory
+          {
+            Kind = kind,
+            Title = title.Length > 200 ? title[..200] : title,
+            Content = content,
+            Priority = kind == AgentMemoryKinds.Rule ? 200 : 100,
+            IsPinned = kind == AgentMemoryKinds.Rule,
+            IsActive = true
+          });
+        }
+
+        hasChanges = true;
+      }
+      catch
+      {
+        // Ignore malformed memory blocks
+      }
+    }
+
+    if (hasChanges)
+    {
+      try
+      {
+        await db.SaveChangesAsync(ct);
+      }
+      catch
+      {
+        // Ignore persistence errors if table is unavailable
       }
     }
   }
