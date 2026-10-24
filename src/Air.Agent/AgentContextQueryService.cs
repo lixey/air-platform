@@ -5,7 +5,8 @@ public static class AgentContextQueryService
   public static async Task<object?> BuildContextAsync(
     IServiceProvider services,
     string? userMessage = null,
-    CancellationToken ct = default)
+    CancellationToken ct = default,
+    bool includeReports = true)
   {
     var db = services.GetService<PlatformDbContext>();
     var app = services.GetService<PlatformAppService>();
@@ -55,8 +56,8 @@ public static class AgentContextQueryService
           path = el.Path,
           label = el.Label,
           type = el.Type,
-          required = el.IsRequired,
-          multiple = select?.IsMultiple == true || el.ValueKind == FormValueKind.List,
+          required = el.IsRequired ? true : (bool?)null,
+          multiple = (select?.IsMultiple == true || el.ValueKind == FormValueKind.List) ? true : (bool?)null,
           referenceService = select?.ReferenceService,
           referenceFilter = refFilterMap.Count > 0 ? refFilterMap : null,
           options = select?.Options?.Select(o => new { id = o.Id, name = o.Name }).ToList(),
@@ -91,7 +92,7 @@ public static class AgentContextQueryService
               path = cel.Path,
               label = cel.Label,
               type = cel.Type,
-              required = cel.IsRequired,
+              required = cel.IsRequired ? true : (bool?)null,
               referenceService = cSelect?.ReferenceService,
               defaultValue = cDefVal
             });
@@ -113,7 +114,7 @@ public static class AgentContextQueryService
         service = desc.ServicePath,
         label = desc.Label,
         title = formInst.GetTitle(),
-        acceptsFiles = children.Any(c => c.IsFiles),
+        acceptsFiles = children.Any(c => c.IsFiles) ? true : (bool?)null,
         fields = editableFields,
         lines = lineSchema
       });
@@ -129,7 +130,7 @@ public static class AgentContextQueryService
       ct);
 
     var recentRecords = await LoadRecentRecordsAsync(dictionaries.Keys, userMessage, searchTokens, db, app, ct);
-    var reports = await LoadReportsSummaryAsync(db, app, ct);
+    var reports = includeReports ? await LoadReportsSummaryAsync(db, app, ct) : [];
 
     return new
     {
@@ -400,7 +401,7 @@ public static class AgentContextQueryService
             catch { }
           }
 
-          var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 25 }, ct);
+          var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 15 }, ct);
           foreach (var rawRow in page.Rows)
           {
             if (CleanGridRow(rawRow, stripZeroMoney: true) is { } clean &&
@@ -410,8 +411,8 @@ public static class AgentContextQueryService
             }
           }
 
-          // Also search by keywords if total > 25 so older records mentioned by name are found
-          if (page.Total > 25 && searchTokens.Count > 0)
+          // Also search by keywords if total > 15 so older records mentioned by name are found
+          if (page.Total > 15 && searchTokens.Count > 0)
           {
             foreach (var token in searchTokens.Take(3))
             {
@@ -475,14 +476,13 @@ public static class AgentContextQueryService
             title = Localizer.Instance.For(feat.Module)[feat.Name],
             activeFilters = data.ActiveFilters,
             kpis = data.Kpis,
-            charts = data.Charts,
             table = data.Table == null
               ? null
               : new
               {
                 title = data.Table.Title,
                 columns = data.Table.Columns,
-                rows = data.Table.Rows.Take(35).ToList(),
+                rows = data.Table.Rows.Take(20).ToList(),
                 bottomRows = data.Table.BottomRows
               }
           };

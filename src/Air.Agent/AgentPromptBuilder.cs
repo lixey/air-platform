@@ -2,7 +2,9 @@ namespace Air.Agent;
 
 public static class AgentPromptBuilder
 {
-  public static string BuildPrompt(AgentTurnRequest request, string? contextJson)
+  private const int MaxInlinePromptBytes = 42_000;
+
+  public static string BuildPrompt(AgentTurnRequest request, string? contextJson, string? workspaceDir = null)
   {
     var sb = new StringBuilder();
     var uiCulture = CultureInfo.CurrentUICulture;
@@ -58,21 +60,6 @@ public static class AgentPromptBuilder
     sb.AppendLine("   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Разом\", \"sum\": 1000}]}</air_table>`.");
     sb.AppendLine("   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
 
-    var domainKnowledge = request.Services?.GetService<AgentOptions>()?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
-    if (!string.IsNullOrWhiteSpace(domainKnowledge))
-    {
-      sb.AppendLine();
-      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE & LEGACY MAPPING]");
-      sb.AppendLine(domainKnowledge);
-    }
-
-    if (!string.IsNullOrWhiteSpace(contextJson))
-    {
-      sb.AppendLine();
-      sb.AppendLine("[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON]");
-      sb.AppendLine(contextJson);
-    }
-
     if (request.Attachments.Count > 0)
     {
       sb.AppendLine();
@@ -89,7 +76,69 @@ public static class AgentPromptBuilder
       ? Localizer.Instance["AgentDefaultPhotoPrompt"]
       : request.Message);
 
+    var domainKnowledge = request.Services?.GetService<AgentOptions>()?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
+    if (!string.IsNullOrWhiteSpace(domainKnowledge))
+    {
+      sb.AppendLine();
+      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE & LEGACY MAPPING]");
+      sb.AppendLine(domainKnowledge);
+    }
+
+    if (!string.IsNullOrWhiteSpace(contextJson))
+    {
+      var currentBytes = Encoding.UTF8.GetByteCount(sb.ToString());
+      var contextBytes = Encoding.UTF8.GetByteCount(contextJson);
+      var fullContextFile = !string.IsNullOrWhiteSpace(workspaceDir)
+        ? Path.Combine(workspaceDir, $"context-{request.SessionId}.json")
+        : null;
+
+      if (currentBytes + contextBytes + 128 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
+      {
+        sb.AppendLine();
+        if (fullContextFile != null && File.Exists(fullContextFile) && request.Attachments.Count == 0)
+        {
+          sb.AppendLine($"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON — FULL REPORTS SAVED IN \"{fullContextFile}\"]");
+        }
+        else
+        {
+          sb.AppendLine("[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON]");
+        }
+
+        sb.AppendLine(contextJson);
+      }
+      else
+      {
+        var contextPath = Path.Combine(workspaceDir, $"context-{request.SessionId}.json");
+        if (!File.Exists(contextPath))
+        {
+          File.WriteAllText(contextPath, contextJson, Encoding.UTF8);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT — FULL REPORTS SAVED IN \"{contextPath}\" (USE view_file IF NEEDED FOR FULL REPORT TABLES)]");
+        var budgetBytes = Math.Max(4096, MaxInlinePromptBytes - currentBytes - 256);
+        sb.AppendLine(TruncateUtf8(contextJson, budgetBytes));
+      }
+    }
+
     return sb.ToString();
+  }
+
+  private static string TruncateUtf8(string text, int maxBytes)
+  {
+    if (Encoding.UTF8.GetByteCount(text) <= maxBytes)
+    {
+      return text;
+    }
+
+    var bytes = Encoding.UTF8.GetBytes(text);
+    var len = maxBytes;
+    while (len > 0 && (bytes[len] & 0b1100_0000) == 0b1000_0000)
+    {
+      len--;
+    }
+
+    return Encoding.UTF8.GetString(bytes, 0, len);
   }
 
   public static async Task StageInlineProposalsAsync(

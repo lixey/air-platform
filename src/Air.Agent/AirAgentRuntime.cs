@@ -10,8 +10,9 @@ public static class AirAgentRuntime
   public static Task<object?> BuildContextAsync(
     IServiceProvider services,
     string? userMessage = null,
-    CancellationToken ct = default) =>
-    AgentContextQueryService.BuildContextAsync(services, userMessage, ct);
+    CancellationToken ct = default,
+    bool includeReports = true) =>
+    AgentContextQueryService.BuildContextAsync(services, userMessage, ct, includeReports);
 
   public static Task<object?> QueryRecordsAsync(
     JsonElement args,

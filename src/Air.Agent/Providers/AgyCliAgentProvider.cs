@@ -2,6 +2,12 @@ namespace Air.Agent.Providers;
 
 public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) : IAgentProvider
 {
+  private static readonly JsonSerializerOptions PromptJsonOptions = new(JsonSerializerDefaults.Web)
+  {
+    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+  };
+
   private IReadOnlyList<AgentModelDto>? _cachedModels;
   private readonly SemaphoreSlim _modelsLock = new(1, 1);
 
@@ -167,15 +173,23 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     string? contextJson = null;
     try
     {
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct);
-      contextJson = JsonSerializer.Serialize(ctxObj, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+      var includeReports = request.Attachments.Count == 0;
+      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports);
+      contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
+      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 34_000)
+      {
+        var fullPath = Path.Combine(store.WorkspaceDirectory, $"context-{request.SessionId}.json");
+        await File.WriteAllTextAsync(fullPath, contextJson, Encoding.UTF8, ct);
+        var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false);
+        contextJson = JsonSerializer.Serialize(compactObj, PromptJsonOptions);
+      }
     }
     catch
     {
       // Ignore context prefetch errors
     }
 
-    var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson);
+    var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
     var rawModel = string.IsNullOrWhiteSpace(request.Model)
       ? options.DefaultModel
       : request.Model.Trim();
