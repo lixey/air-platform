@@ -3,7 +3,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using Xl = DocumentFormat.OpenXml.Spreadsheet;
 
-namespace Platform.App.Grid.Export;
+namespace Platform.App.Grid.Internals;
 
 /// <summary>
 /// Writes the rows of a grid into one worksheet: a bold frozen header of the column labels, typed cells,

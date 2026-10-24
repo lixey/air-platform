@@ -1,4 +1,4 @@
-.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch gate prepare reset db-prepare db-reset agent-up agent-down agent-restart mcp-check
+.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch check-ts gate prepare reset db-prepare db-reset agent-up agent-down agent-restart mcp-check
 
 VOLUME ?= default
 WEB := demo/web
@@ -25,9 +25,12 @@ format-check: ## Verify formatting without modifying files
 check-paths: check-arch ## Verify zero absolute filesystem paths and architectural rules in tracked files
 	@! git grep -nI -E '$(ABS_PATH_PATTERN)'
 
-gate: format-check check-paths check-arch build ## Run unified verification gate (format, paths, arch, build)
+check-ts: ## Verify TypeScript compilation for air-ui and demo
+	@cd $(WEB) && npx tsc --noEmit -p apps/demo/tsconfig.app.json
 
-check-arch: ## Verify Platform.* namespaces, physical folder matching, 1 type per file, and *Extensions.cs
+gate: format-check check-paths check-arch check-ts build ## Run unified verification gate (format, paths, arch, ts, build)
+
+check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, and *Extensions.cs
 	@python3 -c 'import glob, os, re, sys; \
 	resolve_ns = lambda n: "Platform." + n[4:] if n.startswith("Air.") else (n.split(".")[0] if n.startswith("Demo") and (n.endswith(".Api") or n.endswith(".Migrations")) and n != "Demo.Api" else n); \
 	csprojs = {os.path.dirname(os.path.abspath(p)): (re.search(r"<RootNamespace>([^<]+)</RootNamespace>", open(p, encoding="utf-8").read()).group(1).strip() if re.search(r"<RootNamespace>([^<]+)</RootNamespace>", open(p, encoding="utf-8").read()) else resolve_ns(os.path.splitext(os.path.basename(p))[0])) for p in glob.glob("**/*.csproj", recursive=True)}; \
@@ -36,7 +39,9 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, 1 type pe
 	[errs.extend([f"{cs}: forbidden Air namespace"] if re.search(r"^\s*namespace\s+Air\b", txt, re.M) else []) or \
 	 errs.extend([f"{cs}: namespace {m.group(1)} != expected {exp_ns(cs, max([d for d in csprojs if os.path.abspath(cs).startswith(d + os.sep)], key=len))}" for m in [re.search(r"^\s*namespace\s+([A-Za-z0-9_.]+)\s*;", txt, re.M)] if m and [d for d in csprojs if os.path.abspath(cs).startswith(d + os.sep)] and m.group(1) != exp_ns(cs, max([d for d in csprojs if os.path.abspath(cs).startswith(d + os.sep)], key=len))]) or \
 	 errs.extend([f"{cs}: multiple top-level types" for t in [set(re.findall(r"^(?:public|internal|file)\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+([A-Za-z0-9_]+)", txt, re.M))] if "/Migrations/" not in cs and len(t) > 1]) or \
-	 errs.extend([f"{cs}: extension method in non-Extensions file"] if re.search(r"static\s+[^\(\n]+\(\s*this\s+", txt) and not cs.endswith("Extensions.cs") else []) \
+	 errs.extend([f"{cs}: extension method in non-Extensions file"] if re.search(r"static\s+[^\(\n]+\(\s*this\s+", txt) and not cs.endswith("Extensions.cs") else []) or \
+	 errs.extend([f"{cs}: internal type must be in Internals/"] if cs.startswith("src/") and re.search(r"^internal\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+", txt, re.M) and "/Internals/" not in cs else []) or \
+	 errs.extend([f"{cs}: contract type must be in Contracts/"] if cs.startswith("src/") and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b", txt, re.M) and "/Contracts/" not in cs else []) \
 	 for cs in sorted(glob.glob("**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs and not cs.endswith(".Designer.cs") and os.path.basename(cs) not in ("GlobalUsings.cs", "Program.cs") for txt in [open(cs, encoding="utf-8").read()]]; \
 	print("\n".join(errs)) if errs else None; sys.exit(1 if errs else 0)'
 
