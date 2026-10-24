@@ -243,7 +243,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                     class="flex items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
                   >
                     <div class="flex min-w-0 items-start gap-1.5">
-                      <i class="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center" [icon]="'warning'"></i>
+                      <i class="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center" [icon]="'alert'"></i>
                       <span class="font-medium break-words">{{ proposal.duplicateWarning }}</span>
                     </div>
                     @if (proposal.duplicateRecordId) {
