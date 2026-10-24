@@ -94,20 +94,26 @@ export function evaluateFilterNode(node: FilterNode | null | undefined, values: 
       return actual == null || actual === '';
     case 'isNotNull':
       return actual != null && actual !== '';
-    case 'eq':
+    case 'equals':
       return actual == expected || (actual != null && expected != null && String(actual) === String(expected));
-    case 'neq':
+    case 'notEquals':
       return actual != expected && (actual == null || expected == null || String(actual) !== String(expected));
-    case 'gt':
+    case 'greaterThan':
       return Number(actual) > Number(expected);
-    case 'gte':
+    case 'greaterThanOrEqual':
       return Number(actual) >= Number(expected);
-    case 'lt':
+    case 'lessThan':
       return Number(actual) < Number(expected);
-    case 'lte':
+    case 'lessThanOrEqual':
       return Number(actual) <= Number(expected);
     case 'contains':
       return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().includes(expected.toLowerCase());
+    case 'notContains':
+      return typeof actual !== 'string' || typeof expected !== 'string' || !actual.toLowerCase().includes(expected.toLowerCase());
+    case 'startsWith':
+      return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().startsWith(expected.toLowerCase());
+    case 'endsWith':
+      return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().endsWith(expected.toLowerCase());
     case 'in':
       return Array.isArray(expected) && expected.some(v => v == actual || String(v) === String(actual));
     case 'notIn':
