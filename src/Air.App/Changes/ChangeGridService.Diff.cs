@@ -310,6 +310,70 @@ public abstract partial class ChangeGridService
     return elem.GetRawText();
   }
 
+  private static string? FormatCompactAuditJson(string? targetJson, string? compareJson, bool onlyDiff)
+  {
+    if (string.IsNullOrWhiteSpace(targetJson))
+    {
+      return targetJson;
+    }
+
+    try
+    {
+      using var targetDoc = JsonDocument.Parse(targetJson);
+      if (targetDoc.RootElement.ValueKind != JsonValueKind.Object)
+      {
+        return UnescapeJsonText(targetJson);
+      }
+
+      JsonDocument? compareDoc = null;
+      if (onlyDiff && !string.IsNullOrWhiteSpace(compareJson))
+      {
+        try
+        {
+          compareDoc = JsonDocument.Parse(compareJson);
+        }
+        catch { }
+      }
+
+      using (compareDoc)
+      {
+        var hasCompareObj = compareDoc?.RootElement.ValueKind == JsonValueKind.Object;
+        var filtered = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        foreach (var prop in targetDoc.RootElement.EnumerateObject())
+        {
+          if (prop.Name is "Id" or "TenantId" or "Ver" or "CreatedAt" or "UpdatedAt")
+          {
+            continue;
+          }
+
+          if (onlyDiff && hasCompareObj)
+          {
+            if (compareDoc!.RootElement.TryGetProperty(prop.Name, out var otherVal) &&
+                string.Equals(prop.Value.GetRawText(), otherVal.GetRawText(), StringComparison.Ordinal))
+            {
+              continue;
+            }
+          }
+          else if (!onlyDiff && prop.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+          {
+            continue;
+          }
+
+          filtered[prop.Name] = prop.Value;
+        }
+
+        if (filtered.Count > 0)
+        {
+          return JsonSerializer.Serialize(filtered, UnescapedJsonOptions);
+        }
+      }
+    }
+    catch { }
+
+    return UnescapeJsonText(targetJson);
+  }
+
   private static string? UnescapeJsonText(string? json)
   {
     if (string.IsNullOrEmpty(json) || !json.Contains("\\u", StringComparison.OrdinalIgnoreCase))

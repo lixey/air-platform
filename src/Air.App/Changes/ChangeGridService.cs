@@ -58,7 +58,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       .Item("restored", "Restored", r => r.Operation == ChangeOperations.Restored).Color(UiColor.Indigo);
 
     query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
-    query.SearchBy(r => r.Table, r => r.Operation, r => r.Before, r => r.After, r => r.CorrelationId);
+    query.SearchBy(r => r.Id, r => r.RowId, r => r.Table, r => r.Operation, r => r.Before, r => r.After, r => r.CorrelationId);
   }
 
   public override async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
@@ -119,14 +119,16 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
         dict["operation"] = L[opStr];
       }
 
+      var onlyDiff = row.Operation is ChangeOperations.Modified or ChangeOperations.Restored;
+
       if (dict.TryGetValue("before", out var beforeObj) && beforeObj is string beforeStr)
       {
-        dict["before"] = UnescapeJsonText(beforeStr);
+        dict["before"] = FormatCompactAuditJson(beforeStr, row.After, onlyDiff);
       }
 
       if (dict.TryGetValue("after", out var afterObj) && afterObj is string afterStr)
       {
-        dict["after"] = UnescapeJsonText(afterStr);
+        dict["after"] = FormatCompactAuditJson(afterStr, row.Before, onlyDiff);
       }
     }
 
