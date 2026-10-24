@@ -8,6 +8,11 @@ public static class AgentEndpointsExtensions
   {
     var options = new AgentOptions();
     configure?.Invoke(options);
+    if (!string.IsNullOrWhiteSpace(options.DomainKnowledge))
+    {
+      AirAgentRuntime.SystemPromptSupplement = options.DomainKnowledge;
+      AgentMemoryCatalog.DefaultDomainKnowledge = options.DomainKnowledge;
+    }
 
     services.AddAirMcp();
     services.TryAddSingleton(options);
@@ -18,6 +23,14 @@ public static class AgentEndpointsExtensions
     services.AddSingleton<IAgentProvider, OpenAiCompatibleAgentProvider>();
     services.TryAddSingleton<IAgentModelSynchronizer, AgentModelSynchronizer>();
     return services;
+  }
+
+  public static PlatformOptions AddAirAgent(this PlatformOptions options, Action<AgentOptions>? configure = null)
+  {
+    ArgumentNullException.ThrowIfNull(options);
+    options.ConfigureBuilder(b => b.Services.AddAirAgent(configure));
+    options.ConfigureApp(app => app.MapAirAgent());
+    return options;
   }
 
   public static void MapAirAgent(this IEndpointRouteBuilder app)

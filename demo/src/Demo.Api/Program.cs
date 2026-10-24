@@ -4,5 +4,11 @@ await PlatformHost.RunAsync(
     options
       .AddModule<EcomModule>()
       .AddModule<OrgModule>()
-      .AddModule<AppModule>()
+      .AddModule<AppModule>(),
+  app =>
+  {
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+    app.MapFallbackToFile("index.html");
+  }
 );

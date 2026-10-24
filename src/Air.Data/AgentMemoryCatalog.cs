@@ -2,6 +2,8 @@ namespace Platform.Data;
 
 public static class AgentMemoryCatalog
 {
+  public static string? DefaultDomainKnowledge { get; set; }
+
   public static AppAgentMemory[] DefaultRows() =>
   [
     new()
@@ -99,6 +101,7 @@ public static class AgentMemoryCatalog
       }
     }
 
+    seedDomainKnowledge ??= DefaultDomainKnowledge;
     if (!string.IsNullOrWhiteSpace(seedDomainKnowledge) &&
         !existing.Any(e => e.Kind == AgentMemoryKinds.Seed))
     {
