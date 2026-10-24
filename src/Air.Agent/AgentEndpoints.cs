@@ -149,7 +149,7 @@ public static class AgentEndpoints
       return Results.File(att.LocalPath, att.ContentType, att.FileName);
     });
 
-    group.MapPost("/reset", (AgentResetRequestDto req, HttpContext ctx, AgentStore store) =>
+    group.MapPost("/reset", (AgentResetRequest req, HttpContext ctx, AgentStore store) =>
     {
       if (!string.IsNullOrWhiteSpace(req.SessionId))
       {
@@ -204,7 +204,7 @@ public static class AgentEndpoints
     });
 
     group.MapPost("/chat", async (
-      AgentChatRequestDto body,
+      AgentChatRequest body,
       HttpContext ctx,
       AgentStore store,
       AgentOptions options,

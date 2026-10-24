@@ -36,11 +36,12 @@ public static class PlatformHost
   {
     ArgumentNullException.ThrowIfNull(module);
 
-    // 1. Auto-register module assembly *Service, IGridService, IFormService, IScreenService
+    // 1. Auto-register module assembly *Service, IPlatformService, IGridService, IFormService, IScreenService
     var moduleAssembly = module.GetType().Assembly;
     var serviceTypes = moduleAssembly.GetTypes()
       .Where(t => t is { IsClass: true, IsAbstract: false } &&
-                  (typeof(IGridService).IsAssignableFrom(t) ||
+                  (typeof(IPlatformService).IsAssignableFrom(t) ||
+                   typeof(IGridService).IsAssignableFrom(t) ||
                    typeof(IFormService).IsAssignableFrom(t) ||
                    typeof(IScreenService).IsAssignableFrom(t) ||
                    typeof(PlatformAppService).IsAssignableFrom(t) ||

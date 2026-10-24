@@ -2,17 +2,17 @@ namespace Air.App.Report;
 
 public interface IReportService : IScreenService
 {
-  Feature Feature { get; }
+  new Feature Feature { get; }
+  Feature IPlatformService.Feature => Feature;
   Task<ReportDataDto> GetReportAsync(ReportRequest request, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, ReportRequest? request, CancellationToken ct = default);
 }
 
-public abstract class ReportService(PlatformAppService? app = null) : IReportService
+public abstract class ReportService(PlatformAppService? app = null) : PlatformService(app), IReportService
 {
-  protected PlatformAppService? App { get; private set; } = app;
-  protected ILocalizer L => Localizer.Instance;
+  protected PlatformAppService? App => PlatformApp;
 
-  public abstract Feature Feature { get; }
+  public abstract override Feature Feature { get; }
 
   public abstract Task<ReportDataDto> GetReportAsync(ReportRequest request, CancellationToken ct = default);
 

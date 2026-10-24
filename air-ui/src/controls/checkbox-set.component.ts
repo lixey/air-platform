@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, model, signal } from '@angular/core';
 import type { FormValueControl } from '@angular/forms/signals';
-import type { CheckboxOptionDto } from '../core/generated/contracts';
+import type { OptionDto } from '../core/generated/contracts';
 import { CHECKBOX_CLASSES, FIELD_FOCUS_WITHIN, INVALID_EDGE } from '../theme/css-classes';
 import { FIELD_DESCRIPTION } from './field-description';
 import { UiControlDirective, type UiControlState } from './ui-control.directive';
@@ -20,7 +20,7 @@ import { UiControlDirective, type UiControlState } from './ui-control.directive'
       [attr.aria-describedby]="description?.() ?? null"
     >
       @for (option of options(); track option.id) {
-        <label class="flex items-center gap-2 text-base cursor-pointer" [class.text-muted]="disabled()">
+        <label class="flex items-center gap-2 text-base cursor-pointer" [class.text-muted]="disabled()" [attr.title]="option.title ?? null">
           <input
             type="checkbox"
             class="${CHECKBOX_CLASSES}"
@@ -28,7 +28,7 @@ import { UiControlDirective, type UiControlState } from './ui-control.directive'
             [uiControlValue]="checkedSet().has(option.id)"
             (change)="toggle(option.id, $event)"
           />
-          <span>{{ option.label }}</span>
+          <span>{{ option.name }}</span>
         </label>
       } @empty {
         <span class="text-base text-muted">—</span>
@@ -39,7 +39,7 @@ import { UiControlDirective, type UiControlState } from './ui-control.directive'
 export class CheckboxSetComponent implements FormValueControl<readonly number[] | null> {
   readonly value = model<readonly number[] | null>(null);
 
-  readonly options = input<readonly CheckboxOptionDto[]>([]);
+  readonly options = input<readonly OptionDto[]>([]);
   readonly disabled = input(false);
   readonly readonly = input(false);
   readonly required = input(false);

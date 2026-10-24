@@ -4,7 +4,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import { AppService } from '../app/app.service';
 import { modulePathOf, redirectFor } from '../app/menu-tree';
-import type { MenuItemDto, OverlayModelDto } from '../core/generated/contracts';
+import type { MenuItemDto, OverlayDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { OverlayService } from '../overlay/overlay.service';
 import { PANELS } from '../panels/panels-tokens';
@@ -59,7 +59,7 @@ export function filterMenuTree(items: readonly MenuItemDto[], query: string): Me
  * and is measured and placed again by the overlay host, which keeps it inside the window's frame. Only a tree taller
  * than the frame is clamped to it, and then the tree scrolls inside the body while its filter stays in sight.
  */
-const MEGA_MENU: OverlayModelDto = {
+const MEGA_MENU: OverlayDto = {
   key: 'layout.mega-menu',
   presentation: 'popover',
   closesOnEscape: true,

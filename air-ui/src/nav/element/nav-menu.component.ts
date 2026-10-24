@@ -1,6 +1,6 @@
 import { Component, computed, DestroyRef, inject, Injector, model } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
-import type { NavMenuModel, OverlayModelDto } from '../../core/generated/contracts';
+import type { NavMenuModel, OverlayDto } from '../../core/generated/contracts';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { OverlayService } from '../../overlay/overlay.service';
 import { singlePanelLayout } from '../../panels/single-panel-layout';
@@ -67,7 +67,7 @@ export class NavMenuComponent {
       return;
     }
 
-    const overlay: OverlayModelDto = {
+    const overlay: OverlayDto = {
       key: `${NAV_MENU_OVERLAY}.${model.key}`,
       presentation: 'menu',
       layout: singlePanelLayout(NAV_MENU_OVERLAY, { kind: 'NavMenuBody', elements: this.elements(), closesOnAction: true }),

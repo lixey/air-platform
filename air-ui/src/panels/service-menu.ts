@@ -1,10 +1,10 @@
 import { Injector, type ProviderToken } from '@angular/core';
-import type { OverlayModelDto, PanelModel } from '../core/generated/contracts';
+import type { OverlayDto, PanelModel } from '../core/generated/contracts';
 import { singlePanelLayout } from './single-panel-layout';
 
 /** What a menu whose body injects its opener's service is opened with: the overlay's model and the body's injector. */
 export interface ServiceMenu {
-  readonly model: OverlayModelDto;
+  readonly model: OverlayDto;
   readonly injector: Injector;
 }
 

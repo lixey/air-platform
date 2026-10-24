@@ -18,7 +18,7 @@ public sealed class OverlayScreenDto
 }
 
 [UiContract]
-public sealed class OverlayModelDto
+public sealed class OverlayDto
 {
   public string Key { get; set; } = string.Empty;
 
@@ -57,7 +57,7 @@ public static class OverlayModel
 
 public sealed class OverlayBuilder(string key, string presentation, PanelLayoutDto? layout = null)
 {
-  private readonly OverlayModelDto _dto = new() { Key = key, Presentation = presentation, Layout = layout };
+  private readonly OverlayDto _dto = new() { Key = key, Presentation = presentation, Layout = layout };
 
   public string Presentation => _dto.Presentation;
   public string? WidthValue => _dto.Width;
@@ -93,7 +93,7 @@ public sealed class OverlayBuilder(string key, string presentation, PanelLayoutD
     return this;
   }
 
-  public OverlayModelDto Build() => _dto;
+  public OverlayDto Build() => _dto;
 }
 
 [UiContract]

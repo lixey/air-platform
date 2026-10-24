@@ -77,7 +77,7 @@ public sealed class ModuleCatalog
 
     var serviceTypes = module.GetType().Assembly.GetTypes()
       .Where(t => t is { IsClass: true, IsAbstract: false } &&
-                  (t.Name.EndsWith("GridService") || t.Name.EndsWith("FormService") || t.Name.EndsWith("Service")));
+                  (typeof(IPlatformService).IsAssignableFrom(t) || t.Name.EndsWith("GridService") || t.Name.EndsWith("FormService") || t.Name.EndsWith("Service")));
     foreach (var st in serviceTypes)
     {
       var path = ServicePathResolver.Resolve(st);
@@ -198,16 +198,9 @@ public sealed class ModuleCatalog
     }
 
     var instance = ctor.Invoke(args);
-    if (appService is not null)
+    if (appService is not null && instance is IPlatformService platformService)
     {
-      if (instance is Grid.IGridService grid)
-      {
-        grid.AttachPlatformApp(appService);
-      }
-      else if (instance is Form.IFormService form)
-      {
-        form.AttachPlatformApp(appService);
-      }
+      platformService.AttachPlatformApp(appService);
     }
 
     return instance;

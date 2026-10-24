@@ -87,7 +87,7 @@ public sealed class AgentProposalDto
   public string? FormService { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public Overlay.OverlayModelDto? Overlay { get; set; }
+  public Overlay.OverlayDto? Overlay { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? DuplicateWarning { get; set; }
@@ -135,7 +135,7 @@ public sealed class AgentStreamEventDto
 
 [UiContract]
 [ClientOptional]
-public sealed class AgentChatRequestDto
+public sealed class AgentChatRequest
 {
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? SessionId { get; set; }
@@ -158,7 +158,7 @@ public sealed class AgentChatRequestDto
 
 [UiContract]
 [ClientOptional]
-public sealed class AgentResetRequestDto
+public sealed class AgentResetRequest
 {
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? SessionId { get; set; }

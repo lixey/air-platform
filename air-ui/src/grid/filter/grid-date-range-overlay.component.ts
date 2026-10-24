@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, linkedSignal, untracked } from '@angular/core';
 import { LocaleService } from '../../app/locale.service';
 import { BtnComponent } from '../../btn/btn.component';
-import type { GridColumnDto, OverlayModelDto } from '../../core/generated/contracts';
+import type { GridColumnDto, OverlayDto } from '../../core/generated/contracts';
 import { TextsService, type UiTextKey } from '../../core/texts.service';
 import { todayIn } from '../../core/time-zone';
 import type { IsoDate } from '../../datepicker/calendar-month';
@@ -55,7 +55,7 @@ const PERIOD_ROW = {
 const PERIOD_BUTTON = `h-7 px-2 rounded-md border border-field-edge bg-field text-sm text-link hover:border-field-hover hover:text-link-hover cursor-pointer ${FOCUS_RING}`;
 
 /** A menu hanging from a date header, whose one panel is the column's date range menu. */
-export function gridDateRangeOverlay(column: GridColumnDto): OverlayModelDto {
+export function gridDateRangeOverlay(column: GridColumnDto): OverlayDto {
   return {
     key: `${GRID_DATE_RANGE_OVERLAY}.${column.path ?? ''}`,
     presentation: 'menu',

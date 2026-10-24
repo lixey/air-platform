@@ -1,4 +1,4 @@
-import type { OverlayModelDto, OverlayPresentation } from '../core/generated/contracts';
+import type { OverlayDto, OverlayPresentation } from '../core/generated/contracts';
 import { parseSize, toBound } from '../panels/panel-size';
 
 export interface OverlayRect {
@@ -102,7 +102,7 @@ export const DIALOG_FRAME = 3840;
  * measured size, so it does not change while the content grows and shrinks.
  */
 export function resolveOverlay(
-  model: OverlayModelDto,
+  model: OverlayDto,
   { work, anchor, viewport, units, size, keepsOwnWidth, hangsDownOnly, asked }: OverlayMeasures,
 ): OverlayBox {
   const isOutOfSight = !anchor || !overlaps(anchor, viewport);
@@ -170,7 +170,7 @@ export function resolveOverlay(
  * the anchor's top and inside the frame as `place` takes it, and the frame's bottom edge. A model that states no height
  * in pixels fits nowhere. The measured size is not read.
  */
-function fitsBelow(model: OverlayModelDto, anchor: OverlayRect, frame: OverlayRect, inward: number): boolean {
+function fitsBelow(model: OverlayDto, anchor: OverlayRect, frame: OverlayRect, inward: number): boolean {
   const stated = toBound(model.height ?? undefined);
   const frameEnd = frame.top + frame.height;
   return stated !== undefined && stated <= frameEnd - clamp(anchor.top + inward, frame.top, frameEnd);
@@ -199,7 +199,7 @@ function fitsBelow(model: OverlayModelDto, anchor: OverlayRect, frame: OverlayRe
  * and the frame's bottom edge, which reads the anchor and the frame and never the measured size.
  */
 function menuBox(
-  model: OverlayModelDto,
+  model: OverlayDto,
   anchor: OverlayRect,
   frame: OverlayRect,
   inward: number,

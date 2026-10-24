@@ -112,7 +112,7 @@ public sealed record NavMenuModel : NavButtonModel
 [UiContract]
 public sealed record NavOverlayModel : NavButtonModel
 {
-  public OverlayModelDto Overlay { get; set; } = new();
+  public OverlayDto Overlay { get; set; } = new();
 }
 
 [UiContract]

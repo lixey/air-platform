@@ -2,7 +2,7 @@ import { computed, ErrorHandler, Injector, type Signal, signal } from '@angular/
 import { type Observable, Subject } from 'rxjs';
 import type { CloseAttempt, CloseParticipant } from '../core/close-decision';
 import { CloseDecision } from '../core/close-decision';
-import type { OverlayModelDto } from '../core/generated/contracts';
+import type { OverlayDto } from '../core/generated/contracts';
 import { Lifetime } from '../core/lifetime';
 import { PANEL_DENSITY, PANEL_WINDOW_RULE } from '../panels/panels-tokens';
 import type { OverlayAsk } from './overlay-box';
@@ -71,7 +71,7 @@ export class OverlayRef<TResult = unknown> {
   readonly injector: Injector;
 
   constructor(
-    readonly model: OverlayModelDto,
+    readonly model: OverlayDto,
     readonly anchor: HTMLElement | null,
     parent: Injector,
     /** The scale the card reads, derived from where the overlay was opened; the model never names it. */

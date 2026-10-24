@@ -1,7 +1,7 @@
 import { Component, computed } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 import { CheckboxSetComponent } from '../../controls/checkbox-set.component';
-import type { CheckboxOptionDto, FormCheckboxSetModel } from '../../core/generated/contracts';
+import type { FormCheckboxSetModel, OptionDto } from '../../core/generated/contracts';
 import { FormElementBase } from './form-element-base';
 import { FormItemComponent } from './form-item.component';
 
@@ -16,5 +16,5 @@ import { FormItemComponent } from './form-item.component';
   `,
 })
 export class FormCheckboxSetComponent extends FormElementBase<readonly number[] | null, FormCheckboxSetModel> {
-  protected readonly options = computed<readonly CheckboxOptionDto[]>(() => this.model()?.options ?? []);
+  protected readonly options = computed<readonly OptionDto[]>(() => this.model()?.options ?? []);
 }

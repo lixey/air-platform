@@ -1,7 +1,7 @@
 import { Component, computed, DestroyRef, type ElementRef, inject, input, viewChild } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
-import type { OverlayModelDto } from '../core/generated/contracts';
+import type { OverlayDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { singlePanelLayout } from '../panels/single-panel-layout';
@@ -148,7 +148,7 @@ export class FileUploadOverlayComponent {
  * The upload dialog over `target`, a file grid and the parent its files go under: a modal card that a click beside it
  * leaves open, so the statuses of the files stay in view until the user closes it.
  */
-export function uploadOverlayOf(target: Omit<FileUploadOverlayModel, 'kind'>): OverlayModelDto {
+export function uploadOverlayOf(target: Omit<FileUploadOverlayModel, 'kind'>): OverlayDto {
   return {
     key: `${FILE_UPLOAD_OVERLAY}.${target.service}`,
     presentation: 'dialog',

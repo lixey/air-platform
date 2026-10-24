@@ -32,10 +32,17 @@ public static class FormValueKind
 }
 
 [UiContract]
-public sealed class CheckboxOptionDto
+public sealed class ActionInputDto
 {
-  public long Id { get; set; }
-  public string Label { get; set; } = string.Empty;
+  public Dictionary<string, object?> Value { get; set; } = new(StringComparer.Ordinal);
+}
+
+[UiContract]
+[ClientOptional]
+public sealed class FormActionInputRequest : FormRequest
+{
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Method { get; set; }
 }
 
 [UiContract]
@@ -107,18 +114,11 @@ public class FormRequest
 }
 
 [UiContract]
-public sealed class FormDataDto
+public sealed class FormDataDto : MutationResultDto
 {
   public long? Id { get; set; }
   public int? Ver { get; set; }
   public Dictionary<string, object?> Value { get; set; } = new(StringComparer.Ordinal);
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [OneOf(typeof(MutationOutcome))]
-  public string? Outcome { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<MessageDto>? Warnings { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public Dictionary<string, int>? Unavailable { get; set; }
@@ -233,15 +233,8 @@ public sealed class FormElementDto
 }
 
 [UiContract]
-public sealed class FormActionDto
+public sealed class FormActionDto : MutationResultDto
 {
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [OneOf(typeof(MutationOutcome))]
-  public string? Outcome { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<MessageDto>? Warnings { get; set; }
-
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? OpenScreen { get; set; }
 
@@ -327,7 +320,7 @@ public sealed record FormSelectModel : FormElementModel
   public bool IsMultiple { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public OverlayModelDto? CreateOverlay { get; set; }
+  public OverlayDto? CreateOverlay { get; set; }
 }
 
 [UiContract]
@@ -363,7 +356,7 @@ public sealed record FormTimeZoneModel : FormElementModel
 [UiContract]
 public sealed record FormCheckboxSetModel : FormElementModel
 {
-  public List<CheckboxOptionDto> Options { get; set; } = [];
+  public List<OptionDto> Options { get; set; } = [];
 }
 
 [UiContract]

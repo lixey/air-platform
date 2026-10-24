@@ -65,6 +65,3 @@ public class AppMetadataDto
 
   public Dictionary<string, string> Texts { get; set; } = [];
 }
-
-[UiContract]
-public sealed class MetadataDto : AppMetadataDto;

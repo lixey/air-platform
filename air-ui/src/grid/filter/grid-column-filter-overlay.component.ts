@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, untracked, viewChild } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
-import type { GridColumnDto, OverlayModelDto } from '../../core/generated/contracts';
+import type { GridColumnDto, OverlayDto } from '../../core/generated/contracts';
 import { TextsService } from '../../core/texts.service';
 import { NavComponent } from '../../nav/nav.component';
 import { OverlayRef } from '../../overlay/overlay-ref';
@@ -14,7 +14,7 @@ import { FilterTreeComponent } from './filter-tree.component';
 const GRID_FILTER_OVERLAY = 'grid.columnFilter';
 
 /** A menu hanging from the header's button, whose one panel is the column's filter overlay. */
-export function gridColumnFilterOverlay(column: GridColumnDto): OverlayModelDto {
+export function gridColumnFilterOverlay(column: GridColumnDto): OverlayDto {
   return {
     key: `${GRID_FILTER_OVERLAY}.${column.path ?? ''}`,
     presentation: 'menu',

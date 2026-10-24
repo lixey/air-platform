@@ -3,7 +3,7 @@ import type { FormValueControl } from '@angular/forms/signals';
 import { FIELD_DESCRIPTION } from '../controls/field-description';
 import { FIELD_LOOK } from '../controls/field-look';
 import { resultGate } from '../controls/result-gate';
-import type { FormDataDto, OverlayModelDto } from '../core/generated/contracts';
+import type { FormDataDto, OverlayDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { isFormData } from '../form/form-value';
 import { UiIconDirective } from '../icon/ui-icon.directive';
@@ -148,7 +148,7 @@ export class SelectComponent implements FormValueControl<unknown> {
   readonly disabled = input(false, { transform: booleanAttribute });
   readonly invalid = input(false);
   readonly placeholder = input<string>('');
-  readonly createOverlay = input<OverlayModelDto | null>(null);
+  readonly createOverlay = input<OverlayDto | null>(null);
 
   /** The picked: one option or none in single mode, any number in multiple. */
   readonly picked = model<readonly SelectOption[]>([]);

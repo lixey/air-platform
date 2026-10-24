@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import type { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { serviceUrl } from '../core/api';
-import type { FormActionDto, FormDataDto, FormModel, FormNavActionModel, MessageDto, OverlayModelDto } from '../core/generated/contracts';
+import type { FormActionDto, FormDataDto, FormModel, FormNavActionModel, MessageDto, OverlayDto } from '../core/generated/contracts';
 import { classifyMutationFailure } from '../core/mutation-failure';
 import { type AskService, ownMessages } from '../overlay/ask.service';
 import type { ConfirmationService } from '../overlay/confirmation.service';
@@ -260,7 +260,7 @@ export class FormActions {
   private openScreen(service: string, id: number | null | undefined): void {
     const params = id == null ? {} : { id };
     const template = this.ctx.ref?.model;
-    const model: OverlayModelDto = template?.screen
+    const model: OverlayDto = template?.screen
       ? { ...template, key: service, screen: { ...template.screen, service, params } }
       : { key: service, presentation: 'dialog', closesOnEscape: true, screen: { service, params } };
     this.ctx.overlay.open(model, null, this.ctx.injector);

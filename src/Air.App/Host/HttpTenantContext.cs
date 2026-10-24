@@ -22,7 +22,7 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
           return claimTid;
         }
 
-        return 1;
+        return httpContext.User.Identity?.IsAuthenticated == true ? 1 : null;
       }
 
       return null;

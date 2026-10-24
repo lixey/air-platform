@@ -1,5 +1,5 @@
 import { inject, Injector } from '@angular/core';
-import type { GridModel, OverlayModelDto } from '../core/generated/contracts';
+import type { GridModel, OverlayDto } from '../core/generated/contracts';
 import type { IsCurrent } from '../core/lifetime';
 import type { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
@@ -48,7 +48,7 @@ export class GridForms {
    * names another form or none: the form opens in it, else in the overlay of the grid's own form, else in a dialog,
    * the first two addressed to the form being opened.
    */
-  open(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null, rowOverlay?: OverlayModelDto | null): boolean {
+  open(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null, rowOverlay?: OverlayDto | null): boolean {
     const defaultOverlay = this.options.model()?.form;
     const targetService = formService ?? defaultOverlay?.screen?.service;
     if (!targetService) {
@@ -56,7 +56,7 @@ export class GridForms {
     }
 
     const declared = rowOverlay ?? defaultOverlay;
-    const overlay: OverlayModelDto = declared
+    const overlay: OverlayDto = declared
       ? {
           ...declared,
           key: targetService,
@@ -82,7 +82,7 @@ export class GridForms {
   }
 
   /** The model with the grid's parent params added, when it opens a form; else as it is. */
-  withParentParams(model: OverlayModelDto): OverlayModelDto {
+  withParentParams(model: OverlayDto): OverlayDto {
     return this.follows(model.screen?.service) ? this.addParentParams(model) : model;
   }
 
@@ -106,7 +106,7 @@ export class GridForms {
   }
 
   /** The model of a form of the grid with the grid's parent params added. */
-  private addParentParams(model: OverlayModelDto): OverlayModelDto {
+  private addParentParams(model: OverlayDto): OverlayDto {
     const screen = model.screen;
     if (!screen) {
       return model;

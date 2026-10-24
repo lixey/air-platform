@@ -233,16 +233,8 @@ export interface Page<TRow = unknown> {
 
 export interface GridPageDto<TRow = unknown> extends Page<TRow> {
   bottomRows?: TRow[] | null;
-  forms?: Record<string, OverlayModelDto> | null;
+  forms?: Record<string, OverlayDto> | null;
   topRows?: TRow[] | null;
-}
-
-export interface ActionInputDto {
-  value: Record<string, unknown>;
-}
-
-export interface GridActionInputRequest extends GridRequest {
-  method?: string | null;
 }
 
 export interface GridServiceEndpoints {
@@ -281,6 +273,8 @@ export interface ReportServiceEndpoints {
 }
 
 export interface FormServiceEndpoints {
+  delete: { request: FormRequest; answer: GridDeleteDto };
+  'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };
   'get-data': { request: FormRequest | null; answer: ScreenDto };
   save: { request: FormRequest; answer: FormDataDto };
 }
@@ -393,6 +387,10 @@ export type NavElementModel = NavElementKinds[keyof NavElementKinds];
 
 export type PlatformKind = keyof PanelKinds | keyof CellKinds | keyof HeaderKinds | keyof FormElementKinds | keyof NavElementKinds;
 
+export interface ActionInputDto {
+  value: Record<string, unknown>;
+}
+
 export interface AgentAttachmentDto {
   id: string;
   fileName: string;
@@ -401,7 +399,7 @@ export interface AgentAttachmentDto {
   previewUrl: string;
 }
 
-export interface AgentChatRequestDto {
+export interface AgentChatRequest {
   sessionId?: string | null;
   message?: string | null;
   attachmentIds?: string[] | null;
@@ -445,7 +443,7 @@ export interface AgentProposalDto {
   committedRecordId?: number | null;
   committedLabel?: string | null;
   formService?: string | null;
-  overlay?: OverlayModelDto | null;
+  overlay?: OverlayDto | null;
   duplicateWarning?: string | null;
   duplicateRecordId?: number | null;
   duplicateFormService?: string | null;
@@ -472,7 +470,7 @@ export interface AgentProviderDto {
   isAvailable: boolean;
 }
 
-export interface AgentResetRequestDto {
+export interface AgentResetRequest {
   sessionId?: string | null;
 }
 
@@ -507,11 +505,6 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
-export interface CheckboxOptionDto {
-  id: number;
-  label: string;
-}
-
 export interface CheckboxTreeNodeDto {
   key: string;
   label: string;
@@ -533,7 +526,7 @@ export interface FileInfoDto {
   ver: number;
 }
 
-export interface FileInfoRequest {
+export interface FileInfoRequest extends GridRequest {
   name?: string | null;
   description?: string | null;
   isDataOnly?: boolean;
@@ -573,7 +566,7 @@ export interface FileMetadataDto {
   altitude?: number | null;
 }
 
-export interface FileMoveRequest {
+export interface FileMoveRequest extends GridRequest {
   beforeId?: number | null;
   isDataOnly?: boolean;
   id?: number | null;
@@ -624,11 +617,22 @@ export interface FilterRule {
   picked?: PickedValue[] | null;
 }
 
-export interface FormActionDto {
-  outcome?: MutationOutcome | null;
-  warnings?: MessageDto[] | null;
+export interface FormActionDto extends MutationResultDto {
   openScreen?: string | null;
   openId?: number | null;
+  outcome?: MutationOutcome | null;
+  title?: string | null;
+  messages?: MessageDto[] | null;
+  warnings?: MessageDto[] | null;
+}
+
+export interface FormActionInputRequest extends FormRequest {
+  method?: string | null;
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  ver?: number | null;
+  value?: unknown | null;
 }
 
 export interface FormAskModel {
@@ -646,7 +650,7 @@ export interface FormCheckboxModel {
 
 export interface FormCheckboxSetModel {
   kind: 'FormCheckboxSet';
-  options: CheckboxOptionDto[];
+  options: OptionDto[];
 }
 
 export interface FormCheckboxTreeModel {
@@ -674,13 +678,15 @@ export interface FormConstraintsDto {
   max?: number | null;
 }
 
-export interface FormDataDto {
+export interface FormDataDto extends MutationResultDto {
   id?: number | null;
   ver?: number | null;
   value: Record<string, unknown>;
-  outcome?: MutationOutcome | null;
-  warnings?: MessageDto[] | null;
   unavailable?: Record<string, number> | null;
+  outcome?: MutationOutcome | null;
+  title?: string | null;
+  messages?: MessageDto[] | null;
+  warnings?: MessageDto[] | null;
 }
 
 export interface FormDateModel {
@@ -854,7 +860,7 @@ export interface FormSelectModel {
   referenceFilter?: FilterNode | null;
   referenceDraftRules?: ReferenceDraftRuleDto[] | null;
   isMultiple?: boolean;
-  createOverlay?: OverlayModelDto | null;
+  createOverlay?: OverlayDto | null;
 }
 
 export interface FormTabDto {
@@ -878,13 +884,38 @@ export interface FormTimeZoneModel {
   inherit: string;
 }
 
-export interface GridActionDto {
+export interface GridActionDto extends MutationResultDto {
   count: number;
   id?: number | null;
-  outcome?: MutationOutcome | null;
-  warnings?: MessageDto[] | null;
   openScreen?: string | null;
   openId?: unknown | null;
+  outcome?: MutationOutcome | null;
+  title?: string | null;
+  messages?: MessageDto[] | null;
+  warnings?: MessageDto[] | null;
+}
+
+export interface GridActionInputRequest extends GridRequest {
+  method?: string | null;
+  isDataOnly?: boolean;
+  id?: number | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  selectedIds?: number[] | null;
+  selectedVersions?: number[] | null;
+  referenceLabelPaths?: string[] | null;
+  patchSourceColumns?: string[] | null;
+  isReferencePicker?: boolean;
+  includesInactive?: boolean;
+  namedFilters?: string[] | null;
+  formDraft?: Record<string, unknown> | null;
+  page?: number;
+  pageSize?: number;
+  sort?: SortRule[] | null;
+  filter?: FilterNode | null;
+  columnFilter?: FilterNode | null;
+  search?: string | null;
+  searchFields?: string[] | null;
 }
 
 export interface GridCellCheckboxModel {
@@ -909,9 +940,11 @@ export interface GridCellDatetimeModel {
   colorPath?: string | null;
 }
 
-export interface GridCellDto {
+export interface GridCellDto extends MutationResultDto {
   row?: unknown | null;
   outcome?: MutationOutcome | null;
+  title?: string | null;
+  messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
 }
 
@@ -969,7 +1002,7 @@ export interface GridCellReferenceModel {
   colorPath?: string | null;
 }
 
-export interface GridCellRequest {
+export interface GridCellRequest extends GridRequest {
   path?: string;
   ver?: number | null;
   value?: unknown;
@@ -1058,9 +1091,11 @@ export interface GridCoverDto {
   thumbUrl?: string | null;
 }
 
-export interface GridDeleteDto {
+export interface GridDeleteDto extends MutationResultDto {
   deleted: number;
   outcome?: MutationOutcome | null;
+  title?: string | null;
+  messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
 }
 
@@ -1117,7 +1152,7 @@ export interface GridModel {
   isSelectable: boolean;
   isReadOnly: boolean;
   mutationTexts: MutationTextsDto;
-  form?: OverlayModelDto | null;
+  form?: OverlayDto | null;
   initialSearch?: string | null;
   initialFilter?: FilterNode | null;
   focusesSearch?: boolean;
@@ -1148,7 +1183,7 @@ export interface GridNavActionModel {
 export interface GridNavAddModel {
   kind: 'GridNavAdd';
   service?: string | null;
-  overlay?: OverlayModelDto | null;
+  overlay?: OverlayDto | null;
   label?: string | null;
   title?: string | null;
   icon?: UiIcon | null;
@@ -1253,7 +1288,7 @@ export interface GridNumberEditDto {
   hasStepper?: boolean;
 }
 
-export interface GridPickRequest {
+export interface GridPickRequest extends GridRequest {
   pickedId?: number;
   isDataOnly?: boolean;
   id?: number | null;
@@ -1360,13 +1395,11 @@ export interface MessageDto {
   type: MessageType;
 }
 
-export interface MetadataDto {
-  menu: MenuItemDto[];
-  routes: MenuItemDto[];
-  tenant?: SwitcherDto | null;
-  language?: SwitcherDto | null;
-  defaultCurrency?: string | null;
-  texts: Record<string, string>;
+export interface MutationResultDto {
+  outcome?: MutationOutcome | null;
+  title?: string | null;
+  messages?: MessageDto[] | null;
+  warnings?: MessageDto[] | null;
 }
 
 export interface MutationTextsDto {
@@ -1468,7 +1501,7 @@ export interface NavOptionsDto {
 
 export interface NavOverlayModel {
   kind: 'NavOverlay';
-  overlay: OverlayModelDto;
+  overlay: OverlayDto;
   label?: string | null;
   title?: string | null;
   icon?: UiIcon | null;
@@ -1567,7 +1600,7 @@ export interface OverlayDirtyModel {
   continueLabel: string;
 }
 
-export interface OverlayModelDto {
+export interface OverlayDto {
   key: string;
   presentation: OverlayPresentation;
   layout?: PanelLayoutDto | null;

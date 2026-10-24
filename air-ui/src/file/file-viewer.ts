@@ -9,7 +9,7 @@ import type {
   FileInfoRequest,
   FileMetadataDto,
   GridRequest,
-  OverlayModelDto,
+  OverlayDto,
 } from '../core/generated/contracts';
 import type { IsCurrent } from '../core/lifetime';
 import { TextsService } from '../core/texts.service';
@@ -173,7 +173,7 @@ export const FILE_VIEWER_SOURCE = new InjectionToken<FileViewerSource>('FILE_VIE
  * The file viewer at the file `key`: a modal dialog over the whole window, its one panel filling the card, which Escape
  * closes.
  */
-export function fileViewerOf(key: GridRowKey): OverlayModelDto {
+export function fileViewerOf(key: GridRowKey): OverlayDto {
   const model: FileViewerOverlayModel = { kind: 'FileViewerOverlay', key };
   return {
     key: FILE_VIEWER_OVERLAY,

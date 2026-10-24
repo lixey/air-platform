@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, ElementRef, inject, Injector, model } from '@angular/core';
 import { BtnTablistDirective } from '../btn/btn-tablist.directive';
 import { BtnComponent } from '../btn/btn.component';
-import type { NavDirection, NavElementModel, NavModel, NavOverflow, OverlayModelDto } from '../core/generated/contracts';
+import type { NavDirection, NavElementModel, NavModel, NavOverflow, OverlayDto } from '../core/generated/contracts';
 import { resolveModel } from '../core/resolve-model';
 import { TextsService } from '../core/texts.service';
 import { OverlayService } from '../overlay/overlay.service';
@@ -191,7 +191,7 @@ export class NavComponent {
       return;
     }
 
-    const model: OverlayModelDto = {
+    const model: OverlayDto = {
       key: `${NAV_MORE_OVERLAY}.${this.model()?.key ?? ''}`,
       presentation: 'menu',
       layout: singlePanelLayout(NAV_MORE_OVERLAY, { kind: 'NavMenuBody', elements: this.more() }),

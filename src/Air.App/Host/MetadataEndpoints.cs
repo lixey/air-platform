@@ -12,6 +12,11 @@ internal static class MetadataEndpoints
       CancellationToken ct) =>
       await PlatformEndpoints.WithRequestCultureAsync(httpContext.Request, async culture =>
       {
+        if (!userContext.IsAuthenticated)
+        {
+          return Results.Unauthorized();
+        }
+
         Localizer.Instance.EnsureManagersLoaded();
         var texts = UiTexts.English.Keys.ToDictionary(k => k, k => Localizer.Instance[k]);
         var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);

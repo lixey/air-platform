@@ -91,7 +91,7 @@ public abstract partial class GridService<TEntity, TRow>
     return ApplyActiveNamedFilters(query, gridReq, queryDeclaration);
   }
 
-  public virtual async Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
+  public virtual async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
   {
     var gridReq = request as GridRequest;
     var query = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
@@ -157,7 +157,7 @@ public abstract partial class GridService<TEntity, TRow>
       await PopulateRowAvailabilityAsync(shapedRows, cols, ct);
       var filteredEntities = dataProvider.Filter(request);
       var bottomRows = !isSelect ? await ComputeSumRowsAsync(filteredEntities.Select(queryDeclaration.Selector), cols.List, ct) : null;
-      return new Page<object>
+      return new GridPageDto<object>
       {
         Rows = shapedRows,
         BottomRows = bottomRows,
@@ -176,7 +176,7 @@ public abstract partial class GridService<TEntity, TRow>
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
     var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), cols.List, ct) : null;
 
-    return new Page<object>
+    return new GridPageDto<object>
     {
       Rows = defaultShapedRows,
       BottomRows = defaultBottomRows,
@@ -623,9 +623,9 @@ public abstract partial class GridService<TEntity, TRow>
     return validProps.Count > 0 ? string.Join('.', validProps) : null;
   }
 
-  private Dictionary<string, object?>? CollectRowFormOverlays(List<object> shapedRows)
+  private Dictionary<string, OverlayDto>? CollectRowFormOverlays(List<object> shapedRows)
   {
-    Dictionary<string, object?>? forms = null;
+    Dictionary<string, OverlayDto>? forms = null;
     foreach (var rowObj in shapedRows)
     {
       if (rowObj is Dictionary<string, object?> dict &&
@@ -641,7 +641,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is Form.IFormService formInstance)
             {
-              forms ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+              forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
               forms[formHandle] = formInstance.Overlay(formHandle);
             }
           }

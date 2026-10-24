@@ -71,12 +71,12 @@ public abstract partial class GridService<TEntity, TRow>
       {
         if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
         {
-          hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(targetFeat.All) || User.Can(Feature.All);
+          hasRight = User.Can(targetFeat.Action(reqAttr.ActionName)) || User.Can(targetFeat.All) || User.Can(Feature.All);
         }
       }
       else if (reqAction != null && User != null && User.IsAuthenticated)
       {
-        hasRight = User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
+        hasRight = User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
       }
       else if (!entry.IsAllowedInReadOnly && isUserReadOnly)
       {
@@ -413,7 +413,7 @@ public abstract partial class GridService<TEntity, TRow>
       Service = servicePath,
       Columns = matching,
       IsReadOnly = true,
-      Form = new OverlayModelDto(),
+      Form = new OverlayDto(),
       Nav = new NavModel
       {
         Key = $"{servicePath}.select.nav",
@@ -478,7 +478,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private OverlayModelDto? ResolveFormOverlay(Columns columns)
+  private OverlayDto? ResolveFormOverlay(Columns columns)
   {
     var detectedFormService = ResolveFormServicePath(columns);
     if (detectedFormService is null)
@@ -490,7 +490,7 @@ public abstract partial class GridService<TEntity, TRow>
     return ResolveFormOverlayForType(formType, detectedFormService);
   }
 
-  private OverlayModelDto ResolveFormOverlayForType(Type? formType, string formServicePath)
+  private OverlayDto ResolveFormOverlayForType(Type? formType, string formServicePath)
   {
     if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
     {

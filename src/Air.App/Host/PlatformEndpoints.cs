@@ -28,11 +28,11 @@ public static class PlatformEndpoints
     catch (KeyNotFoundException ex)
     {
       var msg = string.IsNullOrWhiteSpace(ex.Message) ? Localizer.Instance["FormNotFound"] : ex.Message;
-      return Results.NotFound(new
+      return Results.NotFound(new MutationResultDto
       {
-        outcome = MutationOutcome.Refused,
-        title = msg,
-        messages = new[] { new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error } }
+        Outcome = MutationOutcome.Refused,
+        Title = msg,
+        Messages = [new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error }]
       });
     }
     finally
@@ -56,11 +56,11 @@ public static class PlatformEndpoints
     catch (KeyNotFoundException ex)
     {
       var msg = string.IsNullOrWhiteSpace(ex.Message) ? Localizer.Instance["FormNotFound"] : ex.Message;
-      return Results.NotFound(new
+      return Results.NotFound(new MutationResultDto
       {
-        outcome = MutationOutcome.Refused,
-        title = msg,
-        messages = new[] { new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error } }
+        Outcome = MutationOutcome.Refused,
+        Title = msg,
+        Messages = [new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error }]
       });
     }
     finally
@@ -119,22 +119,20 @@ public static class PlatformEndpoints
   internal static IResult ToMutationResult(object? result) =>
     result switch
     {
-      GridDeleteDto del when del.Outcome != MutationOutcome.Committed =>
-        del.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = del.Outcome, title = Localizer.Instance["MutationConflict"], messages = del.Warnings })
-          : Results.UnprocessableEntity(new { outcome = del.Outcome, title = Localizer.Instance["DeleteRefused"], messages = del.Warnings }),
-      GridCellDto cell when cell.Outcome != MutationOutcome.Committed =>
-        cell.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = cell.Outcome, title = Localizer.Instance["MutationConflict"], messages = cell.Warnings })
-          : Results.UnprocessableEntity(new { outcome = cell.Outcome, title = Localizer.Instance["MutationRefused"], messages = cell.Warnings }),
-      GridActionDto act when act.Outcome != MutationOutcome.Committed =>
-        act.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = act.Outcome, title = Localizer.Instance["MutationConflict"], messages = act.Warnings })
-          : Results.UnprocessableEntity(new { outcome = act.Outcome, title = Localizer.Instance["MutationRefused"], messages = act.Warnings }),
-      FormActionDto fact when fact.Outcome != MutationOutcome.Committed =>
-        fact.Outcome == MutationOutcome.Conflict
-          ? Results.Conflict(new { outcome = fact.Outcome, title = Localizer.Instance["MutationConflict"], messages = fact.Warnings })
-          : Results.UnprocessableEntity(new { outcome = fact.Outcome, title = Localizer.Instance["MutationRefused"], messages = fact.Warnings }),
+      MutationResultDto mut when mut.Outcome != null && mut.Outcome != MutationOutcome.Committed =>
+        mut.Outcome == MutationOutcome.Conflict
+          ? Results.Conflict(new MutationResultDto
+          {
+            Outcome = mut.Outcome,
+            Title = mut.Title ?? Localizer.Instance["MutationConflict"],
+            Messages = mut.Messages ?? mut.Warnings
+          })
+          : Results.UnprocessableEntity(new MutationResultDto
+          {
+            Outcome = mut.Outcome,
+            Title = mut.Title ?? (mut is GridDeleteDto ? Localizer.Instance["DeleteRefused"] : Localizer.Instance["MutationRefused"]),
+            Messages = mut.Messages ?? mut.Warnings
+          }),
       _ => Results.Ok(result)
     };
 }

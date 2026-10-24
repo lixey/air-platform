@@ -9,7 +9,7 @@ import { formModel } from '../../../tests/form-model';
 import { bindGrid } from '../../../tests/grid-binding';
 import { navModel } from '../../../tests/nav-model';
 import { uploadLimits } from '../../../tests/upload-limits';
-import type { GridModel, GridNavUploadModel, OverlayModelDto } from '../../core/generated/contracts';
+import type { GridModel, GridNavUploadModel, OverlayDto } from '../../core/generated/contracts';
 import { uploadOverlayOf } from '../../file/file-upload-overlay.component';
 import { OverlayMenu } from '../../overlay/overlay-menu';
 import { OverlayService } from '../../overlay/overlay.service';
@@ -108,7 +108,7 @@ describe('GridNavUploadComponent', () => {
     click();
 
     expect(opened).toHaveBeenCalledTimes(1);
-    const [dialog, anchor, opener] = opened.mock.calls[0] as [OverlayModelDto, unknown, Injector];
+    const [dialog, anchor, opener] = opened.mock.calls[0] as [OverlayDto, unknown, Injector];
     expect(dialog).toEqual(
       uploadOverlayOf({
         ...upload.limits,

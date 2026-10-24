@@ -39,7 +39,7 @@ public static class ContractExporter
           return [];
         }
       })
-      .Where(t => t.IsClass && !(t.IsAbstract && t.IsSealed))
+      .Where(t => t.IsClass && !(t.IsAbstract && t.IsSealed) && !t.IsGenericTypeDefinition)
       .Where(t => !baseSlotTypes.Contains(t))
       .Where(t => t.GetCustomAttribute<UiContractAttribute>() != null ||
                   !t.IsAbstract && (
@@ -110,16 +110,8 @@ public static class ContractExporter
     sb.AppendLine();
     sb.AppendLine("export interface GridPageDto<TRow = unknown> extends Page<TRow> {");
     sb.AppendLine("  bottomRows?: TRow[] | null;");
-    sb.AppendLine("  forms?: Record<string, OverlayModelDto> | null;");
+    sb.AppendLine("  forms?: Record<string, OverlayDto> | null;");
     sb.AppendLine("  topRows?: TRow[] | null;");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface ActionInputDto {");
-    sb.AppendLine("  value: Record<string, unknown>;");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface GridActionInputRequest extends GridRequest {");
-    sb.AppendLine("  method?: string | null;");
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface GridServiceEndpoints {");
@@ -158,6 +150,8 @@ public static class ContractExporter
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface FormServiceEndpoints {");
+    sb.AppendLine("  delete: { request: FormRequest; answer: GridDeleteDto };");
+    sb.AppendLine("  'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };");
     sb.AppendLine("  'get-data': { request: FormRequest | null; answer: ScreenDto };");
     sb.AppendLine("  save: { request: FormRequest; answer: FormDataDto };");
     sb.AppendLine("}");
@@ -189,7 +183,11 @@ public static class ContractExporter
   private static void ExportInterface(StringBuilder sb, Type type)
   {
     var name = type.Name;
-    sb.AppendLine($"export interface {name} {{");
+    var extendsClause = type.BaseType is { } bt &&
+                        (bt == typeof(GridRequest) || bt == typeof(FormRequest) || bt == typeof(MutationResultDto))
+      ? $" extends {bt.Name}"
+      : string.Empty;
+    sb.AppendLine($"export interface {name}{extendsClause} {{");
 
     // If it's a polymorphic component model or FilterNode, emit its kind literal
     if (!type.IsAbstract &&

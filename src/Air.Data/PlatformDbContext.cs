@@ -347,11 +347,20 @@ public abstract class PlatformDbContext : DbContext
           timestamps.CreatedAt = now;
         }
 
-        if (entry.Entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0)
+        if (entry.Entity is IHasTenant tenantEntity)
         {
-          tenantEntity.TenantId = tenantId ?? throw new InvalidOperationException(
-            $"Cannot insert {entry.Metadata.ClrType.Name} without an active tenant."
-          );
+          if (tenantEntity.TenantId == 0)
+          {
+            tenantEntity.TenantId = tenantId ?? throw new InvalidOperationException(
+              $"Cannot insert {entry.Metadata.ClrType.Name} without an active tenant."
+            );
+          }
+          else if (tenantId.HasValue && tenantEntity.TenantId != tenantId.Value)
+          {
+            throw new InvalidOperationException(
+              $"Cannot insert {entry.Metadata.ClrType.Name} belonging to another tenant."
+            );
+          }
         }
 
         if (entry.Entity is IInheritedByChildTenants inherited && inherited.TenantId == 0)

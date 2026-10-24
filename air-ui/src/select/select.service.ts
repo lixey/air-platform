@@ -1,6 +1,6 @@
 import { computed, inject, Injector, Service, type Signal, signal, untracked } from '@angular/core';
 import { type Observable, Subject } from 'rxjs';
-import type { OverlayModelDto } from '../core/generated/contracts';
+import type { OverlayDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import type { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
@@ -148,7 +148,7 @@ export class SelectService {
     const menu = serviceMenu('select.grid', { kind: 'SelectOverlay' }, { token: SelectService, instance: this, parent: injector });
     const list = this.model().options ? OPTIONS_WIDTH : gridListWidth(this.model().labelPaths?.length ?? 1);
     const width = Math.min(MOST_OVERLAY_WIDTH, list + (multiple ? PICKED_PANEL_WIDTH : 0));
-    const overlayModel: OverlayModelDto = { ...menu.model, width: `${width}px`, height: `${BAR_HEIGHT + this.listHeight()}px` };
+    const overlayModel: OverlayDto = { ...menu.model, width: `${width}px`, height: `${BAR_HEIGHT + this.listHeight()}px` };
     const ref = this.menu.open(overlayModel, anchor, menu.injector, model.label || this.texts.of('SearchOptions'));
     ref.ask(
       computed(() => {

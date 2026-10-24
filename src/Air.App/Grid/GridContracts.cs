@@ -26,7 +26,7 @@ public sealed record GridModel : PanelModel
   public MutationTextsDto MutationTexts { get; set; } = new();
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public OverlayModelDto? Form { get; set; }
+  public OverlayDto? Form { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? InitialSearch { get; set; }
@@ -36,6 +36,18 @@ public sealed record GridModel : PanelModel
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool FocusesSearch { get; set; }
+}
+
+public class GridPageDto<TRow> : Page<TRow>
+{
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<TRow>? TopRows { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<TRow>? BottomRows { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public Dictionary<string, OverlayDto>? Forms { get; init; }
 }
 
 [UiContract]
@@ -294,7 +306,7 @@ public sealed record GridNavAddModel : NavButtonModel
   public string? Service { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public OverlayModelDto? Overlay { get; set; }
+  public OverlayDto? Overlay { get; set; }
 }
 
 [UiContract]
@@ -377,20 +389,13 @@ public sealed class GridCountDto
 }
 
 [UiContract]
-public sealed class GridDeleteDto
+public sealed class GridDeleteDto : MutationResultDto
 {
   public int Deleted { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [OneOf(typeof(MutationOutcome))]
-  public string? Outcome { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<MessageDto>? Warnings { get; set; }
 }
 
 [UiContract]
-public sealed class GridActionDto
+public sealed class GridActionDto : MutationResultDto
 {
   public int Count { get; set; }
 
@@ -398,17 +403,18 @@ public sealed class GridActionDto
   public long? Id { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [OneOf(typeof(MutationOutcome))]
-  public string? Outcome { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<MessageDto>? Warnings { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? OpenScreen { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public object? OpenId { get; set; }
+}
+
+[UiContract]
+[ClientOptional]
+public class GridActionInputRequest : GridRequest
+{
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Method { get; set; }
 }
 
 [UiContract]
@@ -431,15 +437,13 @@ public class GridCellRequest : GridRequest
 }
 
 [UiContract]
-public class GridCellDto
+public class GridCellDto : MutationResultDto
 {
   public object? Row { get; set; }
 
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [OneOf(typeof(MutationOutcome))]
-  public string? Outcome { get; set; } = MutationOutcome.Committed;
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<MessageDto>? Warnings { get; set; }
+  public GridCellDto()
+  {
+    Outcome = MutationOutcome.Committed;
+  }
 }
 

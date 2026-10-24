@@ -1,10 +1,10 @@
 namespace Air.App.Form;
 
-public interface IFormService
+public interface IFormService : IPlatformService
 {
   PlatformDbContext DbContext { get; }
   string Service { get; }
-  OverlayModelDto Overlay(string service);
+  OverlayDto Overlay(string service);
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, (long?)null, ct);
@@ -15,14 +15,15 @@ public interface IFormService
   Task DeleteAsync(long id, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
+  Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default);
   Task<Dictionary<string, int>?> EvaluateUnavailableAsync(long? id, CancellationToken ct = default) => Task.FromResult<Dictionary<string, int>?>(null);
   Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default);
   string GetTitle() => string.Empty;
   string GetRecordCaption(object? entity, long? id) => string.Empty;
-  void AttachPlatformApp(PlatformAppService app);
-  Feature Feature { get; }
+  new void AttachPlatformApp(PlatformAppService app);
+  new Feature Feature { get; }
 }
 
 public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db, PlatformAppService? app = null) : IFormService
@@ -209,10 +210,12 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     public bool IsInMenu { get; set; }
     public bool IsAllowedInReadOnly { get; set; }
     public Delegate Method { get; init; } = null!;
+    public Screens.RecordAsk? Ask { get; set; }
+    public Func<CancellationToken, Task<object?>>? DefaultProvider { get; set; }
     public List<Screens.RecordAvailability> Offers { get; } = [];
   }
 
-  public sealed class FormNavActionBuilder(FormNavActionEntry entry, Nav nav)
+  public class FormNavActionBuilder(FormNavActionEntry entry, Nav nav)
   {
     public Nav InMenu()
     {
@@ -223,6 +226,56 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     public FormNavActionBuilder AllowReadOnly(bool allow = true)
     {
       entry.IsAllowedInReadOnly = allow;
+      return this;
+    }
+  }
+
+  public sealed class FormNavActionBuilder<TRequest>(FormNavActionEntry entry, Nav nav) : FormNavActionBuilder(entry, nav)
+    where TRequest : class, new()
+  {
+    public FormNavActionBuilder<TRequest> Ask(Action<Actions.ActionInput<TRequest>> elements)
+    {
+      entry.Ask = Actions.TransitionAsk.Of(elements);
+      return this;
+    }
+
+    public FormNavActionBuilder<TRequest> Default(Func<CancellationToken, Task<TRequest>> provider)
+    {
+      entry.DefaultProvider = async ct => await provider(ct);
+      return this;
+    }
+
+    public FormNavActionBuilder<TRequest> Default(Func<TRequest> provider)
+    {
+      entry.DefaultProvider = _ => Task.FromResult<object?>(provider());
+      return this;
+    }
+
+    public FormNavActionBuilder<TRequest> Default(Func<TRequest, CancellationToken, Task> provider)
+    {
+      entry.DefaultProvider = async ct =>
+      {
+        var req = new TRequest();
+        await provider(req, ct);
+        return req;
+      };
+      return this;
+    }
+
+    public FormNavActionBuilder<TRequest> Default(Action<TRequest> provider)
+    {
+      entry.DefaultProvider = _ =>
+      {
+        var req = new TRequest();
+        provider(req);
+        return Task.FromResult<object?>(req);
+      };
+      return this;
+    }
+
+    public new FormNavActionBuilder<TRequest> AllowReadOnly(bool allow = true)
+    {
+      base.AllowReadOnly(allow);
       return this;
     }
   }
@@ -262,6 +315,37 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       return new FormNavActionBuilder(entry, this);
     }
 
+    public FormNavActionBuilder<TRequest> AddAction<TRequest>(
+      Delegate method,
+      Action<Grid.GridService<TEntity, TEntity>.ButtonBuilder>? look = null,
+      string? confirm = null)
+      where TRequest : class, new()
+    {
+      var b = new Grid.GridService<TEntity, TEntity>.ButtonBuilder();
+      look?.Invoke(b);
+      var rawLabel = b.LabelText ?? method.Method.Name;
+      var action = new FormNavActionModel
+      {
+        Service = servicePath,
+        Key = method.Method.Name.ToLowerInvariant(),
+        Method = method.Method.Name,
+        Label = _l[rawLabel],
+        Title = b.TitleText != null ? _l[b.TitleText] : null,
+        Icon = b.IconHandle,
+        Color = b.ColorHandle ?? UiColor.Blue,
+        Variant = b.VariantHandle ?? ButtonVariant.Soft,
+        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = b.ColorHandle ?? UiColor.Red } : null
+      };
+      var entry = new FormNavActionEntry
+      {
+        Model = action,
+        IsInMenu = b.IsInMenu,
+        Method = method
+      };
+      Actions.Add(entry);
+      return new FormNavActionBuilder<TRequest>(entry, this);
+    }
+
     public void AvailableWhen(
       Delegate action,
       Expression<Func<TEntity, bool>> condition,
@@ -292,6 +376,30 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   {
     SetNav(nav);
     return Task.CompletedTask;
+  }
+
+  public virtual async Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default)
+  {
+    Request = request;
+    var nav = new Nav(Service, L);
+    await SetNavAsync(nav, ct);
+    var entry = nav.Actions.FirstOrDefault(a =>
+      string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
+    if (entry?.DefaultProvider == null)
+    {
+      return new Dictionary<string, object?>();
+    }
+
+    var rawDefaults = await entry.DefaultProvider(ct);
+    if (rawDefaults == null)
+    {
+      return new Dictionary<string, object?>();
+    }
+
+    var jsonText = JsonSerializer.Serialize(rawDefaults, PlatformJsonOptions.DefaultOptions);
+    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    return dict;
   }
 
   protected Task<FormActionDto> ExecuteActionAsync(
@@ -467,7 +575,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     return probe.Children.Any(c => !c.IsFiles);
   }
 
-  public virtual OverlayModelDto Overlay(string service)
+  public virtual OverlayDto Overlay(string service)
   {
     var dto = Presentation($"{service}.modal").Screen(service).Build();
     if (HasChildPages())

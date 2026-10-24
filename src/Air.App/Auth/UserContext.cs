@@ -10,9 +10,13 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
   private ClaimsPrincipal? User => httpContextAccessor.HttpContext?.User;
   private HashSet<string>? _permissions;
 
-  public bool IsAuthenticated => User?.Identity?.IsAuthenticated == true;
+  public bool IsAuthenticated =>
+    User?.Identity?.IsAuthenticated == true ||
+    httpContextAccessor.HttpContext == null && AsyncLocalTenantContext.Instance.UserId != null;
 
-  public long? UserId => Long(AuthClaims.Sub) ?? Long(ClaimTypes.NameIdentifier);
+  public long? UserId =>
+    Long(AuthClaims.Sub) ?? Long(ClaimTypes.NameIdentifier) ??
+    (httpContextAccessor.HttpContext == null ? AsyncLocalTenantContext.Instance.UserId : null);
 
   public long? SessionId => Long(AuthClaims.SessionId);
 
@@ -24,7 +28,10 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
 
   public string Language => CultureInfo.CurrentUICulture.Name;
 
-  public IReadOnlySet<string> Permissions => _permissions ??= Values(AuthClaims.Permission);
+  public IReadOnlySet<string> Permissions =>
+    _permissions ??= httpContextAccessor.HttpContext == null && AsyncLocalTenantContext.Instance.Rights is { } ambient
+      ? ambient.ToHashSet(StringComparer.OrdinalIgnoreCase)
+      : Values(AuthClaims.Permission);
 
   public string? Claim(string type) => User?.FindFirst(type)?.Value;
 

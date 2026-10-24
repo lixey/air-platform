@@ -1,5 +1,5 @@
 import { computed, inject, Injector, Service, signal } from '@angular/core';
-import type { OverlayModelDto } from '../core/generated/contracts';
+import type { OverlayDto } from '../core/generated/contracts';
 import { resolveModel } from '../core/resolve-model';
 import { toBound } from '../panels/panel-size';
 import { SCREEN_OVERLAY_OWNER } from '../screen/screen-address';
@@ -68,7 +68,7 @@ export class OverlayService {
    * (`scopeOf`); no caller names it.
    */
   open<TResult = unknown>(
-    model: OverlayModelDto,
+    model: OverlayDto,
     anchor?: HTMLElement | null,
     injector?: Injector,
     options?: OverlayOpenOptions,

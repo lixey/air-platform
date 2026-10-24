@@ -2,12 +2,12 @@ namespace Air.App.Grid;
 
 public sealed record GridCreateDescriptor(Type FormServiceType, string ServicePath, string Label, string? Color = null);
 
-public interface IGridService
+public interface IGridService : IPlatformService
 {
   PlatformDbContext DbContext { get; }
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
-  Task<Page<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
+  Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
   Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
@@ -19,8 +19,8 @@ public interface IGridService
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   string? GetRecordLabel(object? entity) => null;
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
-  void AttachPlatformApp(PlatformAppService app);
-  Feature Feature { get; }
+  new void AttachPlatformApp(PlatformAppService app);
+  new Feature Feature { get; }
 }
 
 public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, PlatformAppService? app = null) : IGridService
@@ -482,17 +482,17 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         if (Feature.FeaturesByServiceType.TryGetValue(reqRight.Service, out var targetFeat))
         {
-          return User == null || !User.IsAuthenticated || User.Can(targetFeat.Action(reqRight.Action.ToString())) || User.Can(targetFeat.All);
+          return User == null || User.Can(targetFeat.Action(reqRight.ActionName)) || User.Can(targetFeat.All);
         }
       }
 
       if (deleteMethod.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true) is { } reqAction)
       {
-        return User == null || !User.IsAuthenticated || User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
+        return User == null || User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
       }
     }
 
-    return Feature.HasDelete && (User == null || !User.IsAuthenticated || User.Can(Feature.Delete) || User.Can(Feature.All));
+    return Feature.HasDelete && (User == null || User.Can(Feature.Delete) || User.Can(Feature.All));
   }
 
   public virtual Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>

@@ -1,7 +1,7 @@
 import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, Injector, signal, viewChild } from '@angular/core';
 import { AppService } from '../app/app.service';
 import { LocaleService } from '../app/locale.service';
-import type { OverlayModelDto, PanelLayoutDto } from '../core/generated/contracts';
+import type { OverlayDto, PanelLayoutDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayHostComponent } from '../overlay/overlay-host.component';
@@ -13,7 +13,7 @@ import { AGENT_PANEL, MENU_PANEL, TABS_PANEL, WORK_PANEL } from './layout-panel-
 import { LayoutPinsService } from './layout-pins.service';
 import { isTabStripVisible } from './layout-tabs.component';
 
-const AGENT_DIALOG: OverlayModelDto = {
+const AGENT_DIALOG: OverlayDto = {
   key: 'layout.agent',
   presentation: 'dialog',
   closesOnEscape: true,

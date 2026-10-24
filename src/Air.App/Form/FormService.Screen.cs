@@ -142,12 +142,12 @@ public abstract partial class FormService<TEntity, TInput>
         {
           if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
           {
-            hasRight = User.Can(targetFeat.Action(reqAttr.Action.ToString())) || User.Can(targetFeat.All) || User.Can(Feature.All);
+            hasRight = User.Can(targetFeat.Action(reqAttr.ActionName)) || User.Can(targetFeat.All) || User.Can(Feature.All);
           }
         }
         else if (reqAction != null && User != null && User.IsAuthenticated)
         {
-          hasRight = User.Can(Feature.Action(reqAction.Action.ToString())) || User.Can(Feature.All);
+          hasRight = User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
         }
         else if (!entry.IsAllowedInReadOnly && (IsReadOnly || isUserReadOnly))
         {
@@ -156,6 +156,27 @@ public abstract partial class FormService<TEntity, TInput>
 
         if (hasRight)
         {
+          if (entry.Ask != null)
+          {
+            entry.Model.Ask = new FormAskModel
+            {
+              Title = entry.Model.Label,
+              Message = entry.Model.Confirm?.Message,
+              Color = entry.Model.Color,
+              HasDefaults = entry.DefaultProvider != null,
+              Elements = [.. entry.Ask.BuildElements().Select(e =>
+              {
+                if (!string.IsNullOrEmpty(e.Label))
+                {
+                  e.Label = L[e.Label];
+                }
+
+                return e;
+              })]
+            };
+            entry.Model.Confirm = null;
+          }
+
           permittedActions.Add(entry);
         }
       }

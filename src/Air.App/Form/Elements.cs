@@ -486,7 +486,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<CheckboxOptionDto>? options = null)
+  public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<OptionDto>? options = null)
   {
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
@@ -500,7 +500,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   }
   public FormElement<TEntity, TProp> AsCheckboxSet(object? options)
   {
-    if (options is IEnumerable<CheckboxOptionDto> opts)
+    if (options is IEnumerable<OptionDto> opts)
     {
       return AsCheckboxSet(opts);
     }

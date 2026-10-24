@@ -9,7 +9,7 @@ import type {
   GridPageDto,
   GridRequest,
   GridServiceEndpoints,
-  OverlayModelDto,
+  OverlayDto,
   SortDirection,
   SortRule,
 } from '../core/generated/contracts';
@@ -588,12 +588,7 @@ export class GridService {
    * carries under `forms` for that form when the row with this key names it, else in the overlay of the grid's own
    * form addressed to it, else in a dialog. In a select, picks the row instead.
    */
-  openForm(
-    id: GridRowKey | null,
-    anchor?: HTMLElement | null,
-    formService?: string | null,
-    customOverlay?: OverlayModelDto | null,
-  ): boolean {
+  openForm(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null, customOverlay?: OverlayDto | null): boolean {
     // In a select the row's link picks the row, as a click on it does
     if (this.select) {
       const row = this.rows().find(r => keyOf(r) === id) ?? null;
@@ -610,7 +605,7 @@ export class GridService {
   }
 
   /** Nav Add and row edit share the same verified parent address. */
-  withParentParams(model: OverlayModelDto): OverlayModelDto {
+  withParentParams(model: OverlayDto): OverlayDto {
     return this.forms.withParentParams(model);
   }
 

@@ -51,6 +51,15 @@ public static class RightsTree
           rights.Add(Node(accessRight.Key, modL[labelKey]));
         }
 
+        foreach (var customRight in DiscoverFeatureActionRights(module, feat))
+        {
+          if (rights.All(r => !string.Equals(r.Key, customRight.Key, StringComparison.OrdinalIgnoreCase)))
+          {
+            var labelKey = System.Text.RegularExpressions.Regex.Replace(customRight.Action, "([a-z])([A-Z])", "$1 $2");
+            rights.Add(Node(customRight.Key, modL.TextOr(customRight.Action, modL[labelKey])));
+          }
+        }
+
         var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? modL[feat.Name] : modL[feat.CleanName];
         featureNodes.Add(Node(
           feat.All.Key,
@@ -91,6 +100,106 @@ public static class RightsTree
       .Where(p => p.PropertyType == typeof(Right) && p.GetIndexParameters().Length == 0)
       .OrderBy(p => p.MetadataToken)
       .Select(p => (Right)p.GetValue(access)!);
+  }
+
+  private static readonly HashSet<string> StandardActions = new(StringComparer.OrdinalIgnoreCase)
+  {
+    "View", "MenuView", "Edit", "Delete", "Export", "*"
+  };
+
+  private static IEnumerable<Right> DiscoverFeatureActionRights(IPlatformModule module, Feature feature)
+  {
+    var discovered = new List<Right>();
+
+    foreach (var r in feature.Rights.Values)
+    {
+      if (!StandardActions.Contains(r.Action) &&
+          !r.Action.StartsWith(FeatureAccess.AccessToPrefix, StringComparison.OrdinalIgnoreCase))
+      {
+        discovered.Add(r);
+      }
+    }
+
+    var assembly = module.GetType().Assembly;
+    Type[] moduleTypes;
+    try
+    {
+      moduleTypes = assembly.GetTypes();
+    }
+    catch
+    {
+      return discovered;
+    }
+
+    var prefix = module.Handle + feature.CleanName;
+    var relatedServices = moduleTypes
+      .Where(t => t is { IsClass: true, IsAbstract: false } &&
+                  (t == feature.ServiceType ||
+                   Feature.FeaturesByServiceType.TryGetValue(t, out var mapped) && mapped == feature ||
+                   t.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && t.Name.EndsWith("Service", StringComparison.OrdinalIgnoreCase)))
+      .ToList();
+
+    var entityTypes = new HashSet<Type>();
+    foreach (var st in relatedServices)
+    {
+      foreach (var method in st.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+      {
+        if (method.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true) is { } reqAct &&
+            !StandardActions.Contains(reqAct.ActionName))
+        {
+          discovered.Add(feature.Action(reqAct.ActionName));
+        }
+      }
+
+      var cur = st.BaseType;
+      while (cur != null && cur != typeof(object))
+      {
+        if (cur.IsGenericType)
+        {
+          var def = cur.GetGenericTypeDefinition();
+          if (def == typeof(Grid.GridService<,>) || def == typeof(Form.FormService<,>))
+          {
+            entityTypes.Add(cur.GetGenericArguments()[0]);
+            break;
+          }
+        }
+
+        cur = cur.BaseType;
+      }
+    }
+
+    if (entityTypes.Count > 0)
+    {
+      foreach (var entityType in entityTypes)
+      {
+        var statusFlowInterface = typeof(Screens.IRecordStatuses<>).MakeGenericType(entityType);
+        foreach (var flowType in moduleTypes.Where(t => t is { IsClass: true, IsAbstract: false } && statusFlowInterface.IsAssignableFrom(t)))
+        {
+          try
+          {
+            var ctor = flowType.GetConstructors().FirstOrDefault();
+            if (ctor != null)
+            {
+              var args = ctor.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : null).ToArray();
+              if (ctor.Invoke(args) is object flowInstance &&
+                  statusFlowInterface.GetProperty("Transitions")?.GetValue(flowInstance) is System.Collections.IEnumerable transitions)
+              {
+                foreach (var tr in transitions)
+                {
+                  if (tr?.GetType().GetProperty("Name")?.GetValue(tr) is string trName && !string.IsNullOrWhiteSpace(trName))
+                  {
+                    discovered.Add(feature.Action(trName));
+                  }
+                }
+              }
+            }
+          }
+          catch { }
+        }
+      }
+    }
+
+    return discovered;
   }
 
   public static HashSet<string> FlattenKeys(IEnumerable<CheckboxTreeNodeDto> nodes)

@@ -1,5 +1,5 @@
 import { computed, type Injector, signal } from '@angular/core';
-import type { OverlayModelDto } from '../core/generated/contracts';
+import type { OverlayDto } from '../core/generated/contracts';
 import type { OverlayRef } from './overlay-ref';
 import type { OverlayOpenOptions, OverlayService } from './overlay.service';
 
@@ -29,7 +29,7 @@ export class OverlayMenu {
    * Opens the card named `label` from the anchor unless one is open, which it answers instead; the options pass to
    * `OverlayService.open` as given.
    */
-  open(model: OverlayModelDto, anchor: HTMLElement | null, injector: Injector, label: string, options?: OverlayOpenOptions): OverlayRef {
+  open(model: OverlayDto, anchor: HTMLElement | null, injector: Injector, label: string, options?: OverlayOpenOptions): OverlayRef {
     const open = this._ref();
     if (open) {
       return open;

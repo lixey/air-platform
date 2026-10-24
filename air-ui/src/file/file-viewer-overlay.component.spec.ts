@@ -6,7 +6,7 @@ import { boxesOf } from '../../tests/boxes';
 import { userProfile } from '../../tests/user-profile';
 import { AuthService } from '../app/auth/auth.service';
 import { SLATE_GHOST_ICON_BTN_CLASSES, SLATE_SOFT_BTN_CLASSES } from '../btn/btn.component';
-import type { FileInfoDto, FileMetadataDto, OverlayModelDto } from '../core/generated/contracts';
+import type { FileInfoDto, FileMetadataDto, OverlayDto } from '../core/generated/contracts';
 import { OverlayRef } from '../overlay/overlay-ref';
 import type { FileView } from './file-view';
 import { FILE_VIEWER_OVERLAY, FILE_VIEWER_SOURCE, type FileInfoChange, fileViewerOf, type FileViewerSource } from './file-viewer';
@@ -122,7 +122,7 @@ describe('FileViewerOverlayComponent', () => {
 
   it('is a modal dialog over the whole window whose one panel fills the card', () => {
     mount(2);
-    const model: OverlayModelDto = fileViewerOf(2);
+    const model: OverlayDto = fileViewerOf(2);
 
     expect(model.key).toBe(FILE_VIEWER_OVERLAY);
     expect(model.presentation).toBe('dialog');

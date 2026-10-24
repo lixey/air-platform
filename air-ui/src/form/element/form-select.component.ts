@@ -1,6 +1,6 @@
 import { Component, computed, effect, linkedSignal, untracked } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
-import type { FilterNode, FormSelectModel, OverlayModelDto, Reference } from '../../core/generated/contracts';
+import type { FilterNode, FormSelectModel, OverlayDto, Reference } from '../../core/generated/contracts';
 import { valueAt } from '../../core/json';
 import type { SelectOption } from '../../select/select-option';
 import { labelPathsOf, optionOfReference, referenceOfOption } from '../../select/select-option';
@@ -119,7 +119,7 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
     };
   });
 
-  protected readonly createOverlay = computed<OverlayModelDto | null>(() => {
+  protected readonly createOverlay = computed<OverlayDto | null>(() => {
     const base = this.model()?.createOverlay ?? null;
     if (!base?.screen) {
       return base;
