@@ -22,6 +22,7 @@ public interface IFormService : IPlatformService
   Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default);
   string GetTitle() => string.Empty;
   string GetRecordCaption(object? entity, long? id) => string.Empty;
+  IReadOnlyList<MessageDto>? GetLastSaveWarnings() => null;
   new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }
 }

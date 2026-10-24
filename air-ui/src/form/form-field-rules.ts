@@ -15,7 +15,7 @@ import {
   validate,
   type ValidationError,
 } from '@angular/forms/signals';
-import type { FormElementDto, MessageDto } from '../core/generated/contracts';
+import type { FilterNode, FormElementDto, MessageDto } from '../core/generated/contracts';
 
 /** What the field rules read of a form, as functions, so the rules follow the form without holding it. */
 export interface FormFieldRulesSource {
@@ -27,6 +27,8 @@ export interface FormFieldRulesSource {
   readonly refusesInput: () => boolean;
   /** The server's messages the form holds. */
   readonly messages: () => readonly MessageDto[];
+  /** The current draft values of the form for evaluating dynamic field predicates. */
+  readonly values?: () => Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -38,8 +40,8 @@ export function formFieldRules(source: FormFieldRulesSource): SchemaFn<Record<st
   return root => {
     readonly(root, { when: () => source.refusesInput() });
     applyEach(root, field => {
-      disabled(field, { when: ctx => isFieldDisabled(source.elementOf(ctx.key()), source.isReadOnly) });
-      metadata(field, REQUIRED, ctx => source.elementOf(ctx.key())?.isRequired ?? false);
+      disabled(field, { when: ctx => isFieldDisabled(source.elementOf(ctx.key()), source.isReadOnly, source.values) });
+      metadata(field, REQUIRED, ctx => isFieldRequired(source.elementOf(ctx.key()), source.values));
       metadata(field, MIN_LENGTH, ctx => lengthLimitOf(source.elementOf(ctx.key()), 'minLength'));
       metadata(field, MAX_LENGTH, ctx => lengthLimitOf(source.elementOf(ctx.key()), 'maxLength'));
       metadata(field, MIN_NUMBER, ctx => numericBoundOf(source.elementOf(ctx.key()), 'min'));
@@ -53,8 +55,66 @@ export function formFieldRules(source: FormFieldRulesSource): SchemaFn<Record<st
 }
 
 /** Whether a field refuses input for good: no element names it, or the element or the record is closed to the user. */
-export function isFieldDisabled(element: FormElementDto | undefined, isReadOnly: () => boolean): boolean {
-  return !element || element.isDisabled || element.isServerOwned || isReadOnly();
+export function isFieldDisabled(
+  element: FormElementDto | undefined,
+  isReadOnly: () => boolean,
+  values?: () => Readonly<Record<string, unknown>>,
+): boolean {
+  if (!element || element.isDisabled || element.isServerOwned || isReadOnly()) {
+    return true;
+  }
+  return Boolean(element.disabledWhen && values && evaluateFilterNode(element.disabledWhen, values()));
+}
+
+/** Whether a field is currently required: statically (`isRequired`) or dynamically (`requiredWhen`). */
+export function isFieldRequired(element: FormElementDto | undefined, values?: () => Readonly<Record<string, unknown>>): boolean {
+  if (!element) {
+    return false;
+  }
+  if (element.isRequired) {
+    return true;
+  }
+  return Boolean(element.requiredWhen && values && evaluateFilterNode(element.requiredWhen, values()));
+}
+
+/** Evaluates a declarative `FilterNode` predicate against the current form draft values. */
+export function evaluateFilterNode(node: FilterNode | null | undefined, values: Readonly<Record<string, unknown>>): boolean {
+  if (!node) {
+    return true;
+  }
+  if (node.kind === 'FilterGroup') {
+    return node.logic === 'or'
+      ? node.items.some(item => evaluateFilterNode(item, values))
+      : node.items.every(item => evaluateFilterNode(item, values));
+  }
+  const actual = values[node.field];
+  const expected = node.value;
+  switch (node.operator) {
+    case 'isNull':
+      return actual == null || actual === '';
+    case 'isNotNull':
+      return actual != null && actual !== '';
+    case 'eq':
+      return actual == expected || (actual != null && expected != null && String(actual) === String(expected));
+    case 'neq':
+      return actual != expected && (actual == null || expected == null || String(actual) !== String(expected));
+    case 'gt':
+      return Number(actual) > Number(expected);
+    case 'gte':
+      return Number(actual) >= Number(expected);
+    case 'lt':
+      return Number(actual) < Number(expected);
+    case 'lte':
+      return Number(actual) <= Number(expected);
+    case 'contains':
+      return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().includes(expected.toLowerCase());
+    case 'in':
+      return Array.isArray(expected) && expected.some(v => v == actual || String(v) === String(actual));
+    case 'notIn':
+      return !Array.isArray(expected) || !expected.some(v => v == actual || String(v) === String(actual));
+    default:
+      return true;
+  }
 }
 
 /** The length limit of a text counted in UTF-16 units, the one the browser counts; none for other units. */

@@ -6,8 +6,10 @@ namespace Platform.Api.Mutations;
 public class MutationContext(PlatformDbContext? db = null) : IMutationContext
 {
   private readonly List<MutationError> _errors = [];
+  private readonly List<MutationError> _warnings = [];
 
   public IReadOnlyList<MutationError> Errors => _errors;
+  public IReadOnlyList<MutationError> Warnings => _warnings;
 
   public void AddError(MutationError error)
   {
@@ -17,6 +19,16 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
   public void AddError(string code, string message, long? recordId = null, string? path = null)
   {
     _errors.Add(new MutationError(code, message, path, recordId));
+  }
+
+  public void Warn(MutationError warning)
+  {
+    _warnings.Add(warning);
+  }
+
+  public void Warn(string message, string? code = null, long? recordId = null, string? path = null)
+  {
+    _warnings.Add(new MutationError(code ?? "mutation.warning", message, path, recordId));
   }
 
   public virtual async Task FlushAsync(CancellationToken cancellationToken)

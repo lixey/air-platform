@@ -135,4 +135,40 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     Dto.CreateFormServiceType = typeof(TFormService);
     return this;
   }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> VisibleWhen(FilterNode condition)
+  {
+    base.VisibleWhen(condition);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> VisibleWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    base.VisibleWhen(predicate);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> DisabledWhen(FilterNode condition)
+  {
+    base.DisabledWhen(condition);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> DisabledWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    base.DisabledWhen(predicate);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> RequiredWhen(FilterNode condition)
+  {
+    base.RequiredWhen(condition);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> RequiredWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    base.RequiredWhen(predicate);
+    return this;
+  }
 }

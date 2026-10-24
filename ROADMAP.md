@@ -163,7 +163,7 @@ To allow the platform to power not only rich backoffice admin applications (`Air
 
 ---
 
-## Phase 5: Core Engine Performance, Decomposition & `air-ui` Cleanup (COMPLETED)
+## Phase 5: Core Engine Performance, Decomposition & `air-ui` Cleanup (✅ Completed)
 
 ### 5.1 Backend Query & Performance Fixes (`GridService`, `FormService`, `StatusFlowService`, `Air.Data`)
 1. **Fix Badge Count Leak & Duplicate Counting (`GridService.Screen.cs:147-218`)**:
@@ -197,7 +197,7 @@ To allow the platform to power not only rich backoffice admin applications (`Air
 
 ---
 
-## Phase 6: High-Productivity Enterprise Primitives for `my-port` & `ak-bcc`
+## Phase 6: High-Productivity Enterprise Primitives for `my-port` & `ak-bcc` (✅ Completed)
 
 1. **Declarative Many-to-Many Join Binding (`.AsReferences<TGrid, TJoin>(...)`)**:
    - Automatically load, diff, insert, delete, and clone join-table rows (e.g., `FinTransactionTag` in `my-port`) inside `FormService` without `[NotMapped]` properties or manual `AfterLoad`/`AfterSave`/`BeforeDelete` boilerplate.

@@ -196,7 +196,8 @@ public abstract partial class GridService<TEntity, TRow>
         Id = target.Id,
         Count = 1,
         OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId
+        OpenId = ctx.OpenId,
+        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, [target], MessageType.Warning) : null
       };
     });
   }
@@ -256,7 +257,8 @@ public abstract partial class GridService<TEntity, TRow>
         Id = target.Id,
         Count = 1,
         OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId
+        OpenId = ctx.OpenId,
+        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, [target], MessageType.Warning) : null
       };
     });
   }
@@ -355,7 +357,8 @@ public abstract partial class GridService<TEntity, TRow>
         Id = target.Id,
         Count = 1,
         OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId
+        OpenId = ctx.OpenId,
+        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, [target], MessageType.Warning) : null
       };
     });
   }
@@ -504,7 +507,8 @@ public abstract partial class GridService<TEntity, TRow>
       {
         Outcome = MutationOutcome.Committed,
         OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId
+        OpenId = ctx.OpenId,
+        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, records, MessageType.Warning) : null
       };
     });
   }
@@ -590,7 +594,11 @@ public abstract partial class GridService<TEntity, TRow>
       }
 
       await tx.CommitAsync(ct);
-      return new GridActionDto { Outcome = MutationOutcome.Committed };
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Committed,
+        Warnings = context.Warnings.Count > 0 ? FormatErrors(context.Warnings, entities, MessageType.Warning) : null
+      };
     });
   }
 
@@ -708,7 +716,8 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridDeleteDto
       {
         Outcome = MutationOutcome.Committed,
-        Deleted = entities.Count
+        Deleted = entities.Count,
+        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, entities, MessageType.Warning) : null
       };
     });
   }

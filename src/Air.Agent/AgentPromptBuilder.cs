@@ -281,13 +281,19 @@ public static class AgentPromptBuilder
                      v.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
             ? n.GetString()
             : null;
-          if (string.IsNullOrWhiteSpace(name)) { return 1; } var isReferencedByOther = elements.Any(other =>
+          if (string.IsNullOrWhiteSpace(name))
+          {
+            return 1;
+          }
+
+          var isReferencedByOther = elements.Any(other =>
             !other.Equals(el) &&
             other.TryGetProperty("values", out var ov) && ov.ValueKind == JsonValueKind.Object &&
             ov.EnumerateObject().Any(p =>
               p.Value.ValueKind == JsonValueKind.String &&
               string.Equals(p.Value.GetString()?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)));
-          return isReferencedByOther ? 0 : 1; })
+          return isReferencedByOther ? 0 : 1;
+        })
       ];
     }
 

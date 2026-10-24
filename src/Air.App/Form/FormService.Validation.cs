@@ -106,8 +106,9 @@ public abstract partial class FormService<TEntity, TInput>
 
       var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
       var isFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || (efProp?.IsForeignKey() ?? false);
+      var isRequiredNow = el.IsRequired || el.RequiredWhenPredicate != null && (el.RequiredWhenPredicate(input) || el.RequiredWhenPredicate(entity));
 
-      if (el.IsRequired && !AnswersRequirement(val, isFk))
+      if (isRequiredNow && !AnswersRequirement(val, isFk))
       {
         if (!ruleCtx.Failures.Any(f => string.Equals(f.Path, el.Path, StringComparison.OrdinalIgnoreCase) && f.Code == "form.validation.required"))
         {

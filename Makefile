@@ -1,4 +1,4 @@
-.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch prepare reset db-prepare db-reset agent-up agent-down agent-restart mcp-check
+.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch gate prepare reset db-prepare db-reset agent-up agent-down agent-restart mcp-check
 
 VOLUME ?= default
 WEB := demo/web
@@ -24,6 +24,8 @@ format-check: ## Verify formatting without modifying files
 
 check-paths: check-arch ## Verify zero absolute filesystem paths and architectural rules in tracked files
 	@! git grep -nI -E '$(ABS_PATH_PATTERN)'
+
+gate: format-check check-paths check-arch build ## Run unified verification gate (format, paths, arch, build)
 
 check-arch: ## Verify Platform.* namespaces, physical folder matching, 1 type per file, and *Extensions.cs
 	@python3 -c 'import glob, os, re, sys; \

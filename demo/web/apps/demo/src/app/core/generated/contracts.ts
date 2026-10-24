@@ -723,6 +723,9 @@ export interface FormElementDto {
   placeholder?: string | null;
   help?: string | null;
   selectPatches?: SelectPatchDto[] | null;
+  visibleWhen?: FilterNode | null;
+  disabledWhen?: FilterNode | null;
+  requiredWhen?: FilterNode | null;
 }
 
 export interface FormFilesModel {

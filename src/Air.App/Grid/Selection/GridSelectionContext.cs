@@ -5,6 +5,7 @@ namespace Platform.App.Grid.Selection;
 public abstract class GridSelectionContext<TEntity> : IMutationContext where TEntity : class
 {
   private readonly List<MutationError> _errors = [];
+  private readonly List<MutationError> _warnings = [];
   private readonly Func<CancellationToken, Task>? _flusher;
   private readonly PlatformDbContext? _db;
 
@@ -26,10 +27,17 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
 
   public IReadOnlyList<MutationError> Errors => _errors;
 
+  public IReadOnlyList<MutationError> Warnings => _warnings;
+
   public void AddError(string code, string message, long? recordId = null, string? path = null) =>
     _errors.Add(new MutationError(code, message, RecordId: recordId, Path: path));
 
   public void AddError(MutationError error) => _errors.Add(error);
+
+  public void Warn(MutationError warning) => _warnings.Add(warning);
+
+  public void Warn(string message, string? code = null, long? recordId = null, string? path = null) =>
+    _warnings.Add(new MutationError(code ?? "grid.warning", message, Path: path, RecordId: recordId));
 
   public void Refuse(string message, long? recordId = null, string? path = null) =>
     AddError("refused", message, recordId, path);

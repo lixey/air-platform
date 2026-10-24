@@ -5,6 +5,8 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   where TInput : class, new()
 {
   private Elements? _lastElements;
+  private List<MessageDto>? _lastSaveWarnings;
+  public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _lastSaveWarnings;
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 
   public PlatformDbContext DbContext => db;
@@ -476,7 +478,8 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       {
         Outcome = MutationOutcome.Committed,
         OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId
+        OpenId = ctx.OpenId,
+        Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
       };
     });
   }

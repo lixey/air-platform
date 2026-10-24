@@ -36,4 +36,11 @@ public sealed class PlatformOptions
     _appActions.Add(configure);
     return this;
   }
+
+  public PlatformOptions AddJob<TJob>(TimeSpan interval, TimeSpan? initialDelay = null)
+    where TJob : class, IPlatformJob
+  {
+    ConfigureBuilder(builder => builder.AddPlatformJob<TJob>(interval, initialDelay));
+    return this;
+  }
 }

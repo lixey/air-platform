@@ -44,6 +44,38 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.IsHidden = hidden;
     return this;
   }
+  public FormElement<TEntity, TProp> VisibleWhen(FilterNode condition)
+  {
+    dto.VisibleWhen = condition;
+    return this;
+  }
+  public FormElement<TEntity, TProp> VisibleWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    dto.VisibleWhen = TranslateFilterNode(predicate.Body);
+    return this;
+  }
+  public FormElement<TEntity, TProp> DisabledWhen(FilterNode condition)
+  {
+    dto.DisabledWhen = condition;
+    return this;
+  }
+  public FormElement<TEntity, TProp> DisabledWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    dto.DisabledWhen = TranslateFilterNode(predicate.Body);
+    return this;
+  }
+  public FormElement<TEntity, TProp> RequiredWhen(FilterNode condition)
+  {
+    dto.RequiredWhen = condition;
+    return this;
+  }
+  public FormElement<TEntity, TProp> RequiredWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    dto.RequiredWhen = TranslateFilterNode(predicate.Body);
+    var compiled = predicate.Compile();
+    dto.RequiredWhenPredicate = obj => obj is TEntity typed && compiled(typed);
+    return this;
+  }
   public FormElement<TEntity, TProp> Focus(bool focus = true)
   {
     dto.IsFocused = focus;
@@ -409,5 +441,141 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
       IsMultiple = true
     };
     return new FormReferenceElement<TEntity, TProp, TSource>(dto);
+  }
+
+  public FormReferenceElement<TEntity, TProp, TJoin> AsReferences<TGridService, TJoin>(
+    Expression<Func<TJoin, long>> ownerKey,
+    Expression<Func<TJoin, long>> referenceKey)
+    where TJoin : class, IEntity, new()
+  {
+    var refEl = AsReferences<TGridService, TJoin>();
+    var ownerProp = (ownerKey.Body is UnaryExpression u1 ? u1.Operand : ownerKey.Body) is MemberExpression m1
+      ? m1.Member as PropertyInfo
+      : null;
+    var refProp = (referenceKey.Body is UnaryExpression u2 ? u2.Operand : referenceKey.Body) is MemberExpression m2
+      ? m2.Member as PropertyInfo
+      : null;
+    var getRefId = referenceKey.Compile();
+
+    dto.JoinLoader = async (db, ownerId, ct) =>
+    {
+      var param = ownerKey.Parameters[0];
+      var ownerPred = Expression.Lambda<Func<TJoin, bool>>(
+        Expression.Equal(ownerKey.Body, Expression.Constant(ownerId)),
+        param);
+      return await db.Set<TJoin>()
+        .AsNoTracking()
+        .Where(ownerPred)
+        .OrderBy(x => x.Id)
+        .Select(referenceKey)
+        .ToListAsync(ct);
+    };
+
+    dto.JoinSyncer = async (db, ownerId, desiredIds, ct) =>
+    {
+      var distinctDesired = desiredIds.Where(id => id > 0).Distinct().ToList();
+      var param = ownerKey.Parameters[0];
+      var ownerPred = Expression.Lambda<Func<TJoin, bool>>(
+        Expression.Equal(ownerKey.Body, Expression.Constant(ownerId)),
+        param);
+      var existingRows = await db.Set<TJoin>().Where(ownerPred).ToListAsync(ct);
+      var toRemove = existingRows.Where(r => !distinctDesired.Contains(getRefId(r))).ToList();
+      if (toRemove.Count > 0)
+      {
+        db.Set<TJoin>().RemoveRange(toRemove);
+      }
+
+      var existingRefIds = existingRows.Select(getRefId).ToHashSet();
+      var added = false;
+      foreach (var refId in distinctDesired.Where(id => !existingRefIds.Contains(id)))
+      {
+        var joinEntity = new TJoin();
+        ownerProp?.SetValue(joinEntity, ownerId);
+        refProp?.SetValue(joinEntity, refId);
+        if (joinEntity is IHasTenant tenantJoin && tenantJoin.TenantId == 0 && db is PlatformDbContext pDb && pDb.TenantContext.TenantId is { } tid)
+        {
+          tenantJoin.TenantId = tid;
+        }
+
+        db.Set<TJoin>().Add(joinEntity);
+        added = true;
+      }
+
+      return toRemove.Count > 0 || added;
+    };
+
+    return refEl;
+  }
+
+  internal static FilterNode TranslateFilterNode(Expression expr)
+  {
+    if (expr is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } conv)
+    {
+      expr = conv.Operand;
+    }
+
+    if (expr is BinaryExpression { NodeType: ExpressionType.AndAlso } andExpr)
+    {
+      return FilterNode.All(TranslateFilterNode(andExpr.Left), TranslateFilterNode(andExpr.Right));
+    }
+
+    if (expr is BinaryExpression { NodeType: ExpressionType.OrElse } orExpr)
+    {
+      return FilterNode.Any(TranslateFilterNode(orExpr.Left), TranslateFilterNode(orExpr.Right));
+    }
+
+    if (expr is UnaryExpression { NodeType: ExpressionType.Not } notExpr && GetMemberName(notExpr.Operand) is { } notMember)
+    {
+      return FilterNode.Rule(ToCamel(notMember), FilterOperator.Equals, false);
+    }
+
+    if (expr is BinaryExpression bin)
+    {
+      var fieldName = GetMemberName(bin.Left);
+      var valExpr = bin.Right;
+      if (fieldName == null)
+      {
+        fieldName = GetMemberName(bin.Right);
+        valExpr = bin.Left;
+      }
+
+      if (fieldName != null)
+      {
+        var camelField = ToCamel(fieldName);
+        object? val = null;
+        try
+        {
+          val = valExpr is ConstantExpression ce
+            ? ce.Value
+            : Expression.Lambda(valExpr).Compile().DynamicInvoke();
+        }
+        catch { }
+
+        if (val == null)
+        {
+          return bin.NodeType == ExpressionType.NotEqual
+            ? FilterNode.Rule(camelField, FilterOperator.IsNotNull)
+            : FilterNode.Rule(camelField, FilterOperator.IsNull);
+        }
+
+        var op = bin.NodeType switch
+        {
+          ExpressionType.NotEqual => FilterOperator.NotEquals,
+          ExpressionType.GreaterThan => FilterOperator.GreaterThan,
+          ExpressionType.GreaterThanOrEqual => FilterOperator.GreaterThanOrEqual,
+          ExpressionType.LessThan => FilterOperator.LessThan,
+          ExpressionType.LessThanOrEqual => FilterOperator.LessThanOrEqual,
+          _ => FilterOperator.Equals
+        };
+        return FilterNode.Rule(camelField, op, val);
+      }
+    }
+
+    if (GetMemberName(expr) is { } boolMember)
+    {
+      return FilterNode.Rule(ToCamel(boolMember), FilterOperator.Equals, true);
+    }
+
+    return FilterNode.All();
   }
 }

@@ -74,6 +74,11 @@ public abstract partial class FormService<TEntity, TInput>
       CopyMatchingProperties(entity, input);
     }
 
+    if (!IsNew)
+    {
+      await PopulateJoinedReferencesAsync(elements, entity, input, ct);
+    }
+
     var hooks = new Hooks();
     SetHooks(hooks);
 
@@ -257,6 +262,7 @@ public abstract partial class FormService<TEntity, TInput>
     {
       var baselineInput = new TInput();
       CopyMatchingProperties(entity, baselineInput);
+      await PopulateJoinedReferencesAsync(elements, entity, baselineInput, ct);
       var baselineLoadCtx = new FormLoadContext<TEntity, TInput>
       {
         Entity = entity,
@@ -346,6 +352,8 @@ public abstract partial class FormService<TEntity, TInput>
 
       await db.SaveChangesAsync(ct);
 
+      await SyncJoinedReferencesAsync(elements, entity, input, ct);
+
       if (hooks.AfterSaveActions.Count > 0)
       {
         foreach (var h in hooks.AfterSaveActions)
@@ -367,6 +375,8 @@ public abstract partial class FormService<TEntity, TInput>
 
       await tx.CommitAsync(ct);
     });
+
+    _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
 
     if (!ReferenceEquals(entity, input))
     {
@@ -423,6 +433,11 @@ public abstract partial class FormService<TEntity, TInput>
     if (!ReferenceEquals(entity, input))
     {
       CopyMatchingProperties(entity, input);
+    }
+
+    if (!IsNew)
+    {
+      await PopulateJoinedReferencesAsync(elements, entity, input, ct);
     }
 
     var hooks = new Hooks();
@@ -511,6 +526,8 @@ public abstract partial class FormService<TEntity, TInput>
 
       await db.SaveChangesAsync(ct);
 
+      await SyncJoinedReferencesAsync(elements, entity, input, ct);
+
       if (hooks.AfterSaveActions.Count > 0)
       {
         foreach (var h in hooks.AfterSaveActions)
@@ -547,7 +564,8 @@ public abstract partial class FormService<TEntity, TInput>
     return new GridCellDto
     {
       Row = row,
-      Outcome = MutationOutcome.Committed
+      Outcome = MutationOutcome.Committed,
+      Warnings = saveCtx.Warnings.Count > 0 ? saveCtx.Warnings : null
     };
   }
 
@@ -600,6 +618,14 @@ public abstract partial class FormService<TEntity, TInput>
     await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
       await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+      foreach (var el in elements.List)
+      {
+        if (el.JoinSyncer != null)
+        {
+          await el.JoinSyncer(db, entity.Id, [], ct);
+        }
+      }
 
       db.Set<TEntity>().Remove(entity);
       await db.SaveChangesAsync(ct);
@@ -712,8 +738,98 @@ public abstract partial class FormService<TEntity, TInput>
       await tx.CommitAsync(ct);
       return new FormActionDto
       {
-        Outcome = MutationOutcome.Committed
+        Outcome = MutationOutcome.Committed,
+        Warnings = context.Warnings.Count > 0 ? context.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
       };
     });
+  }
+
+  private async Task PopulateJoinedReferencesAsync(
+    Elements elements,
+    TEntity entity,
+    TInput input,
+    CancellationToken ct)
+  {
+    foreach (var el in elements.List)
+    {
+      if (el.JoinLoader == null || string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
+
+      var ids = await el.JoinLoader(db, entity.Id, ct);
+      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
+      if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
+      {
+        entityProp.SetValue(entity, new List<long>(ids));
+      }
+
+      if (!ReferenceEquals(entity, input))
+      {
+        var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
+        if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
+        {
+          inputProp.SetValue(input, new List<long>(ids));
+        }
+      }
+    }
+  }
+
+  private async Task SyncJoinedReferencesAsync(
+    Elements elements,
+    TEntity entity,
+    TInput input,
+    CancellationToken ct)
+  {
+    var anyChanged = false;
+    foreach (var el in elements.List)
+    {
+      if (el.JoinSyncer == null || string.IsNullOrEmpty(el.Path))
+      {
+        continue;
+      }
+
+      var raw = PropertyAccessorCache.GetValue(input, el.Path) ?? PropertyAccessorCache.GetValue(entity, el.Path);
+      var desired = new List<long>();
+      if (raw is IEnumerable<long> longSeq)
+      {
+        desired = longSeq.Where(id => id > 0).Distinct().ToList();
+      }
+      else if (raw is IEnumerable enumerable and not string)
+      {
+        foreach (var item in enumerable)
+        {
+          if (item != null && long.TryParse(item.ToString(), out var parsed) && parsed > 0 && !desired.Contains(parsed))
+          {
+            desired.Add(parsed);
+          }
+        }
+      }
+
+      if (await el.JoinSyncer(db, entity.Id, desired, ct))
+      {
+        anyChanged = true;
+      }
+
+      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
+      if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
+      {
+        entityProp.SetValue(entity, new List<long>(desired));
+      }
+
+      if (!ReferenceEquals(entity, input))
+      {
+        var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
+        if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
+        {
+          inputProp.SetValue(input, new List<long>(desired));
+        }
+      }
+    }
+
+    if (anyChanged)
+    {
+      await db.SaveChangesAsync(ct);
+    }
   }
 }

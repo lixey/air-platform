@@ -8,9 +8,12 @@ public class FormSaveContext<TEntity, TInput> : IMutationContext
   internal PlatformDbContext? Db { get; init; }
   internal IReadOnlyDictionary<string, object?>? OriginalValues { get; init; }
   private readonly List<MutationError> _mutationErrors = [];
+  private readonly List<MutationError> _mutationWarnings = [];
   public List<MessageDto> Errors { get; } = [];
+  public List<MessageDto> Warnings { get; } = [];
 
   IReadOnlyList<MutationError> IMutationContext.Errors => _mutationErrors;
+  IReadOnlyList<MutationError> IMutationContext.Warnings => _mutationWarnings;
 
   public void AddError(MutationError error)
   {
@@ -34,6 +37,19 @@ public class FormSaveContext<TEntity, TInput> : IMutationContext
   {
     _mutationErrors.Add(new MutationError(code, message, path, recordId));
     Errors.Add(new MessageDto { Code = code, Detail = message, Path = path, RecordId = recordId, Type = MessageType.Error });
+  }
+
+  public void Warn(MutationError warning)
+  {
+    _mutationWarnings.Add(warning);
+    Warnings.Add(warning.ToMessage(MessageType.Warning));
+  }
+
+  public void Warn(string message, string? code = null, long? recordId = null, string? path = null)
+  {
+    var err = new MutationError(code ?? "form.warning", message, path, recordId);
+    _mutationWarnings.Add(err);
+    Warnings.Add(new MessageDto { Code = err.Code, Detail = message, Path = path, RecordId = recordId, Type = MessageType.Warning });
   }
 
   public void Refuse(string detail, string? path = null) =>

@@ -169,4 +169,16 @@ public static class PlatformApiExtensions
     app.UsePlatformAuth();
     return app.MapPlatformApiEndpoints();
   }
+
+  public static WebApplicationBuilder AddPlatformJob<TJob>(
+    this WebApplicationBuilder builder,
+    TimeSpan interval,
+    TimeSpan? initialDelay = null)
+    where TJob : class, IPlatformJob
+  {
+    builder.Services.TryAddScoped<TJob>();
+    builder.Services.AddSingleton(new PlatformJobRegistration(typeof(TJob), interval, initialDelay));
+    builder.Services.AddHostedService<PlatformJobHostedService>();
+    return builder;
+  }
 }

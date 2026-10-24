@@ -364,12 +364,21 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     await db.Set<TFile>().AddAsync(entity, cancellationToken);
     await db.SaveChangesAsync(cancellationToken);
 
+    await AfterUploadAsync(entity, fileBytes, cancellationToken);
+    if (db.ChangeTracker.HasChanges())
+    {
+      await db.SaveChangesAsync(cancellationToken);
+    }
+
     return new GridActionDto
     {
       Outcome = MutationOutcome.Committed,
       Id = entity.Id
     };
   }
+
+  protected virtual Task AfterUploadAsync(TFile entity, byte[] content, CancellationToken cancellationToken) =>
+    Task.CompletedTask;
 
   [RequireAction(EndpointAction.Edit)]
   public override Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
@@ -878,6 +887,13 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
 
     await db.Set<TFile>().AddAsync(entity, cancellationToken);
     await db.SaveChangesAsync(cancellationToken);
+
+    await AfterUploadAsync(entity, content, cancellationToken);
+    if (db.ChangeTracker.HasChanges())
+    {
+      await db.SaveChangesAsync(cancellationToken);
+    }
+
     return entity.Id;
   }
 

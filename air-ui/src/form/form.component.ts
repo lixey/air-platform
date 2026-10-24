@@ -19,6 +19,7 @@ import { PanelsContext } from '../panels/panels-context';
 import { PANELS } from '../panels/panels-tokens';
 import { FormCloseGuard } from './form-close-guard';
 import { FormElementOutletComponent } from './form-element-outlet.component';
+import { evaluateFilterNode } from './form-field-rules';
 import { FormOutcomeComponent } from './form-outcome.component';
 import { FORM, FORM_TAB, RECORD_TAB } from './form-panel-values';
 import { spanClassOf } from './form-span';
@@ -148,7 +149,7 @@ export class FormComponent {
 
   /** Every element of a form without tabs; with tabs, the elements of the showing one. */
   protected isShown(element: FormElementDto): boolean {
-    return this.isTabShown(element.tab);
+    return this.isTabShown(element.tab) && (!element.visibleWhen || evaluateFilterNode(element.visibleWhen, this.form.value()));
   }
 
   /** Whether what belongs to `tab`, the record tab when it names none, shows: always in a form without tabs. */

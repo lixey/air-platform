@@ -559,7 +559,13 @@ public abstract partial class GridService<TEntity, TRow>
                 Color = target?.Color,
                 Elements = [.. t.Ask.BuildElements().Select(e =>
                 {
-                  if (!string.IsNullOrEmpty(e.Label)) { e.Label = L[e.Label]; } return e; })]
+                  if (!string.IsNullOrEmpty(e.Label))
+                  {
+                    e.Label = L[e.Label];
+                  }
+
+                  return e;
+                })]
               },
             UnavailableReasons = t.Offers.Count == 0
               ? null

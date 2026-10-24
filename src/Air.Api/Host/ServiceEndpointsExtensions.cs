@@ -234,7 +234,8 @@ public static class ServiceEndpointsExtensions
 
   public static bool IsCustomActionPermitted(MethodInfo actionMethod, Feature? feat, IUserContext? userContext)
   {
-    if (actionMethod.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null)
+    if (actionMethod.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null ||
+        actionMethod.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null)
     {
       return true;
     }

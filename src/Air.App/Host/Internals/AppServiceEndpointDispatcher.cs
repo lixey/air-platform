@@ -399,7 +399,8 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             Ver = ver,
             Value = dict,
             Outcome = MutationOutcome.Committed,
-            Unavailable = unavailable
+            Unavailable = unavailable,
+            Warnings = form.GetLastSaveWarnings()?.ToList()
           });
         }
 

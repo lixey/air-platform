@@ -33,7 +33,7 @@ import { ScreenLifecycle } from '../screen/screen-lifecycle';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
 import { FormActions } from './form-actions';
-import { formFieldRules, isFieldDisabled } from './form-field-rules';
+import { evaluateFilterNode, formFieldRules, isFieldDisabled } from './form-field-rules';
 import {
   canonicalJson,
   frozenCopy,
@@ -268,6 +268,7 @@ export class FormService {
       isReadOnly: () => this.isReadOnly(),
       refusesInput: () => this.isBusy() || !!this.lifecycle?.isLocked(),
       messages: () => this.messages(),
+      values: () => this.value(),
     }),
     { name: 'form' },
   );
@@ -581,7 +582,16 @@ export class FormService {
   /** Whether the element at `path` can show a message: the form draws it and its field takes errors. */
   private showsMessage(path: string): boolean {
     const element = this.elementOf(path);
-    return !!element && !element.isHidden && !isFieldDisabled(element, () => this.isReadOnly());
+    return (
+      !!element &&
+      !element.isHidden &&
+      (!element.visibleWhen || evaluateFilterNode(element.visibleWhen, this.value())) &&
+      !isFieldDisabled(
+        element,
+        () => this.isReadOnly(),
+        () => this.value(),
+      )
+    );
   }
 
   /** The form's screen, its layout and its record, as the server holds it now. */
