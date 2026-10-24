@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [PrimaryKey(nameof(Key), nameof(Index))]
 public sealed class AppPlatformFileContentPart

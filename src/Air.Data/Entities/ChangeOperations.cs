@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// What happened to a row the change journal records (AppPlatformChange.Operation).

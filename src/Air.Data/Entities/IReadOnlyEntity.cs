@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// Marker interface for reference and dictionary entities that cannot be created, modified,

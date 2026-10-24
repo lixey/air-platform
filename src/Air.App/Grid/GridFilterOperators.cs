@@ -1,4 +1,4 @@
-namespace Air.App.Grid;
+namespace Platform.App.Grid;
 
 /// <summary>
 /// How every filter operator is shown: the text key of its label and its symbol.

@@ -1,4 +1,4 @@
-namespace Air.Data.Postgres;
+namespace Platform.Data.Postgres;
 
 public static class PlatformPostgresExtensions
 {

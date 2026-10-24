@@ -1,4 +1,4 @@
-namespace Air.Data.Querying;
+namespace Platform.Data.Querying;
 
 public static class DataProvider
 {

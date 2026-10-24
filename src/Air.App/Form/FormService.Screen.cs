@@ -1,4 +1,4 @@
-namespace Air.App.Form;
+namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
   where TEntity : class, IEntity, new()
@@ -135,8 +135,8 @@ public abstract partial class FormService<TEntity, TInput>
       foreach (var entry in customNav.Actions)
       {
         var methodInfo = entry.Method.Method;
-        var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true);
-        var reqAction = methodInfo.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true);
+        var reqAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true);
+        var reqAction = methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true);
         var hasRight = true;
         if (reqAttr != null && User != null && User.IsAuthenticated)
         {
@@ -400,7 +400,7 @@ public abstract partial class FormService<TEntity, TInput>
       else if (el.IsRightsTree && el.Model is FormCheckboxTreeModel treeModel)
       {
         var held = User is { IsAuthenticated: true } ? User.Permissions : null;
-        treeModel.Nodes = Air.App.Auth.RightsTree.Build(ModuleCatalog.Instance, held);
+        treeModel.Nodes = Platform.App.Auth.RightsTree.Build(ModuleCatalog.Instance, held);
       }
     }
   }
@@ -606,10 +606,10 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       var limits = rules != null
-        ? new Files.Contracts.FileUploadLimitsDto
+        ? new FileUploadLimitsDto
         {
-          Accept = [.. Files.Internal.FileTypeTable.TypesOf(rules.ContentTypes)],
-          Extensions = [.. Files.Internal.FileTypeTable.ExtensionsOf(rules.ContentTypes)],
+          Accept = [.. FileTypeTable.TypesOf(rules.ContentTypes)],
+          Extensions = [.. FileTypeTable.ExtensionsOf(rules.ContentTypes)],
           MaxBytes = rules.MaxBytes,
           SourceMaxBytes = rules.SourceMaxBytes > 0 ? rules.SourceMaxBytes : rules.MaxBytes,
           MaxFiles = rules.MaxFiles,
@@ -617,10 +617,10 @@ public abstract partial class FormService<TEntity, TInput>
           Images = rules.Images,
           ImageMaxSide = rules.ImageMaxSide,
           ImageQuality = rules.ImageQuality,
-          MaxPixels = Files.Internal.FileTypeTable.MaxPixels,
-          ThumbnailMaxBytes = Files.Internal.FileTypeTable.ThumbnailMaxBytes
+          MaxPixels = FileTypeTable.MaxPixels,
+          ThumbnailMaxBytes = FileTypeTable.ThumbnailMaxBytes
         }
-        : new Files.Contracts.FileUploadLimitsDto();
+        : new FileUploadLimitsDto();
 
       var childFeat = child.ServiceType != null
         ? ModuleCatalog.Instance.FindFeature(child.ServicePath)

@@ -1,4 +1,4 @@
-namespace Air.Data.Tenancy;
+namespace Platform.Data.Tenancy;
 
 /// <summary>
 /// Provides access to the current tenant, user, and request context for multi-tenant data scoping and auditing.

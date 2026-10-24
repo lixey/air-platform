@@ -1,6 +1,4 @@
-using System.Text.RegularExpressions;
-
-namespace Air.App.Grid;
+namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()

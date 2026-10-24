@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// Base entity for reference and dictionary entities with deterministic IDs assigned explicitly.

@@ -1,4 +1,4 @@
-namespace Air.App.Flow;
+namespace Platform.App.Flow;
 
 public class Transition<TEntity>
 {

@@ -6,4 +6,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Air.Api" />
+    <InternalsVisibleTo Include="Air.App" />
+    <InternalsVisibleTo Include="Air.Agent" />
+  </ItemGroup>
 </Project>

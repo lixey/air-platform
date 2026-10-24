@@ -1,4 +1,4 @@
-namespace Air.Agent;
+namespace Platform.Agent;
 
 public static class AgentProposalBuilder
 {

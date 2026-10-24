@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [Comment("User-to-role assignment")]
 public abstract class BaseAppAuthAssignment : BaseEntity

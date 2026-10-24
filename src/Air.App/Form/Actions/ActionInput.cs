@@ -1,4 +1,4 @@
-namespace Air.App.Form.Actions;
+namespace Platform.App.Form.Actions;
 
 public sealed class ActionInput<TInput> where TInput : class
 {
@@ -15,16 +15,16 @@ public sealed class ActionInput<TInput> where TInput : class
       propName = char.ToLowerInvariant(pi.Name[0]) + pi.Name[1..];
     }
 
-    var label = Air.App.Form.Elements.PathToLabel(propName);
-    var fieldType = Air.App.Form.Elements.ResolveFieldType(typeof(TProp));
-    var temporalType = Air.App.Form.Elements.ResolveTemporalType(typeof(TProp));
+    var label = Platform.App.Form.Elements.PathToLabel(propName);
+    var fieldType = Platform.App.Form.Elements.ResolveFieldType(typeof(TProp));
+    var temporalType = Platform.App.Form.Elements.ResolveTemporalType(typeof(TProp));
     var dto = new FormElementDto
     {
       Path = propName,
       Label = label,
       Type = fieldType,
       TemporalType = temporalType,
-      Model = Air.App.Form.Elements.ResolveDefaultModel(typeof(TProp)),
+      Model = Platform.App.Form.Elements.ResolveDefaultModel(typeof(TProp)),
       Span = 12
     };
 

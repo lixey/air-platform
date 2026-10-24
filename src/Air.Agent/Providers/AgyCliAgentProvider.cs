@@ -1,4 +1,4 @@
-namespace Air.Agent.Providers;
+namespace Platform.Agent.Providers;
 
 public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) : IAgentProvider
 {

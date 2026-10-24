@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [Comment("Role grant: a right's key or a pattern")]
 public abstract class BaseAppAuthGrant : BaseEntity

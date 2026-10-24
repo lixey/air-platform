@@ -1,4 +1,4 @@
-namespace Air.App.Changes;
+namespace Platform.App.Changes;
 
 /// <summary>
 /// The change journal (AppPlatformChange) of the tenant: a grid an application routes with a sealed

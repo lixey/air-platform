@@ -1,4 +1,4 @@
-namespace Air.Agent;
+namespace Platform.Agent;
 
 public sealed class AgentStore
 {

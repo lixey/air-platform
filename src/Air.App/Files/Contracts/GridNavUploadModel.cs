@@ -1,4 +1,4 @@
-namespace Air.App.Files.Contracts;
+namespace Platform.App.Files.Contracts;
 
 [UiContract]
 public sealed record GridNavUploadModel : NavButtonModel

@@ -1,4 +1,4 @@
-namespace Air.Agent;
+namespace Platform.Agent;
 
 public static class AgentPromptBuilder
 {
@@ -76,13 +76,7 @@ public static class AgentPromptBuilder
       ? Localizer.Instance["AgentDefaultPhotoPrompt"]
       : request.Message);
 
-    var domainKnowledge = request.Services?.GetService<AgentOptions>()?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
-    if (!string.IsNullOrWhiteSpace(domainKnowledge))
-    {
-      sb.AppendLine();
-      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE & LEGACY MAPPING]");
-      sb.AppendLine(domainKnowledge);
-    }
+    AppendDatabaseMemoryAndDomainKnowledge(sb, request);
 
     if (!string.IsNullOrWhiteSpace(contextJson))
     {
@@ -122,6 +116,93 @@ public static class AgentPromptBuilder
     }
 
     return sb.ToString();
+  }
+
+  private static void AppendDatabaseMemoryAndDomainKnowledge(StringBuilder sb, AgentTurnRequest request)
+  {
+    var options = request.Services?.GetService<AgentOptions>();
+    var maxChars = options?.MaxMemoryChars ?? 12_000;
+    var db = request.Services?.GetService<PlatformDbContext>();
+    var hasDbSeed = false;
+
+    if (db is not null)
+    {
+      try
+      {
+        var memories = db.AppAgentMemory
+          .AsNoTracking()
+          .Where(m => m.IsActive)
+          .OrderByDescending(m => m.Kind == AgentMemoryKinds.Rule)
+          .ThenByDescending(m => m.IsPinned)
+          .ThenByDescending(m => m.Priority)
+          .ThenBy(m => m.Id)
+          .ToList();
+
+        if (memories.Count > 0)
+        {
+          var usedChars = 0;
+          var rules = new List<AppAgentMemory>();
+          var knowledge = new List<AppAgentMemory>();
+
+          foreach (var mem in memories)
+          {
+            var entryLen = mem.Title.Length + mem.Content.Length + 16;
+            if (usedChars + entryLen > maxChars)
+            {
+              continue;
+            }
+
+            usedChars += entryLen;
+            if (string.Equals(mem.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase))
+            {
+              rules.Add(mem);
+            }
+            else
+            {
+              if (string.Equals(mem.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase))
+              {
+                hasDbSeed = true;
+              }
+
+              knowledge.Add(mem);
+            }
+          }
+
+          if (rules.Count > 0)
+          {
+            sb.AppendLine();
+            sb.AppendLine("[MANDATORY AI RULES & POLICIES (FROM DATABASE)]");
+            foreach (var r in rules)
+            {
+              sb.AppendLine($"- [{r.Title}]: {r.Content}");
+            }
+          }
+
+          if (knowledge.Count > 0)
+          {
+            sb.AppendLine();
+            sb.AppendLine("[PERSISTENT AI MEMORY & DOMAIN KNOWLEDGE (FROM DATABASE)]");
+            foreach (var k in knowledge)
+            {
+              sb.AppendLine($"### {k.Title} ({k.Kind})");
+              sb.AppendLine(k.Content);
+            }
+          }
+        }
+      }
+      catch
+      {
+        // Ignore if table is not yet migrated
+      }
+    }
+
+    var domainKnowledge = options?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
+    if (!hasDbSeed && !string.IsNullOrWhiteSpace(domainKnowledge))
+    {
+      sb.AppendLine();
+      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE & LEGACY MAPPING]");
+      sb.AppendLine(domainKnowledge);
+    }
   }
 
   private static string TruncateUtf8(string text, int maxBytes)

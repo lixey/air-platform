@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// One login, on one device, until it expires or is revoked.

@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 /// <summary>
 /// Standard list request containing pagination, sorting, filters, and fulltext search.

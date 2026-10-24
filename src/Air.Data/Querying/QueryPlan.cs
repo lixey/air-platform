@@ -1,4 +1,4 @@
-namespace Air.Data.Querying;
+namespace Platform.Data.Querying;
 
 /// <summary>
 /// A validated, compiled query plan ready for execution: filter predicate, deterministic ordering, pagination.

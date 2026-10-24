@@ -1,7 +1,7 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 
-namespace Air.Data.Files;
+namespace Platform.Data.Files;
 
 public static class FileKeys
 {

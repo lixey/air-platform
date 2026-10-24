@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [Comment("Installation of a module's initial data"), Index(nameof(Module), IsUnique = true)]
 public class AppPlatformInstallation : BaseEntity

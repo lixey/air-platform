@@ -1,6 +1,6 @@
 using System.Collections.Frozen;
 
-namespace Air.Data.Querying;
+namespace Platform.Data.Querying;
 
 /// <summary>
 /// Compiled, immutable query schema for an entity: fields, tie-breaker key, default sort, and limits.

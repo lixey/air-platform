@@ -1,0 +1,23 @@
+namespace Platform.Mcp;
+
+/// <summary>
+/// Holds the active user/tenant context for local CLI agent turns so loopback MCP calls run under the caller's session.
+/// </summary>
+public sealed class McpExecutionBridge
+{
+  private volatile McpCallContext? _active;
+
+  public McpCallContext? Active => _active;
+
+  public IDisposable BeginTurn(long? tenantId, long? userId, IReadOnlySet<string>? rights, string? sessionId)
+  {
+    var prev = _active;
+    _active = new McpCallContext(tenantId ?? 1, userId, rights, sessionId);
+    return new Scope(() => _active = prev);
+  }
+
+  private sealed class Scope(Action onDispose) : IDisposable
+  {
+    public void Dispose() => onDispose();
+  }
+}

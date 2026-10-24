@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 /// <summary>
 /// A picked option: Id filters, Label is passed for UI rendering.

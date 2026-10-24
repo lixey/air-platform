@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [Comment("Base user role model")]
 public abstract class BaseAppAuthRole : BaseEntity, IInheritedByChildTenants

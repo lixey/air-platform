@@ -1,9 +1,4 @@
-namespace Air.Data;
-
-public interface IAgentModelSynchronizer
-{
-  Task<int> SyncFromProvidersAsync(PlatformDbContext db, CancellationToken ct = default);
-}
+namespace Platform.Data;
 
 public static class AgentModelCatalog
 {

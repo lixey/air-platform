@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace Air.App.Flow;
+namespace Platform.App.Flow;
 
 public sealed class TransitionSource<TEntity>(
   IReadOnlyList<long> from,

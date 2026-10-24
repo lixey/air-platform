@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// Marks a property (e.g. a status column) whose mutation acts as its own concurrency token

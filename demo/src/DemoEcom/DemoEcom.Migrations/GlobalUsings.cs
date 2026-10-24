@@ -1,6 +1,3 @@
-global using Air.App.Components;
-global using Air.Data;
-global using Air.Data.Tenancy;
 global using Bogus;
 global using DemoApp.Migrations.Seeds;
 global using DemoEcom.Data;

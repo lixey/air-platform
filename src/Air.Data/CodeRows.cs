@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Air.Data;
+namespace Platform.Data;
 
 public static partial class CodeRows
 {

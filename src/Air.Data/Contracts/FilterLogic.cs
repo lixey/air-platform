@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 public static class FilterLogic
 {

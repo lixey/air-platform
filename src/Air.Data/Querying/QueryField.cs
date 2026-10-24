@@ -1,4 +1,4 @@
-namespace Air.Data.Querying;
+namespace Platform.Data.Querying;
 
 /// <summary>
 /// A queryable field: compiled server-side expression and allowed capabilities.

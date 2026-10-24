@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 /// <summary>
 /// A collection of filter nodes combined with AND / OR logic.

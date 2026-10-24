@@ -1,4 +1,4 @@
-namespace Air.App.Auth;
+namespace Platform.App.Auth;
 
 public static class RightsTree
 {
@@ -144,7 +144,7 @@ public static class RightsTree
     {
       foreach (var method in st.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
       {
-        if (method.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true) is { } reqAct &&
+        if (method.GetCustomAttribute<RequireActionAttribute>(inherit: true) is { } reqAct &&
             !StandardActions.Contains(reqAct.ActionName))
         {
           discovered.Add(feature.Action(reqAct.ActionName));

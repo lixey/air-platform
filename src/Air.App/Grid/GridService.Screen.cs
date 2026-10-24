@@ -1,4 +1,4 @@
-namespace Air.App.Grid;
+namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
@@ -64,8 +64,8 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var entry in nav.Actions)
     {
       var methodInfo = entry.Method.Method;
-      var reqAttr = methodInfo.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true);
-      var reqAction = methodInfo.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true);
+      var reqAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true);
+      var reqAction = methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true);
       var hasRight = true;
       if (reqAttr != null && User != null && User.IsAuthenticated)
       {

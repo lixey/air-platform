@@ -105,7 +105,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
       if (!string.IsNullOrEmpty(c.Input.Password))
       {
-        c.Entity.PasswordHash = (app?.Hasher ?? new Air.App.Auth.PasswordHasher()).HashPassword(c.Input.Password);
+        c.Entity.PasswordHash = (app?.Hasher ?? new PasswordHasher()).HashPassword(c.Input.Password);
       }
 
       if (!c.IsNew && c.Changed(e => e.Login, e => e.IsActive, e => e.MustChangePassword, e => e.Password, e => e.RoleIds))

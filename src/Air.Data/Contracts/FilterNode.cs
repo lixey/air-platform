@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 /// <summary>
 /// A node in the filter tree: FilterGroup or FilterRule, with polymorphic kind discriminator.

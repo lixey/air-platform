@@ -1,4 +1,4 @@
-namespace Air.Data.SqlServer;
+namespace Platform.Data.SqlServer;
 
 public static class PlatformSqlServerExtensions
 {

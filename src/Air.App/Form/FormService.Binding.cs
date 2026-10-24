@@ -1,4 +1,4 @@
-namespace Air.App.Form;
+namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
   where TEntity : class, IEntity, new()

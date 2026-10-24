@@ -1,4 +1,4 @@
-namespace Air.Data.Files;
+namespace Platform.Data.Files;
 
 public abstract class FileStore
 {

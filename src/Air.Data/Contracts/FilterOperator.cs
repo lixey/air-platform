@@ -1,6 +1,6 @@
 using System.Collections.Frozen;
 
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 public static class FilterOperator
 {

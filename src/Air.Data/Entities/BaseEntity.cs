@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// Base entity with standard surrogate Id, audit timestamps, and optimistic concurrency version.

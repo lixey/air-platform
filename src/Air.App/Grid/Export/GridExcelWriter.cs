@@ -1,10 +1,9 @@
-using System.Text.RegularExpressions;
 using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using Xl = DocumentFormat.OpenXml.Spreadsheet;
 
-namespace Air.App.Grid.Export;
+namespace Platform.App.Grid.Export;
 
 /// <summary>
 /// Writes the rows of a grid into one worksheet: a bold frozen header of the column labels, typed cells,

@@ -1,27 +1,4 @@
-namespace Air.App.Grid;
-
-public sealed record GridCreateDescriptor(Type FormServiceType, string ServicePath, string Label, string? Color = null);
-
-public interface IGridService : IPlatformService
-{
-  PlatformDbContext DbContext { get; }
-  Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
-  Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
-  Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
-  Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
-  Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default);
-  Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
-  Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) => DeleteAsync(request, cancellationToken);
-  Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default);
-  Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
-  Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
-  Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
-  IReadOnlyList<string>? GetReferenceLabelPaths() => null;
-  string? GetRecordLabel(object? entity) => null;
-  IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
-  new void AttachPlatformApp(PlatformAppService app);
-  new Feature Feature { get; }
-}
+namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, PlatformAppService? app = null) : IGridService
   where TEntity : class, IEntity, new()
@@ -31,7 +8,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public PlatformDbContext DbContext => db;
   public PlatformAppService? PlatformApp { get; private set; } = app;
-  protected Auth.IUserContext User => PlatformApp?.User ?? new Auth.UserContext(new HttpContextAccessor());
+  protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   public sealed class UserRestrictions
@@ -478,7 +455,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     if (deleteMethod != null)
     {
-      if (deleteMethod.GetCustomAttribute<Security.RequireRightAttribute>(inherit: true) is { } reqRight)
+      if (deleteMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true) is { } reqRight)
       {
         if (Feature.FeaturesByServiceType.TryGetValue(reqRight.Service, out var targetFeat))
         {
@@ -486,7 +463,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         }
       }
 
-      if (deleteMethod.GetCustomAttribute<Security.RequireActionAttribute>(inherit: true) is { } reqAction)
+      if (deleteMethod.GetCustomAttribute<RequireActionAttribute>(inherit: true) is { } reqAction)
       {
         return User == null || User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
       }
@@ -856,7 +833,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     {
       foreach (var el in entry.Ask.BuildElements())
       {
-        if (string.IsNullOrEmpty(el.ReferencePath) || el.Model is not Form.FormSelectModel selectModel || string.IsNullOrEmpty(selectModel.ReferenceService))
+        if (string.IsNullOrEmpty(el.ReferencePath) || el.Model is not FormSelectModel selectModel || string.IsNullOrEmpty(selectModel.ReferenceService))
         {
           continue;
         }
@@ -1016,6 +993,3 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return [];
   }
 }
-
-public abstract class GridService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : GridService<TEntity, TEntity>(db, app)
-  where TEntity : class, IEntity, new();

@@ -1,4 +1,4 @@
-namespace Air.App.Form.Contracts;
+namespace Platform.App.Form.Contracts;
 
 [UiContract]
 public static class FilesLook

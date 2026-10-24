@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 /// <summary>
 /// Marks a JsonElement property that always carries a number in generated contracts.

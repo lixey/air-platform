@@ -3,6 +3,7 @@
     <Project Path="src/Air.Data/Air.Data.csproj" />
     <Project Path="src/Air.Data.Postgres/Air.Data.Postgres.csproj" />
     <Project Path="src/Air.Data.SqlServer/Air.Data.SqlServer.csproj" />
+    <Project Path="src/Air.Api/Air.Api.csproj" />
     <Project Path="src/Air.App/Air.App.csproj" />
     <Project Path="src/Air.Mcp/Air.Mcp.csproj" />
     <Project Path="src/Air.Agent/Air.Agent.csproj" />

@@ -1,4 +1,4 @@
-namespace Air.App.Grid;
+namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
@@ -364,11 +364,11 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var fileGridType = ModuleCatalog.Instance.FindServiceType(coverCell.Service);
-    if (fileGridType != null && typeof(Files.Internal.IFileCoverSource).IsAssignableFrom(fileGridType))
+    if (fileGridType != null && typeof(Files.Internals.IFileCoverSource).IsAssignableFrom(fileGridType))
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(fileGridType, db, PlatformApp) is Files.Internal.IFileCoverSource coverSource)
+        if (ModuleCatalog.Instance.CreateServiceInstance(fileGridType, db, PlatformApp) is Files.Internals.IFileCoverSource coverSource)
         {
           var covers = await coverSource.CoversAsync(ownerIds, ct);
           foreach (var rowObj in shapedRows)

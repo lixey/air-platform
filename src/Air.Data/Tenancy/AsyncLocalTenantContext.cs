@@ -1,4 +1,4 @@
-namespace Air.Data.Tenancy;
+namespace Platform.Data.Tenancy;
 
 /// <summary>
 /// Ambient tenant context backed by AsyncLocal, allowing tenant and user propagation across async flows.

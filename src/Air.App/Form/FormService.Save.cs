@@ -1,4 +1,4 @@
-namespace Air.App.Form;
+namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
   where TEntity : class, IEntity, new()
@@ -94,10 +94,10 @@ public abstract partial class FormService<TEntity, TInput>
       foreach (var prop in presetJson.EnumerateObject())
       {
         var targetName = prop.Name;
-        var entityProp = Internal.PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
+        var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
         if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
             !targetName.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
-            Internal.PropertyAccessorCache.GetProperty(typeof(TEntity), targetName + "Id") != null)
+            PropertyAccessorCache.GetProperty(typeof(TEntity), targetName + "Id") != null)
         {
           targetName += "Id";
         }
@@ -187,8 +187,8 @@ public abstract partial class FormService<TEntity, TInput>
       ApplyBoundParentId(entity, parent, Request.ParentId);
       if (parent.BoundProperty != null && !parent.IsOptional)
       {
-        var boundParentVal = Internal.PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name)
-          ?? Internal.PropertyAccessorCache.GetValue(input, parent.BoundProperty.Name);
+        var boundParentVal = PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name)
+          ?? PropertyAccessorCache.GetValue(input, parent.BoundProperty.Name);
         if (boundParentVal is not long pid || pid <= 0)
         {
           throw new FormRefusedException(
@@ -283,7 +283,7 @@ public abstract partial class FormService<TEntity, TInput>
     ApplyBoundParentId(entity, parent, Request.ParentId);
     if (parent.BoundProperty != null && !parent.IsOptional)
     {
-      var boundParentVal = Internal.PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name);
+      var boundParentVal = PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name);
       if (boundParentVal is not long pid || pid <= 0)
       {
         throw new FormRefusedException(

@@ -1,4 +1,4 @@
-namespace Air.Data.Querying;
+namespace Platform.Data.Querying;
 
 public sealed class DataProvider<TEntity, TRow>
   where TEntity : class

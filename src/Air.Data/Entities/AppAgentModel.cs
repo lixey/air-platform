@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [Comment("AI assistant model configuration per provider")]
 [Index(nameof(ProviderHandle), nameof(ModelId), IsUnique = true)]

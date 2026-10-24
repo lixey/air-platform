@@ -1,4 +1,4 @@
-namespace Air.App.Form.Actions;
+namespace Platform.App.Form.Actions;
 
 public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
 {
@@ -45,7 +45,7 @@ public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
-      ReferenceService = Air.App.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
+      ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
       ReferenceLabelPaths = ["name"]
     };
     return this;
@@ -57,7 +57,7 @@ public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
   {
     if (dto.Model is FormSelectModel selectModel)
     {
-      var sourcePath = Air.App.Form.Elements.ToCamelPath(MemberPath.Of(sourceMember));
+      var sourcePath = Platform.App.Form.Elements.ToCamelPath(MemberPath.Of(sourceMember));
       var rule = FilterNode.Rule(sourcePath, FilterOperator.Equals, value);
       selectModel.ReferenceFilter = selectModel.ReferenceFilter is null
         ? rule

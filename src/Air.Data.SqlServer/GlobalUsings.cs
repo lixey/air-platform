@@ -1,5 +1,4 @@
 global using System.Data;
-global using Air.Data.Entities;
 global using Microsoft.Data.SqlClient;
 global using Microsoft.EntityFrameworkCore;
 global using Microsoft.EntityFrameworkCore.Infrastructure;

@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// A tenant: a row the code declares, read only in every screen, in a tree of any depth.

@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// One row a managed mutation added, changed, deleted or restored: the change journal, a platform table of the

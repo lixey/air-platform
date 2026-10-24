@@ -1,4 +1,4 @@
-namespace Air.App.TypeScript;
+namespace Platform.App.TypeScript;
 
 public static class ContractExporter
 {
@@ -6,6 +6,7 @@ public static class ContractExporter
   {
     var allAssemblies = assemblies
       .Append(typeof(ContractExporter).Assembly)
+      .Append(typeof(UiContractAttribute).Assembly)
       .Append(typeof(ListRequest).Assembly)
       .Distinct()
       .ToArray();
@@ -87,10 +88,10 @@ public static class ContractExporter
     ExportUnionFromConsts(sb, typeof(FormValueKind), "FormValueKind");
     ExportUnionFromConsts(sb, typeof(NavDirection), "NavDirection");
     ExportUnionFromConsts(sb, typeof(NavOverflow), "NavOverflow");
-    ExportUnionFromConsts(sb, typeof(Air.App.Form.Contracts.FilesLook), "FilesLook");
-    ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileImages), "FileImages");
-    ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileType), "FileType");
-    ExportUnionFromConsts(sb, typeof(Air.Data.Entities.FileCover), "FileCover");
+    ExportUnionFromConsts(sb, typeof(FilesLook), "FilesLook");
+    ExportUnionFromConsts(sb, typeof(Platform.Data.Entities.FileImages), "FileImages");
+    ExportUnionFromConsts(sb, typeof(Platform.Data.Entities.FileType), "FileType");
+    ExportUnionFromConsts(sb, typeof(Platform.Data.Entities.FileCover), "FileCover");
     ExportUnionFromConsts(sb, typeof(ReportChartKind), "ReportChartKind");
     ExportUnionFromConsts(sb, typeof(ReportColumnKind), "ReportColumnKind");
 

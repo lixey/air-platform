@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace Air.App.Grid;
+namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
@@ -128,7 +128,7 @@ public abstract partial class GridService<TEntity, TRow>
         var formType = column.FormServiceResolver(row);
         if (formType is not null)
         {
-          shaped["form"] = Modules.ServicePathResolver.Resolve(formType);
+          shaped["form"] = ServicePathResolver.Resolve(formType);
         }
       }
 

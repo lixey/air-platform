@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
 public class FileRulesAttribute : Attribute

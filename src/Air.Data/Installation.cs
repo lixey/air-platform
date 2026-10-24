@@ -1,4 +1,4 @@
-namespace Air.Data;
+namespace Platform.Data;
 
 public static class Installation
 {

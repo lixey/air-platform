@@ -1,7 +1,3 @@
-global using Air.App.Auth;
-global using Air.App.Components;
-global using Air.Data;
-global using Air.Data.Entities;
 global using Bogus;
 global using DemoApp.Data;
 global using DemoApp.Data.Models;

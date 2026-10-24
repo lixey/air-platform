@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
-namespace Air.Data;
+namespace Platform.Data;
 
 /// <summary>
 /// Base EF Core DbContext for the platform and its modules.
@@ -28,6 +28,7 @@ public abstract class PlatformDbContext : DbContext
 
   public DbSet<AppLanguage> AppLanguage => Set<AppLanguage>();
   public DbSet<AppAgentModel> AppAgentModel => Set<AppAgentModel>();
+  public DbSet<AppAgentMemory> AppAgentMemory => Set<AppAgentMemory>();
   public DbSet<AppPlatformInstallation> AppPlatformInstallation => Set<AppPlatformInstallation>();
   public DbSet<Entities.AppPlatformChange> AppPlatformChange => Set<Entities.AppPlatformChange>();
 

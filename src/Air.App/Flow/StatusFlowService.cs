@@ -1,4 +1,4 @@
-namespace Air.App.Flow;
+namespace Platform.App.Flow;
 
 public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : IRecordStatuses<TEntity>
   where TEntity : class, IEntity, new()

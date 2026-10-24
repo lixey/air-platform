@@ -1,4 +1,4 @@
-namespace Air.App.Grid.AddOns.Covers.Contracts;
+namespace Platform.App.Grid.AddOns.Covers.Contracts;
 
 [UiContract]
 public sealed class GridCoverDto

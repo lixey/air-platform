@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 
-namespace Air.App.Grid.Selection;
+namespace Platform.App.Grid.Selection;
 
 public abstract class GridSelectionContext<TEntity> : IMutationContext where TEntity : class
 {

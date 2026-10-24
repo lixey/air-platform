@@ -1,12 +1,4 @@
-namespace Air.App.Report;
-
-public interface IReportService : IScreenService
-{
-  new Feature Feature { get; }
-  Feature IPlatformService.Feature => Feature;
-  Task<ReportDataDto> GetReportAsync(ReportRequest request, CancellationToken ct = default);
-  Task<ScreenDto> BuildScreenAsync(string servicePath, ReportRequest? request, CancellationToken ct = default);
-}
+namespace Platform.App.Report;
 
 public abstract class ReportService(PlatformAppService? app = null) : PlatformService(app), IReportService
 {

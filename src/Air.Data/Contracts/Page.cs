@@ -1,4 +1,4 @@
-namespace Air.Data.Contracts;
+namespace Platform.Data.Contracts;
 
 /// <summary>
 /// A page of rows returned to the client. Total is omitted when hasMore is true to avoid redundant COUNT(*).

@@ -1,4 +1,4 @@
-namespace Air.Data.Entities;
+namespace Platform.Data.Entities;
 
 /// <summary>
 /// Marks a property (e.g. password hash, secret token) that must never be filtered, sorted, searched or queried.

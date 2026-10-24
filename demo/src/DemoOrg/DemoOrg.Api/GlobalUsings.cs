@@ -1,14 +1,3 @@
-global using Air.App;
-global using Air.App.Auth;
-global using Air.App.Form;
-global using Air.App.Grid;
-global using Air.App.Localization;
-global using Air.App.Metadata;
-global using Air.App.Modules;
-global using Air.App.Overlay;
-global using Air.Data.Entities;
-global using Air.Data.Postgres;
-global using Air.Data.Tenancy;
 global using DemoApp;
 global using DemoApp.Color;
 global using DemoApp.User;

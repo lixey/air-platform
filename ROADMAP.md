@@ -136,12 +136,30 @@ To allow the platform to power not only rich backoffice admin applications (`Air
    - Contains `Grid/`, `Form/`, `Report/`, `Screens/`, `Flow/`, `Panels/`, `Overlay/`, `Nav/`, `Components/`, `Files/FileGridService`, `Changes/ChangeGridService`, `Auth/RightsTree`, `TypeScript/ContractExporter`.
 
 ### 4.2 Strict Folder & File Naming Rules Across All Platform Projects
-1. **Mandatory `*Extensions` Suffix**:
+1. **Brand-Neutral `Platform.*` Namespaces & Folder-to-Namespace Matching**:
+   - The brand `Air` is used **only** in `.csproj` / `.slnx` project names (`Air.Data`, `Air.Api`, `Air.App`, `Air.Agent`, `Air.Mcp`, `Air.UiContracts`).
+   - All C# root namespaces use `Platform.*` (`Platform.Data`, `Platform.Api`, `Platform.App`, `Platform.Agent`, `Platform.Mcp`, `Platform.UiContracts`) for effortless white-labeling/rebranding, and every `.cs` file's `namespace` **must** strictly match its physical directory path relative to its project root.
+2. **Strictly One Type Per File**:
+   - Every class, record, struct, interface, or enum **must** reside in its own dedicated `.cs` file named after the type (using `OfT` suffix for generic overloads).
+3. **Mandatory `*Extensions` Suffix**:
    - Every static class that defines extension methods (`this ...`) — and its `.cs` file — **must** end with `Extensions` (e.g., `PlatformApiExtensions.cs`, `PlatformAppExtensions.cs`, `PlatformEndpointsExtensions.cs`, `AuthEndpointsExtensions.cs`, `FileEndpointsExtensions.cs`, `ServiceEndpointsExtensions.cs`, `MetadataEndpointsExtensions.cs`, `AgentEndpointsExtensions.cs`, `McpEndpointsExtensions.cs`, `PlatformPostgresExtensions.cs`, `PlatformSqlServerExtensions.cs`).
-2. **Mandatory `Contracts/` Subfolders**:
+4. **Mandatory `Contracts/` Subfolders**:
    - Every wire contract (`*Dto`, `*Request`, `*Model`, contract attributes/enums) **must** reside inside a `Contracts/` folder (`Air.Data/Contracts/`, `Air.Api/Contracts/`, `Air.Api/Auth/Contracts/`, `Air.App/Contracts/`, `Air.App/Grid/Contracts/`, `Air.App/Form/Contracts/`, `Air.App/Report/Contracts/`, `Air.App/Screens/Contracts/`, `Air.App/Overlay/Contracts/`, `Air.App/Panels/Contracts/`, `Air.App/Nav/Contracts/`, `Air.App/Metadata/Contracts/`, `Air.App/Files/Contracts/`).
-3. **Mandatory `Internals/` Subfolders (Plural)**:
-   - Every `internal` helper, cache, parser, or engine implementation detail **must** reside inside an `Internals/` folder (`Air.Data/Internals/`, `Air.Api/Internals/`, `Air.App/Internals/`, `Air.App/Grid/Internals/`, `Air.App/Files/Internals/`).
+5. **Mandatory `Internals/` Subfolders (Plural)**:
+   - Every `internal` helper, cache, parser, or engine implementation detail **must** reside inside an `Internals/` folder (`Air.Data/Internals/`, `Air.Api/Internals/`, `Air.App/Internals/`, `Air.App/Grid/Internals/`, `Air.App/Files/Internals/`, `Air.Agent/Internals/`).
+6. **Clean Declarative Host Entry Point (`PlatformHost.RunAsync`)**:
+   - Unify `Program.cs` across `Demo.Api`, `MyPort.Api`, and `Bcc.Api` using `await PlatformHost.RunAsync(args, options => options.AddModule<...>(), app => ...)`.
+
+### 4.3 Persistent AI Assistant Database Memory & Rules (`AppAgentMemory` + Web UI)
+1. **Database Entity `AppAgentMemory` (`Air.Data/Entities/AppAgentMemory.cs`)**:
+   - Stores both initial **Seed** domain knowledge, mandatory **Rules** (`AgentMemoryKind.Rule`), and dynamic learned **Facts/Preferences** (`AgentMemoryKind.Fact`) in `PlatformDbContext.AppAgentMemory` (replacing hardcoded `DomainKnowledge` C# strings in `Program.cs`).
+   - Tracks `Title`, `Kind` (`Rule`, `Seed`, `Fact`), `Scope` / `Module`, `Content`, `Priority`, `IsPinned`, `IsActive`, `CharCount`, and `TokenEstimate` (`(Content.Length + 3) / 4`).
+2. **Web UI Management & Budget Evaluation (`AppAgentMemoryGridService` / `AppAgentMemoryFormService`)**:
+   - Exposes AI Memory & Rules in the `App` administration menu right alongside AI Models (`AppAgentModel`).
+   - Displays character/token size per entry, total active token budget summation in the grid footer, named filter badges (`Active`, `Rules`, `Seed`, `Learned Facts`, `Archived`), and inline/form editing so administrators can review, edit, pin, or disable memories and keep prompt context compact.
+3. **Bounded Prompt Injection & Self-Learning (`Air.Agent`)**:
+   - `AgentPromptBuilder` loads active `AppAgentMemory` rows (ordered by `Kind == Rule` first, then `IsPinned desc, Priority desc, Id asc`) up to a configurable token/character budget (`MaxMemoryChars = 12000`).
+   - Built-in agent memory tool allows the AI assistant to save or update user-approved rules and recurring facts directly into `AppAgentMemory`.
 
 ---
 

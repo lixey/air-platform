@@ -244,4 +244,34 @@
   <data name="Status" xml:space="preserve">
     <value>Статус</value>
   </data>
+  <data name="Agent Memories" xml:space="preserve">
+    <value>Пам'ять і правила ШІ</value>
+  </data>
+  <data name="Agent Memory" xml:space="preserve">
+    <value>Запис пам'яті ШІ</value>
+  </data>
+  <data name="New Agent Memory" xml:space="preserve">
+    <value>Новий запис пам'яті ШІ</value>
+  </data>
+  <data name="Kind" xml:space="preserve">
+    <value>Тип</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>Правила</value>
+  </data>
+  <data name="Seed" xml:space="preserve">
+    <value>Базові знання</value>
+  </data>
+  <data name="Facts" xml:space="preserve">
+    <value>Факти</value>
+  </data>
+  <data name="Preferences" xml:space="preserve">
+    <value>Налаштування</value>
+  </data>
+  <data name="Pinned" xml:space="preserve">
+    <value>Закріплено</value>
+  </data>
+  <data name="Toggle pinned" xml:space="preserve">
+    <value>Закріпити / Відкріпити</value>
+  </data>
 </root>

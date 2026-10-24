@@ -1,4 +1,4 @@
-namespace Air.Data.Tenancy;
+namespace Platform.Data.Tenancy;
 
 /// <summary>
 /// What held permissions cover, the one answer behind every check of a right: a key {Module}.{Feature}.{Action} is

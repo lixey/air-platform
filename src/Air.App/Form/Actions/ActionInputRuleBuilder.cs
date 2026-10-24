@@ -1,4 +1,4 @@
-namespace Air.App.Form.Actions;
+namespace Platform.App.Form.Actions;
 
 public sealed class ActionInputRuleBuilder<TProp>(FormElementDto dto)
 {

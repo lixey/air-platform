@@ -1,4 +1,4 @@
-namespace Air.Data.Files;
+namespace Platform.Data.Files;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class FileStoreAttribute(string key) : Attribute

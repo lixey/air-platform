@@ -1,4 +1,3 @@
-global using Air.Data;
 global using Bogus;
 global using DemoApp.Migrations.Seeds;
 global using DemoOrg.Data;

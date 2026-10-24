@@ -1,4 +1,4 @@
-namespace Air.Data;
+namespace Platform.Data;
 
 /// <summary>
 /// The time zones of the platform: a zone is its IANA id, of at most 64 characters.

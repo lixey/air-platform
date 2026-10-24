@@ -1,4 +1,4 @@
-namespace Air.Data.Files;
+namespace Platform.Data.Files;
 
 public sealed class LocalFileStorage : IFileStorage
 {

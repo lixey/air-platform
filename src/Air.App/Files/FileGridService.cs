@@ -1,6 +1,6 @@
 using System.IO.Compression;
 
-namespace Air.App.Files;
+namespace Platform.App.Files;
 
 public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppService? app = null)
   : GridService<TFile, TFile>(db, app), IFormFilesSource, IFileCoverSource
@@ -135,7 +135,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     return Expression.Lambda<Func<TFile, bool>>(Expression.Equal(propExpr, valExpr), param);
   }
 
-  [Security.RequireAction(Security.EndpointAction.Edit)]
+  [RequireAction(EndpointAction.Edit)]
   public virtual async Task<GridActionDto> Upload(
     GridUploadRequest request,
     IFormFileCollection files,
@@ -371,7 +371,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     };
   }
 
-  [Security.RequireAction(Security.EndpointAction.Edit)]
+  [RequireAction(EndpointAction.Edit)]
   public override Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
     DeleteAsync(request, cancellationToken);
 
@@ -462,7 +462,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     };
   }
 
-  [Security.RequireAction(Security.EndpointAction.Edit)]
+  [RequireAction(EndpointAction.Edit)]
   public virtual async Task<GridActionDto> SetCover(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
@@ -512,7 +512,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     return new GridActionDto { Outcome = MutationOutcome.Committed };
   }
 
-  [Security.RequireAction(Security.EndpointAction.Edit)]
+  [RequireAction(EndpointAction.Edit)]
   public virtual async Task<GridActionDto> Move(FileMoveRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
@@ -571,7 +571,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     return new GridActionDto { Outcome = MutationOutcome.Committed };
   }
 
-  [Security.RequireAction(Security.EndpointAction.View)]
+  [RequireAction(EndpointAction.View)]
   public virtual async Task<FileInfoDto> GetInfo(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
@@ -616,7 +616,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     };
   }
 
-  [Security.RequireAction(Security.EndpointAction.Edit)]
+  [RequireAction(EndpointAction.Edit)]
   public virtual async Task<GridActionDto> SetInfo(FileInfoRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
@@ -697,7 +697,7 @@ public abstract class FileGridService<TFile>(PlatformDbContext db, PlatformAppSe
     }
   }
 
-  [Security.RequireAction(Security.EndpointAction.View)]
+  [RequireAction(EndpointAction.View)]
   public virtual async Task<IResult> DownloadAll(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);

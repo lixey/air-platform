@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Air.App.Form;
+namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
   where TEntity : class, IEntity, new()
@@ -276,8 +276,8 @@ public abstract partial class FormService<TEntity, TInput>
       else if (el.Model is FormCheckboxTreeModel { Nodes: { } treeNodes } && val is IEnumerable<string> treeKeys)
       {
         var keyList = treeKeys.ToList();
-        var allowedKeys = Air.App.Auth.RightsTree.FlattenKeys(treeNodes);
-        var disabledKeys = Air.App.Auth.RightsTree.FlattenDisabledKeys(treeNodes);
+        var allowedKeys = Platform.App.Auth.RightsTree.FlattenKeys(treeNodes);
+        var disabledKeys = Platform.App.Auth.RightsTree.FlattenDisabledKeys(treeNodes);
         var origTreeSet = ruleCtx.SaveContext.OriginalValues != null
           && ruleCtx.SaveContext.OriginalValues.TryGetValue(el.Path, out var origTreeVal)
           && origTreeVal is IEnumerable<string> origTreeEnum
@@ -296,7 +296,7 @@ public abstract partial class FormService<TEntity, TInput>
         }
         else
         {
-          var normalized = Air.App.Auth.RightsTree.Normalize(treeNodes, keyList);
+          var normalized = Platform.App.Auth.RightsTree.Normalize(treeNodes, keyList);
           if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
           {
             inputProp.SetValue(input, normalized);
@@ -515,17 +515,17 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       var refGridType = el.ReferenceServiceType
-        ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? Modules.ModuleCatalog.Instance.FindServiceType(rs) : null);
+        ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? ModuleCatalog.Instance.FindServiceType(rs) : null);
 
       if (refGridType == null ||
-          Modules.ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, PlatformApp) is not Grid.IGridService refGrid)
+          ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, PlatformApp) is not Grid.IGridService refGrid)
       {
         continue;
       }
 
-      var filterItems = new List<Air.Data.Contracts.FilterNode>
+      var filterItems = new List<Platform.Data.Contracts.FilterNode>
       {
-        Air.Data.Contracts.FilterNode.Rule("id", Air.Data.Contracts.FilterOperator.Equals, refId)
+        Platform.Data.Contracts.FilterNode.Rule("id", Platform.Data.Contracts.FilterOperator.Equals, refId)
       };
 
       if (el.Model is FormSelectModel selectModel)
@@ -548,11 +548,11 @@ public abstract partial class FormService<TEntity, TInput>
                 : PropertyAccessorCache.GetValue(entity, draftProp.Name);
               if (draftVal != null)
               {
-                filterItems.Add(Air.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Air.Data.Contracts.FilterOperator.Equals, draftVal));
+                filterItems.Add(Platform.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Platform.Data.Contracts.FilterOperator.Equals, draftVal));
               }
               else
               {
-                filterItems.Add(Air.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Air.Data.Contracts.FilterOperator.IsNull, null));
+                filterItems.Add(Platform.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Platform.Data.Contracts.FilterOperator.IsNull, null));
               }
             }
           }
@@ -561,9 +561,9 @@ public abstract partial class FormService<TEntity, TInput>
 
       var combinedFilter = filterItems.Count == 1
         ? filterItems[0]
-        : Air.Data.Contracts.FilterNode.All(filterItems.ToArray());
+        : Platform.Data.Contracts.FilterNode.All(filterItems.ToArray());
 
-      var countDto = await refGrid.GetCountAsync(new Grid.GridRequest { Filter = combinedFilter }, ct);
+      var countDto = await refGrid.GetCountAsync(new GridRequest { Filter = combinedFilter }, ct);
       if (countDto.Total <= 0)
       {
         ruleCtx.Failures.Add(new MessageDto

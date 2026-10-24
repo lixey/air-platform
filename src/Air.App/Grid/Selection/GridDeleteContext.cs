@@ -1,4 +1,4 @@
-namespace Air.App.Grid.Selection;
+namespace Platform.App.Grid.Selection;
 
 public sealed class GridDeleteContext<TEntity> : GridSelectionContext<TEntity> where TEntity : class
 {

@@ -1,4 +1,4 @@
-namespace Air.Data.Querying;
+namespace Platform.Data.Querying;
 
 /// <summary>
 /// Thrown during query planning when a client request violates query map capabilities or limits.

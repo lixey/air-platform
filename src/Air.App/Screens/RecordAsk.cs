@@ -1,4 +1,4 @@
-namespace Air.App.Screens;
+namespace Platform.App.Screens;
 
 public abstract class RecordAsk
 {
