@@ -115,7 +115,7 @@ Currently, `ServiceEndpoints.cs` hardcodes a 4-branch `if/else` (`IGridService`,
 
 ---
 
-## Phase 4: `Air.Api` Extraction & Strict Structural Conventions (`Contracts/`, `Internals/`, `*Extensions`)
+## Phase 4: `Air.Api` Extraction & Strict Structural Conventions (`Contracts/`, `Internals/`, `*Extensions`) (✅ Completed)
 
 ### 4.1 Architectural Separation: `Air.Data` $\to$ `Air.Api` $\to$ `Air.App`
 To allow the platform to power not only rich backoffice admin applications (`Air.App` + `air-ui`), but also lightweight customer-facing storefronts, mobile/partner APIs, webhook hosts, or applications with alternative UI libraries — with **strict security isolation** and minimal binary footprint:
