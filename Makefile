@@ -30,7 +30,7 @@ check-ts: ## Verify TypeScript compilation for air-ui and demo
 
 gate: format-check check-paths check-arch check-ts build ## Run unified verification gate (format, paths, arch, ts, build)
 
-check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, and *Extensions.cs
+check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, *Extensions.cs, and .resx parity
 	@python3 -c 'import glob, os, re, sys; \
 	resolve_ns = lambda n: "Platform." + n[4:] if n.startswith("Air.") else (n.split(".")[0] if n.startswith("Demo") and (n.endswith(".Api") or n.endswith(".Migrations")) and n != "Demo.Api" else n); \
 	csprojs = {os.path.dirname(os.path.abspath(p)): (re.search(r"<RootNamespace>([^<]+)</RootNamespace>", open(p, encoding="utf-8").read()).group(1).strip() if re.search(r"<RootNamespace>([^<]+)</RootNamespace>", open(p, encoding="utf-8").read()) else resolve_ns(os.path.splitext(os.path.basename(p))[0])) for p in glob.glob("**/*.csproj", recursive=True)}; \
@@ -43,6 +43,7 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 	 errs.extend([f"{cs}: internal type must be in Internals/"] if cs.startswith("src/") and re.search(r"^internal\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+", txt, re.M) and "/Internals/" not in cs else []) or \
 	 errs.extend([f"{cs}: contract type must be in Contracts/"] if cs.startswith("src/") and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b", txt, re.M) and "/Contracts/" not in cs else []) \
 	 for cs in sorted(glob.glob("**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs and not cs.endswith(".Designer.cs") and os.path.basename(cs) not in ("GlobalUsings.cs", "Program.cs") for txt in [open(cs, encoding="utf-8").read()]]; \
+	[errs.extend([f"{rx}: missing in .uk.resx: {sorted(b - u)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())) if os.path.exists(rx[:-5] + ".uk.resx") else set())] if b - u]) for rx in sorted(glob.glob("**/*.resx", recursive=True)) if not rx.endswith(".uk.resx")]; \
 	print("\n".join(errs)) if errs else None; sys.exit(1 if errs else 0)'
 
 export-contracts: ## Export TypeScript contracts and localized UI texts

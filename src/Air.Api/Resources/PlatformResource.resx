@@ -1003,6 +1003,36 @@
   <data name="History" xml:space="preserve">
     <value>History</value>
   </data>
+  <data name="Added" xml:space="preserve">
+    <value>Added</value>
+  </data>
+  <data name="Modified" xml:space="preserve">
+    <value>Modified</value>
+  </data>
+  <data name="Deleted" xml:space="preserve">
+    <value>Deleted</value>
+  </data>
+  <data name="Restored" xml:space="preserve">
+    <value>Restored</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="ChangeRestoreUnavailable" xml:space="preserve">
+    <value>Selected changes are not available.</value>
+  </data>
+  <data name="ChangeRestoreNotRestorable" xml:space="preserve">
+    <value>Only modified or deleted records can be restored.</value>
+  </data>
+  <data name="ChangeRestoreMissingRow" xml:space="preserve">
+    <value>The record no longer exists.</value>
+  </data>
+  <data name="ChangeRestoreExists" xml:space="preserve">
+    <value>The record already exists.</value>
+  </data>
+  <data name="ChangeDiffEmpty" xml:space="preserve">
+    <value>No field changes recorded.</value>
+  </data>
   <data name="RestoreConfirm" xml:space="preserve">
     <value>Restore the selected journal rows?</value>
   </data>

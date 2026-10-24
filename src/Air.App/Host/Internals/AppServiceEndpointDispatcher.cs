@@ -101,6 +101,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
+          if (grid is ChangeGridService changeGrid && req.Id is > 0 && !req.IsDataOnly)
+          {
+            return Results.Ok(await changeGrid.BuildDiffScreenAsync(serviceName, req, ct));
+          }
+
           var page = await grid.GetDataAsync(req, ct);
           if (req.IsDataOnly)
           {

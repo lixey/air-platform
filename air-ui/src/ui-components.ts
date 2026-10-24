@@ -1,4 +1,5 @@
 import { AgentBlockOverlayComponent, type AgentBlockOverlayModel } from './agent/agent-blocks.component';
+import { ChangeDiffComponent } from './change/change-diff.component';
 import { defineComponents } from './core/dynamic-component/component-map';
 import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
 import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
@@ -223,6 +224,7 @@ export const UI_COMPONENTS = defineComponents({
   LayoutMenu: LayoutMenuComponent,
   LayoutAgent: LayoutAgentComponent,
   AgentBlockOverlay: AgentBlockOverlayComponent,
+  ChangeDiff: ChangeDiffComponent,
   LayoutTabs: LayoutTabsComponent,
   LayoutRouteScreen: LayoutRouteScreenComponent,
   LayoutMegaMenuBody: LayoutMegaMenuBodyComponent,

@@ -1003,6 +1003,36 @@
   <data name="History" xml:space="preserve">
     <value>Історія</value>
   </data>
+  <data name="Added" xml:space="preserve">
+    <value>Додано</value>
+  </data>
+  <data name="Modified" xml:space="preserve">
+    <value>Змінено</value>
+  </data>
+  <data name="Deleted" xml:space="preserve">
+    <value>Видалено</value>
+  </data>
+  <data name="Restored" xml:space="preserve">
+    <value>Відновлено</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>Усі</value>
+  </data>
+  <data name="ChangeRestoreUnavailable" xml:space="preserve">
+    <value>Вибрані зміни недоступні.</value>
+  </data>
+  <data name="ChangeRestoreNotRestorable" xml:space="preserve">
+    <value>Відновити можна лише змінені або видалені записи.</value>
+  </data>
+  <data name="ChangeRestoreMissingRow" xml:space="preserve">
+    <value>Запис більше не існує.</value>
+  </data>
+  <data name="ChangeRestoreExists" xml:space="preserve">
+    <value>Запис уже існує.</value>
+  </data>
+  <data name="ChangeDiffEmpty" xml:space="preserve">
+    <value>Зміни полів не зафіксовані.</value>
+  </data>
   <data name="RestoreConfirm" xml:space="preserve">
     <value>Відновити вибрані рядки журналу?</value>
   </data>

@@ -292,6 +292,7 @@ export interface PlatformEndpoints {
 }
 
 export interface PanelKinds {
+  ChangeDiff: ChangeDiffModel;
   FormAsk: FormAskModel;
   FormChildScreen: FormChildScreenModel;
   FormFiles: FormFilesModel;
@@ -498,6 +499,33 @@ export interface AppMetadataDto {
   language?: SwitcherDto | null;
   defaultCurrency?: string | null;
   texts: Record<string, string>;
+}
+
+export interface ChangeDiffFieldDto {
+  key: string;
+  label: string;
+  before?: string | null;
+  after?: string | null;
+  isChanged: boolean;
+}
+
+export interface ChangeDiffModel {
+  kind: 'ChangeDiff';
+  id: number;
+  title: string;
+  subtitle?: string | null;
+  operation: string;
+  operationKey: string;
+  operationColor: string;
+  service?: string | null;
+  parentService?: string | null;
+  parentId?: number | null;
+  canRestore: boolean;
+  restoreLabel?: string | null;
+  restoreConfirm?: string | null;
+  restoredLabel?: string | null;
+  emptyLabel?: string | null;
+  fields: ChangeDiffFieldDto[];
 }
 
 export interface ChangePasswordRequest {

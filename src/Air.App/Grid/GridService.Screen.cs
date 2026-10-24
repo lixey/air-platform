@@ -489,7 +489,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private OverlayDto? ResolveFormOverlay(Columns columns)
+  protected virtual OverlayDto? ResolveFormOverlay(Columns columns)
   {
     var detectedFormService = ResolveFormServicePath(columns);
     if (detectedFormService is null)

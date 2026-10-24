@@ -327,6 +327,11 @@ public abstract class PlatformDbContext : DbContext
     return hasModified;
   }
 
+  private static readonly System.Text.Json.JsonSerializerOptions AuditJsonOptions = new()
+  {
+    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+  };
+
   private static string SerializeProperties(Type clrType, IEnumerable<PropertyEntry> properties, Func<PropertyEntry, object?> val)
   {
     var excluded = EntityAuditMetadata.For(clrType).ExcludedProperties;
@@ -341,7 +346,7 @@ public abstract class PlatformDbContext : DbContext
       dict[p.Metadata.Name] = val(p);
     }
 
-    return System.Text.Json.JsonSerializer.Serialize(dict);
+    return System.Text.Json.JsonSerializer.Serialize(dict, AuditJsonOptions);
   }
 
   private void ApplyEntityConventions()

@@ -37,11 +37,12 @@ public static class RightsTree
         rights.Add(Node(feat.Export.Key, L["Export"]));
         if (feat.ServiceType != null && typeof(Changes.ChangeGridService).IsAssignableFrom(feat.ServiceType))
         {
-          rights.Add(Node(feat.Action("Restore").Key, L["Restore"]));
+          rights.Add(Node(feat.Restore.Key, L["Restore"]));
         }
         else if (feat.HasHistory)
         {
           rights.Add(Node(feat.History.Key, L["History"]));
+          rights.Add(Node(feat.Restore.Key, L["Restore"]));
         }
 
         foreach (var accessRight in GetContainerRights(feat))
@@ -108,7 +109,7 @@ public static class RightsTree
 
   private static readonly HashSet<string> StandardActions = new(StringComparer.OrdinalIgnoreCase)
   {
-    "View", "MenuView", "Edit", "Delete", "Export", "History", "*"
+    "View", "MenuView", "Edit", "Delete", "Export", "History", "Restore", "*"
   };
 
   private static IEnumerable<Right> DiscoverFeatureActionRights(IPlatformModule module, Feature feature)

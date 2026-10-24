@@ -47,6 +47,7 @@
     <ItemGroup Condition="'$(MSBuildProjectName)' == 'Air.App' or '@(ProjectReference->WithMetadataValue('Filename', 'Air.App'))' != ''">
       <Using Include="Platform.App.Auth" />
       <Using Include="Platform.App.Changes" />
+      <Using Include="Platform.App.Changes.Contracts" />
       <Using Include="Platform.App.Components.Contracts" />
       <Using Include="Platform.App.Contracts" />
       <Using Include="Platform.App.Files" />

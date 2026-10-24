@@ -264,10 +264,12 @@ public static class ServiceEndpointsExtensions
 
     if (actionMethod.Name == "Restore" && feat != null)
     {
-      return userContext.Can(feat.Action("Restore")) ||
-             userContext.Can(feat.Edit) ||
+      return userContext.Can(feat.Restore) ||
              userContext.Can(feat.All) ||
-             userContext.Can("*");
+             userContext.Can("*") ||
+             userContext.Permissions.Any(p =>
+               p.EndsWith(".Restore", StringComparison.OrdinalIgnoreCase) ||
+               p.EndsWith(".*", StringComparison.Ordinal));
     }
 
     var reqAttr = actionMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true);
