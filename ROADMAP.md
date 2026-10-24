@@ -115,9 +115,39 @@ Currently, `ServiceEndpoints.cs` hardcodes a 4-branch `if/else` (`IGridService`,
 
 ---
 
-## Phase 4: Core Engine Performance, Decomposition & `air-ui` Cleanup
+## Phase 4: `Air.Api` Extraction & Strict Structural Conventions (`Contracts/`, `Internals/`, `*Extensions`)
 
-### 4.1 Backend Query & Performance Fixes (`GridService`, `FormService`, `StatusFlowService`, `Air.Data`)
+### 4.1 Architectural Separation: `Air.Data` $\to$ `Air.Api` $\to$ `Air.App`
+To allow the platform to power not only rich backoffice admin applications (`Air.App` + `air-ui`), but also lightweight customer-facing storefronts, mobile/partner APIs, webhook hosts, or applications with alternative UI libraries — with **strict security isolation** and minimal binary footprint:
+1. **`Air.Data` (Pure Data, Entities, Multi-Tenancy, Querying, File Storage)**:
+   - Zero dependency on ASP.NET Core / HTTP.
+2. **`Air.Api` (Headless Modular API, Auth, RBAC, Localization, Mutations & Custom `PlatformService` Dispatch)**:
+   - Depends **only** on `Air.Data` and `Microsoft.AspNetCore.App`.
+   - Contains **zero** references to `GridService`, `FormService`, `ReportService`, `ScreenService`, `OverlayModel`, `PanelLayout`, or `UI_COMPONENTS` slot models.
+   - Provides:
+     - Module system (`IPlatformModule`, `PlatformModule`, `ModuleDefinition`, `ModuleCatalog`, `Feature`, `Right`, `Rights`, `ModuleMenu`).
+     - Base service contract (`IPlatformService`, `PlatformService`, `PlatformAppService`, `IServiceEndpointDispatcher` chain of responsibility so `Air.App` plugs in Grid/Form/Report/Screen dispatch cleanly without `Air.Api` knowing about them).
+     - Auth, Sessions, & Security (`IUserContext`, `UserContext`, `IAuthStore`, `AuthStore`, `IPasswordHasher`, `PasswordHasher`, `SessionTokenService`, `GrantedRights`, `RequireRightAttribute`, `RequireActionAttribute`, `EndpointAction`).
+     - Localization (`ILocalizer`, `Localizer`), JSON serialization (`PlatformJsonOptions`), Mutation primitives (`IMutationContext`, `MutationContext`, `MutationError`, `MutationResultDto`, `MessageDto`, `UiContractAttribute`).
+     - Core HTTP pipeline (`PlatformApiExtensions`: `AddPlatformApi`, `AddPlatformModule`, `UsePlatformAuth`, `MapPlatformApi`, `AuthEndpointsExtensions`, `FileEndpointsExtensions`, `ServiceEndpointsExtensions`, `HttpTenantContext`).
+3. **`Air.App` (Rich Backoffice UI Engine: Grids, Forms, Reports, Screens, Status Flows, UI Contracts)**:
+   - Depends on `Air.Api` and `Air.Data`.
+   - Registers `AppServiceEndpointDispatcher` into `Air.Api` to handle `IGridService`, `IFormService`, `IReportService`, `IScreenService`, and `/api/metadata`.
+   - Contains `Grid/`, `Form/`, `Report/`, `Screens/`, `Flow/`, `Panels/`, `Overlay/`, `Nav/`, `Components/`, `Files/FileGridService`, `Changes/ChangeGridService`, `Auth/RightsTree`, `TypeScript/ContractExporter`.
+
+### 4.2 Strict Folder & File Naming Rules Across All Platform Projects
+1. **Mandatory `*Extensions` Suffix**:
+   - Every static class that defines extension methods (`this ...`) — and its `.cs` file — **must** end with `Extensions` (e.g., `PlatformApiExtensions.cs`, `PlatformAppExtensions.cs`, `PlatformEndpointsExtensions.cs`, `AuthEndpointsExtensions.cs`, `FileEndpointsExtensions.cs`, `ServiceEndpointsExtensions.cs`, `MetadataEndpointsExtensions.cs`, `AgentEndpointsExtensions.cs`, `McpEndpointsExtensions.cs`, `PlatformPostgresExtensions.cs`, `PlatformSqlServerExtensions.cs`).
+2. **Mandatory `Contracts/` Subfolders**:
+   - Every wire contract (`*Dto`, `*Request`, `*Model`, contract attributes/enums) **must** reside inside a `Contracts/` folder (`Air.Data/Contracts/`, `Air.Api/Contracts/`, `Air.Api/Auth/Contracts/`, `Air.App/Contracts/`, `Air.App/Grid/Contracts/`, `Air.App/Form/Contracts/`, `Air.App/Report/Contracts/`, `Air.App/Screens/Contracts/`, `Air.App/Overlay/Contracts/`, `Air.App/Panels/Contracts/`, `Air.App/Nav/Contracts/`, `Air.App/Metadata/Contracts/`, `Air.App/Files/Contracts/`).
+3. **Mandatory `Internals/` Subfolders (Plural)**:
+   - Every `internal` helper, cache, parser, or engine implementation detail **must** reside inside an `Internals/` folder (`Air.Data/Internals/`, `Air.Api/Internals/`, `Air.App/Internals/`, `Air.App/Grid/Internals/`, `Air.App/Files/Internals/`).
+
+---
+
+## Phase 5: Core Engine Performance, Decomposition & `air-ui` Cleanup
+
+### 5.1 Backend Query & Performance Fixes (`GridService`, `FormService`, `StatusFlowService`, `Air.Data`)
 1. **Fix Badge Count Leak & Duplicate Counting (`GridService.Screen.cs:147-218`)**:
    - Apply `RestrictedQuery()` (`SetUserRestrictions`) to all `NamedFilter` badge counts and eliminate duplicate badge queries between `BuildScreenAsync` and `GetCountAsync`.
 2. **Eliminate N+1 Availability, Sum, Color & Multi-Reference Queries**:
@@ -134,7 +164,7 @@ Currently, `ServiceEndpoints.cs` hardcodes a 4-branch `if/else` (`IGridService`,
    - Remove `"Ecom: "` (`GridService.Screen.cs:534`, `FormService.Screen.cs:790`), `"demo/"` (`PlatformModule.cs:148, 162`), `["App", "Org", "Ecom", "Doc"]` (`ServicePathResolver.cs:15`), and `"Легасі UI: ..."` (`PlatformResource` localization key instead).
    - Decompose `GridService` (3,571 lines) and `FormService` (3,418 lines) into clean, single-responsibility partial/internal files (~200–350 lines each).
 
-### 4.2 Frontend (`air-ui`) Architecture & Hygiene Fixes
+### 5.2 Frontend (`air-ui`) Architecture & Hygiene Fixes
 1. **Route `AgentService` Through `HttpClient` / `Api` & `ScreenMutations` (`air-ui/src/layout/agent.service.ts`)**:
    - Replace raw `fetch()` for `status`, `upload`, `confirm`, `reset` with `Api` / `HttpClient` so `credentialsInterceptor` (`X-Platform-Time-Zone`) and `sessionRefreshInterceptor` (auto-refreshing expired JWTs on `401`) work automatically.
    - Add `X-Platform-Time-Zone` and `401` token refresh retry to the SSE `chat` stream.
@@ -149,7 +179,7 @@ Currently, `ServiceEndpoints.cs` hardcodes a 4-branch `if/else` (`IGridService`,
 
 ---
 
-## Phase 5: High-Productivity Enterprise Primitives for `my-port` & `ak-bcc`
+## Phase 6: High-Productivity Enterprise Primitives for `my-port` & `ak-bcc`
 
 1. **Declarative Many-to-Many Join Binding (`.AsReferences<TGrid, TJoin>(...)`)**:
    - Automatically load, diff, insert, delete, and clone join-table rows (e.g., `FinTransactionTag` in `my-port`) inside `FormService` without `[NotMapped]` properties or manual `AfterLoad`/`AfterSave`/`BeforeDelete` boilerplate.
