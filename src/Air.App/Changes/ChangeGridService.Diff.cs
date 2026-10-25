@@ -273,14 +273,10 @@ public abstract partial class ChangeGridService
           var refEntity = await principalDb.FindAsync(principalType, [fkId], ct);
           if (refEntity != null)
           {
-            var rawName = (PropertyAccessorCache.GetValue(refEntity, "Name")
-              ?? PropertyAccessorCache.GetValue(refEntity, "Title")
-              ?? PropertyAccessorCache.GetValue(refEntity, "Number")
-              ?? PropertyAccessorCache.GetValue(refEntity, "Code")
-              ?? PropertyAccessorCache.GetValue(refEntity, "Login"))?.ToString();
+            var rawName = PropertyAccessorCache.GetReferenceLabel(refEntity);
             if (!string.IsNullOrWhiteSpace(rawName))
             {
-              return refEntity is IReadOnlyEntity ? modL[rawName] : rawName;
+              return rawName;
             }
           }
         }

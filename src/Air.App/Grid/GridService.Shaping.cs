@@ -23,10 +23,17 @@ public abstract partial class GridService<TEntity, TRow>
       return ShapeRow(row);
     }
 
-    _ = ShapeRow(row);
+    if (HasCustomShapeRow)
+    {
+      _ = ShapeRow(row);
+    }
 
-    var shaped = new Dictionary<string, object?>(StringComparer.Ordinal);
-    if (PropertyAccessorCache.GetValue(row, "Id") is { } idVal)
+    var shaped = new Dictionary<string, object?>(columns.Count + 4, StringComparer.Ordinal);
+    if (row is IEntity entityRow)
+    {
+      shaped["id"] = entityRow.Id;
+    }
+    else if (PropertyAccessorCache.GetValue(row, "Id") is { } idVal)
     {
       shaped["id"] = idVal;
     }
@@ -58,14 +65,16 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    foreach (var column in columns)
+    for (var cIdx = 0; cIdx < columns.Count; cIdx++)
     {
+      var column = columns[cIdx];
       if (string.IsNullOrEmpty(column.Path))
       {
         continue;
       }
 
       var value = ReadPathValue(row, column.Path);
+      var allocatedRef = false;
 
       if (column.Options is { Count: > 0 } options)
       {
@@ -75,49 +84,47 @@ public abstract partial class GridService<TEntity, TRow>
           var opt = options.FirstOrDefault(o => o.Id == id);
           var name = opt != null ? L[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
           value = new Reference { Id = id, Name = name };
+          allocatedRef = true;
         }
         else if (value is Reference optRef)
         {
-          var name = L[optRef.Name];
-          value = new Reference { Id = optRef.Id, Name = name };
+          value = new Reference { Id = optRef.Id, Name = L[optRef.Name], Color = optRef.Color };
+          allocatedRef = true;
         }
-      }
-      else if (value is Reference existingRef)
-      {
-        value = new Reference
-        {
-          Id = existingRef.Id,
-          Name = L[existingRef.Name]
-        };
       }
       else if (column.ReferenceService is not null && value is IEntity refEntity)
       {
         string? rawName = null;
         if (column.ReferenceLabelPaths is { Count: > 0 } labelPaths)
         {
-          var parts = labelPaths
-            .Select(lp => ReadPathValue(value, lp)?.ToString())
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .ToList();
-          if (parts.Count > 0)
+          if (labelPaths.Count == 1)
           {
-            rawName = string.Join(" — ", parts);
+            rawName = ReadPathValue(value, labelPaths[0])?.ToString();
+          }
+          else
+          {
+            List<string>? parts = null;
+            for (var i = 0; i < labelPaths.Count; i++)
+            {
+              var part = ReadPathValue(value, labelPaths[i])?.ToString();
+              if (!string.IsNullOrWhiteSpace(part))
+              {
+                parts ??= new List<string>(labelPaths.Count);
+                parts.Add(part);
+              }
+            }
+
+            if (parts is { Count: > 0 })
+            {
+              rawName = string.Join(" — ", parts);
+            }
           }
         }
 
-        rawName ??= (PropertyAccessorCache.GetValue(value, "Name")
-          ?? PropertyAccessorCache.GetValue(value, "Title")
-          ?? PropertyAccessorCache.GetValue(value, "Number")
-          ?? PropertyAccessorCache.GetValue(value, "Code")
-          ?? PropertyAccessorCache.GetValue(value, "Login"))?.ToString()
+        rawName ??= PropertyAccessorCache.GetReferenceLabel(value)
           ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
-        value = new Reference { Id = refEntity.Id, Name = L[rawName] };
-      }
-      else if (value is string strVal && !string.IsNullOrEmpty(strVal) &&
-               (row is IReadOnlyEntity && string.Equals(column.Path, "name", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(column.Path, "type", StringComparison.OrdinalIgnoreCase)))
-      {
-        value = L[strVal];
+        value = new Reference { Id = refEntity.Id, Name = rawName };
+        allocatedRef = true;
       }
 
       if (column.ColorEvaluator is not null)
@@ -127,12 +134,14 @@ public abstract partial class GridService<TEntity, TRow>
         {
           if (value is Reference r)
           {
-            value = new Dictionary<string, object?>
+            if (allocatedRef)
             {
-              ["id"] = r.Id,
-              ["name"] = r.Name,
-              ["color"] = hue
-            };
+              r.Color = hue;
+            }
+            else
+            {
+              value = new Reference { Id = r.Id, Name = r.Name, Color = hue };
+            }
           }
           else if (value is Dictionary<string, object?> dictVal)
           {
@@ -154,7 +163,10 @@ public abstract partial class GridService<TEntity, TRow>
         }
       }
 
-      PutValue(shaped, column.Path, value);
+      if (value is not null)
+      {
+        PutValue(shaped, column.Path, value);
+      }
     }
 
     return shaped;
@@ -167,11 +179,15 @@ public abstract partial class GridService<TEntity, TRow>
   {
     if (!path.Contains('.'))
     {
-      var topKey = ToCamel(path);
+      var topKey = PropertyAccessorCache.ToCamel(path);
       if (value is Reference topRef && target.TryGetValue(topKey, out var curTop) && curTop is Dictionary<string, object?> topDict)
       {
         topDict["id"] = topRef.Id;
         topDict["name"] = topRef.Name;
+        if (!string.IsNullOrEmpty(topRef.Color))
+        {
+          topDict["color"] = topRef.Color;
+        }
       }
       else
       {
@@ -181,18 +197,22 @@ public abstract partial class GridService<TEntity, TRow>
       return;
     }
 
-    var segments = path.Split('.');
+    var segments = PropertyAccessorCache.GetCamelPathSegments(path);
     var current = target;
     for (var i = 0; i < segments.Length - 1; i++)
     {
-      var key = ToCamel(segments[i]);
+      var key = segments[i];
       if (!current.TryGetValue(key, out var existing) || existing is not Dictionary<string, object?> nested)
       {
-        nested = new Dictionary<string, object?>(StringComparer.Ordinal);
+        nested = new Dictionary<string, object?>(4, StringComparer.Ordinal);
         if (existing is Reference existingRef)
         {
           nested["id"] = existingRef.Id;
           nested["name"] = existingRef.Name;
+          if (!string.IsNullOrEmpty(existingRef.Color))
+          {
+            nested["color"] = existingRef.Color;
+          }
         }
 
         current[key] = nested;
@@ -201,20 +221,21 @@ public abstract partial class GridService<TEntity, TRow>
       current = nested;
     }
 
-    var lastKey = ToCamel(segments[^1]);
+    var lastKey = segments[^1];
     if (value is Reference valRef && current.TryGetValue(lastKey, out var curLast) && curLast is Dictionary<string, object?> curDict)
     {
       curDict["id"] = valRef.Id;
       curDict["name"] = valRef.Name;
+      if (!string.IsNullOrEmpty(valRef.Color))
+      {
+        curDict["color"] = valRef.Color;
+      }
     }
     else
     {
       current[lastKey] = value;
     }
   }
-
-  private static string ToCamel(string str) =>
-    string.IsNullOrEmpty(str) ? str : char.ToLowerInvariant(str[0]) + str[1..];
 
   private async IAsyncEnumerable<object> ShapeStreamAsync(
     IAsyncEnumerable<TRow> source,

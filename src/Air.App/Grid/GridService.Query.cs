@@ -397,7 +397,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   private async Task PopulateCoversAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
-    var coverCol = columns.FirstOrDefault(c => c.Cell is AddOns.Covers.Contracts.GridCellCoverModel);
+    var coverCol = columns.FirstOrDefault(c => !c.IsHidden && c.Cell is AddOns.Covers.Contracts.GridCellCoverModel);
     if (coverCol == null || shapedRows.Count == 0)
     {
       return;
@@ -479,17 +479,12 @@ public abstract partial class GridService<TEntity, TRow>
           continue;
         }
 
-        var key = ToCamel(col.Path.Split('.')[0]);
+        var key = PropertyAccessorCache.GetCamelPathSegments(col.Path)[0];
         if (dict.TryGetValue(key, out var val))
         {
           if (val is Reference r)
           {
-            dict[key] = new Dictionary<string, object?>
-            {
-              ["id"] = r.Id,
-              ["name"] = r.Name,
-              ["color"] = hue
-            };
+            r.Color = hue;
           }
           else if (val is Dictionary<string, object?> dictVal)
           {
@@ -769,7 +764,60 @@ public abstract partial class GridService<TEntity, TRow>
     return forms;
   }
 
+  private static readonly ConcurrentDictionary<string, QueryMap<TEntity>> CachedQueryMaps = new(StringComparer.Ordinal);
+
   internal static QueryMap<TEntity> BuildQueryMap(Query queryDeclaration, IReadOnlyList<GridColumnDto> columns)
+  {
+    if (queryDeclaration.Selector is null)
+    {
+      var sb = new StringBuilder(columns.Count * 24 + 32);
+      var canCache = true;
+      for (var i = 0; i < columns.Count; i++)
+      {
+        var col = columns[i];
+        if (col.FilterExpression is not null)
+        {
+          canCache = false;
+          break;
+        }
+
+        var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
+        sb.Append(col.Path).Append('|').Append(col.FilterPath).Append('|').Append(isRef ? '1' : '0').Append(';');
+      }
+
+      if (canCache)
+      {
+        if (queryDeclaration.SearchFields is { Count: > 0 } sfs)
+        {
+          sb.Append("#S:");
+          for (var i = 0; i < sfs.Count; i++)
+          {
+            sb.Append(sfs[i]).Append(',');
+          }
+        }
+
+        if (queryDeclaration.DefaultSort.Count > 0)
+        {
+          sb.Append("#D:");
+          for (var i = 0; i < queryDeclaration.DefaultSort.Count; i++)
+          {
+            sb.Append(queryDeclaration.DefaultSort[i].Field).Append(',');
+          }
+        }
+
+        if (CachedQueryMaps.Count > 512)
+        {
+          CachedQueryMaps.Clear();
+        }
+
+        return CachedQueryMaps.GetOrAdd(sb.ToString(), _ => BuildQueryMapCore(queryDeclaration, columns));
+      }
+    }
+
+    return BuildQueryMapCore(queryDeclaration, columns);
+  }
+
+  private static QueryMap<TEntity> BuildQueryMapCore(Query queryDeclaration, IReadOnlyList<GridColumnDto> columns)
   {
     var builder = queryDeclaration.Selector is not null
       ? QueryMap.FromSelector(queryDeclaration.Selector)

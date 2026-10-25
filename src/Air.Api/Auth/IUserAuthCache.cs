@@ -1,7 +1,7 @@
 namespace Platform.Api.Auth;
 
 /// <summary>
-/// Coordinates distributed (Redis) and in-memory caching of user sessions, permissions, and extensible user context data.
+/// Coordinates provider-agnostic caching of user sessions, permissions, and extensible user context data via <see cref="ICacheProvider"/>.
 /// </summary>
 public interface IUserAuthCache
 {

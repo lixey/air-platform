@@ -13,10 +13,16 @@ internal static class PropertyAccessorCache
       HashCode.Combine(obj.Type, StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
   }
 
+  private static readonly string[] LabelCandidateNames = ["Name", "Title", "Number", "Code", "Login"];
+
   private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertiesByType = new();
   private static readonly ConcurrentDictionary<(Type Type, string Name), PropertyInfo?> PropertyByName = new(TypePropertyComparer.Instance);
   private static readonly ConcurrentDictionary<(Type Type, string Name), Func<object, object?>?> GetterByName = new(TypePropertyComparer.Instance);
   private static readonly ConcurrentDictionary<(Type Type, string Name), Action<object, object?>?> SetterByName = new(TypePropertyComparer.Instance);
+  private static readonly ConcurrentDictionary<Type, Func<object, object?>?> LabelGetterByType = new();
+  private static readonly ConcurrentDictionary<string, string[]> PathSegmentsCache = new(StringComparer.Ordinal);
+  private static readonly ConcurrentDictionary<string, string[]> CamelPathSegmentsCache = new(StringComparer.Ordinal);
+  private static readonly ConcurrentDictionary<string, string> CamelCaseCache = new(StringComparer.Ordinal);
 
   public static PropertyInfo[] GetProperties(Type type) =>
     PropertiesByType.GetOrAdd(type, static t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance));
@@ -62,6 +68,48 @@ internal static class PropertyAccessorCache
       return Expression.Lambda<Action<object, object?>>(assign, targetParam, valueParam).Compile();
     });
 
+  public static string? GetReferenceLabel(object target)
+  {
+    var getter = LabelGetterByType.GetOrAdd(target.GetType(), static type =>
+    {
+      foreach (var candidate in LabelCandidateNames)
+      {
+        var g = GetGetter(type, candidate);
+        if (g is not null)
+        {
+          return g;
+        }
+      }
+
+      return null;
+    });
+
+    return getter?.Invoke(target)?.ToString();
+  }
+
+  public static string[] GetPathSegments(string path) =>
+    PathSegmentsCache.GetOrAdd(path, static p => p.Split('.'));
+
+  public static string[] GetCamelPathSegments(string path) =>
+    CamelPathSegmentsCache.GetOrAdd(path, static p =>
+    {
+      var raw = GetPathSegments(p);
+      var res = new string[raw.Length];
+      for (var i = 0; i < raw.Length; i++)
+      {
+        res[i] = ToCamel(raw[i]);
+      }
+
+      return res;
+    });
+
+  public static string ToCamel(string str) =>
+    string.IsNullOrEmpty(str)
+      ? str
+      : char.IsLower(str[0])
+        ? str
+        : CamelCaseCache.GetOrAdd(str, static s => char.ToLowerInvariant(s[0]) + s[1..]);
+
   public static object? GetValue(object? target, string propertyName)
   {
     if (target is null || string.IsNullOrEmpty(propertyName))
@@ -92,13 +140,15 @@ internal static class PropertyAccessorCache
     }
 
     var current = target;
-    foreach (var segment in path.Split('.'))
+    var segments = GetPathSegments(path);
+    for (var i = 0; i < segments.Length; i++)
     {
       if (current is null)
       {
         return null;
       }
 
+      var segment = segments[i];
       if (current is IDictionary<string, object?> dict)
       {
         dict.TryGetValue(segment, out current);

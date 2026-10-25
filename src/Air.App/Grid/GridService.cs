@@ -277,7 +277,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
               var name = loaded != null
                 ? (PropertyAccessorCache.GetValue(loaded, "Name") ?? PropertyAccessorCache.GetValue(loaded, "Title") ?? PropertyAccessorCache.GetValue(loaded, "Number"))?.ToString()
                 : null;
-              dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? L[name] : $"#{refId}" };
+              dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? name : $"#{refId}" };
             }
             catch { }
           }

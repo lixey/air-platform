@@ -1684,6 +1684,7 @@ export interface PickedValue {
 export interface Reference {
   id: number;
   name: string;
+  color?: string | null;
 }
 
 export interface ReferenceDraftRuleDto {

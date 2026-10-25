@@ -3,6 +3,7 @@ namespace Platform.App.Grid.Internals;
 internal static class GridProjectionBuilder
 {
   private static readonly ConcurrentDictionary<(Type EntityType, string Signature), LambdaExpression> Cache = new();
+  private static readonly ConcurrentDictionary<(Type EntityType, string ColSig), LambdaExpression?> FastCache = new();
 
   public static Expression<Func<TEntity, TEntity>>? TryBuildSelector<TEntity>(
     IReadOnlyList<GridColumnDto> columns,
@@ -14,15 +15,44 @@ internal static class GridProjectionBuilder
       return null;
     }
 
-    foreach (var col in columns)
+    var entityType = typeof(TEntity);
+    var colSigBuilder = new StringBuilder(columns.Count * 24);
+    for (var i = 0; i < columns.Count; i++)
     {
+      var col = columns[i];
       if (col.ColorEvaluator != null && col.ColorExpression == null && string.IsNullOrEmpty(col.ColorNavPath))
       {
         return null;
       }
+
+      colSigBuilder
+        .Append(col.Path).Append('|')
+        .Append(col.ColorNavPath).Append('|')
+        .Append(col.ColorExpression).Append('|')
+        .Append(col.ReferenceService != null ? '1' : '0')
+        .Append(col.IsHidden ? '1' : '0');
+      if (col.ReferenceLabelPaths is { Count: > 0 } lps)
+      {
+        for (var j = 0; j < lps.Count; j++)
+        {
+          colSigBuilder.Append(',').Append(lps[j]);
+        }
+      }
+
+      if (col.Cell is GridCellOpenFormModel { KeyPath: { Length: > 0 } kp })
+      {
+        colSigBuilder.Append('@').Append(kp);
+      }
+
+      colSigBuilder.Append(';');
     }
 
-    var entityType = typeof(TEntity);
+    var colSig = colSigBuilder.ToString();
+    if (FastCache.TryGetValue((entityType, colSig), out var fastHit))
+    {
+      return (Expression<Func<TEntity, TEntity>>?)fastHit;
+    }
+
     var root = new GridProjectionNode();
 
     foreach (var prop in entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -109,7 +139,7 @@ internal static class GridProjectionBuilder
     root.AppendSignature(sigBuilder, string.Empty);
     var signature = sigBuilder.ToString();
 
-    return (Expression<Func<TEntity, TEntity>>)Cache.GetOrAdd((entityType, signature), _ =>
+    var built = Cache.GetOrAdd((entityType, signature), _ =>
     {
       var param = Expression.Parameter(entityType, "e");
       var bindings = root.Bind(param).ToList();
@@ -117,6 +147,13 @@ internal static class GridProjectionBuilder
         Expression.MemberInit(Expression.New(entityType), bindings),
         param);
     });
+    if (FastCache.Count > 512)
+    {
+      FastCache.Clear();
+    }
+
+    FastCache[(entityType, colSig)] = built;
+    return (Expression<Func<TEntity, TEntity>>)built;
   }
 
   private static bool TryAddExpressionMemberPaths(Type entityType, LambdaExpression lambda, GridProjectionNode root)

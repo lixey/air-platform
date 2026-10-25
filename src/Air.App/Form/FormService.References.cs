@@ -185,7 +185,7 @@ public abstract partial class FormService<TEntity, TInput>
             var itemCaption = loadedById.TryGetValue(k, out var loaded)
               ? ReadDisplayCaption(loaded, labelPaths)
               : null;
-            refs.Add(new Reference { Id = k, Name = !string.IsNullOrEmpty(itemCaption) ? L[itemCaption] : $"#{k}" });
+            refs.Add(new Reference { Id = k, Name = !string.IsNullOrEmpty(itemCaption) ? itemCaption : $"#{k}" });
           }
         }
 
@@ -263,7 +263,7 @@ public abstract partial class FormService<TEntity, TInput>
       dict[el.ReferencePath] = new Reference
       {
         Id = key.Value,
-        Name = !string.IsNullOrEmpty(refName) ? L[refName] : $"#{key.Value}"
+        Name = !string.IsNullOrEmpty(refName) ? refName : $"#{key.Value}"
       };
     }
 

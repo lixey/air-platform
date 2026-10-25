@@ -35,6 +35,7 @@
       <Using Include="Platform.Api" />
       <Using Include="Platform.Api.Auth" />
       <Using Include="Platform.Api.Auth.Contracts" />
+      <Using Include="Platform.Api.Caching" />
       <Using Include="Platform.Api.Contracts" />
       <Using Include="Platform.Api.Files" />
       <Using Include="Platform.Api.Host" />

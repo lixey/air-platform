@@ -28,7 +28,7 @@ public interface IUserContext
   string? Claim(string type);
 
   /// <summary>
-  /// Reads custom application data enriched via <see cref="IUserAuthEnricher"/> from the cached user auth snapshot.
+  /// Reads custom application data populated via <see cref="ISessionClaimsProvider"/> from the cached user auth snapshot.
   /// </summary>
   T? GetData<T>(string key) => default;
 }

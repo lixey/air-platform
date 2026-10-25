@@ -105,6 +105,13 @@ export function screenLoader(
       : undefined;
   });
 
+  // Eagerly subscribe to countResource so get-count starts in parallel with get-data before <ui-grid> mounts
+  effect(() => {
+    if (requestTarget()?.isGrid) {
+      void countResource.isLoading();
+    }
+  });
+
   effect(() => {
     const req = requestTarget();
     const isCurrent = captured();
