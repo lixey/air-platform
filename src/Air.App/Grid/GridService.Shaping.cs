@@ -13,9 +13,14 @@ public abstract partial class GridService<TEntity, TRow>
     IReadOnlyList<GridColumnDto> columns,
     IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null)
   {
-    if (row is null || columns.Count == 0)
+    if (row is null)
     {
-      return row!;
+      return new Dictionary<string, object?>(StringComparer.Ordinal);
+    }
+
+    if (columns.Count == 0)
+    {
+      return ShapeRow(row);
     }
 
     _ = ShapeRow(row);
@@ -87,7 +92,24 @@ public abstract partial class GridService<TEntity, TRow>
       }
       else if (column.ReferenceService is not null && value is IEntity refEntity)
       {
-        var rawName = PropertyAccessorCache.GetValue(value, "Name")?.ToString()
+        string? rawName = null;
+        if (column.ReferenceLabelPaths is { Count: > 0 } labelPaths)
+        {
+          var parts = labelPaths
+            .Select(lp => ReadPathValue(value, lp)?.ToString())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+          if (parts.Count > 0)
+          {
+            rawName = string.Join(" — ", parts);
+          }
+        }
+
+        rawName ??= (PropertyAccessorCache.GetValue(value, "Name")
+          ?? PropertyAccessorCache.GetValue(value, "Title")
+          ?? PropertyAccessorCache.GetValue(value, "Number")
+          ?? PropertyAccessorCache.GetValue(value, "Code")
+          ?? PropertyAccessorCache.GetValue(value, "Login"))?.ToString()
           ?? refEntity.Id.ToString(CultureInfo.InvariantCulture);
         value = new Reference { Id = refEntity.Id, Name = L[rawName] };
       }

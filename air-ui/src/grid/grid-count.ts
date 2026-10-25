@@ -1,13 +1,47 @@
 import { httpResource } from '@angular/common/http';
-import { computed, effect, linkedSignal, untracked } from '@angular/core';
+import { computed, effect, linkedSignal, type Signal, untracked } from '@angular/core';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { type AnswerOf, serviceUrl } from '../core/api';
 import type { GridRequest, GridServiceEndpoints } from '../core/generated/contracts';
 import type { IsCurrent } from '../core/lifetime';
 
-/** One request of the counter: whether the grid it was asked for is still current. */
+/** An initial count request started in parallel with `get-data` by `screenLoader`. */
+export interface PrefetchedGridCount {
+  readonly total: Signal<number | undefined>;
+  readonly isLoading: Signal<boolean>;
+  readonly isError: Signal<boolean>;
+  readonly isCurrent: IsCurrent;
+}
+
+const prefetchedCounts = new Map<string, PrefetchedGridCount>();
+
+/** Registers an in-flight or completed initial `get-count` started alongside `get-data`. */
+export function registerPrefetchedGridCount(service: string, prefetched: PrefetchedGridCount): void {
+  for (const [k, v] of prefetchedCounts) {
+    if (!v.isCurrent()) {
+      prefetchedCounts.delete(k);
+    }
+  }
+  prefetchedCounts.set(service.toLowerCase(), prefetched);
+}
+
+/** Consumes the prefetched `get-count` for `service` if one is current. */
+export function consumePrefetchedGridCount(service: string | null | undefined): PrefetchedGridCount | null {
+  if (!service) {
+    return null;
+  }
+  const key = service.toLowerCase();
+  const entry = prefetchedCounts.get(key) ?? null;
+  if (entry) {
+    prefetchedCounts.delete(key);
+  }
+  return entry && entry.isCurrent() ? entry : null;
+}
+
+/** One request of the counter: whether the grid it was asked for is still current, and an optional prefetched count. */
 interface CountRequest {
   readonly isCurrent: IsCurrent;
+  readonly prefetched?: PrefetchedGridCount | null;
 }
 
 /** What the row counter is given of its grid. */
@@ -28,10 +62,10 @@ export interface GridCountOptions {
 
 /**
  * The row counter of one grid: how many rows match its filters, named filters and search, asked apart from the page of
- * rows, and beside the total the badges of the named filters that declare one. A requested count forgets the total it
- * held and keeps the badges; its answer is adopted only while the request that asked it is the last
- * one and its capture is current. A page that carries an exact total is adopted without a request. When `resetBy`
- * changes the counter starts over from `totalAtStart`, asking at once when the opening page leaves the total open.
+ * rows. A requested count forgets the total it held; its answer is adopted only while the request that asked it is the
+ * last one and its capture is current. A page that carries an exact total is adopted without a request. When `resetBy`
+ * changes the counter starts over from `totalAtStart`, adopting a prefetched parallel count when available or asking at
+ * once when the opening page leaves the total open.
  *
  * Created in a field of the grid service, so its request and its effect live in the service's injection context.
  * It knows nothing of the service: it is given its options.
@@ -40,13 +74,25 @@ export class GridCount {
   /** The last count asked, or none. */
   private readonly request = linkedSignal<unknown, CountRequest | null>({
     source: () => this.options.resetBy(),
-    computation: () => (untracked(this.options.totalAtStart) === null ? { isCurrent: untracked(this.options.capture) } : null),
+    computation: () => {
+      if (untracked(this.options.totalAtStart) !== null) {
+        return null;
+      }
+      const service = untracked(this.options.service);
+      if (!service || !untracked(this.options.isCounted)) {
+        return null;
+      }
+      return {
+        isCurrent: untracked(this.options.capture),
+        prefetched: consumePrefetchedGridCount(service),
+      };
+    },
   });
 
   private readonly countLoader = httpResource<AnswerOf<GridServiceEndpoints, 'get-count'>>(() => {
     const request = this.request();
     const service = this.options.service();
-    if (!request || !service || !this.options.isCounted() || !request.isCurrent()) {
+    if (!request || request.prefetched || !service || !this.options.isCounted() || !request.isCurrent()) {
       return undefined;
     }
     return {
@@ -62,11 +108,19 @@ export class GridCount {
     { readonly reset: unknown; readonly request: CountRequest | null; readonly total: number | undefined },
     number | null
   >({
-    source: () => ({
-      reset: this.options.resetBy(),
-      request: this.request(),
-      total: this.countLoader.hasValue() ? this.countLoader.value()?.total : undefined,
-    }),
+    source: () => {
+      const request = this.request();
+      const total = request?.prefetched
+        ? request.prefetched.total()
+        : this.countLoader.hasValue()
+          ? this.countLoader.value()?.total
+          : undefined;
+      return {
+        reset: this.options.resetBy(),
+        request,
+        total,
+      };
+    },
     computation: (source, previous) => {
       if (typeof source.total === 'number' && source.request?.isCurrent()) {
         return source.total;
@@ -80,29 +134,19 @@ export class GridCount {
   });
   readonly countedTotal = this._countedTotal.asReadonly();
 
-  private readonly _badges = linkedSignal<
-    { readonly reset: unknown; readonly answer: Readonly<Record<string, number>> | null },
-    Readonly<Record<string, number>> | null
-  >({
-    source: () => ({
-      reset: this.options.resetBy(),
-      answer: (this.countLoader.hasValue() ? this.countLoader.value()?.namedFilterBadges : null) ?? null,
-    }),
-    // The answer of the count held now; while one is asked or failed, what the last one answered since the start
-    computation: (source, previous) => source.answer ?? (previous && previous.source.reset === source.reset ? previous.value : null),
-  });
-  /** The badges the last count answered, kept while a count is asked; null before the first and for a grid with none. */
-  readonly badges = this._badges.asReadonly();
-
-  readonly isCountLoading = this.countLoader.isLoading;
-  readonly isCountPending = computed(() => this.countLoader.isLoading() && this.countedTotal() === null);
+  readonly isCountLoading = computed(() => this.request()?.prefetched?.isLoading() ?? this.countLoader.isLoading());
+  readonly isCountPending = computed(() => this.isCountLoading() && this.countedTotal() === null);
   /** Whether the last count failed: the total is unknown until it is asked again. */
-  readonly isCountFailed = computed(() => this.countLoader.status() === 'error' && this.countedTotal() === null);
+  readonly isCountFailed = computed(
+    () =>
+      (this.request()?.prefetched ? this.request()!.prefetched!.isError() : this.countLoader.status() === 'error') &&
+      this.countedTotal() === null,
+  );
 
   private hadCountRequest = false;
   private readonly cancelObsoleteCount = effect(() => {
     const request = this.request();
-    const target = !!request && !!this.options.service() && this.options.isCounted() && request.isCurrent();
+    const target = !!request && !request.prefetched && !!this.options.service() && this.options.isCounted() && request.isCurrent();
     if (!target && this.hadCountRequest) {
       this.countLoader.set(undefined);
     }

@@ -31,6 +31,21 @@ internal static class AuthEndpointsExtensions
         return Results.Unauthorized();
       }
 
+      if (ctx.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot && snapshot.IsActive)
+      {
+        return Results.Ok(new UserProfileDto
+        {
+          Id = snapshot.Id,
+          Login = snapshot.Login,
+          Name = snapshot.Name,
+          Email = snapshot.Email,
+          Language = IsUkrainian(ctx.Request) ? "uk" : "en",
+          TimeZone = snapshot.TimeZone,
+          MustChangePassword = snapshot.MustChangePassword,
+          Permissions = snapshot.Permissions.ToList()
+        });
+      }
+
       var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
       if (user == null || !user.IsActive)
       {
@@ -152,6 +167,16 @@ internal static class AuthEndpointsExtensions
         await authStore.RevokeUserSessionsAsync(user.Id, userContext.SessionId, "password-change", ct);
         await authStore.SaveChangesAsync(ct);
 
+        var authCache = ctx.RequestServices.GetService<IUserAuthCache>();
+        if (authCache != null)
+        {
+          await authCache.EvictUserAsync(user.Id, ct);
+          if (userContext.SessionId is { } currentSid)
+          {
+            await authCache.EvictSessionAsync(currentSid, ct);
+          }
+        }
+
         var now = DateTimeOffset.UtcNow;
         var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
         var session = userContext.SessionId is { } sid ? await authStore.FindSessionAsync(sid, ct) : null;
@@ -233,6 +258,7 @@ internal static class AuthEndpointsExtensions
         return Results.Unauthorized();
       }
 
+      var authCache = ctx.RequestServices.GetService<IUserAuthCache>();
       if (providedHash != null &&
           session.RefreshTokenHash != providedHash &&
           session.PreviousRefreshTokenHash == providedHash)
@@ -242,6 +268,11 @@ internal static class AuthEndpointsExtensions
           session.RevokedAt = now;
           session.RevokedReason = "reuse";
           await authStore.SaveChangesAsync(ct);
+          if (authCache != null)
+          {
+            await authCache.EvictSessionAsync(session.Id, ct);
+          }
+
           return Results.Unauthorized();
         }
 
@@ -257,6 +288,11 @@ internal static class AuthEndpointsExtensions
         session.LastUsedAt = now;
         await authStore.SaveChangesAsync(ct);
         IssueRefreshCookie(ctx.Response, nextRefresh, session.ExpiresAt);
+      }
+
+      if (authCache != null)
+      {
+        await authCache.EvictSessionAsync(session.Id, ct);
       }
 
       var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
@@ -275,6 +311,12 @@ internal static class AuthEndpointsExtensions
           session.RevokedAt = DateTimeOffset.UtcNow;
           session.RevokedReason = "self";
           await authStore.SaveChangesAsync(ct);
+        }
+
+        var authCache = ctx.RequestServices.GetService<IUserAuthCache>();
+        if (authCache != null)
+        {
+          await authCache.EvictSessionAsync(sid, ct);
         }
       }
 
@@ -303,6 +345,10 @@ internal static class AuthEndpointsExtensions
           {
             user.LanguageId = req.Id;
             await authStore.SaveChangesAsync(ct);
+            if (ctx.RequestServices.GetService<IUserAuthCache>() is { } authCache)
+            {
+              await authCache.EvictUserAsync(user.Id, ct);
+            }
           }
 
           var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
@@ -372,6 +418,12 @@ internal static class AuthEndpointsExtensions
       session.TenantId = req.Id;
       session.LastUsedAt = DateTimeOffset.UtcNow;
       await authStore.SaveChangesAsync(ct);
+
+      if (ctx.RequestServices.GetService<IUserAuthCache>() is { } authCache)
+      {
+        await authCache.EvictSessionAsync(session.Id, ct);
+        await authCache.EvictUserAsync(user.Id, ct);
+      }
 
       IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion);
       return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));

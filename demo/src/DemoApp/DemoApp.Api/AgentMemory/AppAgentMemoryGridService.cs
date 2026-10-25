@@ -24,15 +24,15 @@ public sealed class AppAgentMemoryGridService(AppDbContext db, AppService? app =
     query.RecordLabel(e => e.Title);
     query.SearchBy(r => r.Id, r => r.Title, r => r.Kind, r => r.Module, r => r.Content);
     query.NamedFilter("kind", L["Kind"])
-      .All(L["All"]).Badge().Default()
-      .Item("rule", L["Rules"], r => r.Kind == AgentMemoryKinds.Rule).Color(UiColor.Rose).Badge()
-      .Item("seed", L["Seed"], r => r.Kind == AgentMemoryKinds.Seed).Color(UiColor.Blue).Badge()
-      .Item("fact", L["Facts"], r => r.Kind == AgentMemoryKinds.Fact).Color(UiColor.Emerald).Badge()
-      .Item("preference", L["Preferences"], r => r.Kind == AgentMemoryKinds.Preference).Color(UiColor.Violet).Badge();
+      .All(L["All"]).Default()
+      .Item("rule", L["Rules"], r => r.Kind == AgentMemoryKinds.Rule).Color(UiColor.Rose)
+      .Item("seed", L["Seed"], r => r.Kind == AgentMemoryKinds.Seed).Color(UiColor.Blue)
+      .Item("fact", L["Facts"], r => r.Kind == AgentMemoryKinds.Fact).Color(UiColor.Emerald)
+      .Item("preference", L["Preferences"], r => r.Kind == AgentMemoryKinds.Preference).Color(UiColor.Violet);
     query.NamedFilter("state", L["Status"])
-      .All(L["All"]).Badge().Default()
-      .Item("active", L["Active"], r => r.IsActive).Color(UiColor.Emerald).Badge()
-      .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate).Badge();
+      .All(L["All"]).Default()
+      .Item("active", L["Active"], r => r.IsActive).Color(UiColor.Emerald)
+      .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
   protected override void SetNav(Nav nav)

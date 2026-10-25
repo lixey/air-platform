@@ -26,4 +26,9 @@ public interface IUserContext
 
   /// <summary>The value of a claim of the principal, or null.</summary>
   string? Claim(string type);
+
+  /// <summary>
+  /// Reads custom application data enriched via <see cref="IUserAuthEnricher"/> from the cached user auth snapshot.
+  /// </summary>
+  T? GetData<T>(string key) => default;
 }

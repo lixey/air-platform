@@ -13,6 +13,7 @@ public static class AuthClaims
   public const string MustChangePassword = "must_change_password";
   public const string Tenant = "tenant";
   public const string ViaCookieItem = "Platform.Auth.ViaCookie";
+  public const string SnapshotItem = "Platform.Auth.Snapshot";
   public const string AccessCookie = "platform_access";
   public const string RefreshCookie = "platform_refresh";
 }

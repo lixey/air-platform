@@ -23,8 +23,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     var formOverlay = ResolveFormOverlay(columns);
 
-    var nav = new Nav(servicePath, L);
-    SetNav(nav);
+    var nav = GetNav(servicePath);
 
     LocalizeAndConfigureColumns(columns.List);
 
@@ -140,46 +139,15 @@ public abstract partial class GridService<TEntity, TRow>
       var chosenKey = request?.NamedFilters?.FirstOrDefault(k =>
           group.Items.Any(i => string.Equals(i.Key, k, StringComparison.OrdinalIgnoreCase)))
         ?? group.Items.FirstOrDefault(i => i.IsDefault)?.Key;
-      var groupItems = new List<GridNavNamedFilterModel>();
+      var groupItems = new List<GridNavNamedFilterModel>(group.Items.Count);
       foreach (var item in group.Items)
       {
-        string? badgeVal = null;
-        if (item.HasBadge)
-        {
-          try
-          {
-            var baseQ = RestrictedQuery();
-            foreach (var filter in queryDeclaration.Filters)
-            {
-              baseQ = baseQ.Where(filter);
-            }
-
-            if (ParentId.HasValue && parent.FilterFunc != null && parent.MatchesService(ParentService))
-            {
-              baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-            }
-            else if (ParentId is > 0 && parentChild?.FilterProvider is { } fp)
-            {
-              baseQ = (IQueryable<TEntity>)fp(db, ParentId.Value, baseQ);
-            }
-
-            if (item.Predicate != null)
-            {
-              baseQ = baseQ.Where(item.Predicate);
-            }
-
-            badgeVal = (await baseQ.CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
-          }
-          catch { }
-        }
-
         groupItems.Add(new GridNavNamedFilterModel
         {
           Key = item.Key,
           Label = L[item.Label],
           Title = item.Title != null ? L[item.Title] : null,
           Color = item.Color,
-          Badge = badgeVal,
           IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
         });
       }
@@ -195,43 +163,12 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var item in queryDeclaration.NamedFilters)
     {
-      string? badgeValue = null;
-      if (item.HasBadge)
-      {
-        try
-        {
-          var baseQ = RestrictedQuery();
-          foreach (var filter in queryDeclaration.Filters)
-          {
-            baseQ = baseQ.Where(filter);
-          }
-
-          if (ParentId.HasValue && parent.FilterFunc != null && parent.MatchesService(ParentService))
-          {
-            baseQ = parent.FilterFunc(baseQ, ParentId.Value);
-          }
-          else if (ParentId is > 0 && parentChild?.FilterProvider is { } fp)
-          {
-            baseQ = (IQueryable<TEntity>)fp(db, ParentId.Value, baseQ);
-          }
-
-          if (item.Predicate != null)
-          {
-            baseQ = baseQ.Where(item.Predicate);
-          }
-
-          badgeValue = (await baseQ.CountAsync(ct)).ToString(CultureInfo.InvariantCulture);
-        }
-        catch { }
-      }
-
       navElements.Add(new GridNavNamedFilterModel
       {
         Key = item.Key,
         Label = L[item.Label],
         Title = item.Title != null ? L[item.Title] : null,
         Color = item.Color,
-        Badge = badgeValue,
         IsRemembered = item.IsRemembered,
         IsSelected = request?.NamedFilters?.Any(k => string.Equals(k, item.Key, StringComparison.OrdinalIgnoreCase)) == true
       });
@@ -511,13 +448,20 @@ public abstract partial class GridService<TEntity, TRow>
 
   private OverlayDto ResolveFormOverlayForType(Type? formType, string formServicePath)
   {
+    if (_cachedFormOverlays.TryGetValue(formServicePath, out var cachedOverlay))
+    {
+      return cachedOverlay;
+    }
+
     if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
     {
       try
       {
         if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService formInstance)
         {
-          return formInstance.Overlay(formServicePath);
+          var resolved = formInstance.Overlay(formServicePath);
+          _cachedFormOverlays[formServicePath] = resolved;
+          return resolved;
         }
       }
       catch
@@ -526,7 +470,9 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    return OverlayModel.Dialog($"{formServicePath}.modal").Screen(formServicePath).Build();
+    var fallback = OverlayModel.Dialog($"{formServicePath}.modal").Screen(formServicePath).Build();
+    _cachedFormOverlays[formServicePath] = fallback;
+    return fallback;
   }
 
   private GridNavStatusModel? BuildStatusNavElement(string servicePath, IRecordStatuses<TEntity> statusFlow)

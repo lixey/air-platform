@@ -42,6 +42,11 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
         return ambient;
       }
 
+      if (httpContextAccessor.HttpContext?.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot)
+      {
+        return snapshot.Id;
+      }
+
       var sub = httpContextAccessor.HttpContext?.User.FindFirst(AuthClaims.Sub)?.Value;
       return long.TryParse(sub, out var uid) ? uid : null;
     }
@@ -60,6 +65,11 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
       }
 
       var httpContext = httpContextAccessor.HttpContext;
+      if (httpContext?.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot)
+      {
+        return snapshot.PermissionSet;
+      }
+
       if (httpContext?.User.Identity?.IsAuthenticated == true)
       {
         return httpContext.User.FindAll(AuthClaims.Permission)

@@ -26,6 +26,9 @@ public class PlatformAppService(
   /// <summary>Password hasher and verifier.</summary>
   public IPasswordHasher Hasher => Services.GetService<IPasswordHasher>() ?? new PasswordHasher();
 
+  /// <summary>Distributed user and session authentication cache.</summary>
+  public IUserAuthCache? AuthCache => Services.GetService<IUserAuthCache>();
+
   /// <summary>Time provider for the current request or system default.</summary>
   public TimeProvider Time => Services.GetService<TimeProvider>() ?? TimeProvider.System;
 
@@ -55,5 +58,79 @@ public class PlatformAppService(
   {
     var feat = Feature.FeaturesByServiceType.TryGetValue(screen, out var f) ? f : null;
     return feat == null || User.Can(feat.View);
+  }
+
+  /// <summary>
+  /// Evicts cached session/user auth snapshots when a security entity is mutated.
+  /// </summary>
+  public async Task EvictAuthCacheForEntityAsync(object? entity, PlatformDbContext? db = null, CancellationToken ct = default)
+  {
+    if (AuthCache is not { } cache)
+    {
+      return;
+    }
+
+    if (entity != null)
+    {
+      await EvictSingleAsync(cache, entity, ct);
+    }
+
+    if (db != null)
+    {
+      foreach (var entry in db.ChangeTracker.Entries<BaseAppAuthSession>())
+      {
+        if (entry.Entity.Id > 0)
+        {
+          await cache.EvictSessionAsync(entry.Entity.Id, ct);
+        }
+      }
+    }
+  }
+
+  /// <summary>
+  /// Evicts cached session/user auth snapshots when security entities are mutated in a batch.
+  /// </summary>
+  public async Task EvictAuthCacheForEntitiesAsync(IEnumerable<object> entities, PlatformDbContext? db = null, CancellationToken ct = default)
+  {
+    if (AuthCache is not { } cache)
+    {
+      return;
+    }
+
+    foreach (var entity in entities)
+    {
+      await EvictSingleAsync(cache, entity, ct);
+    }
+
+    if (db != null)
+    {
+      foreach (var entry in db.ChangeTracker.Entries<BaseAppAuthSession>())
+      {
+        if (entry.Entity.Id > 0)
+        {
+          await cache.EvictSessionAsync(entry.Entity.Id, ct);
+        }
+      }
+    }
+  }
+
+  private static async Task EvictSingleAsync(IUserAuthCache cache, object entity, CancellationToken ct)
+  {
+    switch (entity)
+    {
+      case BaseAppUser u:
+        await cache.EvictUserAsync(u.Id, ct);
+        break;
+      case BaseAppAuthSession s:
+        await cache.EvictSessionAsync(s.Id, ct);
+        await cache.EvictUserAsync(s.UserId, ct);
+        break;
+      case BaseAppAuthAssignment a:
+        await cache.EvictUserAsync(a.UserId, ct);
+        break;
+      case BaseAppAuthRole or BaseAppAuthGrant or BaseAppTenant:
+        await cache.EvictAllAsync(ct);
+        break;
+    }
   }
 }

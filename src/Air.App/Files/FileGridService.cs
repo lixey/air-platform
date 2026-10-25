@@ -362,7 +362,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     var combinedExpr = Expression.AndAlso(coverCheck, inOwnersExpr);
     var lambda = Expression.Lambda<Func<TFile, bool>>(combinedExpr, param);
 
-    var covers = await db.Set<TFile>().AsNoTracking().Where(lambda).ToListAsync(cancellationToken);
+    var covers = await RestrictedQuery().AsNoTracking().Where(lambda).ToListAsync(cancellationToken);
     var result = new Dictionary<long, GridCoverDto>();
 
     foreach (var cover in covers)

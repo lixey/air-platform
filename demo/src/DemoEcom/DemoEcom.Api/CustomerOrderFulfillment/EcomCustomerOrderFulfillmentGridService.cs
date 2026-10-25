@@ -45,7 +45,7 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
       "needs-purchase",
       L["Needs a purchase"],
       line => line.Qty - line.QtyDone - line.QtyReserved - line.QtyPurchased > 0m
-    ).Badge();
+    );
   }
 
   protected override void SetColumns(Columns columns)

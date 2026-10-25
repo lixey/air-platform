@@ -49,6 +49,28 @@ public static class PlatformApiExtensions
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
     builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
+    if (builder.Services.All(d => d.ServiceType != typeof(Microsoft.Extensions.Caching.Distributed.IDistributedCache)))
+    {
+      var redisConn = builder.Configuration.GetConnectionString("Redis")
+        ?? builder.Configuration["Redis:ConnectionString"]
+        ?? Environment.GetEnvironmentVariable("AIR_REDIS_CONNECTION");
+      if (!string.IsNullOrWhiteSpace(redisConn))
+      {
+        var defaultPrefix = $"air:{builder.Environment.ApplicationName.ToLowerInvariant()}:{builder.Environment.EnvironmentName.ToLowerInvariant()}:";
+        var instanceName = builder.Configuration["Redis:InstanceName"] ?? defaultPrefix;
+        builder.Services.AddStackExchangeRedisCache(o =>
+        {
+          o.Configuration = redisConn;
+          o.InstanceName = instanceName;
+        });
+      }
+      else
+      {
+        builder.Services.AddDistributedMemoryCache();
+      }
+    }
+
+    builder.Services.TryAddSingleton<IUserAuthCache, Auth.Internals.UserAuthCache>();
     var filesPath = builder.Configuration["Files:Path"];
     if (string.IsNullOrWhiteSpace(filesPath))
     {
@@ -105,58 +127,106 @@ public static class PlatformApiExtensions
         var authStore = context.RequestServices.GetService<IAuthStore>();
         if (authStore != null)
         {
-          var session = await authStore.FindSessionAsync(sessionId, context.RequestAborted);
-          if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
+          var authCache = context.RequestServices.GetService<IUserAuthCache>();
+          if (authCache != null)
           {
-            var user = await authStore.FindUserByIdAsync(userId, context.RequestAborted);
-            if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
+            var session = await authCache.GetSessionAsync(sessionId, authStore, context.RequestAborted);
+            if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
             {
-              var sessionTenantId = session.TenantId ?? (user as IHasTenant)?.TenantId;
-              SecurityInfo securityInfo;
-              using (sessionTenantId != null
-                ? AsyncLocalTenantContext.Use(sessionTenantId, null, user.Id, context.TraceIdentifier)
-                : AsyncLocalTenantContext.UseSystemScope(user.Id, context.TraceIdentifier))
+              var user = await authCache.GetUserProfileAsync(userId, session.TenantId, authStore, context.RequestServices, context.RequestAborted);
+              if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
               {
-                securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
+                var claims = new List<Claim>
+                {
+                  new(AuthClaims.Sub, user.Id.ToString()),
+                  new(AuthClaims.Login, user.Login),
+                  new(AuthClaims.SessionId, session.Id.ToString()),
+                  new(AuthClaims.Version, user.TokenVersion.ToString())
+                };
+
+                if (user.MustChangePassword)
+                {
+                  claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
+                }
+
+                var tenantId = session.TenantId ?? user.HomeTenantId;
+                if (tenantId is > 0)
+                {
+                  claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));
+                }
+
+                var identity = new ClaimsIdentity(claims, "PlatformAuth");
+                context.User = new ClaimsPrincipal(identity);
+                context.Items[AuthClaims.SnapshotItem] = user;
+
+                if (isCookie)
+                {
+                  context.Items[AuthClaims.ViaCookieItem] = true;
+                }
+
+                using (AsyncLocalTenantContext.Use(tenantId, user.PermissionSet, user.Id, context.TraceIdentifier))
+                {
+                  await next();
+                  return;
+                }
               }
-
-              var claims = new List<Claim>
+            }
+          }
+          else
+          {
+            var session = await authStore.FindSessionAsync(sessionId, context.RequestAborted);
+            if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
+            {
+              var user = await authStore.FindUserByIdAsync(userId, context.RequestAborted);
+              if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
               {
-                new(AuthClaims.Sub, user.Id.ToString()),
-                new(AuthClaims.Login, user.Login),
-                new(AuthClaims.SessionId, session.Id.ToString()),
-                new(AuthClaims.Version, user.TokenVersion.ToString())
-              };
+                var sessionTenantId = session.TenantId ?? (user as IHasTenant)?.TenantId;
+                SecurityInfo securityInfo;
+                using (sessionTenantId != null
+                  ? AsyncLocalTenantContext.Use(sessionTenantId, null, user.Id, context.TraceIdentifier)
+                  : AsyncLocalTenantContext.UseSystemScope(user.Id, context.TraceIdentifier))
+                {
+                  securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
+                }
 
-              if (user.MustChangePassword)
-              {
-                claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
-              }
+                var claims = new List<Claim>
+                {
+                  new(AuthClaims.Sub, user.Id.ToString()),
+                  new(AuthClaims.Login, user.Login),
+                  new(AuthClaims.SessionId, session.Id.ToString()),
+                  new(AuthClaims.Version, user.TokenVersion.ToString())
+                };
 
-              var tenantId = sessionTenantId ?? securityInfo.HomeTenantId;
-              if (tenantId is > 0)
-              {
-                claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));
-              }
+                if (user.MustChangePassword)
+                {
+                  claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
+                }
 
-              foreach (var p in securityInfo.Permissions)
-              {
-                claims.Add(new Claim(AuthClaims.Permission, p));
-              }
+                var tenantId = sessionTenantId ?? securityInfo.HomeTenantId;
+                if (tenantId is > 0)
+                {
+                  claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));
+                }
 
-              var identity = new ClaimsIdentity(claims, "PlatformAuth");
-              context.User = new ClaimsPrincipal(identity);
+                foreach (var p in securityInfo.Permissions)
+                {
+                  claims.Add(new Claim(AuthClaims.Permission, p));
+                }
 
-              if (isCookie)
-              {
-                context.Items[AuthClaims.ViaCookieItem] = true;
-              }
+                var identity = new ClaimsIdentity(claims, "PlatformAuth");
+                context.User = new ClaimsPrincipal(identity);
 
-              var rightsSet = securityInfo.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase);
-              using (AsyncLocalTenantContext.Use(tenantId, rightsSet, user.Id, context.TraceIdentifier))
-              {
-                await next();
-                return;
+                if (isCookie)
+                {
+                  context.Items[AuthClaims.ViaCookieItem] = true;
+                }
+
+                var rightsSet = securityInfo.Permissions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                using (AsyncLocalTenantContext.Use(tenantId, rightsSet, user.Id, context.TraceIdentifier))
+                {
+                  await next();
+                  return;
+                }
               }
             }
           }

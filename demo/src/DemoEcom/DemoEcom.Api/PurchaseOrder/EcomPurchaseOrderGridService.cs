@@ -28,7 +28,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
         doc => doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCompletedId || doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCanceledId
       ).Color(UiColor.Emerald)
       .All(L["All"]);
-    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).Badge().Remember();
+    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).Remember();
   }
 
   protected override void SetColumns(Columns<EcomDoc> columns)

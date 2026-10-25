@@ -1112,7 +1112,6 @@ export interface GridColumnDto {
 
 export interface GridCountDto {
   total: number;
-  namedFilterBadges?: Record<string, number> | null;
 }
 
 export interface GridCoverDto {

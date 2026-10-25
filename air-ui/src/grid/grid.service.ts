@@ -251,6 +251,7 @@ export class GridService {
       columnFilter: toFilterNode(this.columnFilters()),
       search: this.search() ? this.search() : undefined,
       ...(this.namedFilters().length > 0 ? { namedFilters: [...this.namedFilters()] } : {}),
+      isDataOnly: true,
     }),
     isCounted: () => !this.isPicking(),
     resetBy: this.held,
@@ -557,11 +558,6 @@ export class GridService {
     if (this.named.press(key)) {
       this.changeQuery(() => undefined);
     }
-  }
-
-  /** The badge the last count answered for the element of this key; null before one did, when the model's stands. */
-  namedFilterBadgeOf(key: string): number | null {
-    return this.count.badges()?.[key] ?? null;
   }
 
   /** Whether a save of a form this grid opened changed the row's cell at the column's path; reads a signal. */

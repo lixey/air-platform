@@ -707,6 +707,11 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       }
 
       await tx.CommitAsync(cancellationToken);
+      if (PlatformApp != null)
+      {
+        await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, cancellationToken);
+      }
+
       return new FormActionDto
       {
         Outcome = MutationOutcome.Committed,
@@ -788,18 +793,18 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   public virtual OverlayDto Overlay(string service)
   {
     var dto = Presentation($"{service}.modal").Screen(service).Build();
-    if (HasChildPages())
+    if (dto.Presentation != OverlayPresentation.Drawer)
     {
-      if (dto.Presentation != OverlayPresentation.Drawer)
+      if (HasChildPages())
       {
         dto.Presentation = OverlayPresentation.Drawer;
         dto.Width = null;
         dto.Height = null;
       }
-    }
-    else if (dto.Presentation == OverlayPresentation.Popover && dto.Width is null)
-    {
-      dto.Width = PanelSize.Px(720);
+      else if (dto.Presentation == OverlayPresentation.Popover && dto.Width is null)
+      {
+        dto.Width = PanelSize.Px(720);
+      }
     }
 
     return dto;

@@ -1,9 +1,19 @@
 import { httpResource, type HttpResourceRef } from '@angular/common/http';
 import { computed, effect, inject, type Signal, signal, untracked } from '@angular/core';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
+import { AuthService } from '../app/auth/auth.service';
+import { browserStorage, userStorageKey } from '../app/auth/user-storage';
 import { type AnswerOf, serviceUrl } from '../core/api';
-import type { PanelLayoutDto, PanelNodeDto, ScreenDto, ScreenServiceEndpoints } from '../core/generated/contracts';
+import type {
+  GridServiceEndpoints,
+  PanelLayoutDto,
+  PanelNodeDto,
+  ScreenDto,
+  ScreenServiceEndpoints,
+  UserProfileDto,
+} from '../core/generated/contracts';
 import type { IsCurrent, Lifetime } from '../core/lifetime';
+import { registerPrefetchedGridCount } from '../grid/grid-count';
 import type { ScreenAddress } from './screen-address';
 import { SCREEN_LIFETIME } from './screen-lifetime';
 
@@ -30,19 +40,15 @@ export interface ScreenLoader {
 
 /**
  * Loads a screen by address, for a route and for an overlay alike: posts the address's params
- * to `/api/{service}/get-data` and exposes what comes back. A screen answers its layout and
- * its data together; asked for the data alone it omits the layout, and the loader keeps the
- * one it holds — for that screen: another address starts from nothing. Call it where
- * `httpResource` may be called: in a component's field.
- *
- * The loader asks only while the lifetime of its screen is current — the injected `SCREEN_LIFETIME` unless one is
- * given — and drops an answer whose screen moved on meanwhile. Its failure is its host's to show: the global alert
- * stays silent.
+ * to `/api/{service}/get-data` and exposes what comes back. When the address targets a standalone
+ * grid, `/api/{service}/get-count` is started in parallel with `get-data` using the same initial
+ * parameters (including remembered named filters from browser storage).
  */
 export function screenLoader(
   address: () => ScreenAddress | null,
   lifetime: Lifetime | null = inject(SCREEN_LIFETIME, { optional: true }),
 ): ScreenLoader {
+  const auth = inject(AuthService, { optional: true });
   const requested = computed(address);
   /** The address while its lifetime is current, with the epoch it is asked in: an invalidation asks it again. */
   const currentAddress = computed(
@@ -55,16 +61,61 @@ export function screenLoader(
   );
   /** Whether the answer to the address asked now is still current: taken once per address and epoch. */
   const captured = computed<IsCurrent | null>(() => currentAddress() && untracked(() => lifetime?.capture() ?? always));
-  const resource = httpResource<AnswerOf<ScreenServiceEndpoints, 'get-data'>>(() => {
+
+  const requestTarget = computed(() => {
     const target = currentAddress()?.target;
-    return target
+    if (!target) {
+      return null;
+    }
+    const rawParams: Readonly<Record<string, unknown>> =
+      target.params && typeof target.params === 'object' ? (target.params as Readonly<Record<string, unknown>>) : {};
+    const isGrid = isCountedGridTarget(target.service, rawParams);
+    const remembered =
+      isGrid && rawParams['namedFilters'] === undefined
+        ? rememberedNamedFiltersOf(
+            untracked(() => auth?.currentUser() ?? null),
+            target.service,
+          )
+        : undefined;
+    const body = remembered ? { ...rawParams, namedFilters: remembered } : rawParams;
+    return { service: target.service, body, isGrid };
+  });
+
+  const resource = httpResource<AnswerOf<ScreenServiceEndpoints, 'get-data'>>(() => {
+    const req = requestTarget();
+    return req
       ? {
-          url: serviceUrl<ScreenServiceEndpoints>(target.service, 'get-data'),
+          url: serviceUrl<ScreenServiceEndpoints>(req.service, 'get-data'),
           method: 'POST',
-          body: target.params ?? {},
+          body: req.body,
           ...shownByCaller(),
         }
       : undefined;
+  });
+
+  const countResource = httpResource<AnswerOf<GridServiceEndpoints, 'get-count'>>(() => {
+    const req = requestTarget();
+    return req?.isGrid
+      ? {
+          url: serviceUrl<GridServiceEndpoints>(req.service, 'get-count'),
+          method: 'POST',
+          body: countBodyOf(req.body),
+          ...shownByCaller(),
+        }
+      : undefined;
+  });
+
+  effect(() => {
+    const req = requestTarget();
+    const isCurrent = captured();
+    if (req?.isGrid && isCurrent) {
+      registerPrefetchedGridCount(req.service, {
+        total: computed(() => (countResource.hasValue() && isCurrent() ? countResource.value()?.total : undefined)),
+        isLoading: countResource.isLoading,
+        isError: computed(() => countResource.status() === 'error'),
+        isCurrent,
+      });
+    }
   });
 
   const last = keptLayoutOf(currentAddress, captured, resource);
@@ -85,6 +136,34 @@ export function screenLoader(
       }
     },
   };
+}
+
+function isCountedGridTarget(service: string, params: Readonly<Record<string, unknown>>): boolean {
+  return service.toLowerCase().endsWith('-grid') && params['isReferencePicker'] !== true && !Array.isArray(params['referenceLabelPaths']);
+}
+
+function rememberedNamedFiltersOf(user: Pick<UserProfileDto, 'id'> | null, service: string): readonly string[] | undefined {
+  if (!user || !service) {
+    return undefined;
+  }
+  try {
+    const raw = browserStorage()?.getItem(userStorageKey(user, `named-filters:${service}`));
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    const keys = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    return keys.length > 0 ? keys : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function countBodyOf(params: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  for (const key of ['parentId', 'parentService', 'filter', 'columnFilter', 'search', 'namedFilters']) {
+    if (params[key] !== undefined) {
+      body[key] = params[key];
+    }
+  }
+  return body;
 }
 
 /** What a screen asks of a dialog showing it: the shape `ScreenLoader.asked` declares, written there alone. */

@@ -148,6 +148,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
       if (!c.IsNew && c.Changed(e => e.Login, e => e.IsActive, e => e.MustChangePassword, e => e.Password, e => e.RoleIds))
       {
+        c.Entity.TokenVersion++;
         var now = DateTimeOffset.UtcNow;
         var sessions = await db.AppAuthSession
           .Where(s => s.UserId == c.Entity.Id && s.RevokedAt == null)

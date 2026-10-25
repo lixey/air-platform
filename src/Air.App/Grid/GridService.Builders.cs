@@ -324,12 +324,6 @@ public abstract partial class GridService<TEntity, TRow>
 
   public sealed class GridNamedFilterBuilder(NamedFilterItem item)
   {
-    public GridNamedFilterBuilder Badge(bool badge = true)
-    {
-      item.HasBadge = badge;
-      return this;
-    }
-
     public GridNamedFilterBuilder Remember(bool remember = true)
     {
       item.IsRemembered = remember;
@@ -396,16 +390,6 @@ public abstract partial class GridService<TEntity, TRow>
     public GridNamedFilterGroupBuilder Title(string legacyUi, string legacyDb) =>
       Title($"Легасі UI: {legacyUi} | БД: {legacyDb}");
 
-    public GridNamedFilterGroupBuilder Badge(bool badge = true)
-    {
-      if (group.Items.Count > 0)
-      {
-        group.Items[^1].HasBadge = badge;
-      }
-
-      return this;
-    }
-
     public GridNamedFilterGroupBuilder Remember(bool remember = true)
     {
       group.IsRemembered = remember;
@@ -418,7 +402,6 @@ public abstract partial class GridService<TEntity, TRow>
     public string Key { get; } = key;
     public string Label { get; } = label;
     public Expression<Func<TEntity, bool>>? Predicate { get; } = predicate;
-    public bool HasBadge { get; set; }
     public bool IsRemembered { get; set; }
     public bool IsDefault { get; set; }
     public string? Color { get; set; }

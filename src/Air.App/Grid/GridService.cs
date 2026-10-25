@@ -180,7 +180,23 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return null;
   }
 
+  private static readonly ConcurrentDictionary<Type, bool> CustomShapeRowTypes = new();
+
+  private bool HasCustomShapeRow =>
+    CustomShapeRowTypes.GetOrAdd(GetType(), static t =>
+    {
+      var m1 = t.GetMethod("ShapeRow", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(TRow)]);
+      var m3 = t.GetMethod(
+        "ShapeRow",
+        BindingFlags.Instance | BindingFlags.NonPublic,
+        [typeof(TRow), typeof(IReadOnlyList<GridColumnDto>), typeof(IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>)]);
+      return m1 != null && m1.DeclaringType != typeof(GridService<TEntity, TRow>) ||
+             m3 != null && m3.DeclaringType != typeof(GridService<TEntity, TRow>);
+    });
+
   private (string? ParentService, long? ParentId, Query Value)? _cachedQuery;
+  private (string? ParentService, long? ParentId, string ServicePath, Nav Value)? _cachedNav;
+  private readonly Dictionary<string, OverlayDto> _cachedFormOverlays = new(StringComparer.OrdinalIgnoreCase);
 
   private Query GetQueryDeclaration()
   {
@@ -193,6 +209,23 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     SetQuery(q);
     _cachedQuery = (ParentService, ParentId, q);
     return q;
+  }
+
+  private Nav GetNav(string? servicePath = null)
+  {
+    var effectivePath = servicePath ?? ServicePathResolver.Resolve(GetType());
+    if (_cachedNav is { } cached &&
+        cached.ParentService == ParentService &&
+        cached.ParentId == ParentId &&
+        string.Equals(cached.ServicePath, effectivePath, StringComparison.Ordinal))
+    {
+      return cached.Value;
+    }
+
+    var nav = new Nav(effectivePath, L);
+    SetNav(nav);
+    _cachedNav = (ParentService, ParentId, effectivePath, nav);
+    return nav;
   }
 
   protected virtual void SetQuery(Query query) { }
@@ -305,8 +338,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     var servicePath = ServicePathResolver.Resolve(GetType());
-    var nav = new Nav(servicePath, L);
-    SetNav(nav);
+    var nav = GetNav(servicePath);
     if (nav.Creates.Count > 0)
     {
       return nav.Creates

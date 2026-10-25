@@ -171,22 +171,7 @@ public abstract partial class GridService<TEntity, TRow>
       request.Sort = queryDeclaration.DefaultSort.ToList();
     }
 
-    if (!string.IsNullOrWhiteSpace(request.Search) && queryDeclaration.PickKeySelector != null)
-    {
-      request.Search = queryDeclaration.PickKeySelector(request.Search);
-    }
-
-    if (request.SearchFields is not { Count: > 0 } && queryDeclaration.SearchFields is { Count: > 0 })
-    {
-      request.SearchFields = queryDeclaration.SearchFields.ToList();
-    }
-
-    if (!isSelect && !(gridReq?.IsDataOnly ?? false) && request.Filter is null && request.ColumnFilter is null && gridReq?.NamedFilters is not { Count: > 0 } && queryDeclaration.InitialFilters.Count > 0)
-    {
-      request.Filter = queryDeclaration.InitialFilters.Count == 1
-        ? queryDeclaration.InitialFilters[0]
-        : FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()]);
-    }
+    NormalizeGridRequest(gridReq, request, queryDeclaration, isSelect);
 
     var queryMap = BuildQueryMap(queryDeclaration, cols.List);
 
@@ -219,9 +204,23 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var queryWithNavs = IncludeColumnNavigations(filteredQuery.AsNoTrackingWithIdentityResolution(), allColumns);
-    var defaultDataProvider = DataProvider.Create(queryWithNavs, queryMap);
-    var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
+    var defaultSelector = typeof(TRow) == typeof(TEntity)
+      ? GridProjectionBuilder.TryBuildSelector<TEntity>(cols.List, HasCustomShapeRow)
+      : null;
+
+    Page<TEntity> defaultPage;
+    if (defaultSelector != null)
+    {
+      var projectedProvider = DataProvider.Create(filteredQuery.AsNoTracking(), queryMap, defaultSelector);
+      defaultPage = await projectedProvider.GetPageAsync(request, ct);
+    }
+    else
+    {
+      var queryWithNavs = IncludeColumnNavigations(filteredQuery.AsNoTrackingWithIdentityResolution(), allColumns);
+      var defaultDataProvider = DataProvider.Create(queryWithNavs, queryMap);
+      defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
+    }
+
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
@@ -240,12 +239,13 @@ public abstract partial class GridService<TEntity, TRow>
     };
   }
 
-  public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
+  private static void NormalizeGridRequest(
+    GridRequest? gridReq,
+    ListRequest request,
+    Query queryDeclaration,
+    bool isSelect,
+    bool applyInitialFilters = true)
   {
-    var baseEntityQuery = BuildBaseEntityQuery(request, out _, out var queryDeclaration);
-    var query = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration);
-    var cols = CreateColumns();
-
     if (!string.IsNullOrWhiteSpace(request.Search) && queryDeclaration.PickKeySelector != null)
     {
       request.Search = queryDeclaration.PickKeySelector(request.Search);
@@ -256,40 +256,36 @@ public abstract partial class GridService<TEntity, TRow>
       request.SearchFields = queryDeclaration.SearchFields.ToList();
     }
 
+    if (applyInitialFilters &&
+        !isSelect &&
+        !(gridReq?.IsDataOnly ?? false) &&
+        request.Filter is null &&
+        request.ColumnFilter is null &&
+        gridReq?.NamedFilters is not { Count: > 0 } &&
+        queryDeclaration.InitialFilters.Count > 0)
+    {
+      request.Filter = queryDeclaration.InitialFilters.Count == 1
+        ? queryDeclaration.InitialFilters[0]
+        : FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()]);
+    }
+  }
+
+  public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
+  {
+    var baseEntityQuery = BuildBaseEntityQuery(request, out _, out var queryDeclaration);
+    var query = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration);
+    var cols = CreateColumns();
+    var isSelect = request.ReferenceLabelPaths is { Count: > 0 } || request.IsReferencePicker;
+
+    NormalizeGridRequest(request, request, queryDeclaration, isSelect);
+
     var queryMap = BuildQueryMap(queryDeclaration, cols.List);
 
-    Task<int> CountWithAsync(IQueryable<TEntity> q, CancellationToken token) =>
-      queryDeclaration.Selector != null
-        ? DataProvider.Create(q, queryMap, queryDeclaration.Selector).Filter(request).CountAsync(token)
-        : DataProvider.Create(q, queryMap).Filter(request).CountAsync(token);
+    var total = queryDeclaration.Selector != null
+      ? await DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector).Filter(request).CountAsync(ct)
+      : await DataProvider.Create(query.AsNoTracking(), queryMap).Filter(request).CountAsync(ct);
 
-    var total = await CountWithAsync(query, ct);
-
-    Dictionary<string, int>? badges = null;
-    foreach (var group in queryDeclaration.NamedFilterGroups)
-    {
-      foreach (var item in group.Items)
-      {
-        if (item.HasBadge)
-        {
-          badges ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-          var badgeQuery = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration, overrideGroup: group, overrideGroupItem: item);
-          badges[item.Key] = await CountWithAsync(badgeQuery, ct);
-        }
-      }
-    }
-
-    foreach (var item in queryDeclaration.NamedFilters)
-    {
-      if (item.HasBadge)
-      {
-        badges ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var badgeQuery = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration, overrideToggle: item);
-        badges[item.Key] = await CountWithAsync(badgeQuery, ct);
-      }
-    }
-
-    return new GridCountDto { Total = total, NamedFilterBadges = badges };
+    return new GridCountDto { Total = total };
   }
 
   private async Task PopulateRowAvailabilityAsync(List<object> shapedRows, Columns columns, CancellationToken ct)
@@ -299,8 +295,7 @@ public abstract partial class GridService<TEntity, TRow>
       return;
     }
 
-    var nav = new Nav(localizer: L);
-    SetNav(nav);
+    var nav = GetNav();
     var actionsWithOffers = nav.Actions.Where(a => a.Offers.Count > 0).ToList();
     var statusFlow = columns.StatusFlow as Screens.IRecordStatuses<TEntity>;
     var transitionsWithOffers = statusFlow?.Transitions.Where(t => t.Offers.Count > 0).ToList() ?? [];
@@ -755,18 +750,18 @@ public abstract partial class GridService<TEntity, TRow>
           !string.IsNullOrEmpty(formHandle) &&
           (forms == null || !forms.ContainsKey(formHandle)))
       {
+        if (_cachedFormOverlays.TryGetValue(formHandle, out var cached))
+        {
+          forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
+          forms[formHandle] = cached;
+          continue;
+        }
+
         var formType = ModuleCatalog.Instance.FindServiceType(formHandle);
         if (formType != null && typeof(Form.IFormService).IsAssignableFrom(formType))
         {
-          try
-          {
-            if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is Form.IFormService formInstance)
-            {
-              forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
-              forms[formHandle] = formInstance.Overlay(formHandle);
-            }
-          }
-          catch { }
+          forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
+          forms[formHandle] = ResolveFormOverlayForType(formType, formHandle);
         }
       }
     }

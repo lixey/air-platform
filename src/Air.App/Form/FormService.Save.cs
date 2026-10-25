@@ -448,6 +448,10 @@ public abstract partial class FormService<TEntity, TInput>
 
     _lastSavedEntity = entity;
     _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
+    if (PlatformApp != null)
+    {
+      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+    }
 
     if (!ReferenceEquals(entity, input))
     {
@@ -625,6 +629,11 @@ public abstract partial class FormService<TEntity, TInput>
       };
     }
 
+    if (PlatformApp != null)
+    {
+      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+    }
+
     var row = await readRow(ct);
     return new GridCellDto
     {
@@ -714,6 +723,11 @@ public abstract partial class FormService<TEntity, TInput>
 
       await tx.CommitAsync(ct);
     });
+
+    if (PlatformApp != null)
+    {
+      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+    }
   }
 
   public virtual async Task<FormActionDto> MoveStatusAsync(
