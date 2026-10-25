@@ -6,12 +6,23 @@ public sealed class AgentModelSynchronizer(IEnumerable<IAgentProvider> providers
   {
     await AgentModelCatalog.EnsureSeededAsync(db, ct);
 
+    var activeDbProviders = await db.AppAgentProvider
+      .AsNoTracking()
+      .Where(p => p.IsActive)
+      .ToListAsync(ct);
+    var activeProvidersByHandle = activeDbProviders
+      .ToDictionary(p => p.Handle, p => p, StringComparer.OrdinalIgnoreCase);
+
     var existing = await db.AppAgentModel.ToListAsync(ct);
     var nextOrder = existing.Count > 0 ? existing.Max(m => m.SortOrder) + 10 : 50;
     var added = 0;
 
-    foreach (var provider in providers)
+    foreach (var provider in providers.Where(p => activeProvidersByHandle.ContainsKey(p.Handle)))
     {
+      var providerDisplayName = activeProvidersByHandle.TryGetValue(provider.Handle, out var dbProv) && !string.IsNullOrWhiteSpace(dbProv.Name)
+        ? dbProv.Name
+        : provider.Name;
+
       IReadOnlyList<AgentModelDto> models;
       try
       {
@@ -35,7 +46,7 @@ public sealed class AgentModelSynchronizer(IEnumerable<IAgentProvider> providers
 
         if (row != null)
         {
-          row.ProviderName = provider.Name;
+          row.ProviderName = providerDisplayName;
           if (!string.IsNullOrWhiteSpace(m.Name))
           {
             row.Name = m.Name;
@@ -46,7 +57,7 @@ public sealed class AgentModelSynchronizer(IEnumerable<IAgentProvider> providers
           var newRow = new AppAgentModel
           {
             ProviderHandle = provider.Handle,
-            ProviderName = provider.Name,
+            ProviderName = providerDisplayName,
             ModelId = m.Id,
             Name = !string.IsNullOrWhiteSpace(m.Name) ? m.Name : m.Id,
             SortOrder = nextOrder,

@@ -25,6 +25,11 @@ public sealed class AppAgentModelGridService(
 
   protected override void SetQuery(Query query)
   {
+    if (!ParentId.HasValue)
+    {
+      query.Where(r => db.AppAgentProvider.Any(p => p.Handle == r.ProviderHandle && p.IsActive));
+    }
+
     query.SortBy(r => r.SortOrder).ThenBy(r => r.ProviderHandle).ThenBy(r => r.Name);
     query.RecordLabel(e => e.Name);
     query.SearchBy(r => r.Id, r => r.Name, r => r.ModelId, r => r.ProviderHandle, r => r.ProviderName);
@@ -77,8 +82,8 @@ public sealed class AppAgentModelGridService(
       return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
 
-    await AgentModelCatalog.SetDefaultModelAsync(db, targetId.Value, ct);
-    return new GridActionDto { Outcome = MutationOutcome.Committed };
+    var ok = await AgentModelCatalog.SetDefaultModelAsync(db, targetId.Value, ct);
+    return new GridActionDto { Outcome = ok ? MutationOutcome.Committed : MutationOutcome.Refused };
   }
 
   public async Task<GridActionDto> SetForPhotos(GridRequest request, CancellationToken ct = default)
@@ -89,13 +94,15 @@ public sealed class AppAgentModelGridService(
       return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
 
-    await AgentModelCatalog.SetPhotoModelAsync(db, targetId.Value, ct);
-    return new GridActionDto { Outcome = MutationOutcome.Committed };
+    var ok = await AgentModelCatalog.SetPhotoModelAsync(db, targetId.Value, ct);
+    return new GridActionDto { Outcome = ok ? MutationOutcome.Committed : MutationOutcome.Refused };
   }
 
   public Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default) =>
-    ExecuteBatchAsync(request, (context, _) =>
+    ExecuteBatchAsync(request, async (context, token) =>
     {
+      var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, token);
+
       foreach (var rec in context.Records)
       {
         if ((rec.IsDefault || rec.IsForPhotos) && rec.IsActive)
@@ -103,9 +110,12 @@ public sealed class AppAgentModelGridService(
           continue;
         }
 
+        if (!rec.IsActive && !activeProviderHandles.Contains(rec.ProviderHandle))
+        {
+          continue;
+        }
+
         rec.IsActive = !rec.IsActive;
       }
-
-      return Task.CompletedTask;
     }, ct);
 }

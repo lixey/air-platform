@@ -274,4 +274,25 @@
   <data name="Toggle pinned" xml:space="preserve">
     <value>Закріпити / Відкріпити</value>
   </data>
+  <data name="Agent Providers" xml:space="preserve">
+    <value>Провайдери ШІ</value>
+  </data>
+  <data name="Agent Provider" xml:space="preserve">
+    <value>Провайдер ШІ</value>
+  </data>
+  <data name="New Agent Provider" xml:space="preserve">
+    <value>Новий провайдер ШІ</value>
+  </data>
+  <data name="AI models" xml:space="preserve">
+    <value>Моделі ШІ</value>
+  </data>
+  <data name="Cannot activate a model of a disabled provider." xml:space="preserve">
+    <value>Неможливо увімкнути модель вимкненого провайдера.</value>
+  </data>
+  <data name="Cannot delete a provider that has models or is built-in." xml:space="preserve">
+    <value>Неможливо видалити вбудованого провайдера або провайдера з моделями.</value>
+  </data>
+  <data name="At least one AI provider must remain active." xml:space="preserve">
+    <value>Принаймні один провайдер ШІ має залишатися активним.</value>
+  </data>
 </root>

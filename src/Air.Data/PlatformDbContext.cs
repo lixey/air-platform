@@ -27,6 +27,7 @@ public abstract class PlatformDbContext : DbContext
   public ITenantContext TenantContext => field ?? AsyncLocalTenantContext.Instance;
 
   public DbSet<AppLanguage> AppLanguage => Set<AppLanguage>();
+  public DbSet<AppAgentProvider> AppAgentProvider => Set<AppAgentProvider>();
   public DbSet<AppAgentModel> AppAgentModel => Set<AppAgentModel>();
   public DbSet<AppAgentMemory> AppAgentMemory => Set<AppAgentMemory>();
   public DbSet<AppPlatformInstallation> AppPlatformInstallation => Set<AppPlatformInstallation>();

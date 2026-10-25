@@ -1,6 +1,7 @@
 global using System.ComponentModel.DataAnnotations;
 global using DemoApp.AgentMemory;
 global using DemoApp.AgentModel;
+global using DemoApp.AgentProvider;
 global using DemoApp.Change;
 global using DemoApp.Color;
 global using DemoApp.Data;

@@ -13,6 +13,7 @@ public sealed class AppModule : PlatformModule<App>
     .Route(App.User)
     .Route(App.UserGroup)
     .Route(App.Role)
+    .Route(App.AgentProvider)
     .Route(App.AgentModel)
     .Route(App.AgentMemory)
     .Route(App.Change)

@@ -72,17 +72,6 @@ public static class AgentEndpointsExtensions
         .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
         .ToList();
 
-      var list = enabledProviders.Select(p => new AgentProviderDto
-      {
-        Handle = p.Handle,
-        Name = p.Name,
-        IsAvailable = p.IsAvailable
-      }).ToList();
-
-      var activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, options.DefaultProvider, StringComparison.OrdinalIgnoreCase) && p.IsAvailable)
-        ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
-        ?? enabledProviders.FirstOrDefault();
-
       var db = ctx.RequestServices.GetService<PlatformDbContext>();
       List<AgentModelDto> models;
       string defaultModel;
@@ -92,16 +81,22 @@ public static class AgentEndpointsExtensions
       {
         await AgentModelCatalog.EnsureSeededAsync(db, ct);
         await AgentMemoryCatalog.EnsureSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
+
+        var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
+        enabledProviders = enabledProviders
+          .Where(p => activeProviderHandles.Contains(p.Handle))
+          .ToList();
+
         var dbModels = await db.AppAgentModel
           .AsNoTracking()
-          .Where(m => m.IsActive)
+          .Where(m => m.IsActive && db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
           .OrderBy(m => m.SortOrder)
           .ThenBy(m => m.Id)
           .ToListAsync(ct);
 
-        if (dbModels.Count == 0)
+        if (dbModels.Count == 0 && activeProviderHandles.Count > 0)
         {
-          dbModels = [.. AgentModelCatalog.DefaultRows().Where(m => m.IsActive)];
+          dbModels = [.. AgentModelCatalog.DefaultRows().Where(m => m.IsActive && activeProviderHandles.Contains(m.ProviderHandle))];
         }
 
         var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
@@ -120,11 +115,6 @@ public static class AgentEndpointsExtensions
           ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, AgentModelCatalog.DefaultPhotoModelId, StringComparison.OrdinalIgnoreCase))
           ?? defRow;
         photoModel = photoRow?.ModelId ?? AgentModelCatalog.DefaultPhotoModelId;
-        if (defRow is not null)
-        {
-          activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, defRow.ProviderHandle, StringComparison.OrdinalIgnoreCase))
-            ?? activeProvider;
-        }
       }
       else
       {
@@ -139,6 +129,23 @@ public static class AgentEndpointsExtensions
         }).ToList();
         defaultModel = AgentModelCatalog.DefaultModelId;
         photoModel = AgentModelCatalog.DefaultPhotoModelId;
+      }
+
+      var list = enabledProviders.Select(p => new AgentProviderDto
+      {
+        Handle = p.Handle,
+        Name = p.Name,
+        IsAvailable = p.IsAvailable
+      }).ToList();
+
+      var activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, options.DefaultProvider, StringComparison.OrdinalIgnoreCase) && p.IsAvailable)
+        ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
+        ?? enabledProviders.FirstOrDefault();
+
+      if (models.FirstOrDefault(m => m.IsDefault) is { } defModelDto)
+      {
+        activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, defModelDto.Provider, StringComparison.OrdinalIgnoreCase))
+          ?? activeProvider;
       }
 
       return Results.Ok(new AgentStatusDto
@@ -268,9 +275,6 @@ public static class AgentEndpointsExtensions
         .ToList();
 
       var providerHandle = body.Provider ?? options.DefaultProvider;
-      var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
-        ?? enabledProviders.FirstOrDefault()
-        ?? providers.First();
 
       var attachments = (body.AttachmentIds ?? [])
         .Select(id => store.GetAttachment(id, owner))
@@ -285,7 +289,17 @@ public static class AgentEndpointsExtensions
       {
         await AgentModelCatalog.EnsureSeededAsync(db, ct);
         await AgentMemoryCatalog.EnsureSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
-        var dbModels = await db.AppAgentModel.AsNoTracking().ToListAsync(ct);
+
+        var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
+        enabledProviders = enabledProviders
+          .Where(p => activeProviderHandles.Contains(p.Handle))
+          .ToList();
+
+        var dbModels = await db.AppAgentModel
+          .AsNoTracking()
+          .Where(m => db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
+          .ToListAsync(ct);
+
         if (attachments.Count > 0)
         {
           var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos && m.IsActive)
@@ -295,16 +309,26 @@ public static class AgentEndpointsExtensions
           {
             selectedModel = photoRow.ModelId;
             selectedModelName = photoRow.Name;
-            provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, photoRow.ProviderHandle, StringComparison.OrdinalIgnoreCase))
-              ?? provider;
+            providerHandle = photoRow.ProviderHandle;
           }
         }
         else if (!string.IsNullOrWhiteSpace(selectedModel))
         {
-          var matchedRow = dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
+          var matchedRow = dbModels.FirstOrDefault(m => m.IsActive && string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
           if (matchedRow is not null)
           {
             selectedModelName = matchedRow.Name;
+            providerHandle = matchedRow.ProviderHandle;
+          }
+          else
+          {
+            var fallbackDef = dbModels.FirstOrDefault(m => m.IsDefault && m.IsActive) ?? dbModels.FirstOrDefault(m => m.IsActive);
+            if (fallbackDef is not null)
+            {
+              selectedModel = fallbackDef.ModelId;
+              selectedModelName = fallbackDef.Name;
+              providerHandle = fallbackDef.ProviderHandle;
+            }
           }
         }
         else
@@ -314,8 +338,28 @@ public static class AgentEndpointsExtensions
           {
             selectedModel = defRow.ModelId;
             selectedModelName = defRow.Name;
+            providerHandle = defRow.ProviderHandle;
           }
         }
+      }
+
+      var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
+        ?? enabledProviders.FirstOrDefault();
+
+      ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
+      ctx.Response.Headers.CacheControl = "no-cache";
+      ctx.Response.Headers.Connection = "keep-alive";
+
+      if (provider is null)
+      {
+        var errJson = JsonSerializer.Serialize(new AgentStreamEventDto
+        {
+          Type = "error",
+          Text = Localizer.Instance["AgentErrorCliMissing"]
+        }, JsonOptions);
+        await ctx.Response.WriteAsync($"data: {errJson}\n\n", ct);
+        await ctx.Response.Body.FlushAsync(ct);
+        return;
       }
 
       if (string.IsNullOrWhiteSpace(selectedModelName))
@@ -341,10 +385,6 @@ public static class AgentEndpointsExtensions
         ModelName = selectedModelName,
         Services = ctx.RequestServices
       };
-
-      ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
-      ctx.Response.Headers.CacheControl = "no-cache";
-      ctx.Response.Headers.Connection = "keep-alive";
 
       using var scope = bridge.BeginTurn(tenantContext.TenantId, tenantContext.UserId, tenantContext.Rights, sessionId);
 
