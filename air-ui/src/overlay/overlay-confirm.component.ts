@@ -41,11 +41,13 @@ function confirmDefaults(
   imports: [BtnComponent, TextBoxComponent, UiIconDirective],
   template: `
     <header class="flex items-center gap-(--ui-panel-gap) px-3 py-2 border-b border-line">
-      <i icon="question" class="text-muted"></i>
+      <i [icon]="view().cancelLabel ? 'question' : 'info'" class="text-muted"></i>
       <h2 [id]="id + '-title'" class="m-0 text-base font-semibold">{{ view().title }}</h2>
     </header>
 
-    <p [id]="id + '-message'" class="m-0 px-3 py-4 max-w-prose whitespace-pre-line">{{ view().message }}</p>
+    <p [id]="id + '-message'" class="m-0 px-3 py-4 max-w-2xl max-h-[70vh] overflow-y-auto whitespace-pre-line text-sm leading-relaxed">
+      {{ view().message }}
+    </p>
 
     @if (answer(); as answer) {
       <div class="flex flex-col gap-1 px-3 pb-4" data-confirm-typed>
@@ -57,8 +59,11 @@ function confirmDefaults(
 
     <footer class="flex justify-end gap-(--ui-panel-gap) px-3 py-2 border-t border-line">
       <!-- Without a typed answer focus starts on the safe answer: a stray Enter declines. -->
-      <ui-btn [attr.autofocus]="answer() ? null : ''" [label]="view().cancelLabel" color="slate" (click)="ref?.close(false)" />
+      @if (view().cancelLabel) {
+        <ui-btn [attr.autofocus]="answer() ? null : ''" [label]="view().cancelLabel" color="slate" (click)="ref?.close(false)" />
+      }
       <ui-btn
+        [attr.autofocus]="!view().cancelLabel && !answer() ? '' : null"
         [label]="view().confirmLabel"
         [color]="view().color"
         variant="solid"

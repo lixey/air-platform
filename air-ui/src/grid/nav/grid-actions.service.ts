@@ -232,6 +232,15 @@ export class GridActionsService {
   private adopt(answer: GridActionDto | null, call: GridActionCall, mutation: GridNavMutation): void {
     this.grid.selection.clear();
     this.alert.warnings(answer?.warnings, this.grid.model()?.mutationTexts.committedWarningTitle);
+    if (answer?.messages?.length) {
+      const text = answer.messages
+        .map(m => (m.title && m.detail ? `${m.title}\n${m.detail}` : (m.detail ?? m.title ?? '')))
+        .filter(Boolean)
+        .join('\n\n');
+      if (text) {
+        void this.confirmation.notice(answer.title ?? this.texts.of('Confirm'), text);
+      }
+    }
     if (answer?.openScreen) {
       const id = typeof answer.openId === 'number' ? answer.openId : null;
       this.grid.openForm(id, null, answer.openScreen);

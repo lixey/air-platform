@@ -33,4 +33,15 @@ export class ConfirmationService {
       signal?.removeEventListener('abort', abort);
     }
   }
+
+  /** Opens an informational dialog with a single confirmation button and resolves when it closes. */
+  async notice(title: string, message: string): Promise<void> {
+    await this.confirm({
+      title,
+      message,
+      confirmLabel: 'OK',
+      cancelLabel: '',
+      color: 'primary',
+    });
+  }
 }
