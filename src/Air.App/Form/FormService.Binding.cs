@@ -295,7 +295,7 @@ public abstract partial class FormService<TEntity, TInput>
   {
     if (!parentId.HasValue ||
         parent.BoundProperty == null ||
-        !parent.MatchesService(Request.ParentService) && ResolveParentChildPresetBuilder() != null)
+        !parent.MatchesService(Request.ParentService) && ResolveParentChildBuilder(requirePreset: true)?.PresetProvider != null)
     {
       return;
     }
@@ -313,7 +313,7 @@ public abstract partial class FormService<TEntity, TInput>
   private void RestoreBoundParentId(TEntity entity, Parent parent)
   {
     if (parent.BoundProperty == null ||
-        !parent.MatchesService(Request.ParentService) && ResolveParentChildPresetBuilder() != null)
+        !parent.MatchesService(Request.ParentService) && ResolveParentChildBuilder(requirePreset: true)?.PresetProvider != null)
     {
       return;
     }
@@ -337,7 +337,7 @@ public abstract partial class FormService<TEntity, TInput>
       return;
     }
 
-    var match = ResolveParentChildPresetBuilder();
+    var match = ResolveParentChildBuilder(requirePreset: true);
     if (match?.PresetProvider != null)
     {
       match.PresetProvider(db, Request.ParentId.Value, entity);
@@ -348,26 +348,51 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private ChildGridBuilder? ResolveParentChildPresetBuilder()
+  private (string? Service, IReadOnlyList<ChildGridBuilder> Children)? _cachedParentChildren;
+
+  private ChildGridBuilder? ResolveParentChildBuilder(bool requirePreset = false)
   {
-    if (Request.ParentId is not > 0 || string.IsNullOrEmpty(Request.ParentService))
+    if (string.IsNullOrEmpty(Request.ParentService))
     {
       return null;
     }
 
-    var parentFormType = ModuleCatalog.Instance.FindServiceType(Request.ParentService);
-    if (parentFormType == null ||
-        !typeof(IFormService).IsAssignableFrom(parentFormType) ||
-        ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is not IFormService parentForm)
+    IReadOnlyList<ChildGridBuilder> children;
+    if (_cachedParentChildren is { } cached &&
+        string.Equals(cached.Service, Request.ParentService, StringComparison.OrdinalIgnoreCase))
     {
-      return null;
+      children = cached.Children;
+    }
+    else
+    {
+      children = [];
+      var parentFormType = ModuleCatalog.Instance.FindServiceType(Request.ParentService);
+      if (parentFormType != null &&
+          typeof(IFormService).IsAssignableFrom(parentFormType) &&
+          ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is IFormService parentForm)
+      {
+        (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+      }
+
+      _cachedParentChildren = (Request.ParentService, children);
     }
 
-    var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
     return children.FirstOrDefault(c =>
       !c.IsFiles &&
-      c.PresetProvider != null &&
-      c.ChildEntityType != null &&
-      c.ChildEntityType.IsAssignableFrom(typeof(TEntity)));
+      (!requirePreset || c.PresetProvider != null) &&
+      ((c.ChildEntityType ?? GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false));
+  }
+
+  private static Type? GetGridEntityType(Type? type)
+  {
+    for (var t = type; t != null && t != typeof(object); t = t.BaseType)
+    {
+      if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Grid.GridService<,>))
+      {
+        return t.GetGenericArguments()[0];
+      }
+    }
+
+    return null;
   }
 }

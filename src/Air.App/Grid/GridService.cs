@@ -15,7 +15,10 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
 
-  protected virtual bool IsReadOnly => Feature.IsReadOnly || User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*");
+  protected virtual bool IsReadOnly =>
+    Feature.IsReadOnly ||
+    ResolveParentChildBuilder()?.IsReadOnly == true ||
+    User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*");
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
 
@@ -197,6 +200,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual async Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     SelectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
     var nav = new Nav(ServicePathResolver.Resolve(GetType()), L);

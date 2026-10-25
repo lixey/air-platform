@@ -17,9 +17,24 @@ public abstract partial class GridService<TEntity, TRow>
       query = query.Where(restriction);
     }
 
-    if (ParentId.HasValue && parent.FilterFunc != null)
+    if (ParentId.HasValue)
     {
-      query = parent.FilterFunc(query, ParentId.Value);
+      if (parent.FilterFunc != null && parent.MatchesService(ParentService))
+      {
+        query = parent.FilterFunc(query, ParentId.Value);
+      }
+      else if (ParentId is > 0 && ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
+      {
+        query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
+      }
+      else if (parent.FilterFunc != null)
+      {
+        query = parent.FilterFunc(query, ParentId.Value);
+      }
+      else if (ParentId is > 0)
+      {
+        query = query.Where(_ => false);
+      }
     }
 
     foreach (var filter in queryDeclaration.Filters)
@@ -139,6 +154,7 @@ public abstract partial class GridService<TEntity, TRow>
     Func<GridBatchContext<TEntity>, CancellationToken, Task> afterAttach,
     CancellationToken cancellationToken = default)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     if (IsReadOnly)
     {
@@ -203,6 +219,7 @@ public abstract partial class GridService<TEntity, TRow>
     Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
     CancellationToken cancellationToken = default)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     if (IsReadOnly)
     {
@@ -266,6 +283,7 @@ public abstract partial class GridService<TEntity, TRow>
     CancellationToken cancellationToken)
     where TPicked : class, IEntity
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     if (IsReadOnly)
     {
@@ -400,6 +418,7 @@ public abstract partial class GridService<TEntity, TRow>
     CancellationToken cancellationToken = default,
     [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     var nav = new Nav(localizer: L);
     SetNav(nav);
@@ -510,6 +529,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     var cols = CreateColumns();
     if (cols.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
@@ -599,6 +619,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     if (!CanDelete())
     {
@@ -809,6 +830,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default)
   {
+    ParentService = request.ParentService;
     ParentId = request.ParentId;
     if (request.Id is not > 0)
     {

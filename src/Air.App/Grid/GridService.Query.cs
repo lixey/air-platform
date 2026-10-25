@@ -49,17 +49,16 @@ public abstract partial class GridService<TEntity, TRow>
     return query;
   }
 
-  private (string? Service, long? Id, Form.ChildGridBuilder? Builder)? _cachedParentChild;
+  private (string? Service, Form.ChildGridBuilder? Builder)? _cachedParentChild;
 
   private Form.ChildGridBuilder? ResolveParentChildBuilder()
   {
-    if (ParentId is not > 0 || string.IsNullOrEmpty(ParentService))
+    if (string.IsNullOrEmpty(ParentService))
     {
       return null;
     }
 
     if (_cachedParentChild is { } cached &&
-        cached.Id == ParentId &&
         string.Equals(cached.Service, ParentService, StringComparison.OrdinalIgnoreCase))
     {
       return cached.Builder;
@@ -79,7 +78,7 @@ public abstract partial class GridService<TEntity, TRow>
          string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase)));
     }
 
-    _cachedParentChild = (ParentService, ParentId, resolved);
+    _cachedParentChild = (ParentService, resolved);
     return resolved;
   }
 

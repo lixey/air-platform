@@ -5,6 +5,8 @@ public sealed class AppUserGroupFormService(AppDbContext db, AppService? app = n
 {
   public override Feature Feature => App.UserGroup;
 
+  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Popover(handle);
+
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus().Unique("This name is already in use.");

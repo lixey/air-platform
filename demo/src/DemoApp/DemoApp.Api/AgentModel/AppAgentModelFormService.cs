@@ -5,6 +5,8 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
 {
   public override Feature Feature => App.AgentModel;
 
+  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Popover(handle);
+
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus().Span(6);

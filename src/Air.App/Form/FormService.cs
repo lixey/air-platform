@@ -206,7 +206,10 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   protected virtual string Title => !string.IsNullOrEmpty(Feature.Label) ? Feature.Label : (!string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name);
 
   protected bool IsNew { get; set; }
-  protected virtual bool IsReadOnly => Feature.IsReadOnly || User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
+  protected virtual bool IsReadOnly =>
+    Feature.IsReadOnly ||
+    ResolveParentChildBuilder()?.IsReadOnly == true ||
+    User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
 
@@ -858,6 +861,14 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     LocalizeAndResolveSelectElements(elements);
+    if (Feature.IsReadOnly)
+    {
+      foreach (var child in elements.Children)
+      {
+        child.ReadOnly();
+      }
+    }
+
     _lastElements = elements;
     return (elements.List, elements.Children);
   }
