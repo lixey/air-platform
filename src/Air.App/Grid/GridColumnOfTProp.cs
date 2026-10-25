@@ -370,12 +370,19 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   internal void ApplyColorSelector<TEntity>(Expression<Func<TEntity, string?>> colorSelector)
   {
+    var navPath = ExtractNavigationPath(colorSelector.Body, out var leafMember);
+    var exprKey = navPath != null && leafMember != null
+      ? $"{navPath}.{leafMember}"
+      : leafMember ?? colorSelector.ToString();
     var compiled = ContainsClosure(colorSelector.Body)
       ? colorSelector.Compile()
       : (Func<TEntity, string?>)CompiledColorSelectors.GetOrAdd(
-          (typeof(TEntity), colorSelector.ToString()),
+          (typeof(TEntity), exprKey),
           _ => colorSelector.Compile());
+
     dto.ColorExpression = colorSelector;
+    dto.ColorExpressionKey = exprKey;
+    dto.ColorNavPath = navPath;
     dto.ColorEvaluator = obj =>
     {
       if (obj is TEntity entity)
@@ -392,7 +399,6 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
       return null;
     };
-    dto.ColorNavPath = ExtractNavigationPath(colorSelector.Body);
     ApplyColorPath();
   }
 
@@ -402,9 +408,12 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : $"{dto.Path}Color";
   }
 
-  internal static string? ExtractNavigationPath(Expression expr)
+  internal static string? ExtractNavigationPath(Expression expr) =>
+    ExtractNavigationPath(expr, out _);
+
+  internal static string? ExtractNavigationPath(Expression expr, out string? leafMember)
   {
-    var parts = new List<string>();
+    var parts = new List<string>(4);
     var current = expr;
     while (current is MemberExpression me)
     {
@@ -412,13 +421,15 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
       current = me.Expression;
     }
 
-    if (parts.Count > 1)
+    if (current is not ParameterExpression || parts.Count == 0)
     {
-      parts.Reverse();
-      return string.Join('.', parts.Take(parts.Count - 1));
+      leafMember = null;
+      return null;
     }
 
-    return null;
+    parts.Reverse();
+    leafMember = parts[^1];
+    return parts.Count > 1 ? string.Join('.', parts.Take(parts.Count - 1)) : null;
   }
 
   private static bool ContainsClosure(Expression? expr) =>

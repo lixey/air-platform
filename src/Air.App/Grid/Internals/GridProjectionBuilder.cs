@@ -28,9 +28,10 @@ internal static class GridProjectionBuilder
       colSigBuilder
         .Append(col.Path).Append('|')
         .Append(col.ColorNavPath).Append('|')
-        .Append(col.ColorExpression).Append('|')
+        .Append(col.ColorExpressionKey ?? col.ColorExpression?.ToString()).Append('|')
         .Append(col.ReferenceService != null ? '1' : '0')
-        .Append(col.IsHidden ? '1' : '0');
+        .Append(col.IsHidden ? '1' : '0')
+        .Append(col.Cell is GridCellCoverModel ? '1' : '0');
       if (col.ReferenceLabelPaths is { Count: > 0 } lps)
       {
         for (var j = 0; j < lps.Count; j++)
@@ -67,6 +68,11 @@ internal static class GridProjectionBuilder
     {
       if (!string.IsNullOrWhiteSpace(col.Path))
       {
+        if (col.Cell is GridCellCoverModel)
+        {
+          continue;
+        }
+
         if (col.IsHidden && GridProjectionNode.IsRootFilterOnlyNotMapped(entityType, col.Path))
         {
           continue;

@@ -80,6 +80,9 @@ public sealed class GridColumnDto
   internal System.Linq.Expressions.LambdaExpression? ColorExpression { get; set; }
 
   [JsonIgnore]
+  internal string? ColorExpressionKey { get; set; }
+
+  [JsonIgnore]
   internal string? ColorNavPath { get; set; }
 
   [JsonIgnore]

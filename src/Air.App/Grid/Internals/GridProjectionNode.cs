@@ -161,7 +161,7 @@ internal sealed class GridProjectionNode
     }
 
     var prop = PropertyAccessorCache.GetProperty(rootType, path);
-    return prop != null && prop.GetCustomAttribute<NotMappedAttribute>() != null;
+    return prop == null || prop.GetCustomAttribute<NotMappedAttribute>() != null;
   }
 
   internal static bool CanBindScalar(PropertyInfo prop) =>

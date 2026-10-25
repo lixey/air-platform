@@ -68,7 +68,8 @@ public abstract partial class GridService<TEntity, TRow>
     for (var cIdx = 0; cIdx < columns.Count; cIdx++)
     {
       var column = columns[cIdx];
-      if (string.IsNullOrEmpty(column.Path))
+      if (string.IsNullOrEmpty(column.Path) ||
+          column.Cell is GridCellCoverModel && column.FormServiceResolver is null)
       {
         continue;
       }
