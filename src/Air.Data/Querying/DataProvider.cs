@@ -12,5 +12,5 @@ public static class DataProvider
   public static DataProvider<TEntity, TEntity> Create<TEntity>(
     IQueryable<TEntity> source,
     QueryMap<TEntity> map)
-    where TEntity : class => new(source, map, entity => entity);
+    where TEntity : class => new(source, map);
 }

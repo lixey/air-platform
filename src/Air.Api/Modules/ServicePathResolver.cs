@@ -3,8 +3,12 @@ namespace Platform.Api.Modules;
 public static class ServicePathResolver
 {
   private static readonly ConcurrentDictionary<Assembly, string[]> AssemblyPrefixes = new();
+  private static readonly ConcurrentDictionary<(Type ServiceType, int ModuleCount), string> ResolvedPaths = new();
 
-  public static string Resolve(Type serviceType)
+  public static string Resolve(Type serviceType) =>
+    ResolvedPaths.GetOrAdd((serviceType, ModuleCatalog.Instance.Modules.Count), static key => ResolveCore(key.ServiceType));
+
+  private static string ResolveCore(Type serviceType)
   {
     var name = serviceType.Name;
     if (name.EndsWith("Service", StringComparison.OrdinalIgnoreCase))

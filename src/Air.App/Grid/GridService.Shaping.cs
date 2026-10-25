@@ -108,7 +108,7 @@ public abstract partial class GridService<TEntity, TRow>
             value = new Dictionary<string, object?>
             {
               ["id"] = r.Id,
-              ["name"] = L[r.Name],
+              ["name"] = r.Name,
               ["color"] = hue
             };
           }
@@ -132,7 +132,7 @@ public abstract partial class GridService<TEntity, TRow>
         }
       }
 
-      PutValue(shaped, column.Path.Split('.'), value);
+      PutValue(shaped, column.Path, value);
     }
 
     return shaped;
@@ -141,8 +141,25 @@ public abstract partial class GridService<TEntity, TRow>
   private static object? ReadPathValue(object? target, string path) =>
     PropertyAccessorCache.GetPathValue(target, path);
 
-  private static void PutValue(Dictionary<string, object?> target, string[] segments, object? value)
+  private static void PutValue(Dictionary<string, object?> target, string path, object? value)
   {
+    if (!path.Contains('.'))
+    {
+      var topKey = ToCamel(path);
+      if (value is Reference topRef && target.TryGetValue(topKey, out var curTop) && curTop is Dictionary<string, object?> topDict)
+      {
+        topDict["id"] = topRef.Id;
+        topDict["name"] = topRef.Name;
+      }
+      else
+      {
+        target[topKey] = value;
+      }
+
+      return;
+    }
+
+    var segments = path.Split('.');
     var current = target;
     for (var i = 0; i < segments.Length - 1; i++)
     {

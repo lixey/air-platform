@@ -141,10 +141,9 @@ public abstract partial class GridService<TEntity, TRow>
   public virtual async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
   {
     var gridReq = request as GridRequest;
-    var query = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
+    var filteredQuery = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
     var cols = CreateColumns();
-
-    query = IncludeColumnNavigations(query, cols.List);
+    var allColumns = cols.List.ToList();
 
     var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
     if (isSelect)
@@ -193,6 +192,8 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (queryDeclaration.Selector != null)
     {
+      var noTrackingFiltered = filteredQuery.AsNoTracking();
+      var query = IncludeColumnNavigations(noTrackingFiltered, allColumns);
       var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
       var page = await dataProvider.GetPageAsync(request, ct);
       if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
@@ -204,7 +205,7 @@ public abstract partial class GridService<TEntity, TRow>
       await PopulateCoversAsync(shapedRows, cols.List, ct);
       await PopulateProjectedColorsAsync(shapedRows, cols.List, ct);
       await PopulateRowAvailabilityAsync(shapedRows, cols, ct);
-      var filteredEntities = dataProvider.Filter(request);
+      var filteredEntities = DataProvider.Create(noTrackingFiltered, queryMap, queryDeclaration.Selector).Filter(request);
       var bottomRows = !isSelect ? await ComputeSumRowsAsync(filteredEntities, queryDeclaration.Selector, cols.List, ct) : null;
       return new GridPageDto<object>
       {
@@ -218,12 +219,14 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var defaultDataProvider = DataProvider.Create(query, queryMap);
+    var queryWithNavs = IncludeColumnNavigations(filteredQuery.AsNoTrackingWithIdentityResolution(), allColumns);
+    var defaultDataProvider = DataProvider.Create(queryWithNavs, queryMap);
     var defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
-    var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(defaultDataProvider.Filter(request), null, cols.List, ct) : null;
+    var sumSourceQuery = DataProvider.Create(filteredQuery.AsNoTracking(), queryMap).Filter(request);
+    var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(sumSourceQuery, null, cols.List, ct) : null;
 
     return new GridPageDto<object>
     {
@@ -626,7 +629,7 @@ public abstract partial class GridService<TEntity, TRow>
             }
           }
 
-          PutValue(sumRow, col.Path.Split('.'), total);
+          PutValue(sumRow, col.Path, total);
           if (col.SumColorEvaluator != null)
           {
             var sumColor = col.SumColorEvaluator(total, usedFallback);
@@ -643,7 +646,7 @@ public abstract partial class GridService<TEntity, TRow>
           var total = selector != null
             ? await sourceEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, long?>>(body, rowParam), ct) ?? 0L
             : await sourceEntities.SumAsync(Expression.Lambda<Func<TEntity, long?>>(body, rowParam), ct) ?? 0L;
-          PutValue(sumRow, col.Path.Split('.'), total);
+          PutValue(sumRow, col.Path, total);
           if (col.SumColorEvaluator != null)
           {
             var sumColor = col.SumColorEvaluator(total, false);
@@ -660,7 +663,7 @@ public abstract partial class GridService<TEntity, TRow>
           var total = selector != null
             ? await sourceEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, double?>>(body, rowParam), ct) ?? 0d
             : await sourceEntities.SumAsync(Expression.Lambda<Func<TEntity, double?>>(body, rowParam), ct) ?? 0d;
-          PutValue(sumRow, col.Path.Split('.'), total);
+          PutValue(sumRow, col.Path, total);
         }
       }
       catch { }

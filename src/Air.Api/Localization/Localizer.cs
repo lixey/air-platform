@@ -2,15 +2,26 @@ namespace Platform.Api.Localization;
 
 public sealed class Localizer : ILocalizer
 {
+  private static int _assemblyGeneration = 1;
+
+  static Localizer()
+  {
+    AppDomain.CurrentDomain.AssemblyLoad += static (_, _) => Interlocked.Increment(ref _assemblyGeneration);
+  }
+
   public static readonly Localizer Instance = new();
 
   private readonly Localizer? _root;
   private readonly string? _moduleHandle;
   private readonly Lock _sync = new();
   private readonly List<System.Resources.ResourceManager> _managers = [];
-  private readonly Dictionary<string, string> _canonicalKeys = new(StringComparer.OrdinalIgnoreCase);
+  private volatile System.Resources.ResourceManager[] _managersSnapshot = [];
+  private readonly ConcurrentDictionary<string, string> _canonicalKeys = new(StringComparer.OrdinalIgnoreCase);
+  private readonly ConcurrentDictionary<(string Culture, string Key), string> _cache = new();
+  private readonly ConcurrentDictionary<string, Localizer> _moduleLocalizers = new(StringComparer.OrdinalIgnoreCase);
   private readonly HashSet<string> _loadedNames = new(StringComparer.Ordinal);
-  private int _lastAssemblyCount;
+  private volatile bool _hasUnindexedManager;
+  private int _loadedGeneration;
 
   public Localizer()
   {
@@ -52,12 +63,15 @@ public sealed class Localizer : ILocalizer
 
     var mgr = new System.Resources.ResourceManager(resourceType) { IgnoreCase = true };
     _managers.Add(mgr);
+    _managersSnapshot = [.. _managers];
     IndexKeysLocked(mgr, System.Globalization.CultureInfo.InvariantCulture);
     try
     {
       IndexKeysLocked(mgr, new System.Globalization.CultureInfo("uk"));
     }
     catch { }
+
+    _cache.Clear();
   }
 
   private void IndexKeysLocked(System.Resources.ResourceManager mgr, System.Globalization.CultureInfo culture)
@@ -72,13 +86,16 @@ public sealed class Localizer : ILocalizer
 
       foreach (System.Collections.DictionaryEntry entry in set)
       {
-        if (entry.Key is string k && !_canonicalKeys.ContainsKey(k))
+        if (entry.Key is string k)
         {
-          _canonicalKeys[k] = k;
+          _canonicalKeys.TryAdd(k, k);
         }
       }
     }
-    catch { }
+    catch
+    {
+      _hasUnindexedManager = true;
+    }
   }
 
   public void EnsureManagersLoaded()
@@ -89,19 +106,20 @@ public sealed class Localizer : ILocalizer
       return;
     }
 
-    var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-    if (assemblies.Length == _lastAssemblyCount)
+    var gen = Volatile.Read(ref _assemblyGeneration);
+    if (Volatile.Read(ref _loadedGeneration) == gen)
     {
       return;
     }
 
     lock (_sync)
     {
-      if (assemblies.Length == _lastAssemblyCount)
+      if (_loadedGeneration == gen)
       {
         return;
       }
 
+      var assemblies = AppDomain.CurrentDomain.GetAssemblies();
       foreach (var asm in assemblies)
       {
         if (asm.IsDynamic)
@@ -122,7 +140,7 @@ public sealed class Localizer : ILocalizer
         catch { }
       }
 
-      _lastAssemblyCount = assemblies.Length;
+      Volatile.Write(ref _loadedGeneration, gen);
     }
   }
 
@@ -146,32 +164,38 @@ public sealed class Localizer : ILocalizer
     }
 
     var culture = System.Globalization.CultureInfo.CurrentUICulture;
-    System.Resources.ResourceManager[] snapshot;
-    string? canonical;
-    lock (_sync)
+    var cacheKey = (culture.Name, key);
+    if (_cache.TryGetValue(cacheKey, out var cached))
     {
-      snapshot = [.. _managers];
-      _canonicalKeys.TryGetValue(key, out canonical);
+      result = cached;
+      return true;
     }
 
-    foreach (var mgr in snapshot)
+    _canonicalKeys.TryGetValue(key, out var canonical);
+    if (canonical != null || _hasUnindexedManager)
     {
-      try
+      var snapshot = _managersSnapshot;
+      foreach (var mgr in snapshot)
       {
-        var text = mgr.GetString(key, culture)
-          ?? (canonical != null && canonical != key ? mgr.GetString(canonical, culture) : null);
-        if (!string.IsNullOrEmpty(text))
+        try
         {
-          result = text;
-          return true;
+          var text = (canonical != null ? mgr.GetString(canonical, culture) : null)
+            ?? (canonical != key ? mgr.GetString(key, culture) : null);
+          if (!string.IsNullOrEmpty(text))
+          {
+            _cache.TryAdd(cacheKey, text);
+            result = text;
+            return true;
+          }
         }
+        catch { }
       }
-      catch { }
     }
 
     if (UiTexts.English.TryGetValue(key, out var val) ||
         canonical != null && UiTexts.English.TryGetValue(canonical, out val))
     {
+      _cache.TryAdd(cacheKey, val);
       result = val;
       return true;
     }
@@ -193,7 +217,9 @@ public sealed class Localizer : ILocalizer
   public Localizer For(string? moduleHandle)
   {
     var root = _root ?? this;
-    return string.IsNullOrWhiteSpace(moduleHandle) ? root : new Localizer(root, moduleHandle);
+    return string.IsNullOrWhiteSpace(moduleHandle)
+      ? root
+      : root._moduleLocalizers.GetOrAdd(moduleHandle, static (h, r) => new Localizer(r, h), root);
   }
 
   ILocalizer ILocalizer.For(string? moduleHandle) => For(moduleHandle);

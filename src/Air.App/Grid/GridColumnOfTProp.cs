@@ -366,9 +366,15 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  private static readonly ConcurrentDictionary<(Type EntityType, string ExpressionKey), Delegate> CompiledColorSelectors = new();
+
   internal void ApplyColorSelector<TEntity>(Expression<Func<TEntity, string?>> colorSelector)
   {
-    var compiled = colorSelector.Compile();
+    var compiled = ContainsClosure(colorSelector.Body)
+      ? colorSelector.Compile()
+      : (Func<TEntity, string?>)CompiledColorSelectors.GetOrAdd(
+          (typeof(TEntity), colorSelector.ToString()),
+          _ => colorSelector.Compile());
     dto.ColorExpression = colorSelector;
     dto.ColorEvaluator = obj =>
     {
@@ -414,4 +420,17 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
     return null;
   }
+
+  private static bool ContainsClosure(Expression? expr) =>
+    expr switch
+    {
+      null or ParameterExpression => false,
+      ConstantExpression c => c.Value != null && !c.Type.IsPrimitive && !c.Type.IsEnum && c.Type != typeof(string) && c.Type != typeof(decimal),
+      MemberExpression m => ContainsClosure(m.Expression),
+      UnaryExpression u => ContainsClosure(u.Operand),
+      BinaryExpression b => ContainsClosure(b.Left) || ContainsClosure(b.Right),
+      ConditionalExpression cond => ContainsClosure(cond.Test) || ContainsClosure(cond.IfTrue) || ContainsClosure(cond.IfFalse),
+      MethodCallExpression call => ContainsClosure(call.Object) || call.Arguments.Any(ContainsClosure),
+      _ => true
+    };
 }

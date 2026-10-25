@@ -80,6 +80,17 @@ internal static class PropertyAccessorCache
       return null;
     }
 
+    if (!path.Contains('.'))
+    {
+      if (target is IDictionary<string, object?> d)
+      {
+        d.TryGetValue(path, out var v);
+        return v;
+      }
+
+      return GetGetter(target.GetType(), path)?.Invoke(target);
+    }
+
     var current = target;
     foreach (var segment in path.Split('.'))
     {
