@@ -2,24 +2,30 @@ namespace Platform.Agent;
 
 public sealed class AgentModelSynchronizer(IEnumerable<IAgentProvider> providers) : IAgentModelSynchronizer
 {
-  public async Task<int> SyncFromProvidersAsync(PlatformDbContext db, CancellationToken ct = default)
+  public async Task<int> SyncFromProvidersAsync(
+    PlatformDbContext db,
+    CancellationToken ct = default,
+    string? providerHandle = null)
   {
     await AgentModelCatalog.EnsureSeededAsync(db, ct);
 
-    var activeDbProviders = await db.AppAgentProvider
+    var dbProviders = await db.AppAgentProvider
       .AsNoTracking()
-      .Where(p => p.IsActive)
       .ToListAsync(ct);
-    var activeProvidersByHandle = activeDbProviders
+    var providersByHandle = dbProviders
       .ToDictionary(p => p.Handle, p => p, StringComparer.OrdinalIgnoreCase);
 
     var existing = await db.AppAgentModel.ToListAsync(ct);
     var nextOrder = existing.Count > 0 ? existing.Max(m => m.SortOrder) + 10 : 50;
     var added = 0;
 
-    foreach (var provider in providers.Where(p => activeProvidersByHandle.ContainsKey(p.Handle)))
+    var targetProviders = !string.IsNullOrWhiteSpace(providerHandle)
+      ? providers.Where(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
+      : providers.Where(p => providersByHandle.TryGetValue(p.Handle, out var dp) && dp.IsActive);
+
+    foreach (var provider in targetProviders)
     {
-      var providerDisplayName = activeProvidersByHandle.TryGetValue(provider.Handle, out var dbProv) && !string.IsNullOrWhiteSpace(dbProv.Name)
+      var providerDisplayName = providersByHandle.TryGetValue(provider.Handle, out var dbProv) && !string.IsNullOrWhiteSpace(dbProv.Name)
         ? dbProv.Name
         : provider.Name;
 

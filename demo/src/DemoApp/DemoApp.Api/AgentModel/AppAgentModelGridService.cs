@@ -62,9 +62,13 @@ public sealed class AppAgentModelGridService(
 
   public async Task<GridActionDto> RefreshModels(GridRequest request, CancellationToken ct = default)
   {
+    ParentService = request.ParentService;
+    ParentId = request.ParentId;
+    var parentProviderHandle = ParentRecord<AppAgentProvider>()?.Handle;
+
     if (synchronizer is not null)
     {
-      await synchronizer.SyncFromProvidersAsync(db, ct);
+      await synchronizer.SyncFromProvidersAsync(db, ct, parentProviderHandle);
     }
     else
     {
