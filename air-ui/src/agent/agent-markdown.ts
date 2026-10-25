@@ -82,11 +82,11 @@ export function sanitizeAgentHtml(rawHtml: string): string {
       }
       const attrVal = match[2] ?? match[3] ?? match[4] ?? '';
       if (attrName === 'href') {
-        const trimmedUrl = attrVal.trim().toLowerCase();
-        if (trimmedUrl.startsWith('javascript:') || trimmedUrl.startsWith('vbscript:') || trimmedUrl.startsWith('data:')) {
+        const normalizedUrl = attrVal.replace(/[\u0000-\u0020]+/g, '');
+        if (!/^(?:https?:\/\/|mailto:|\/|#)/i.test(normalizedUrl)) {
           continue;
         }
-        cleanAttrs.push(`href="${escapeHtml(attrVal)}" target="_blank" rel="noopener noreferrer"`);
+        cleanAttrs.push(`href="${escapeHtml(attrVal.trim())}" target="_blank" rel="noopener noreferrer"`);
       } else if (attrName === 'open' && !attrVal) {
         cleanAttrs.push('open');
       } else if (attrVal) {

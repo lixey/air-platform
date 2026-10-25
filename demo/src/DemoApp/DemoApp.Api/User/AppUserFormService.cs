@@ -77,6 +77,12 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         return;
       }
 
+      if (app != null && User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
+      {
+        c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
+        return;
+      }
+
       var now = DateTimeOffset.UtcNow;
       var sessions = await db.AppAuthSession
         .Where(s => s.UserId == c.Entity.Id && s.RevokedAt == null)
@@ -97,6 +103,12 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
+      if (!c.IsNew && app != null && User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
+      {
+        c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
+        return;
+      }
+
       if (c.Entity.Id == 1 || c.Entity.IsRoot)
       {
         if (User?.UserId is long actorId && actorId != c.Entity.Id)
@@ -166,6 +178,21 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         db.Add(new AppAuthAssignment { UserId = c.Entity.Id, AuthRoleId = role, IsActive = true });
       }
     });
+  }
+
+  private async Task<bool> CoversUserGrantsAsync(long userId, CancellationToken cancellationToken)
+  {
+    if (app == null)
+    {
+      return true;
+    }
+
+    var grants = await db.Set<AppAuthGrant>()
+      .Where(g => db.Set<AppAuthAssignment>().Any(a => a.UserId == userId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
+      .Select(g => g.Permission)
+      .Distinct()
+      .ToListAsync(cancellationToken);
+    return app.Covers(grants);
   }
 }
 

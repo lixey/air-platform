@@ -98,18 +98,30 @@ public abstract partial class GridService<TEntity, TRow>
 
     query = IncludeColumnNavigations(query, cols.List);
 
-    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
+    var hasFullView = CanView(gridReq ?? new GridRequest(), User);
+    var isSelect = !hasFullView || gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
     if (isSelect)
     {
-      var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 } ? gridReq.ReferenceLabelPaths : ["name"];
-      var patchColumns = gridReq?.PatchSourceColumns ?? [];
-      var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
-      foreach (var p in patchColumns)
+      if (!hasFullView)
       {
-        preserved.Add(p);
+        var defaultLabel = cols.List.FirstOrDefault()?.Path ?? "name";
+        cols.RetainOnly(new HashSet<string>([defaultLabel, "name"], StringComparer.OrdinalIgnoreCase));
+        request.Filter = null;
+        request.ColumnFilter = null;
+        request.PageSize = Math.Min(request.PageSize > 0 ? request.PageSize : 50, 50);
       }
+      else
+      {
+        var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 } ? gridReq.ReferenceLabelPaths : ["name"];
+        var patchColumns = gridReq?.PatchSourceColumns ?? [];
+        var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
+        foreach (var p in patchColumns)
+        {
+          preserved.Add(p);
+        }
 
-      cols.RetainOnly(preserved);
+        cols.RetainOnly(preserved);
+      }
     }
 
     if (request.PageSize <= 0 && queryDeclaration.CustomPageSize is > 0)

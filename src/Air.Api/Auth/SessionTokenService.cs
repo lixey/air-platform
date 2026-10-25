@@ -53,6 +53,11 @@ public static class SessionTokenService
 
         var generated = RandomNumberGenerator.GetBytes(32);
         File.WriteAllBytes(keyFile, generated);
+        if (!OperatingSystem.IsWindows())
+        {
+          File.SetUnixFileMode(keyFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
         return SHA256.HashData(generated);
       }
     }

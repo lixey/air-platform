@@ -113,7 +113,9 @@ public static class PlatformApiExtensions
             {
               var sessionTenantId = session.TenantId ?? (user as IHasTenant)?.TenantId;
               SecurityInfo securityInfo;
-              using (AsyncLocalTenantContext.Use(sessionTenantId, null, user.Id, context.TraceIdentifier))
+              using (sessionTenantId != null
+                ? AsyncLocalTenantContext.Use(sessionTenantId, null, user.Id, context.TraceIdentifier)
+                : AsyncLocalTenantContext.UseSystemScope(user.Id, context.TraceIdentifier))
               {
                 securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, context.RequestAborted);
               }

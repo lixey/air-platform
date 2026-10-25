@@ -218,7 +218,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     psi.ArgumentList.Add(prompt);
     psi.ArgumentList.Add("--output-format");
     psi.ArgumentList.Add("stream-json");
-    psi.ArgumentList.Add("--dangerously-skip-permissions");
+    psi.ArgumentList.Add("--sandbox");
     psi.ArgumentList.Add("--disable-slash-commands");
     psi.ArgumentList.Add("--model");
     psi.ArgumentList.Add(selectedModel);

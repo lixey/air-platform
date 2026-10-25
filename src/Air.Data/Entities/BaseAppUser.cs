@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 
 namespace Platform.Data.Entities;
 
+[NoRestore]
 [Comment("Base user entity model with security and session control")]
 public abstract class BaseAppUser : BaseEntity
 {
