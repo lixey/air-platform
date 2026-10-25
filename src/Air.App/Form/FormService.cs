@@ -7,6 +7,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   private Elements? _lastElements;
   private Parent? _cachedParent;
   private Hooks? _cachedHooks;
+  private TEntity? _lastSavedEntity;
   private List<MessageDto>? _lastSaveWarnings;
   public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _lastSaveWarnings;
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;

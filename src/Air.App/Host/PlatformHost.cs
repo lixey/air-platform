@@ -47,10 +47,16 @@ public static class PlatformHost
       builderAction(builder);
     }
 
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
     builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin =>
       {
-        var uri = new Uri(origin);
-        return uri.IsLoopback || uri.Host.EndsWith("privat24.ua", StringComparison.OrdinalIgnoreCase);
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+          return false;
+        }
+
+        return uri.IsLoopback || allowedOrigins.Any(o =>
+          string.Equals(o.TrimEnd('/'), origin.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
       })
       .AllowAnyHeader()
       .AllowAnyMethod()
@@ -66,21 +72,6 @@ public static class PlatformHost
     }
 
     pipeline?.Invoke(app);
-
-    try
-    {
-      await using var scope = app.Services.CreateAsyncScope();
-      var db = scope.ServiceProvider.GetService<PlatformDbContext>();
-      if (db is not null)
-      {
-        await AgentModelCatalog.EnsureSeededAsync(db);
-        await AgentMemoryCatalog.EnsureSeededAsync(db);
-      }
-    }
-    catch
-    {
-      // Non-fatal if DB is not yet migrated on startup
-    }
 
     await app.RunAsync();
   }

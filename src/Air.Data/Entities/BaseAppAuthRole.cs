@@ -1,6 +1,6 @@
 namespace Platform.Data.Entities;
 
-[Comment("Base user role model")]
+[NoRestore, Comment("Base user role model")]
 public abstract class BaseAppAuthRole : BaseEntity, IInheritedByChildTenants
 {
   [Comment("Owning tenant, inherited by the tenants under it; null for a global role")]

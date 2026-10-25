@@ -52,6 +52,10 @@ export class ChartComponent {
   }
 }
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function buildEChartsOptions(chart: ReportChartDto, isDark: boolean, locale: string): EChartsCoreOption {
   const textColor = isDark ? '#cbd5e1' : '#334155';
   const mutedColor = isDark ? '#94a3b8' : '#64748b';
@@ -88,7 +92,7 @@ function buildEChartsOptions(chart: ReportChartDto, isDark: boolean, locale: str
         textStyle: { color: textColor, fontSize: 12 },
         formatter: (params: unknown) => {
           const p = params as { name: string; value: number; percent: number; marker: string };
-          return `${p.marker} <b>${p.name}</b><br/>${formatValue(p.value)} (${p.percent?.toFixed(1) ?? 0}%)`;
+          return `${p.marker} <b>${escapeHtml(String(p.name ?? ''))}</b><br/>${formatValue(p.value)} (${p.percent?.toFixed(1) ?? 0}%)`;
         },
       },
       legend: {

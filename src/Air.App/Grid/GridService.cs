@@ -54,6 +54,28 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public virtual bool CanView(GridRequest request, IUserContext? user) =>
     ServiceEndpointsExtensions.CanView(Feature, user);
 
+  public virtual bool CanLookup(GridRequest request, IUserContext? user)
+  {
+    if (user is null or { IsAuthenticated: false })
+    {
+      return false;
+    }
+
+    if (CanView(request, user))
+    {
+      return true;
+    }
+
+    if (typeof(BaseAppFile).IsAssignableFrom(typeof(TEntity)) ||
+        Attribute.IsDefined(typeof(TEntity), typeof(NoRestoreAttribute), inherit: true))
+    {
+      return false;
+    }
+
+    return ModuleCatalog.Instance.AllFeatures.Any(f =>
+      f.ServiceType != GetType() && ServiceEndpointsExtensions.CanView(f, user));
+  }
+
   protected IQueryable<TEntity> Reachable(bool asTracking = false)
   {
     var q = RestrictedQuery();

@@ -76,7 +76,7 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
       {
         var resource = $"air-lock:{lockKey}";
         await db.Database.ExecuteSqlInterpolatedAsync(
-          $"EXEC sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;",
+          $"DECLARE @res int; EXEC @res = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000; IF @res < 0 THROW 51000, 'Failed to acquire application lock.', 1;",
           ct);
       }
     }

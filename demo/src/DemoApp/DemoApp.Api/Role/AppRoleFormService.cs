@@ -56,13 +56,49 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeValidate(c => c.Entity.TenantId = c.Input.TenantId);
 
+    hooks.BeforeDelete(async (c, cancellationToken) =>
+    {
+      if (await IsLastActiveAdminRoleAsync(c.Entity.Id, c.Entity.TenantId, cancellationToken))
+      {
+        c.Refuse(L["The last administrator role cannot be deleted."]);
+      }
+    });
+
+    hooks.BeforeSave(async (c, cancellationToken) =>
+    {
+      if (c.IsNew)
+      {
+        return;
+      }
+
+      var wanted = (c.Input.Permissions ?? []).Where(_shown.Contains).ToHashSet(StringComparer.Ordinal);
+      var losesAdmin = !c.Input.IsActive || _shown.Contains("*") && !wanted.Contains("*");
+      if (losesAdmin && await IsLastActiveAdminRoleAsync(c.Entity.Id, c.Entity.TenantId, cancellationToken))
+      {
+        c.Refuse(L["The last administrator role cannot be deactivated or stripped of administrator rights."]);
+      }
+    });
+
     hooks.AfterSave(async (c, cancellationToken) =>
     {
-      var wanted = (c.Input.Permissions ?? []).ToHashSet(StringComparer.Ordinal);
+      var wanted = (c.Input.Permissions ?? []).Where(_shown.Contains).ToHashSet(StringComparer.Ordinal);
       var grants = await Grants(c.Entity.Id).ToListAsync(cancellationToken);
       db.RemoveRange(grants.Where(g => _shown.Contains(g.Permission) && !wanted.Contains(g.Permission)));
       db.AddRange(wanted.Except(grants.Select(g => g.Permission)).Select(p => new AppAuthGrant { AuthRoleId = c.Entity.Id, Permission = p }));
     });
+  }
+
+  private async Task<bool> IsLastActiveAdminRoleAsync(long roleId, long? tenantId, CancellationToken cancellationToken)
+  {
+    if (!await Grants(roleId).AnyAsync(g => g.Permission == "*", cancellationToken))
+    {
+      return false;
+    }
+
+    return !await db.AppAuthRole.AnyAsync(
+      r => r.Id != roleId && r.TenantId == tenantId && r.IsActive &&
+           db.AppAuthGrant.Any(g => g.AuthRoleId == r.Id && g.Permission == "*"),
+      cancellationToken);
   }
 
   private IQueryable<AppAuthGrant> Grants(long role) => db.AppAuthGrant.Where(g => g.AuthRoleId == role);

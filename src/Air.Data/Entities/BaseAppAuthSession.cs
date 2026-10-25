@@ -3,7 +3,7 @@ namespace Platform.Data.Entities;
 /// <summary>
 /// One login, on one device, until it expires or is revoked.
 /// </summary>
-[Comment("Base authentication session model")]
+[NoRestore, Comment("Base authentication session model")]
 public abstract class BaseAppAuthSession : BaseEntity
 {
   [Comment("Owning user identifier")]

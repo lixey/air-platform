@@ -54,13 +54,13 @@ public abstract class PlatformDbContext : DbContext
           Expression.Constant(nameof(IHasTenant.TenantId)));
 
         var tenantIdExpr = Expression.Property(Expression.Constant(this), nameof(TenantContext));
+        var isSystemScopeExpr = Expression.Property(tenantIdExpr, nameof(ITenantContext.IsSystemScope));
         var currentTenantId = Expression.Property(tenantIdExpr, nameof(ITenantContext.TenantId));
 
-        // Filter: TenantContext.TenantId == null || EF.Property<long>(e, "TenantId") == TenantContext.TenantId
-        var nullCheck = Expression.Equal(currentTenantId, Expression.Constant(null, typeof(long?)));
+        // Filter: TenantContext.IsSystemScope || EF.Property<long>(e, "TenantId") == TenantContext.TenantId
         var convertedProperty = Expression.Convert(property, typeof(long?));
         var equality = Expression.Equal(convertedProperty, currentTenantId);
-        var filterBody = Expression.OrElse(nullCheck, equality);
+        var filterBody = Expression.OrElse(isSystemScopeExpr, equality);
 
         var lambda = Expression.Lambda(filterBody, parameter);
         modelBuilder.Entity(clrType).HasQueryFilter(lambda);
@@ -77,13 +77,13 @@ public abstract class PlatformDbContext : DbContext
           Expression.Constant(nameof(IInheritedByChildTenants.TenantId)));
 
         var tenantIdExpr = Expression.Property(Expression.Constant(this), nameof(TenantContext));
+        var isSystemScopeExpr = Expression.Property(tenantIdExpr, nameof(ITenantContext.IsSystemScope));
         var currentTenantId = Expression.Property(tenantIdExpr, nameof(ITenantContext.TenantId));
 
-        // Filter: TenantContext.TenantId == null || EF.Property<long?>(e, "TenantId") == null || EF.Property<long?>(e, "TenantId") == TenantContext.TenantId
-        var nullContextCheck = Expression.Equal(currentTenantId, Expression.Constant(null, typeof(long?)));
+        // Filter: TenantContext.IsSystemScope || EF.Property<long?>(e, "TenantId") == null || EF.Property<long?>(e, "TenantId") == TenantContext.TenantId
         var nullTenantCheck = Expression.Equal(property, Expression.Constant(null, typeof(long?)));
         var equality = Expression.Equal(property, currentTenantId);
-        var filterBody = Expression.OrElse(nullContextCheck, Expression.OrElse(nullTenantCheck, equality));
+        var filterBody = Expression.OrElse(isSystemScopeExpr, Expression.OrElse(nullTenantCheck, equality));
 
         var lambda = Expression.Lambda(filterBody, parameter);
         modelBuilder.Entity(clrType).HasQueryFilter(lambda);
@@ -119,26 +119,23 @@ public abstract class PlatformDbContext : DbContext
     ApplyEntityConventions();
 
     var journalSnapshots = CaptureJournalSnapshots();
-    var result = base.SaveChanges(acceptAllChangesOnSuccess);
-    if (journalSnapshots.Count > 0)
+    if (journalSnapshots.Count == 0)
     {
-      var journalRows = CompleteJournalRows(journalSnapshots);
-      try
-      {
-        AppPlatformChange.AddRange(journalRows);
-        base.SaveChanges(acceptAllChangesOnSuccess);
-      }
-      catch
-      {
-        // Non-fatal if table not yet created
-      }
-      finally
-      {
-        DetachJournalRows(journalRows);
-      }
+      return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
-    return result;
+    if (Database.CurrentTransaction == null && Database.IsRelational())
+    {
+      return Database.CreateExecutionStrategy().Execute(() =>
+      {
+        using var tx = Database.BeginTransaction();
+        var res = SaveWithJournalCore(acceptAllChangesOnSuccess, journalSnapshots);
+        tx.Commit();
+        return res;
+      });
+    }
+
+    return SaveWithJournalCore(acceptAllChangesOnSuccess, journalSnapshots);
   }
 
   public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
@@ -152,19 +149,41 @@ public abstract class PlatformDbContext : DbContext
       return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
-    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    if (Database.CurrentTransaction == null && Database.IsRelational())
+    {
+      return await Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+      {
+        await using var tx = await Database.BeginTransactionAsync(cancellationToken);
+        var res = await SaveWithJournalCoreAsync(acceptAllChangesOnSuccess, journalSnapshots, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return res;
+      });
+    }
+
+    return await SaveWithJournalCoreAsync(acceptAllChangesOnSuccess, journalSnapshots, cancellationToken);
+  }
+
+  private int SaveWithJournalCore(
+    bool acceptAllChangesOnSuccess,
+    List<(EntityEntry Entry, Entities.AppPlatformChange Row)> journalSnapshots)
+  {
+    var result = base.SaveChanges(acceptAllChangesOnSuccess);
     var journalRows = CompleteJournalRows(journalSnapshots);
+    if (journalRows.Count == 0)
+    {
+      return result;
+    }
+
+    var activeTx = Database.CurrentTransaction;
     try
     {
-      if (journalRows.Count > 0)
-      {
-        AppPlatformChange.AddRange(journalRows);
-        await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-      }
+      activeTx?.CreateSavepoint("air_journal");
+      AppPlatformChange.AddRange(journalRows);
+      base.SaveChanges(acceptAllChangesOnSuccess);
     }
-    catch
+    catch (Exception ex) when (IsMissingJournalTable(ex))
     {
-      // Non-fatal if table not yet created
+      activeTx?.RollbackToSavepoint("air_journal");
     }
     finally
     {
@@ -172,6 +191,53 @@ public abstract class PlatformDbContext : DbContext
     }
 
     return result;
+  }
+
+  private async Task<int> SaveWithJournalCoreAsync(
+    bool acceptAllChangesOnSuccess,
+    List<(EntityEntry Entry, Entities.AppPlatformChange Row)> journalSnapshots,
+    CancellationToken cancellationToken)
+  {
+    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    var journalRows = CompleteJournalRows(journalSnapshots);
+    if (journalRows.Count == 0)
+    {
+      return result;
+    }
+
+    var activeTx = Database.CurrentTransaction;
+    try
+    {
+      if (activeTx != null)
+      {
+        await activeTx.CreateSavepointAsync("air_journal", cancellationToken);
+      }
+
+      AppPlatformChange.AddRange(journalRows);
+      await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+    catch (Exception ex) when (IsMissingJournalTable(ex))
+    {
+      if (activeTx != null)
+      {
+        await activeTx.RollbackToSavepointAsync("air_journal", cancellationToken);
+      }
+    }
+    finally
+    {
+      DetachJournalRows(journalRows);
+    }
+
+    return result;
+  }
+
+  private static bool IsMissingJournalTable(Exception ex)
+  {
+    var msg = ex.InnerException?.Message ?? ex.Message;
+    return msg.Contains(nameof(AppPlatformChange), StringComparison.OrdinalIgnoreCase) &&
+           (msg.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("Invalid object name", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("no such table", StringComparison.OrdinalIgnoreCase));
   }
 
   private readonly HashSet<object> _restoredEntities = new(ReferenceEqualityComparer.Instance);
@@ -363,18 +429,26 @@ public abstract class PlatformDbContext : DbContext
 
       if (entry.State is EntityState.Modified or EntityState.Deleted)
       {
-        if (entry.Entity is IHasTenant existingTenant && tenantId.HasValue && existingTenant.TenantId != 0 && existingTenant.TenantId != tenantId.Value)
+        if (entry.Entity is IHasTenant existingTenant && tenantId.HasValue)
         {
-          throw new InvalidOperationException(
-            $"Cannot modify or delete {entry.Metadata.ClrType.Name} belonging to another tenant."
-          );
+          var origTid = entry.Property(nameof(IHasTenant.TenantId)).OriginalValue as long? ?? existingTenant.TenantId;
+          if (origTid != 0 && origTid != tenantId.Value || existingTenant.TenantId != 0 && existingTenant.TenantId != tenantId.Value)
+          {
+            throw new InvalidOperationException(
+              $"Cannot modify or delete {entry.Metadata.ClrType.Name} belonging to another tenant."
+            );
+          }
         }
 
-        if (entry.Entity is IInheritedByChildTenants existingInherited && existingInherited.TenantId is { } ownerTid && tenantId.HasValue && ownerTid != tenantId.Value)
+        if (entry.Entity is IInheritedByChildTenants existingInherited && tenantId.HasValue)
         {
-          throw new InvalidOperationException(
-            $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant."
-          );
+          var origInheritedTid = entry.Property(nameof(IInheritedByChildTenants.TenantId)).OriginalValue as long? ?? existingInherited.TenantId;
+          if (origInheritedTid is { } ownerTid && ownerTid != tenantId.Value)
+          {
+            throw new InvalidOperationException(
+              $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant."
+            );
+          }
         }
       }
 
@@ -426,7 +500,13 @@ public abstract class PlatformDbContext : DbContext
 
         if (entry.Entity is IHasTenant)
         {
-          entry.Property(nameof(IHasTenant.TenantId)).IsModified = false;
+          var tenantProp = entry.Property(nameof(IHasTenant.TenantId));
+          if (tenantProp.OriginalValue is long origTid && origTid > 0)
+          {
+            tenantProp.CurrentValue = origTid;
+          }
+
+          tenantProp.IsModified = false;
         }
 
         if (entry.Entity is IHasVersion version)

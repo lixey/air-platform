@@ -1,6 +1,6 @@
 namespace Platform.Data.Entities;
 
-[Comment("User-to-role assignment")]
+[NoRestore, Comment("User-to-role assignment")]
 public abstract class BaseAppAuthAssignment : BaseEntity
 {
   [Comment("Assigned user identifier")]

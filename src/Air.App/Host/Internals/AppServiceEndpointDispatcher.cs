@@ -34,7 +34,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       feat ??= reportService.Feature;
       if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
       {
-        if (!CanView(feat, services.GetService<IUserContext>()))
+        var userContext = services.GetService<IUserContext>();
+        if (userContext is null or { IsAuthenticated: false })
+        {
+          return Results.Unauthorized();
+        }
+
+        if (!CanView(feat, userContext))
         {
           return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -57,7 +63,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       feat ??= screenService.Feature;
       if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
       {
-        if (!CanView(feat, services.GetService<IUserContext>()))
+        var userContext = services.GetService<IUserContext>();
+        if (userContext is null or { IsAuthenticated: false })
+        {
+          return Results.Unauthorized();
+        }
+
+        if (!CanView(feat, userContext))
         {
           return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -94,11 +106,22 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     {
       case "get-data":
         {
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (userContext is { IsAuthenticated: false } || !isPicker && !grid.CanView(req, userContext))
+          var canView = grid.CanView(req, userContext);
+          if (!canView && (!isPicker || !grid.CanLookup(req, userContext)))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
+          if (!canView)
+          {
+            req.IsReferencePicker = true;
           }
 
           if (req.IsDataOnly)
@@ -117,9 +140,14 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-count":
         {
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (userContext is { IsAuthenticated: false } || !isPicker && !grid.CanView(req, userContext))
+          if (!grid.CanView(req, userContext) && (!isPicker || !grid.CanLookup(req, userContext)))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -129,6 +157,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-one":
         {
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           if (!CanView(feat, userContext))
           {
@@ -146,9 +179,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "delete":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
@@ -157,9 +190,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "save-cell":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           var req = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
@@ -168,9 +201,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-action-input":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           GridRequest? req = null;
@@ -198,9 +231,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "move-status":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           GridRequest? req = null;
@@ -223,6 +256,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "export":
         {
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
           if (!CanExport(feat, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -237,6 +275,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var uploadMethod = serviceType.GetMethod("Upload");
           if (uploadMethod != null && httpRequest.HasFormContentType)
           {
+            if (userContext is null or { IsAuthenticated: false })
+            {
+              return Results.Unauthorized();
+            }
+
             if (!IsCustomActionPermitted(uploadMethod, feat, userContext))
             {
               return Results.UnprocessableEntity(new MutationResultDto
@@ -312,6 +355,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     {
       case "get-data":
         {
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
           if (!CanView(feat, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -327,9 +375,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "save":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
@@ -370,9 +418,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-action-input":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           FormRequest? req = null;
@@ -399,9 +447,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "move-status" when subMethod != null:
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
           long? id = null;

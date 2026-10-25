@@ -10,14 +10,18 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   public override bool CanView(GridRequest request, IUserContext? user)
   {
+    if (user is not { IsAuthenticated: true })
+    {
+      return false;
+    }
+
     if (base.CanView(request, user))
     {
       return true;
     }
 
     if (!string.IsNullOrEmpty(request.ParentService) &&
-        request.ParentId is > 0 &&
-        user != null)
+        request.ParentId is > 0)
     {
       var parentFeat = ModuleCatalog.Instance.FindFeature(request.ParentService);
       if (parentFeat == null &&
@@ -37,6 +41,9 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
     return false;
   }
+
+  public override bool CanLookup(GridRequest request, IUserContext? user) =>
+    CanView(request, user);
 
   protected override OverlayDto? ResolveFormOverlay(Columns columns)
   {
@@ -237,7 +244,9 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       var targetDb = GetDbContextForTable(change.Table);
       var entityType = targetDb.Model.GetEntityTypes()
         .FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table)?.ClrType;
-      if (entityType == null || typeof(BaseAppFile).IsAssignableFrom(entityType))
+      if (entityType == null ||
+          typeof(BaseAppFile).IsAssignableFrom(entityType) ||
+          Attribute.IsDefined(entityType, typeof(NoRestoreAttribute), inherit: true))
       {
         return new GridActionDto
         {
@@ -365,7 +374,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
   {
     if (User is not { IsAuthenticated: true })
     {
-      return true;
+      return false;
     }
 
     if (User.Can(Feature.Restore) || User.Can(Feature.All) || User.Can("*"))
@@ -383,19 +392,34 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   private bool CanRestoreTable(string table)
   {
-    if (CanRestoreInCurrentScope())
-    {
-      return true;
-    }
-
     if (User is not { IsAuthenticated: true })
     {
-      return true;
+      return false;
     }
 
     var targetDb = GetDbContextForTable(table);
     var entityType = targetDb.Model.GetEntityTypes()
       .FirstOrDefault(e => e.ClrType.Name == table || e.GetTableName() == table)?.ClrType;
+    if (entityType == null ||
+        typeof(BaseAppFile).IsAssignableFrom(entityType) ||
+        Attribute.IsDefined(entityType, typeof(NoRestoreAttribute), inherit: true))
+    {
+      return false;
+    }
+
+    if (User.Can(Feature.Restore) || User.Can(Feature.All) || User.Can("*"))
+    {
+      return true;
+    }
+
+    if (!string.IsNullOrEmpty(ParentService) &&
+        string.Equals(ResolveParentTableName(ParentService), table, StringComparison.OrdinalIgnoreCase) &&
+        ModuleCatalog.Instance.FindFeature(ParentService) is { HasHistory: true } parentFeat &&
+        (User.Can(parentFeat.Restore) || User.Can(parentFeat.All)))
+    {
+      return true;
+    }
+
     var tableFeat = ModuleCatalog.Instance.FindFeatureForEntity(entityType, table);
     return tableFeat is { HasHistory: true } && (User.Can(tableFeat.Restore) || User.Can(tableFeat.All));
   }

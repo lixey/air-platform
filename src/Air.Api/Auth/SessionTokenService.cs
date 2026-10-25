@@ -13,7 +13,13 @@ public static class SessionTokenService
   {
     if (!string.IsNullOrWhiteSpace(secret))
     {
-      _secretKey = SHA256.HashData(Encoding.UTF8.GetBytes(secret));
+      var trimmed = secret.Trim();
+      if (trimmed.Length < 32)
+      {
+        throw new InvalidOperationException("Auth:TokenSecret must be at least 32 characters long.");
+      }
+
+      _secretKey = SHA256.HashData(Encoding.UTF8.GetBytes(trimmed));
     }
   }
 
@@ -25,11 +31,37 @@ public static class SessionTokenService
     var envSecret = Environment.GetEnvironmentVariable("AIR_TOKEN_SECRET");
     if (!string.IsNullOrWhiteSpace(envSecret))
     {
-      return SHA256.HashData(Encoding.UTF8.GetBytes(envSecret));
+      return SHA256.HashData(Encoding.UTF8.GetBytes(envSecret.Trim()));
     }
 
-    var entropy = $"{Environment.MachineName}:{Environment.ProcessPath}:{AppContext.BaseDirectory}:AirPlatform.SessionKey";
-    return SHA256.HashData(Encoding.UTF8.GetBytes(entropy));
+    try
+    {
+      var userDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+      if (!string.IsNullOrWhiteSpace(userDir))
+      {
+        var keyDir = Path.Combine(userDir, ".air");
+        Directory.CreateDirectory(keyDir);
+        var keyFile = Path.Combine(keyDir, "token.key");
+        if (File.Exists(keyFile))
+        {
+          var existing = File.ReadAllBytes(keyFile);
+          if (existing.Length >= 32)
+          {
+            return SHA256.HashData(existing);
+          }
+        }
+
+        var generated = RandomNumberGenerator.GetBytes(32);
+        File.WriteAllBytes(keyFile, generated);
+        return SHA256.HashData(generated);
+      }
+    }
+    catch
+    {
+      // Fallback to in-memory CSPRNG key if filesystem is read-only
+    }
+
+    return RandomNumberGenerator.GetBytes(32);
   }
 
   public static string CreateAccessToken(long sessionId, long userId, DateTimeOffset expiresAt, int tokenVersion = 1)

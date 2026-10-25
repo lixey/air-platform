@@ -35,7 +35,32 @@ public static class AgentEndpointsExtensions
 
   public static void MapAirAgent(this IEndpointRouteBuilder app)
   {
-    var group = app.MapGroup("/api/agent");
+    try
+    {
+      using var scope = app.ServiceProvider.CreateScope();
+      var db = scope.ServiceProvider.GetService<PlatformDbContext>();
+      if (db is not null)
+      {
+        var opts = scope.ServiceProvider.GetService<AgentOptions>();
+        AgentModelCatalog.EnsureSeededAsync(db).GetAwaiter().GetResult();
+        AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
+      }
+    }
+    catch
+    {
+      // Non-fatal if DB is not yet migrated on startup
+    }
+
+    var group = app.MapGroup("/api/agent")
+      .AddEndpointFilter(async (ctx, next) =>
+      {
+        if (ctx.HttpContext.User.Identity?.IsAuthenticated != true)
+        {
+          return Results.Unauthorized();
+        }
+
+        return await next(ctx);
+      });
 
     group.MapGet("/status", async (
       HttpContext ctx,

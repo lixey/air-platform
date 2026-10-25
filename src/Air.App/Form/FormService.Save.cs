@@ -80,6 +80,8 @@ public abstract partial class FormService<TEntity, TInput>
       RestoreBoundParentId(entity, parent);
     }
 
+    _lastSavedEntity = entity;
+
     var input = entity is TInput same ? same : new TInput();
     if (!ReferenceEquals(entity, input))
     {
@@ -135,8 +137,12 @@ public abstract partial class FormService<TEntity, TInput>
     string? outcome = null,
     CancellationToken ct = default)
   {
-    var entityId = (entity as IEntity)?.Id ?? (outcome == null ? Request.Id : null);
-    var ver = (entity as IHasVersion)?.Ver ?? (outcome == null && entityId > 0 ? 1 : null);
+    var entityId = (entity as IEntity)?.Id
+      ?? (_lastSavedEntity?.Id is > 0 ? _lastSavedEntity.Id : (long?)null)
+      ?? (outcome == null ? Request.Id : null);
+    var ver = (entity as IHasVersion)?.Ver
+      ?? (_lastSavedEntity as IHasVersion)?.Ver
+      ?? (outcome == null && entityId > 0 ? 1 : null);
 
     var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
     var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
@@ -337,7 +343,11 @@ public abstract partial class FormService<TEntity, TInput>
       entity.Id = id.Value;
     }
 
-    ApplyBoundParentId(entity, parent, Request.ParentId);
+    if (IsNew)
+    {
+      ApplyBoundParentId(entity, parent, Request.ParentId);
+    }
+
     if (parent.BoundProperty != null && !parent.IsOptional)
     {
       var boundParentVal = PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name);
@@ -367,30 +377,32 @@ public abstract partial class FormService<TEntity, TInput>
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
     }
 
-    foreach (var h in hooks.BeforeSaveActions)
-    {
-      await h(saveCtx, ct);
-    }
-
-    if (saveCtx.Errors.Count > 0)
-    {
-      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
-    }
-
-    if (!ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input, inputOnlyPaths);
-    }
-
-    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
-    if (ruleCtx.Failures.Count > 0)
-    {
-      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
-    }
-
     await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
       await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+      foreach (var h in hooks.BeforeSaveActions)
+      {
+        await h(saveCtx, ct);
+      }
+
+      if (saveCtx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+      }
+
+      if (!ReferenceEquals(entity, input))
+      {
+        CopyMatchingProperties(entity, input, inputOnlyPaths);
+      }
+
+      ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
+      if (ruleCtx.Failures.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
+      }
 
       if (IsNew)
       {
@@ -427,6 +439,7 @@ public abstract partial class FormService<TEntity, TInput>
       await tx.CommitAsync(ct);
     });
 
+    _lastSavedEntity = entity;
     _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
 
     if (!ReferenceEquals(entity, input))
@@ -534,39 +547,27 @@ public abstract partial class FormService<TEntity, TInput>
       };
     }
 
-    foreach (var h in hooks.BeforeSaveActions)
-    {
-      await h(saveCtx, ct);
-    }
-
-    if (saveCtx.Errors.Count > 0)
-    {
-      return new GridCellDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Warnings = saveCtx.Errors
-      };
-    }
-
-    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
-    if (ruleCtx.Failures.Count > 0)
-    {
-      return new GridCellDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Warnings = ruleCtx.Failures.Select(f => new MessageDto
-        {
-          Detail = f.Detail,
-          Path = f.Path ?? path,
-          Code = f.Code,
-          Type = MessageType.Error
-        }).ToList()
-      };
-    }
-
     var cellRefused = await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
       await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+      foreach (var h in hooks.BeforeSaveActions)
+      {
+        await h(saveCtx, ct);
+      }
+
+      if (saveCtx.Errors.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        return true;
+      }
+
+      ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
+      if (ruleCtx.Failures.Count > 0)
+      {
+        await tx.RollbackAsync(ct);
+        return true;
+      }
 
       if (db.Entry(entity).State == EntityState.Detached)
       {
@@ -605,7 +606,15 @@ public abstract partial class FormService<TEntity, TInput>
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = saveCtx.Errors
+        Warnings = saveCtx.Errors.Count > 0
+          ? saveCtx.Errors
+          : ruleCtx.Failures.Select(f => new MessageDto
+          {
+            Detail = f.Detail,
+            Path = f.Path ?? path,
+            Code = f.Code,
+            Type = MessageType.Error
+          }).ToList()
       };
     }
 

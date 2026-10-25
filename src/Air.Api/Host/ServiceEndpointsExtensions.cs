@@ -117,7 +117,16 @@ public static class ServiceEndpointsExtensions
       return Results.NotFound();
     }
 
+    var isAnonymousOrWebhook =
+      actionMethod.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null ||
+      actionMethod.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null;
+
     var userContext = services.GetService<IUserContext>();
+    if (!isAnonymousOrWebhook && userContext is null or { IsAuthenticated: false })
+    {
+      return Results.Unauthorized();
+    }
+
     if (!IsCustomActionPermitted(actionMethod, feat, userContext))
     {
       return Results.UnprocessableEntity(new MutationResultDto
@@ -197,12 +206,12 @@ public static class ServiceEndpointsExtensions
 
   public static bool CanView(Feature? feat, IUserContext? userContext)
   {
-    if (userContext is { IsAuthenticated: false })
+    if (userContext is null or { IsAuthenticated: false })
     {
       return false;
     }
 
-    if (userContext == null || feat == null || string.IsNullOrEmpty(feat.Module))
+    if (feat == null || string.IsNullOrEmpty(feat.Module))
     {
       return true;
     }
@@ -216,12 +225,12 @@ public static class ServiceEndpointsExtensions
 
   public static bool CanExport(Feature? feat, IUserContext? userContext)
   {
-    if (userContext is { IsAuthenticated: false })
+    if (userContext is null or { IsAuthenticated: false })
     {
       return false;
     }
 
-    if (userContext == null || feat == null || string.IsNullOrEmpty(feat.Module))
+    if (feat == null || string.IsNullOrEmpty(feat.Module))
     {
       return true;
     }
@@ -240,23 +249,18 @@ public static class ServiceEndpointsExtensions
       return true;
     }
 
-    if (userContext is { IsAuthenticated: false })
+    if (userContext is null or { IsAuthenticated: false })
     {
       return false;
-    }
-
-    if (userContext == null)
-    {
-      return true;
     }
 
     var reqAttr = actionMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true);
     if (reqAttr != null)
     {
-      return !Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat) ||
-             userContext.Can(targetFeat.Action(reqAttr.ActionName)) ||
-             userContext.Can(targetFeat.All) ||
-             userContext.Can("*");
+      return Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat) &&
+             (userContext.Can(targetFeat.Action(reqAttr.ActionName)) ||
+              userContext.Can(targetFeat.All) ||
+              userContext.Can("*"));
     }
 
     var reqAction = actionMethod.GetCustomAttribute<RequireActionAttribute>(inherit: true);
@@ -271,9 +275,10 @@ public static class ServiceEndpointsExtensions
       {
         return feat != null && (userContext.Can(feat.Restore) || userContext.Can(feat.All)) ||
                userContext.Can("*") ||
-               userContext.Permissions.Any(p =>
-                 p.EndsWith(".Restore", StringComparison.OrdinalIgnoreCase) ||
-                 p.EndsWith(".*", StringComparison.Ordinal));
+               actionMethod.DeclaringType?.Name == "ChangeGridService" &&
+                userContext.Permissions.Any(p =>
+                  p.EndsWith(".Restore", StringComparison.OrdinalIgnoreCase) ||
+                  p.EndsWith(".*", StringComparison.Ordinal));
       }
 
       if (reqAction.FallbackToView && (feat == null || !feat.HasAction(reqAction.ActionName)))

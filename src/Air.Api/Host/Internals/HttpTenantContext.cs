@@ -22,12 +22,16 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
           return claimTid;
         }
 
-        return httpContext.User.Identity?.IsAuthenticated == true ? 1 : null;
+        return null;
       }
 
       return null;
     }
   }
+
+  public bool IsSystemScope =>
+    AsyncLocalTenantContext.Instance.HasExplicitSystemScope ||
+    httpContextAccessor.HttpContext == null && TenantId == null;
 
   public long? UserId
   {

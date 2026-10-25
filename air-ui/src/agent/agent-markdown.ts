@@ -57,14 +57,17 @@ export function sanitizeAgentHtml(rawHtml: string): string {
     .replace(/<(script|style|iframe|object|embed|applet|form|meta|link|input|button|textarea)\b[^>]*\/?>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '');
 
-  return withoutDangerousBlocks.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (full, tagName: string, attrsRaw: string) => {
+  const safeTags: string[] = [];
+  const tokenized = withoutDangerousBlocks.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (full, tagName: string, attrsRaw: string) => {
     const lowerTag = tagName.toLowerCase();
     if (!ALLOWED_TAGS.has(lowerTag)) {
       return escapeHtml(full);
     }
 
     if (full.startsWith('</')) {
-      return `</${lowerTag}>`;
+      const idx = safeTags.length;
+      safeTags.push(`</${lowerTag}>`);
+      return `\u0000SAFETAG${idx}\u0000`;
     }
 
     const selfClosing = full.endsWith('/>') || lowerTag === 'br' || lowerTag === 'hr';
@@ -92,8 +95,14 @@ export function sanitizeAgentHtml(rawHtml: string): string {
     }
 
     const attrStr = cleanAttrs.length > 0 ? ' ' + cleanAttrs.join(' ') : '';
-    return selfClosing && (lowerTag === 'br' || lowerTag === 'hr') ? `<${lowerTag}${attrStr} />` : `<${lowerTag}${attrStr}>`;
+    const rendered = selfClosing && (lowerTag === 'br' || lowerTag === 'hr') ? `<${lowerTag}${attrStr} />` : `<${lowerTag}${attrStr}>`;
+    const idx = safeTags.length;
+    safeTags.push(rendered);
+    return `\u0000SAFETAG${idx}\u0000`;
   });
+
+  const escapedRemainder = tokenized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escapedRemainder.replace(/\u0000SAFETAG(\d+)\u0000/g, (_m, idxStr: string) => safeTags[Number(idxStr)] ?? '');
 }
 
 function renderInlineMarkdown(line: string): string {
@@ -107,8 +116,9 @@ function renderInlineMarkdown(line: string): string {
   text = sanitizeAgentHtml(text);
 
   text = text.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer" class="font-medium text-mark underline underline-offset-2 hover:opacity-80">$1</a>',
+    /\[([^\]]+)\]\((https?:\/\/[^\s)"'<>]+)\)/g,
+    (_m, label: string, url: string) =>
+      `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="font-medium text-mark underline underline-offset-2 hover:opacity-80">${label}</a>`,
   );
   text = text.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-ink">$1</strong>');
   text = text.replace(/__([^_]+)__/g, '<strong class="font-semibold text-ink">$1</strong>');

@@ -41,7 +41,10 @@ public static class PlatformApiExtensions
 
     module.Configure(builder);
 
-    SessionTokenService.ConfigureSecret(builder.Configuration["Auth:TokenSecret"]);
+    var tokenSecret = builder.Configuration["Auth:TokenSecret"]
+      ?? builder.Configuration["Platform:Security:Jwt:Secret"]
+      ?? Environment.GetEnvironmentVariable("AIR_TOKEN_SECRET");
+    SessionTokenService.ConfigureSecret(tokenSecret);
     builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);

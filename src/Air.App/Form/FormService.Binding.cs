@@ -120,7 +120,7 @@ public abstract partial class FormService<TEntity, TInput>
     return dict;
   }
 
-  private static HashSet<string> BuildProtectedPaths(Elements elements, JsonElement? clientJson = null, bool isNew = true)
+  private HashSet<string> BuildProtectedPaths(Elements elements, JsonElement? clientJson = null, bool isNew = true)
   {
     HashSet<string>? presentInJson = null;
     if (!isNew && clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
@@ -160,6 +160,12 @@ public abstract partial class FormService<TEntity, TInput>
       "UpdatedAt",
       "UpdatedBy"
     };
+
+    var parent = GetParent();
+    if (!isNew && parent.BoundProperty != null && !parent.IsOptional)
+    {
+      set.Add(parent.BoundProperty.Name);
+    }
 
     foreach (var prop in PropertyAccessorCache.GetProperties(typeof(TEntity)))
     {
@@ -304,15 +310,18 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void RestoreBoundParentId(TEntity entity, Parent parent)
   {
-    if (parent.BoundProperty == null || Request.ParentId.HasValue)
+    if (parent.BoundProperty == null)
     {
       return;
     }
 
-    var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
-    if (storedParentId.HasValue)
+    if (!IsNew && !parent.IsOptional || !Request.ParentId.HasValue)
     {
-      Request.ParentId = storedParentId.Value;
+      var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
+      if (storedParentId.HasValue)
+      {
+        Request.ParentId = storedParentId.Value;
+      }
     }
   }
 }

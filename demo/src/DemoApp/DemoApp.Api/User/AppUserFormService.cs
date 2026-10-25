@@ -71,7 +71,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
   {
     hooks.BeforeDelete(async (c, cancellationToken) =>
     {
-      if (c.Entity.Id == 1)
+      if (c.Entity.Id == 1 || c.Entity.IsRoot)
       {
         c.Refuse(L["The root user cannot be deleted."]);
         return;
@@ -97,10 +97,38 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
-      if (c.Entity.Id == 1 && !c.Input.IsActive)
+      if (c.Entity.Id == 1 || c.Entity.IsRoot)
       {
-        c.Refuse(L["The root user cannot be deactivated."]);
-        return;
+        if (User?.UserId is long actorId && actorId != c.Entity.Id)
+        {
+          var actorIsRoot = actorId == 1 || await db.Set<AppUser>()
+            .Where(u => u.Id == actorId)
+            .Select(u => u.IsRoot)
+            .FirstOrDefaultAsync(cancellationToken);
+          if (!actorIsRoot)
+          {
+            c.Refuse(L["The root user cannot be modified by another user."]);
+            return;
+          }
+        }
+
+        if (!c.Input.IsActive)
+        {
+          c.Refuse(L["The root user cannot be deactivated."]);
+          return;
+        }
+
+        var selectedRoles = (c.Input.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
+        var hasAdminRole = await db.Set<AppAuthGrant>()
+          .AnyAsync(g => g.Permission == "*" && (
+            selectedRoles.Contains(g.AuthRoleId) ||
+            db.Set<AppAuthAssignment>().Any(a => a.UserId == c.Entity.Id && a.IsActive && !_offered.Contains(a.AuthRoleId) && a.AuthRoleId == g.AuthRoleId)),
+            cancellationToken);
+        if (!hasAdminRole)
+        {
+          c.Refuse(L["The root user cannot be left without administrator rights."]);
+          return;
+        }
       }
 
       if (!string.IsNullOrEmpty(c.Input.Password))

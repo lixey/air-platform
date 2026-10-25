@@ -390,10 +390,16 @@ public static class AgentPromptBuilder
             ? AgentMemoryKinds.Preference
             : AgentMemoryKinds.Fact;
 
+        var tenantId = db.TenantContext.TenantId;
         var existing = await db.AppAgentMemory
-          .FirstOrDefaultAsync(m => m.Title == title, ct);
+          .FirstOrDefaultAsync(m => m.Title == title && m.TenantId == tenantId, ct);
         if (existing is not null)
         {
+          if (existing.IsPinned)
+          {
+            continue;
+          }
+
           existing.Kind = kind;
           existing.Content = content;
           existing.IsActive = true;
@@ -402,11 +408,12 @@ public static class AgentPromptBuilder
         {
           db.AppAgentMemory.Add(new AppAgentMemory
           {
+            TenantId = tenantId,
             Kind = kind,
             Title = title.Length > 200 ? title[..200] : title,
             Content = content,
             Priority = kind == AgentMemoryKinds.Rule ? 200 : 100,
-            IsPinned = kind == AgentMemoryKinds.Rule,
+            IsPinned = false,
             IsActive = true
           });
         }
