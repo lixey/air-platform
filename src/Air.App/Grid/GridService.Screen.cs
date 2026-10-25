@@ -238,7 +238,7 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    var inMenuActions = permittedActions.Where(a => a.Model.NeedsSelection && a.IsInMenu).Select(a => (NavElementModel)a.Model).ToList();
+    var inMenuActions = permittedActions.Where(a => a.IsInMenu).Select(a => (NavElementModel)a.Model).ToList();
     if (inMenuActions.Count > 0)
     {
       actionElements.Add(new NavMenuModel
@@ -250,7 +250,7 @@ public abstract partial class GridService<TEntity, TRow>
       });
     }
 
-    foreach (var entry in permittedActions.Where(a => a.Model.NeedsSelection && !a.IsInMenu))
+    foreach (var entry in permittedActions.Where(a => !a.IsInMenu))
     {
       actionElements.Add(entry.Model);
     }
