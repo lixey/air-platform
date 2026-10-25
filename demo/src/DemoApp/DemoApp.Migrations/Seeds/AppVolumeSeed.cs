@@ -12,10 +12,11 @@ public static class AppVolumeSeed
     int usersCount,
     int randomSeed,
     IReadOnlyList<AppSeedTenant> tenants,
-    CancellationToken cancellationToken = default
+    CancellationToken cancellationToken = default,
+    string? seedPassword = null
   )
   {
-    var passwordHash = new PasswordHasher().HashPassword(AppIdentitySeed.DefaultSeedPassword);
+    var passwordHash = new PasswordHasher().HashPassword(AppIdentitySeed.ResolveSeedPassword(seedPassword));
     var random = new Randomizer(randomSeed);
     var fakers = tenants.Select(t => t.Locale).Distinct()
       .ToDictionary(loc => loc, loc => new Faker(loc) { Random = random });

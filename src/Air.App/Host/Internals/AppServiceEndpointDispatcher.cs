@@ -122,6 +122,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           if (!canView)
           {
             req.IsReferencePicker = true;
+            req.IsDataOnly = true;
+            req.PatchSourceColumns = null;
+            req.ReferenceLabelPaths = null;
+            req.Filter = null;
+            req.ColumnFilter = null;
+            req.NamedFilters = null;
+            req.PageSize = Math.Min(req.PageSize > 0 ? req.PageSize : 50, 50);
           }
 
           if (req.IsDataOnly)
@@ -147,9 +154,17 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          if (!grid.CanView(req, userContext) && (!isPicker || !grid.CanLookup(req, userContext)))
+          var canView = grid.CanView(req, userContext);
+          if (!canView && (!isPicker || !grid.CanLookup(req, userContext)))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
+          if (!canView)
+          {
+            req.Filter = null;
+            req.ColumnFilter = null;
+            req.NamedFilters = null;
           }
 
           return Results.Ok(await grid.GetCountAsync(req, ct));

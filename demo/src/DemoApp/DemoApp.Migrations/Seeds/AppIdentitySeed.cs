@@ -1,16 +1,46 @@
+using Microsoft.Extensions.Configuration;
+
 namespace DemoApp.Migrations.Seeds;
 
 public static class AppIdentitySeed
 {
-  public const string DefaultSeedPassword = "Password123!";
+  public static string ResolveSeedPassword(string? configuredPassword = null)
+  {
+    if (!string.IsNullOrWhiteSpace(configuredPassword))
+    {
+      return configuredPassword.Trim();
+    }
+
+    var env = Environment.GetEnvironmentVariable("AIR_SEED_PASSWORD");
+    if (!string.IsNullOrWhiteSpace(env))
+    {
+      return env.Trim();
+    }
+
+    var config = new ConfigurationBuilder()
+      .SetBasePath(Directory.GetCurrentDirectory())
+      .AddJsonFile("appsettings.json", optional: true)
+      .AddJsonFile("demo/src/Demo.Api/appsettings.json", optional: true)
+      .AddEnvironmentVariables()
+      .Build();
+
+    var fromConfig = config["Seed:AdminPassword"] ?? config["Modules:App:Seed:Password"];
+    if (!string.IsNullOrWhiteSpace(fromConfig))
+    {
+      return fromConfig.Trim();
+    }
+
+    throw new InvalidOperationException("Seed:AdminPassword is not configured in appsettings.json or AIR_SEED_PASSWORD.");
+  }
 
   public static async Task RunAsync(
     AppDbContext db,
     IReadOnlyList<AppSeedTenant> tenants,
-    CancellationToken cancellationToken = default
+    CancellationToken cancellationToken = default,
+    string? seedPassword = null
   )
   {
-    var passwordHash = new PasswordHasher().HashPassword(DefaultSeedPassword);
+    var passwordHash = new PasswordHasher().HashPassword(ResolveSeedPassword(seedPassword));
 
     foreach (var tenant in tenants)
     {

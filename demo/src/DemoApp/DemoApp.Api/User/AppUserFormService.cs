@@ -77,7 +77,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         return;
       }
 
-      if (app != null && User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
+      if (User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
       {
         c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
         return;
@@ -103,7 +103,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
-      if (!c.IsNew && app != null && User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
+      if (!c.IsNew && User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
       {
         c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
         return;
@@ -182,17 +182,18 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
   private async Task<bool> CoversUserGrantsAsync(long userId, CancellationToken cancellationToken)
   {
-    if (app == null)
-    {
-      return true;
-    }
-
     var grants = await db.Set<AppAuthGrant>()
       .Where(g => db.Set<AppAuthAssignment>().Any(a => a.UserId == userId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
       .Select(g => g.Permission)
       .Distinct()
       .ToListAsync(cancellationToken);
-    return app.Covers(grants);
+    if (app != null)
+    {
+      return app.Covers(grants);
+    }
+
+    var held = db.TenantContext.Rights ?? User?.Permissions;
+    return held != null && grants.All(p => HeldRights.Covers(held, p));
   }
 }
 

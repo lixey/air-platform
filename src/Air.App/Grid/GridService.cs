@@ -67,7 +67,10 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     if (typeof(BaseAppFile).IsAssignableFrom(typeof(TEntity)) ||
-        Attribute.IsDefined(typeof(TEntity), typeof(NoRestoreAttribute), inherit: true))
+        typeof(BaseAppAuthRole).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(BaseAppAuthGrant).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(BaseAppAuthAssignment).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(BaseAppAuthSession).IsAssignableFrom(typeof(TEntity)))
     {
       return false;
     }

@@ -8,14 +8,15 @@ public static class AppSeed
     int usersCount = 50,
     int randomSeed = 1729,
     IReadOnlyList<AppSeedTenant>? tenants = null,
-    CancellationToken cancellationToken = default
+    CancellationToken cancellationToken = default,
+    string? seedPassword = null
   )
   {
     tenants ??= AppCodeRows.Tenants();
 
     await AppCodeRows.SyncAsync(db, tenants, cancellationToken);
     await AgentModelCatalog.EnsureSeededAsync(db, cancellationToken);
-    await AppIdentitySeed.RunAsync(db, tenants, cancellationToken);
-    await AppVolumeSeed.RunAsync(db, userGroupsCount, usersCount, randomSeed, tenants, cancellationToken);
+    await AppIdentitySeed.RunAsync(db, tenants, cancellationToken, seedPassword);
+    await AppVolumeSeed.RunAsync(db, userGroupsCount, usersCount, randomSeed, tenants, cancellationToken, seedPassword);
   }
 }
