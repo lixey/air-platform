@@ -26,17 +26,30 @@ public abstract partial class GridService<TEntity, TRow>
       query = query.Where(filter);
     }
 
-    if (ParentId.HasValue && parent.FilterFunc != null && parent.MatchesService(ParentService))
+    if (ParentId.HasValue)
     {
-      query = parent.FilterFunc(query, ParentId.Value);
-    }
-    else if (ParentId is > 0 && ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
-    {
-      query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
+      if (parent.FilterFunc != null && parent.MatchesService(ParentService))
+      {
+        query = parent.FilterFunc(query, ParentId.Value);
+      }
+      else if (ParentId is > 0 && ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
+      {
+        query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
+      }
+      else if (parent.FilterFunc != null)
+      {
+        query = parent.FilterFunc(query, ParentId.Value);
+      }
+      else if (ParentId is > 0)
+      {
+        query = query.Where(_ => false);
+      }
     }
 
     return query;
   }
+
+  private (string? Service, long? Id, Form.ChildGridBuilder? Builder)? _cachedParentChild;
 
   private Form.ChildGridBuilder? ResolveParentChildBuilder()
   {
@@ -45,29 +58,29 @@ public abstract partial class GridService<TEntity, TRow>
       return null;
     }
 
+    if (_cachedParentChild is { } cached &&
+        cached.Id == ParentId &&
+        string.Equals(cached.Service, ParentService, StringComparison.OrdinalIgnoreCase))
+    {
+      return cached.Builder;
+    }
+
+    Form.ChildGridBuilder? resolved = null;
     var parentFormType = ModuleCatalog.Instance.FindServiceType(ParentService);
-    if (parentFormType == null || !typeof(Form.IFormService).IsAssignableFrom(parentFormType))
+    if (parentFormType != null &&
+        typeof(Form.IFormService).IsAssignableFrom(parentFormType) &&
+        ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is Form.IFormService parentForm)
     {
-      return null;
+      var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+      var myService = ServicePathResolver.Resolve(GetType());
+      resolved = children.FirstOrDefault(c =>
+        !c.IsFiles &&
+        (c.ServiceType == GetType() ||
+         string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase)));
     }
 
-    try
-    {
-      if (ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is Form.IFormService parentForm)
-      {
-        var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
-        var myService = ServicePathResolver.Resolve(GetType());
-        return children.FirstOrDefault(c =>
-          !c.IsFiles &&
-          (c.ServiceType == GetType() ||
-           string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase)));
-      }
-    }
-    catch
-    {
-    }
-
-    return null;
+    _cachedParentChild = (ParentService, ParentId, resolved);
+    return resolved;
   }
 
   private static IQueryable<TEntity> ApplyActiveNamedFilters(

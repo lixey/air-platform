@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
 import { SearchBoxComponent } from '../controls/search-box.component';
@@ -57,7 +57,14 @@ import { UI_COLORS } from '../theme/ui-color';
                   <th
                     [class]="headerCellClass(t, col, sortable)"
                     [style.min-width.px]="col.width ?? (col.kind === 'text' ? 160 : 104)"
+                    [attr.role]="sortable ? 'button' : null"
+                    [attr.tabindex]="sortable ? 0 : null"
+                    [attr.aria-sort]="
+                      sortable ? (sortKey() === col.key ? (sortDir() === 'asc' ? 'ascending' : 'descending') : 'none') : null
+                    "
                     (click)="sortable ? toggleSort(col.key) : null"
+                    (keydown.enter)="sortable ? toggleSort(col.key) : null"
+                    (keydown.space)="sortable ? ($event.preventDefault(), toggleSort(col.key)) : null"
                   >
                     <div
                       class="inline-flex items-center gap-1"
@@ -134,10 +141,10 @@ export class ReportTableComponent {
 
   readonly table = input.required<ReportTableDto>();
 
-  protected readonly searchText = signal('');
-  protected readonly activeChip = signal('all');
-  protected readonly sortKey = signal<string | null>(null);
-  protected readonly sortDir = signal<'asc' | 'desc'>('asc');
+  protected readonly searchText = linkedSignal({ source: this.table, computation: () => '' });
+  protected readonly activeChip = linkedSignal({ source: this.table, computation: () => 'all' });
+  protected readonly sortKey = linkedSignal<ReportTableDto, string | null>({ source: this.table, computation: () => null });
+  protected readonly sortDir = linkedSignal<ReportTableDto, 'asc' | 'desc'>({ source: this.table, computation: () => 'asc' });
   protected readonly currentLocale = computed(() => this.locale());
 
   protected readonly displayedRows = computed<readonly Record<string, unknown>[]>(() => {

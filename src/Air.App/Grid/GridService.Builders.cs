@@ -35,13 +35,35 @@ public abstract partial class GridService<TEntity, TRow>
       }
 
       if (BoundParentServiceType != null &&
-          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType &&
-          BoundParentServiceType.IsAssignableFrom(actualType))
+          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType)
       {
-        return true;
+        if (BoundParentServiceType.IsAssignableFrom(actualType) ||
+            actualType.IsAssignableFrom(BoundParentServiceType))
+        {
+          return true;
+        }
+
+        if (GetFormEntityType(BoundParentServiceType) is { } expectedEntity &&
+            expectedEntity == GetFormEntityType(actualType))
+        {
+          return true;
+        }
       }
 
       return false;
+    }
+
+    private static Type? GetFormEntityType(Type? type)
+    {
+      for (var t = type; t != null && t != typeof(object); t = t.BaseType)
+      {
+        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Form.FormService<,>))
+        {
+          return t.GetGenericArguments()[0];
+        }
+      }
+
+      return null;
     }
 
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)

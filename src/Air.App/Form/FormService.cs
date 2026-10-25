@@ -52,8 +52,9 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       builder.ChildEntityType = typeof(TChildEntity);
       builder.FilterProvider = (_, parentId, rawQuery) =>
       {
+        Expression<Func<long>> idExpr = () => parentId;
         var param = foreignKey.Parameters[0];
-        var body = Expression.Equal(foreignKey.Body, Expression.Constant(parentId));
+        var body = Expression.Equal(foreignKey.Body, idExpr.Body);
         var predicate = Expression.Lambda<Func<TChildEntity, bool>>(body, param);
         return ((IQueryable<TChildEntity>)rawQuery).Where(predicate);
       };
@@ -100,8 +101,10 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       builder.ChildEntityType = typeof(TChildEntity);
       builder.FilterProvider = (_, parentId, rawQuery) =>
       {
+        long? nullableParentId = parentId;
+        Expression<Func<long?>> idExpr = () => nullableParentId;
         var param = foreignKey.Parameters[0];
-        var body = Expression.Equal(foreignKey.Body, Expression.Constant((long?)parentId, typeof(long?)));
+        var body = Expression.Equal(foreignKey.Body, idExpr.Body);
         var predicate = Expression.Lambda<Func<TChildEntity, bool>>(body, param);
         return ((IQueryable<TChildEntity>)rawQuery).Where(predicate);
       };
@@ -256,13 +259,35 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       }
 
       if (BoundParentServiceType != null &&
-          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType &&
-          BoundParentServiceType.IsAssignableFrom(actualType))
+          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType)
       {
-        return true;
+        if (BoundParentServiceType.IsAssignableFrom(actualType) ||
+            actualType.IsAssignableFrom(BoundParentServiceType))
+        {
+          return true;
+        }
+
+        if (GetFormEntityType(BoundParentServiceType) is { } expectedEntity &&
+            expectedEntity == GetFormEntityType(actualType))
+        {
+          return true;
+        }
       }
 
       return false;
+    }
+
+    private static Type? GetFormEntityType(Type? type)
+    {
+      for (var t = type; t != null && t != typeof(object); t = t.BaseType)
+      {
+        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(FormService<,>))
+        {
+          return t.GetGenericArguments()[0];
+        }
+      }
+
+      return null;
     }
 
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)

@@ -45,7 +45,7 @@ export class GridForms {
   /**
    * Opens the declared or resolved form for the row with this key, or an empty one for none; `false` when the grid
    * names no form. `rowOverlay` is the overlay the page carries for the form the row names, or null when the row
-   * names another form or none: the form opens in it, else in the overlay of the grid's own form, else in a dialog,
+   * names another form or none: the form opens in it, else in the overlay of the grid's own form, else in a drawer,
    * the first two addressed to the form being opened.
    */
   open(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null, rowOverlay?: OverlayDto | null): boolean {

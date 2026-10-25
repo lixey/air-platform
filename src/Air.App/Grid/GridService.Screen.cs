@@ -79,7 +79,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         hasRight = User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
       }
-      else if (!entry.IsAllowedInReadOnly && (isUserReadOnly || isGridReadOnly))
+      else if (!entry.IsAllowedInReadOnly && (isUserReadOnly || parentChild?.IsReadOnly == true))
       {
         hasRight = false;
       }

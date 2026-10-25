@@ -123,7 +123,7 @@ public abstract partial class FormService<TEntity, TInput>
   private HashSet<string> BuildProtectedPaths(Elements elements, JsonElement? clientJson = null, bool isNew = true)
   {
     HashSet<string>? presentInJson = null;
-    if (clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
+    if (!isNew && clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
     {
       presentInJson = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       foreach (var jProp in jsonObj.EnumerateObject())
@@ -293,7 +293,9 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
   {
-    if (!parentId.HasValue || parent.BoundProperty == null || !parent.MatchesService(Request.ParentService))
+    if (!parentId.HasValue ||
+        parent.BoundProperty == null ||
+        !parent.MatchesService(Request.ParentService) && ResolveParentChildPresetBuilder() != null)
     {
       return;
     }
@@ -310,7 +312,8 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void RestoreBoundParentId(TEntity entity, Parent parent)
   {
-    if (parent.BoundProperty == null || !parent.MatchesService(Request.ParentService))
+    if (parent.BoundProperty == null ||
+        !parent.MatchesService(Request.ParentService) && ResolveParentChildPresetBuilder() != null)
     {
       return;
     }
@@ -334,34 +337,37 @@ public abstract partial class FormService<TEntity, TInput>
       return;
     }
 
-    var parentFormType = ModuleCatalog.Instance.FindServiceType(Request.ParentService);
-    if (parentFormType == null || !typeof(IFormService).IsAssignableFrom(parentFormType))
+    var match = ResolveParentChildPresetBuilder();
+    if (match?.PresetProvider != null)
     {
-      return;
-    }
-
-    try
-    {
-      if (ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is IFormService parentForm)
+      match.PresetProvider(db, Request.ParentId.Value, entity);
+      if (!ReferenceEquals(entity, input))
       {
-        var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
-        var match = children.FirstOrDefault(c =>
-          !c.IsFiles &&
-          c.PresetProvider != null &&
-          c.ChildEntityType != null &&
-          c.ChildEntityType.IsAssignableFrom(typeof(TEntity)));
-        if (match?.PresetProvider != null)
-        {
-          match.PresetProvider(db, Request.ParentId.Value, entity);
-          if (!ReferenceEquals(entity, input))
-          {
-            CopyMatchingProperties(entity, input);
-          }
-        }
+        CopyMatchingProperties(entity, input);
       }
     }
-    catch
+  }
+
+  private ChildGridBuilder? ResolveParentChildPresetBuilder()
+  {
+    if (Request.ParentId is not > 0 || string.IsNullOrEmpty(Request.ParentService))
     {
+      return null;
     }
+
+    var parentFormType = ModuleCatalog.Instance.FindServiceType(Request.ParentService);
+    if (parentFormType == null ||
+        !typeof(IFormService).IsAssignableFrom(parentFormType) ||
+        ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is not IFormService parentForm)
+    {
+      return null;
+    }
+
+    var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+    return children.FirstOrDefault(c =>
+      !c.IsFiles &&
+      c.PresetProvider != null &&
+      c.ChildEntityType != null &&
+      c.ChildEntityType.IsAssignableFrom(typeof(TEntity)));
   }
 }
