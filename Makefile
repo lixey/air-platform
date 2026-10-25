@@ -7,6 +7,7 @@ AGENT_API_PORT ?= 5191
 AGENT_WEB_PORT ?= 4400
 AUDIT_CLI ?= auto
 AUDIT_MODEL ?= claude-opus-5-5-high
+AUDIT_CLAUDE_MODEL ?= claude-opus-5-5
 AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md. Report objective bugs/regressions vs controversial design trade-offs concisely.
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
 DAEMON_RUN := python3 -c 'import os, sys, subprocess; r, w = os.pipe(); f = open(sys.argv[1], "wb"); subprocess.Popen(sys.argv[2:], stdin=r, stdout=f, stderr=f, pass_fds=(w,), start_new_session=True)'
@@ -35,12 +36,12 @@ gate: format-check check-paths check-arch check-ts build ## Run unified verifica
 
 audit: ## Run controlled code audit on Claude Opus 5.5 (High) via agy CLI with automatic fallback to claude CLI
 	@if [ "$(AUDIT_CLI)" = "claude" ]; then \
-		claude --model $(AUDIT_MODEL:%-high=%) --fallback-model claude-opus-5 --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+		claude --model $(AUDIT_CLAUDE_MODEL) --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	elif [ "$(AUDIT_CLI)" = "agy" ]; then \
 		agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	else \
 		agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)" || \
-		claude --model $(AUDIT_MODEL:%-high=%) --fallback-model claude-opus-5 --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+		claude --model $(AUDIT_CLAUDE_MODEL) --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	fi
 
 check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, *Extensions.cs, and .resx parity

@@ -57,9 +57,9 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     return null;
   }
 
-  private static (string Model, string? FallbackModel, string Effort) ResolveCliModelArgs(string selectedModel)
+  private static (string Model, string Effort) ResolveCliModelArgs(string selectedModel)
   {
-    var lower = selectedModel.ToLowerInvariant();
+    var lower = selectedModel.ToLowerInvariant().Replace(".5", "-5", StringComparison.Ordinal);
     var effort = "high";
     var baseModel = lower;
 
@@ -79,17 +79,17 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       baseModel = lower[..^5];
     }
 
-    if (baseModel.StartsWith("claude-opus-5", StringComparison.Ordinal))
+    if (baseModel == "claude-opus-5")
     {
-      return (baseModel, "claude-opus-5", effort);
+      return ("claude-opus-5-5", effort);
     }
 
-    if (baseModel.StartsWith("claude-sonnet-5", StringComparison.Ordinal))
+    if (baseModel == "claude-sonnet-5")
     {
-      return (baseModel, "claude-sonnet-5", effort);
+      return ("claude-sonnet-5-5", effort);
     }
 
-    return (baseModel, null, effort);
+    return (baseModel, effort);
   }
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
@@ -135,7 +135,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
       : (Models.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
-    var (cliModel, fallbackModel, effort) = ResolveCliModelArgs(selectedModel);
+    var (cliModel, effort) = ResolveCliModelArgs(selectedModel);
 
     var psi = new ProcessStartInfo
     {
@@ -159,12 +159,6 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     psi.ArgumentList.Add("Read");
     psi.ArgumentList.Add("--model");
     psi.ArgumentList.Add(cliModel);
-    if (!string.IsNullOrEmpty(fallbackModel) && !string.Equals(cliModel, fallbackModel, StringComparison.OrdinalIgnoreCase))
-    {
-      psi.ArgumentList.Add("--fallback-model");
-      psi.ArgumentList.Add(fallbackModel);
-    }
-
     psi.ArgumentList.Add("--effort");
     psi.ArgumentList.Add(effort);
     psi.ArgumentList.Add("--add-dir");
