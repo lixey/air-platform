@@ -1,7 +1,7 @@
 import { computed, DestroyRef, effect, inject, linkedSignal, Service, type Signal, signal, untracked } from '@angular/core';
 import type { Subscription } from 'rxjs';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
-import { AuthService } from '../app/auth/auth.service';
+import { AuthService, identityOf } from '../app/auth/auth.service';
 import { Api } from '../core/api';
 import type {
   GridColumnDto,
@@ -160,6 +160,7 @@ export class GridService {
     return this.isSelectable() ? [SELECTION_COLUMN_DTO, ...visible] : visible;
   });
   private unsubscribeMutations: (() => void) | undefined;
+  private lastIdentity = identityOf(this.auth.currentUser());
   /** The form half: opening the declared form and watching the forms opened, so their saves refresh the grid. */
   private readonly forms = new GridForms({
     model: this.model,
@@ -294,9 +295,7 @@ export class GridService {
     this.generation();
     untracked(() => {
       if (this.pageRequest && !this.pageRequest.isCurrent()) {
-        this.inFlight?.unsubscribe();
-        this.pageRequest = undefined;
-        this.verification = undefined;
+        this.cancelPage();
       }
     });
   });
@@ -757,16 +756,28 @@ export class GridService {
         this.reload();
       },
       invalidate: () => {
-        this.opening.set(null);
-        this.invalidations.update(n => n + 1);
+        const nextIdentity = identityOf(this.auth.currentUser());
+        if (nextIdentity !== this.lastIdentity) {
+          this.lastIdentity = nextIdentity;
+          this.opening.set(null);
+          this.invalidations.update(n => n + 1);
+        } else {
+          this.cancelPage();
+        }
         this.subscribeMutations();
       },
     });
   }
 
-  private release(): void {
+  private cancelPage(): void {
     this.inFlight?.unsubscribe();
+    this.pageRequest = undefined;
     this.verification = undefined;
+    this._isLoading.set(false);
+  }
+
+  private release(): void {
+    this.cancelPage();
     this.unsubscribeMutations?.();
     this.unsubscribeMutations = undefined;
     this.forms.stop();

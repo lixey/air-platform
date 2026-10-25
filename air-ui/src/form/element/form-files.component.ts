@@ -151,9 +151,7 @@ import { FormFilesActions } from './form-files-actions';
           <p class="m-0 text-sm text-muted" role="alert">{{ texts.of('RequestFailed') }}</p>
           <ui-btn [label]="texts.of('Retry')" variant="ghost" (click)="reload()" />
         </div>
-      } @else if (page.isLoading() && !items().length) {
-        <p class="m-0 text-sm text-muted">{{ texts.of('Loading') }}</p>
-      } @else {
+      } @else if (!page.isLoading() || items().length) {
         <div
           #zoneElement
           [class]="zoneClasses()"

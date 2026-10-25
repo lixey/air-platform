@@ -146,13 +146,18 @@ export class PanelNodeComponent implements PanelNode {
   private readonly registry = inject(DynamicComponentRegistry);
 
   /** The pages of an exclusive container that have been opened once, by path: every page shown joins them. Not persisted. */
-  private readonly opened = linkedSignal<readonly string[], ReadonlySet<string>>({
-    source: () =>
-      this.view()
+  private readonly opened = linkedSignal<{ readonly key: string; readonly shown: readonly string[] }, ReadonlySet<string>>({
+    source: () => ({
+      key: this.state.key(),
+      shown: this.view()
         .children.filter(child => child.isPage && !child.isCollapsed)
         .map(child => child.path),
-    computation: (shown, previous) => {
-      const opened = previous?.value ?? new Set<string>();
+    }),
+    computation: ({ key, shown }, previous) => {
+      if (!previous || previous.source.key !== key) {
+        return new Set(shown);
+      }
+      const opened = previous.value;
       return shown.some(path => !opened.has(path)) ? new Set([...opened, ...shown]) : opened;
     },
   });

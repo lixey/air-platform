@@ -54,7 +54,7 @@ import { SelectService } from './select.service';
           }
         </div>
       } @else if (grid(); as grid) {
-        <div class="flex flex-col flex-1 min-w-0 min-h-0 max-h-96">
+        <div class="flex flex-col flex-1 min-w-0 min-h-0 max-h-96" [attr.inert]="screen.isStale() || null">
           <ui-grid [model]="grid.model" [data]="grid.data" />
         </div>
       } @else if (screen.error()) {
@@ -62,15 +62,16 @@ import { SelectService } from './select.service';
           {{ texts.of('OptionsLoadFailed') }}
           <ui-btn [label]="texts.of('Retry')" (click)="screen.reload()" />
         </div>
-      } @else {
-        <p class="m-3 p-4 text-sm text-muted">{{ texts.of('Loading') }}</p>
       }
       @if (select.isMultiple()) {
         <ui-select-picked />
       }
     </div>
   `,
-  host: { class: 'flex flex-col min-w-0 max-h-full overflow-hidden' },
+  host: {
+    class: 'flex flex-col min-w-0 max-h-full overflow-hidden',
+    '[attr.aria-busy]': 'screen.isLoading() || null',
+  },
 })
 export class SelectOverlayComponent {
   protected readonly texts = inject(TextsService);

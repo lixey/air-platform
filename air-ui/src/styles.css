@@ -83,6 +83,7 @@
   --panel-frame: var(--color-brand-400);
   --panel-shade: color-mix(in oklch, var(--color-brand-500) 20%, transparent);
   --panel-accent: var(--color-sky-600);
+  --panel-progress: var(--color-orange-500);
   --panel-warning: var(--color-amber-700);
   /*
    * A field and a checkbox: their ground; a field's border at rest, pale by the owner's choice and a declared exception of
@@ -129,6 +130,7 @@
   --panel-frame: var(--color-brand-500);
   --panel-shade: color-mix(in oklch, var(--color-brand-950) 35%, transparent);
   --panel-accent: var(--color-sky-400);
+  --panel-progress: var(--color-orange-500);
   --panel-warning: var(--color-amber-400);
   --panel-field: var(--color-brand-700);
   --panel-field-edge: var(--color-brand-600);
@@ -313,6 +315,7 @@
   --color-frame: var(--panel-frame);
   --color-shade: var(--panel-shade);
   --color-accent: var(--panel-accent);
+  --color-progress: var(--panel-progress);
   --color-warning: var(--panel-warning);
   --color-field: var(--panel-field);
   --color-field-edge: var(--panel-field-edge);
@@ -382,19 +385,17 @@
 }
 
 /*
- * The request progress bar of `ui-progress`, drawn by the stylesheet alone. While a request
- * runs it creeps from nothing towards 85% and slows as it goes; when the last one ends it
- * fills and fades. Its idle state is the end of the completion, full and transparent, so it
- * never shows on its own. A request that starts while it completes starts the creep again:
- * the class brings the animation back from its first frame.
+ * The smart request progress bar of `ui-progress`, shown only when a request exceeds 250 ms.
+ * Drawn in the `progress` role (saturated orange) on the compositor alone: hidden at scaleX(0)
+ * when idle, creeping towards 85% while `.is-loading`, and filling to 100% then fading out
+ * while `.is-done`.
  */
 @layer components {
   .ui-progress-bar {
-    @apply h-full w-full origin-left bg-accent;
+    @apply h-full w-full origin-left bg-progress;
     opacity: 0;
-    transition:
-      transform 250ms ease-out,
-      opacity 150ms ease-in 250ms;
+    transform: scaleX(0);
+    transition: none;
   }
 
   .ui-progress-bar.is-loading {
@@ -402,11 +403,19 @@
     transition: none;
     animation: ui-progress-creep 10s cubic-bezier(0.1, 0.6, 0.2, 1) forwards;
   }
+
+  .ui-progress-bar.is-done {
+    opacity: 0;
+    transform: scaleX(1);
+    transition:
+      transform 250ms ease-out,
+      opacity 150ms ease-in 250ms;
+  }
 }
 
 @keyframes ui-progress-creep {
   from {
-    transform: scaleX(0);
+    transform: scaleX(0.08);
   }
   to {
     transform: scaleX(0.85);

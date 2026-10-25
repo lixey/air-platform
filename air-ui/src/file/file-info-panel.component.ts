@@ -117,9 +117,7 @@ function formatNumber(value: number, locale: string, options: Intl.NumberFormatO
           </button>
           <div [id]="id + '-metadata'" [hidden]="!isMetadataOpen()" data-file-metadata>
             @if (isMetadataOpen()) {
-              @if (metadata.isLoading()) {
-                <p class="m-0 text-sm text-muted">{{ texts.of('Loading') }}</p>
-              } @else if (metadata.error()) {
+              @if (metadata.error()) {
                 <div class="flex items-center gap-2">
                   <p class="m-0 text-sm text-muted" role="alert">{{ texts.of('RequestFailed') }}</p>
                   <ui-btn [label]="texts.of('Retry')" variant="ghost" (click)="metadata.reload()" />
@@ -133,7 +131,7 @@ function formatNumber(value: number, locale: string, options: Intl.NumberFormatO
                     </div>
                   }
                 </dl>
-              } @else {
+              } @else if (!metadata.isLoading()) {
                 <p class="m-0 text-sm text-muted" data-file-metadata-none>{{ texts.of('FileMetadataNone') }}</p>
               }
             }
@@ -145,8 +143,6 @@ function formatNumber(value: number, locale: string, options: Intl.NumberFormatO
         <p class="m-0 text-sm text-muted" role="alert">{{ texts.of('RequestFailed') }}</p>
         <ui-btn [label]="texts.of('Retry')" variant="ghost" (click)="info.reload()" />
       </div>
-    } @else {
-      <p class="m-0 text-sm text-muted">{{ texts.of('Loading') }}</p>
     }
   `,
   host: { class: 'flex flex-col gap-3 min-w-0 p-3', '[attr.aria-busy]': 'info.isLoading() || isSaving() || null' },

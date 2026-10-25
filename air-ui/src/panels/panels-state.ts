@@ -24,7 +24,8 @@ export class PanelsState {
   /** This layout's instance id, unique on the page: what the element ids of its panels begin with. */
   readonly id = `ui-panels-${++PanelsState.next}`;
 
-  private layoutKey = '';
+  private readonly _key = signal('');
+  readonly key = this._key.asReadonly();
   private saveHandle: ReturnType<typeof setTimeout> | null = null;
 
   /** The user's arrangement, by panel path. */
@@ -53,12 +54,12 @@ export class PanelsState {
 
   /** Switches to a layout and loads what the user arranged last time. */
   open(layoutKey: string): void {
-    if (this.layoutKey === layoutKey) {
+    if (this._key() === layoutKey) {
       return;
     }
 
     this.flush();
-    this.layoutKey = layoutKey;
+    this._key.set(layoutKey);
     this._prefs.set(this.storage.read(layoutKey));
     this._active.set({});
   }
@@ -147,8 +148,8 @@ export class PanelsState {
       this.saveHandle = null;
     }
 
-    if (this.layoutKey) {
-      this.storage.write(this.layoutKey, this.prefs());
+    if (this._key()) {
+      this.storage.write(this._key(), this.prefs());
     }
   }
 }
