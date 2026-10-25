@@ -1,8 +1,8 @@
 namespace DemoEcom.Data;
 
+[ModuleSchema(EcomData.ModuleHandle)]
 public class EcomDbContext : OrgDbContext
 {
-  public new string ModuleHandle => EcomData.ModuleHandle;
   public EcomDbContext(DbContextOptions<EcomDbContext> options, ITenantContext? tenant = null) : base(options, tenant) { }
 
   protected EcomDbContext(DbContextOptions options, ITenantContext? tenant) : base(options, tenant) { }

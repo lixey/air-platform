@@ -26,6 +26,8 @@ public abstract class PlatformDbContext : DbContext
   [AllowNull]
   public ITenantContext TenantContext => field ?? AsyncLocalTenantContext.Instance;
 
+  public string? ModuleHandle => ModuleOwnershipExtensions.GetDeclaredModuleHandle(GetType());
+
   public DbSet<AppLanguage> AppLanguage => Set<AppLanguage>();
   public DbSet<AppAgentProvider> AppAgentProvider => Set<AppAgentProvider>();
   public DbSet<AppAgentModel> AppAgentModel => Set<AppAgentModel>();
@@ -107,9 +109,13 @@ public abstract class PlatformDbContext : DbContext
     }
   }
 
+  protected sealed override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
+    PlatformMigrationHistory.Apply(optionsBuilder, ModuleHandle, GetType());
+
   protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
   {
     base.ConfigureConventions(configurationBuilder);
+    configurationBuilder.Conventions.Add(_ => new ModuleOwnershipConvention(GetType()));
     configurationBuilder.Properties<DateTime>().HaveConversion<LocalDateTimeConverter>();
     configurationBuilder.Properties<DateTimeOffset>().HaveConversion<UtcOffsetConverter>();
   }

@@ -69,7 +69,7 @@ public static class DevMigrationsRunner
     }
 
     Console.WriteLine("Ensuring schema is created...");
-    await ecomDb.Database.EnsureCreatedAsync();
+    await ModuleSchema.EnsureCreatedAsync([appDb, orgDb, ecomDb]);
 
     var tenants = AppCodeRows.Tenants();
 

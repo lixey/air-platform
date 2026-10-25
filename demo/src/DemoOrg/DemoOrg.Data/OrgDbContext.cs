@@ -1,8 +1,8 @@
 namespace DemoOrg.Data;
 
+[ModuleSchema(OrgData.ModuleHandle)]
 public class OrgDbContext : AppDbContext
 {
-  public new string ModuleHandle => OrgData.ModuleHandle;
   public OrgDbContext(DbContextOptions<OrgDbContext> options, ITenantContext? tenant = null) : base(options, tenant) { }
 
   protected OrgDbContext(DbContextOptions options, ITenantContext? tenant) : base(options, tenant) { }

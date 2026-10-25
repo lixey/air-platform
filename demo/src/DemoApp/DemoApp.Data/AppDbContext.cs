@@ -1,8 +1,8 @@
 namespace DemoApp.Data;
 
+[ModuleSchema(AppData.ModuleHandle)]
 public class AppDbContext : PlatformDbContext
 {
-  public string ModuleHandle => AppData.ModuleHandle;
   public AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext? tenant = null) : base(options, tenant) { }
 
   protected AppDbContext(DbContextOptions options, ITenantContext? tenant) : base(options, tenant) { }
@@ -35,7 +35,10 @@ public class AppDbContext : PlatformDbContext
 
     modelBuilder.Entity<AppAuthRole>().HasIndex(row => row.Name).IsUnique().HasFilter("\"TenantId\" IS NULL");
 
-    foreach (var key in modelBuilder.Model.GetEntityTypes().SelectMany(type => type.GetForeignKeys()))
+    var appAssembly = typeof(AppDbContext).Assembly;
+    foreach (var key in modelBuilder.Model.GetEntityTypes()
+               .Where(type => type.ClrType.Assembly == appAssembly)
+               .SelectMany(type => type.GetForeignKeys()))
     {
       key.DeleteBehavior = key.DeclaringEntityType.ClrType == typeof(Models.AppAuthAssignment) && key.Properties.Any(p => p.Name == nameof(Models.AppAuthAssignment.UserId)) ||
           key.DeclaringEntityType.ClrType == typeof(Models.AppAuthSession) && key.Properties.Any(p => p.Name == nameof(Models.AppAuthSession.UserId))

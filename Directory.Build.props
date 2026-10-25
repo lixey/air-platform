@@ -22,6 +22,7 @@
       <Using Include="Platform.Data.Entities" />
       <Using Include="Platform.Data.Files" />
       <Using Include="Platform.Data.Querying" />
+      <Using Include="Platform.Data.Schema" />
       <Using Include="Platform.Data.Tenancy" />
     </ItemGroup>
     <ItemGroup Condition="'$(MSBuildProjectName)' == 'Air.Data.Postgres' or '@(ProjectReference->WithMetadataValue('Filename', 'Air.Data.Postgres'))' != ''">
