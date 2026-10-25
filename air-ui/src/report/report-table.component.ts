@@ -64,7 +64,7 @@ import { UI_COLORS } from '../theme/ui-color';
                     "
                     (click)="sortable ? toggleSort(col.key) : null"
                     (keydown.enter)="sortable ? toggleSort(col.key) : null"
-                    (keydown.space)="sortable ? ($event.preventDefault(), toggleSort(col.key)) : null"
+                    (keydown.space)="onHeaderSpace($event, sortable, col.key)"
                   >
                     <div
                       class="inline-flex items-center gap-1"
@@ -179,6 +179,14 @@ export class ReportTableComponent {
 
   protected isColSortable(t: ReportTableDto, col: ReportColumnDto): boolean {
     return col.sortable ?? t.sortable ?? false;
+  }
+
+  protected onHeaderSpace(event: Event, sortable: boolean, key: string): void {
+    if (!sortable) {
+      return;
+    }
+    event.preventDefault();
+    this.toggleSort(key);
   }
 
   protected toggleSort(key: string): void {

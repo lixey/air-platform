@@ -143,6 +143,26 @@ public static class AgentModelCatalog
     {
       ProviderHandle = "Claude",
       ProviderName = "Claude CLI (claude)",
+      ModelId = "claude-opus-5-5-high",
+      Name = "Claude Opus 5.5 (High)",
+      SortOrder = 190,
+      IsDefault = false,
+      IsActive = true
+    },
+    new()
+    {
+      ProviderHandle = "Claude",
+      ProviderName = "Claude CLI (claude)",
+      ModelId = "claude-sonnet-5-5-high",
+      Name = "Claude Sonnet 5.5 (High)",
+      SortOrder = 195,
+      IsDefault = false,
+      IsActive = false
+    },
+    new()
+    {
+      ProviderHandle = "Claude",
+      ProviderName = "Claude CLI (claude)",
       ModelId = "claude-opus-4-6",
       Name = "Claude Opus 4.6",
       SortOrder = 200,

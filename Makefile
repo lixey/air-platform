@@ -1,10 +1,13 @@
-.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch check-ts gate prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
+.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
 
 VOLUME ?= default
 WEB := demo/web
 PRETTIER_PATHS := . ../../air-ui/src ../../docs
 AGENT_API_PORT ?= 5191
 AGENT_WEB_PORT ?= 4400
+AUDIT_CLI ?= auto
+AUDIT_MODEL ?= claude-opus-5-5-high
+AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md. Report objective bugs/regressions vs controversial design trade-offs concisely.
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
 DAEMON_RUN := python3 -c 'import os, sys, subprocess; r, w = os.pipe(); f = open(sys.argv[1], "wb"); subprocess.Popen(sys.argv[2:], stdin=r, stdout=f, stderr=f, pass_fds=(w,), start_new_session=True)'
 
@@ -25,10 +28,20 @@ format-check: ## Verify formatting without modifying files
 check-paths: check-arch ## Verify zero absolute filesystem paths and architectural rules in tracked files
 	@! git grep -nI -E '$(ABS_PATH_PATTERN)'
 
-check-ts: ## Verify TypeScript compilation for air-ui and demo
-	@cd $(WEB) && npx tsc --noEmit -p apps/demo/tsconfig.app.json
+check-ts: ## Verify TypeScript and Angular template compilation for air-ui and demo
+	@cd $(WEB) && npx ngc -p apps/demo/tsconfig.app.json --noEmit
 
 gate: format-check check-paths check-arch check-ts build ## Run unified verification gate (format, paths, arch, ts, build)
+
+audit: ## Run controlled code audit on Claude Opus 5.5 (High) via agy CLI with automatic fallback to claude CLI
+	@if [ "$(AUDIT_CLI)" = "claude" ]; then \
+		claude --model $(AUDIT_MODEL:%-high=%) --fallback-model claude-opus-5 --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+	elif [ "$(AUDIT_CLI)" = "agy" ]; then \
+		agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+	else \
+		agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)" || \
+		claude --model $(AUDIT_MODEL:%-high=%) --fallback-model claude-opus-5 --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+	fi
 
 check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, *Extensions.cs, and .resx parity
 	@python3 -c 'import glob, os, re, sys; \
@@ -71,7 +84,16 @@ reset: db-reset
 agent-up: ## Start Demo backend (5191) and frontend (4400) on dedicated agent ports
 	@$(DAEMON_RUN) /tmp/air-platform-agent-api.log dotnet run --project demo/src/Demo.Api --urls http://localhost:$(AGENT_API_PORT)
 	@cd $(WEB) && DEMO_API_URL=http://localhost:$(AGENT_API_PORT) $(DAEMON_RUN) /tmp/air-platform-agent-web.log ./node_modules/.bin/nx serve demo --configuration=agent --port $(AGENT_WEB_PORT)
-	@echo "Agent Demo servers starting: Backend http://localhost:$(AGENT_API_PORT) | Frontend http://localhost:$(AGENT_WEB_PORT)"
+	@for i in $$(seq 1 120); do \
+		if lsof -iTCP:$(AGENT_API_PORT) -sTCP:LISTEN -P -n >/dev/null 2>&1 && lsof -iTCP:$(AGENT_WEB_PORT) -sTCP:LISTEN -P -n >/dev/null 2>&1; then \
+			echo "Agent Demo servers ready: Backend http://localhost:$(AGENT_API_PORT) | Frontend http://localhost:$(AGENT_WEB_PORT)"; \
+			exit 0; \
+		fi; \
+		sleep 0.5; \
+	done; \
+	echo "ERROR: Agent Demo servers failed to bind on $(AGENT_API_PORT)/$(AGENT_WEB_PORT)"; \
+	tail -n 25 /tmp/air-platform-agent-api.log /tmp/air-platform-agent-web.log 2>/dev/null || true; \
+	exit 1
 
 agent-down: ## Stop Demo backend (5191) and frontend (4400) on dedicated agent ports
 	@lsof -ti :$(AGENT_API_PORT) -i :$(AGENT_WEB_PORT) | xargs kill -9 2>/dev/null || true
