@@ -6,8 +6,6 @@ public sealed class EcomDocStatusFormService(EcomDbContext db, EcomService? ecom
 {
   public override Feature Feature => Ecom.DocStatus;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.DocTypeId).Label("Type").AsReference<EcomDocTypeGridService>().Span(6);

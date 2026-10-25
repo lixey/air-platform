@@ -26,12 +26,48 @@ public abstract partial class GridService<TEntity, TRow>
       query = query.Where(filter);
     }
 
-    if (ParentId.HasValue && parent.FilterFunc != null)
+    if (ParentId.HasValue && parent.FilterFunc != null && parent.MatchesService(ParentService))
     {
       query = parent.FilterFunc(query, ParentId.Value);
     }
+    else if (ParentId is > 0 && ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
+    {
+      query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
+    }
 
     return query;
+  }
+
+  private Form.ChildGridBuilder? ResolveParentChildBuilder()
+  {
+    if (ParentId is not > 0 || string.IsNullOrEmpty(ParentService))
+    {
+      return null;
+    }
+
+    var parentFormType = ModuleCatalog.Instance.FindServiceType(ParentService);
+    if (parentFormType == null || !typeof(Form.IFormService).IsAssignableFrom(parentFormType))
+    {
+      return null;
+    }
+
+    try
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is Form.IFormService parentForm)
+      {
+        var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var myService = ServicePathResolver.Resolve(GetType());
+        return children.FirstOrDefault(c =>
+          !c.IsFiles &&
+          (c.ServiceType == GetType() ||
+           string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase)));
+      }
+    }
+    catch
+    {
+    }
+
+    return null;
   }
 
   private static IQueryable<TEntity> ApplyActiveNamedFilters(

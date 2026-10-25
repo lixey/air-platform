@@ -25,6 +25,8 @@ public abstract partial class FormService<TEntity, TInput>
       }
     }
 
+    CurrentEntity = entity;
+
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     if (parent.BoundProperty != null && request.ParentId is > 0)
@@ -85,6 +87,7 @@ public abstract partial class FormService<TEntity, TInput>
           Title = t.Title != null ? L[t.Title] : null
         }).ToList()
         : null,
+      Tables = elements.Tables.Count > 0 ? elements.Tables.ToList() : null,
       IsReadOnly = IsReadOnly,
       DirtyDialog = new OverlayDirtyModel
       {

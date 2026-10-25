@@ -5,8 +5,6 @@ public sealed class OrgCurrencyFormService(OrgDbContext db, OrgService? org = nu
 {
   public override Feature Feature => Org.Currency;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Handle);

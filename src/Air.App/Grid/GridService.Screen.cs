@@ -28,8 +28,9 @@ public abstract partial class GridService<TEntity, TRow>
 
     LocalizeAndConfigureColumns(columns.List);
 
+    var parentChild = ResolveParentChildBuilder();
     var isUserReadOnly = User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
-    var isGridReadOnly = IsReadOnly || isUserReadOnly;
+    var isGridReadOnly = IsReadOnly || isUserReadOnly || parentChild?.IsReadOnly == true;
 
     var navStart = new List<NavElementModel>();
     if (!isGridReadOnly && nav.Creates.Count > 0)
@@ -78,7 +79,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         hasRight = User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
       }
-      else if (!entry.IsAllowedInReadOnly && isUserReadOnly)
+      else if (!entry.IsAllowedInReadOnly && (isUserReadOnly || isGridReadOnly))
       {
         hasRight = false;
       }
@@ -153,9 +154,13 @@ public abstract partial class GridService<TEntity, TRow>
               baseQ = baseQ.Where(filter);
             }
 
-            if (ParentId.HasValue && parent.FilterFunc != null)
+            if (ParentId.HasValue && parent.FilterFunc != null && parent.MatchesService(ParentService))
             {
               baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+            }
+            else if (ParentId is > 0 && parentChild?.FilterProvider is { } fp)
+            {
+              baseQ = (IQueryable<TEntity>)fp(db, ParentId.Value, baseQ);
             }
 
             if (item.Predicate != null)
@@ -201,9 +206,13 @@ public abstract partial class GridService<TEntity, TRow>
             baseQ = baseQ.Where(filter);
           }
 
-          if (ParentId.HasValue && parent.FilterFunc != null)
+          if (ParentId.HasValue && parent.FilterFunc != null && parent.MatchesService(ParentService))
           {
             baseQ = parent.FilterFunc(baseQ, ParentId.Value);
+          }
+          else if (ParentId is > 0 && parentChild?.FilterProvider is { } fp)
+          {
+            baseQ = (IQueryable<TEntity>)fp(db, ParentId.Value, baseQ);
           }
 
           if (item.Predicate != null)
@@ -273,7 +282,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var actionEnd = new List<NavElementModel>();
-    if (CanDelete())
+    if (!isGridReadOnly && CanDelete())
     {
       actionEnd.Add(new GridNavActionModel
       {

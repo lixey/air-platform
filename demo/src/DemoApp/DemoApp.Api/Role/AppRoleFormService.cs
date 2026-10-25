@@ -7,8 +7,6 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
 
   public override Feature Feature => App.Role;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
     elements.Add(e => e.Name).Focus();

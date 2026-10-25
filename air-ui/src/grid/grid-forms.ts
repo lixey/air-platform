@@ -64,7 +64,7 @@ export class GridForms {
         }
       : {
           key: targetService,
-          presentation: 'dialog',
+          presentation: 'drawer',
           closesOnEscape: true,
           screen: { service: targetService, params: id === null ? {} : { id } },
         };

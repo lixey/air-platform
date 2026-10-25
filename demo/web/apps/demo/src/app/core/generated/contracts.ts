@@ -215,7 +215,7 @@ export type FileCover = 'auto' | 'manual';
 
 export type ReportChartKind = 'bar' | 'line' | 'area' | 'stacked-bar' | 'horizontal-bar' | 'donut' | 'pie';
 
-export type ReportColumnKind = 'text' | 'money' | 'number' | 'percent';
+export type ReportColumnKind = 'text' | 'money' | 'number' | 'percent' | 'badge' | 'date' | 'datetime';
 
 export type ButtonVariant = 'soft' | 'solid' | 'ghost';
 export type ButtonSize = 'small' | 'medium';
@@ -787,6 +787,7 @@ export interface FormModel {
   elements: FormElementDto[];
   tabs?: FormTabDto[] | null;
   files?: FormFilesModel[] | null;
+  tables?: ReportTableDto[] | null;
   isReadOnly: boolean;
   dirtyDialog: OverlayDirtyModel;
   mutationTexts: MutationTextsDto;
@@ -1715,6 +1716,9 @@ export interface ReportColumnDto {
   currency?: string | null;
   sticky?: string | null;
   width?: number | null;
+  decimals?: number | null;
+  sortable?: boolean | null;
+  align?: string | null;
 }
 
 export interface ReportDataDto {
@@ -1724,6 +1728,7 @@ export interface ReportDataDto {
   kpis?: ReportKpiDto[] | null;
   charts?: ReportChartDto[] | null;
   table?: ReportTableDto | null;
+  tables?: ReportTableDto[] | null;
 }
 
 export interface ReportFilterGroupDto {
@@ -1774,7 +1779,17 @@ export interface ReportSeriesDto {
 }
 
 export interface ReportTableDto {
+  key?: string | null;
   title?: string | null;
+  subtitle?: string | null;
+  tab?: string | null;
+  searchable?: boolean;
+  sortable?: boolean;
+  compact?: boolean;
+  maxHeight?: number | null;
+  emptyText?: string | null;
+  filterField?: string | null;
+  filterChips?: ReportFilterItemDto[] | null;
   columns: ReportColumnDto[];
   rows: Record<string, unknown>[];
   bottomRows?: Record<string, unknown>[] | null;

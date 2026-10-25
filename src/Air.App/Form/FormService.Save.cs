@@ -95,6 +95,11 @@ public abstract partial class FormService<TEntity, TInput>
 
     var hooks = GetHooks();
 
+    if (IsNew)
+    {
+      ApplyParentChildPreset(entity, input, parent);
+    }
+
     var loadCtx = new FormLoadContext<TEntity, TInput>
     {
       Entity = entity,
@@ -304,6 +309,8 @@ public abstract partial class FormService<TEntity, TInput>
 
       var newLoadInput = new TInput();
       CopyMatchingProperties(entity, newLoadInput);
+      ApplyParentChildPreset(entity, newLoadInput, parent);
+
       var newLoadCtx = new FormLoadContext<TEntity, TInput>
       {
         Entity = entity,

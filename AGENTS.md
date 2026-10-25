@@ -5,6 +5,7 @@
 - **Task Restatement First**: Upon receiving a task, first restate it in clear, coherent prose (broken into numbered points if multi-part) and expand on any implicit details you notice are needed, so the user can see you understood it accurately before reporting actions.
 - **Plan & Approval for Complex Tasks**: If a task requires extended analysis, touches core architecture, or involves design trade-offs, present a compact numbered implementation plan, impact analysis, and critical points first, and wait for explicit user approval before writing code.
 - **Platform Evolution Over Workarounds**: The Air Platform is actively evolving. Never work around or fight platform limitations with hacks — instead, propose clean, universal architectural improvements to the platform itself with thorough justification.
+- **Controlled Subagent Audit**: At the end of every change (before final commit/push), launch an independent controlled audit subagent (`invoke_subagent` with `Model: 'inherit'`) to review the diff for architectural compliance, edge cases, and regressions. Fix objective issues immediately; if the subagent raises a controversial design trade-off, surface it to the user for discussion.
 - **Format, Verify, Commit & Push Automatically**: After every working change, run `make format` (`dotnet format` + `prettier`), verify the unified gate (`make gate`: `format-check`, `check-paths`, `check-arch`, `check-ts`, `build`), then immediately commit and `git push` without asking.
 - **Mandatory Harness Telemetry & Self-Assessment Footer**: At the end of every change/task response, include a concise 3-line telemetry footer:
   1. **MCP Usage & Verdict**: How much Rider/WebStorm MCP was used (`0%`–`100%`, tools called) and an honest verdict on whether it helped or if CLI/native tools were faster.
@@ -47,9 +48,9 @@
 ## 5. UI & Form Conventions
 - **Reuse Platform Primitives**: Always use `air-ui` components, services, and tokens (`ui-nav`, `ui-btn`, `SelectService`, `OverlayService`, `fieldClasses`, `UiIcon` + `ICON_SET`, semantic classes `bg-surface`, `bg-field`, `border-line`, `border-field-edge`) instead of custom native controls. Use `flex items-center justify-center` on `<i [icon]="...">` tags.
 - **Responsive Panels**: Respect `LayoutPanelsService` (`panels.isNarrow()`). On narrow screens, open side panels inside a modal dialog (`presentation: 'dialog'`).
-- **Form Overlay Presentation Rule (`Popover` vs `Drawer`)**:
-  - **Default (`Popover`)**: All standard and compact forms use `OverlayModel.Popover(handle)` by default in the base `FormService`. Child form services must NOT redundantly override `Presentation` when using `Popover`.
-  - **Composite & Large Forms (`Drawer`)**: `OverlayModel.Drawer(handle)` is used ONLY for large multi-section/multi-tab forms and is **strictly mandatory** whenever a form has subordinate child data tables (`elements.AddChild<TGrid>()` without `.AsFiles()`).
+- **Form Overlay Presentation Rule (`Drawer` vs `Popover`)**:
+  - **Default (`Drawer`)**: All standard and composite forms use `OverlayModel.Drawer(handle)` by default in the base `FormService` (as most entities have subordinate child data tables via `elements.AddChild(...)`). Child form services must NOT redundantly override `Presentation` when using `Drawer`.
+  - **Compact Forms (`Popover`)**: Override `Presentation` with `OverlayModel.Popover(handle)` only for compact standalone forms that have no subordinate child data tables.
 - **Bounded Agent Queries**: Small dictionaries (`<= 50` records) are preloaded in full; larger dictionaries (`> 50` records) are queried on-demand via server-side `Search`.
 
 ## 6. Makefile Commands, Dev Ports, MCP & Git Commit Rules

@@ -17,8 +17,6 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
   protected override bool IsReadOnly => base.IsReadOnly || Status is { IsFinal: true };
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetQuery(Query query)
   {
     query.From(db.EcomDoc.Include(doc => doc.DocStatus));

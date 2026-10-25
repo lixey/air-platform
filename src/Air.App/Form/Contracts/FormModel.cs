@@ -12,6 +12,9 @@ public sealed record FormModel : PanelModel
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<FormFilesModel>? Files { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<ReportTableDto>? Tables { get; set; }
+
   public bool IsReadOnly { get; set; }
   public OverlayDirtyModel DirtyDialog { get; set; } = new();
   public MutationTextsDto MutationTexts { get; set; } = new();

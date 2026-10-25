@@ -17,4 +17,7 @@ public sealed class ReportDataDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public ReportTableDto? Table { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<ReportTableDto>? Tables { get; init; }
 }

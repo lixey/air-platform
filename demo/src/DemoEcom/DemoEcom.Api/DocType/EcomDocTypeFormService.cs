@@ -6,8 +6,6 @@ public sealed class EcomDocTypeFormService(EcomDbContext db, EcomService? ecom =
 {
   public override Feature Feature => Ecom.DocType;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus();

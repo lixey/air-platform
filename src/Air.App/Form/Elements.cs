@@ -7,9 +7,37 @@ public class Elements
   private string? _currentTab;
 
   private readonly List<ChildGridBuilder> _children = [];
+  private readonly List<ReportTableDto> _tables = [];
   public IReadOnlyList<FormElementDto> List => _elements;
   public IReadOnlyList<FormTabDto> Tabs => _tabs;
   public IReadOnlyList<ChildGridBuilder> Children => _children;
+  public IReadOnlyList<ReportTableDto> Tables => _tables;
+
+  public void AddReportTable(ReportTableDto table)
+  {
+    if (string.IsNullOrEmpty(table.Tab) && _currentTab != null)
+    {
+      table = new ReportTableDto
+      {
+        Key = table.Key,
+        Title = table.Title,
+        Subtitle = table.Subtitle,
+        Tab = _currentTab,
+        Searchable = table.Searchable,
+        Sortable = table.Sortable,
+        Compact = table.Compact,
+        MaxHeight = table.MaxHeight,
+        EmptyText = table.EmptyText,
+        FilterField = table.FilterField,
+        FilterChips = table.FilterChips,
+        Columns = table.Columns,
+        Rows = table.Rows,
+        BottomRows = table.BottomRows
+      };
+    }
+
+    _tables.Add(table);
+  }
 
   public void AddTab(string label, string? key = null, string? title = null)
   {

@@ -5,8 +5,6 @@ public sealed class OrgBrandFormService(OrgDbContext db, OrgService? org = null)
 {
   public override Feature Feature => Org.Brand;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus().Unique("This name is already in use.");

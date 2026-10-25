@@ -39,8 +39,162 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   public PlatformDbContext DbContext => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected TEntity? CurrentEntity { get; private set; }
 
-  public sealed class Elements : Elements<TInput> { }
+  public sealed class Elements : Elements<TInput>
+  {
+    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+      Expression<Func<TChildEntity, long>> foreignKey,
+      Action<TChildEntity, TEntity>? preset = null)
+      where TChildEntity : class, IEntity
+    {
+      var builder = AddChild<TChildGridService>();
+      builder.ChildEntityType = typeof(TChildEntity);
+      builder.FilterProvider = (_, parentId, rawQuery) =>
+      {
+        var param = foreignKey.Parameters[0];
+        var body = Expression.Equal(foreignKey.Body, Expression.Constant(parentId));
+        var predicate = Expression.Lambda<Func<TChildEntity, bool>>(body, param);
+        return ((IQueryable<TChildEntity>)rawQuery).Where(predicate);
+      };
+
+      var expr = foreignKey.Body is UnaryExpression ue ? ue.Operand : foreignKey.Body;
+      var directProp = expr is MemberExpression me && me.Expression == foreignKey.Parameters[0]
+        ? me.Member as PropertyInfo
+        : null;
+
+      if (directProp is { CanWrite: true } || preset != null)
+      {
+        builder.PresetProvider = (ctxDb, parentId, childObj) =>
+        {
+          if (childObj is not TChildEntity child)
+          {
+            return;
+          }
+
+          if (directProp is { CanWrite: true })
+          {
+            directProp.SetValue(child, parentId);
+          }
+
+          if (preset != null)
+          {
+            var parent = LoadParentEntity(ctxDb, parentId);
+            if (parent != null)
+            {
+              preset(child, parent);
+            }
+          }
+        };
+      }
+
+      return builder;
+    }
+
+    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+      Expression<Func<TChildEntity, long?>> foreignKey,
+      Action<TChildEntity, TEntity>? preset = null)
+      where TChildEntity : class, IEntity
+    {
+      var builder = AddChild<TChildGridService>();
+      builder.ChildEntityType = typeof(TChildEntity);
+      builder.FilterProvider = (_, parentId, rawQuery) =>
+      {
+        var param = foreignKey.Parameters[0];
+        var body = Expression.Equal(foreignKey.Body, Expression.Constant((long?)parentId, typeof(long?)));
+        var predicate = Expression.Lambda<Func<TChildEntity, bool>>(body, param);
+        return ((IQueryable<TChildEntity>)rawQuery).Where(predicate);
+      };
+
+      var expr = foreignKey.Body is UnaryExpression ue ? ue.Operand : foreignKey.Body;
+      var directProp = expr is MemberExpression me && me.Expression == foreignKey.Parameters[0]
+        ? me.Member as PropertyInfo
+        : null;
+
+      if (directProp is { CanWrite: true } || preset != null)
+      {
+        builder.PresetProvider = (ctxDb, parentId, childObj) =>
+        {
+          if (childObj is not TChildEntity child)
+          {
+            return;
+          }
+
+          if (directProp is { CanWrite: true })
+          {
+            directProp.SetValue(child, (long?)parentId);
+          }
+
+          if (preset != null)
+          {
+            var parent = LoadParentEntity(ctxDb, parentId);
+            if (parent != null)
+            {
+              preset(child, parent);
+            }
+          }
+        };
+      }
+
+      return builder;
+    }
+
+    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+      Func<TEntity, Expression<Func<TChildEntity, bool>>> filter,
+      Action<TChildEntity, TEntity>? preset = null)
+      where TChildEntity : class, IEntity =>
+      AddChild<TChildGridService, TChildEntity>((_, parent) => filter(parent), preset);
+
+    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+      Func<PlatformDbContext, TEntity, Expression<Func<TChildEntity, bool>>> filter,
+      Action<TChildEntity, TEntity>? preset = null)
+      where TChildEntity : class, IEntity
+    {
+      var builder = AddChild<TChildGridService>();
+      builder.ChildEntityType = typeof(TChildEntity);
+      builder.FilterProvider = (ctxDb, parentId, rawQuery) =>
+      {
+        var parent = LoadParentEntity(ctxDb, parentId);
+        if (parent == null)
+        {
+          return ((IQueryable<TChildEntity>)rawQuery).Where(_ => false);
+        }
+
+        var predicate = filter(ctxDb, parent);
+        return ((IQueryable<TChildEntity>)rawQuery).Where(predicate);
+      };
+
+      if (preset != null)
+      {
+        builder.PresetProvider = (ctxDb, parentId, childObj) =>
+        {
+          if (childObj is not TChildEntity child)
+          {
+            return;
+          }
+
+          var parent = LoadParentEntity(ctxDb, parentId);
+          if (parent != null)
+          {
+            preset(child, parent);
+          }
+        };
+      }
+
+      return builder;
+    }
+
+    private static TEntity? LoadParentEntity(PlatformDbContext ctxDb, long parentId)
+    {
+      var local = ctxDb.Set<TEntity>().Local.FirstOrDefault(e => e.Id == parentId);
+      if (local != null)
+      {
+        return local;
+      }
+
+      return ctxDb.Set<TEntity>().AsNoTracking().FirstOrDefault(e => e.Id == parentId);
+    }
+  }
 
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
@@ -84,12 +238,36 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public sealed class Parent
   {
+    public Type? BoundParentServiceType { get; private set; }
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
     public bool IsOptional { get; private set; }
 
+    public bool MatchesService(string? parentService)
+    {
+      if (string.IsNullOrEmpty(parentService) || string.IsNullOrEmpty(BoundParentService))
+      {
+        return true;
+      }
+
+      if (string.Equals(parentService, BoundParentService, StringComparison.OrdinalIgnoreCase))
+      {
+        return true;
+      }
+
+      if (BoundParentServiceType != null &&
+          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType &&
+          BoundParentServiceType.IsAssignableFrom(actualType))
+      {
+        return true;
+      }
+
+      return false;
+    }
+
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
+      BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
       var expr = member.Body;
@@ -106,6 +284,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
     public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
     {
+      BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
       var expr = member.Body;
@@ -557,7 +736,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public string Service => ServicePathResolver.Resolve(GetType());
 
-  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Popover(handle);
+  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 
   private bool HasChildPages()
   {

@@ -13,10 +13,11 @@ import {
   type WritableSignal,
 } from '@angular/core';
 import { DynamicOutletDirective } from '../core/dynamic-component/dynamic-outlet.directive';
-import type { FormElementDto, FormFilesModel, FormModel, MessageDto } from '../core/generated/contracts';
+import type { FormElementDto, FormFilesModel, FormModel, MessageDto, ReportTableDto } from '../core/generated/contracts';
 import { focusables } from '../overlay/overlay-focus';
 import { PanelsContext } from '../panels/panels-context';
 import { PANELS } from '../panels/panels-tokens';
+import { ReportTableComponent } from '../report/report-table.component';
 import { FormCloseGuard } from './form-close-guard';
 import { FormElementOutletComponent } from './form-element-outlet.component';
 import { evaluateFilterNode } from './form-field-rules';
@@ -40,7 +41,7 @@ import { FormService, isFormData } from './form.service';
  */
 @Component({
   selector: 'ui-form',
-  imports: [DynamicOutletDirective, FormElementOutletComponent, FormOutcomeComponent],
+  imports: [DynamicOutletDirective, FormElementOutletComponent, FormOutcomeComponent, ReportTableComponent],
   providers: [FormService, FormCloseGuard],
   template: `
     <ui-form-outcome />
@@ -72,6 +73,11 @@ import { FormService, isFormData } from './form.service';
             </div>
           }
         }
+        @for (table of tables(); track table.key ?? $index) {
+          <div class="col-span-full min-w-0" [hidden]="!isTabShown(table.tab)" [attr.data-tab]="table.tab || null" data-form-table>
+            <ui-report-table [table]="table" />
+          </div>
+        }
         @for (files of files(); track files.key) {
           <div class="col-span-full min-w-0" [hidden]="!isTabShown(files.tab)" [attr.data-tab]="files.tab || null" data-form-files>
             <ng-container [uiDynamicOutlet]="files.kind" [uiDynamicOutletInputs]="{ model: files }" />
@@ -102,6 +108,8 @@ export class FormComponent {
 
   /** The record's files drawn in the body, in declared order. */
   protected readonly files = computed<readonly FormFilesModel[]>(() => this.model()?.files ?? []);
+  /** The report tables drawn in the body, in declared order. */
+  protected readonly tables = computed<readonly ReportTableDto[]>(() => this.model()?.tables ?? []);
   private focusedData: unknown = null;
 
   constructor() {

@@ -5,8 +5,6 @@ public sealed class OrgWarehouseFormService(OrgDbContext db, OrgService? org = n
 {
   public override Feature Feature => Org.Warehouse;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew);

@@ -7,8 +7,6 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
   public override Feature Feature => App.User;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
     elements.Add(e => e.Login).Unique("This login is already in use.");

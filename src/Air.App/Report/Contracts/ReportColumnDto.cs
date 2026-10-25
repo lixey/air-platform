@@ -17,4 +17,13 @@ public sealed class ReportColumnDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public int? Width { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public int? Decimals { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public bool? Sortable { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Align { get; init; }
 }

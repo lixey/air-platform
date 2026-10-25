@@ -5,8 +5,6 @@ public sealed class OrgProductCategoryFormService(OrgDbContext db, OrgService? o
 {
   public override Feature Feature => Org.ProductCategory;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus().Unique("This name is already in use.");

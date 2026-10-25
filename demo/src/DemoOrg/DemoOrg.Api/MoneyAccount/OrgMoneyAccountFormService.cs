@@ -5,8 +5,6 @@ public sealed class OrgMoneyAccountFormService(OrgDbContext db, OrgService? org 
 {
   public override Feature Feature => Org.MoneyAccount;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew);

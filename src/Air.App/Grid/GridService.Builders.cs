@@ -17,12 +17,36 @@ public abstract partial class GridService<TEntity, TRow>
   public sealed class Parent
   {
     internal Func<IQueryable<TEntity>, long, IQueryable<TEntity>>? FilterFunc { get; private set; }
+    public Type? BoundParentServiceType { get; private set; }
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
     public bool HasRead { get; private set; }
 
+    public bool MatchesService(string? parentService)
+    {
+      if (string.IsNullOrEmpty(parentService) || string.IsNullOrEmpty(BoundParentService))
+      {
+        return true;
+      }
+
+      if (string.Equals(parentService, BoundParentService, StringComparison.OrdinalIgnoreCase))
+      {
+        return true;
+      }
+
+      if (BoundParentServiceType != null &&
+          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType &&
+          BoundParentServiceType.IsAssignableFrom(actualType))
+      {
+        return true;
+      }
+
+      return false;
+    }
+
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
+      BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
       {
@@ -44,6 +68,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
     {
+      BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
       {
@@ -65,6 +90,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     public void Read<TParentService>()
     {
+      BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       HasRead = true;
     }

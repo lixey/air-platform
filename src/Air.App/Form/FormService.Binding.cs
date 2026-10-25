@@ -123,7 +123,7 @@ public abstract partial class FormService<TEntity, TInput>
   private HashSet<string> BuildProtectedPaths(Elements elements, JsonElement? clientJson = null, bool isNew = true)
   {
     HashSet<string>? presentInJson = null;
-    if (!isNew && clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
+    if (clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
     {
       presentInJson = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       foreach (var jProp in jsonObj.EnumerateObject())
@@ -291,9 +291,9 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private static void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
+  private void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
   {
-    if (!parentId.HasValue || parent.BoundProperty == null)
+    if (!parentId.HasValue || parent.BoundProperty == null || !parent.MatchesService(Request.ParentService))
     {
       return;
     }
@@ -310,7 +310,7 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void RestoreBoundParentId(TEntity entity, Parent parent)
   {
-    if (parent.BoundProperty == null)
+    if (parent.BoundProperty == null || !parent.MatchesService(Request.ParentService))
     {
       return;
     }
@@ -322,6 +322,46 @@ public abstract partial class FormService<TEntity, TInput>
       {
         Request.ParentId = storedParentId.Value;
       }
+    }
+  }
+
+  private void ApplyParentChildPreset(TEntity entity, TInput input, Parent parent)
+  {
+    if (parent.BoundProperty != null && parent.MatchesService(Request.ParentService) ||
+        Request.ParentId is not > 0 ||
+        string.IsNullOrEmpty(Request.ParentService))
+    {
+      return;
+    }
+
+    var parentFormType = ModuleCatalog.Instance.FindServiceType(Request.ParentService);
+    if (parentFormType == null || !typeof(IFormService).IsAssignableFrom(parentFormType))
+    {
+      return;
+    }
+
+    try
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is IFormService parentForm)
+      {
+        var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var match = children.FirstOrDefault(c =>
+          !c.IsFiles &&
+          c.PresetProvider != null &&
+          c.ChildEntityType != null &&
+          c.ChildEntityType.IsAssignableFrom(typeof(TEntity)));
+        if (match?.PresetProvider != null)
+        {
+          match.PresetProvider(db, Request.ParentId.Value, entity);
+          if (!ReferenceEquals(entity, input))
+          {
+            CopyMatchingProperties(entity, input);
+          }
+        }
+      }
+    }
+    catch
+    {
     }
   }
 }

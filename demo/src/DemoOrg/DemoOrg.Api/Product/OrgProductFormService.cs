@@ -7,8 +7,6 @@ public sealed class OrgProductFormService(OrgDbContext db, OrgService? org = nul
 
   public override Feature Feature => Org.Product;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.SupplierId).AsReference<OrgSupplierGridService>().Required().Span(6);

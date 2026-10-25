@@ -5,8 +5,6 @@ public sealed class OrgCounterpartyFormService(OrgDbContext db, OrgService? org 
 {
   public override Feature Feature => Org.Counterparty;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus();

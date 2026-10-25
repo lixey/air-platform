@@ -5,7 +5,6 @@ import { BtnComponent } from '../btn/btn.component';
 import { ChartComponent } from '../chart/chart.component';
 import { Api } from '../core/api';
 import type {
-  ReportColumnDto,
   ReportDataDto,
   ReportFilterItemDto,
   ReportKpiDto,
@@ -17,11 +16,11 @@ import { TextsService } from '../core/texts.service';
 import { TemporalBoxComponent } from '../datepicker/temporal-box.component';
 import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { ScreenMutations } from '../screen/screen-mutations';
-import { UI_COLORS } from '../theme/ui-color';
+import { asUiColor, ReportTableComponent } from './report-table.component';
 
 @Component({
   selector: 'ui-report',
-  imports: [BtnComponent, ChartComponent, TemporalBoxComponent],
+  imports: [BtnComponent, ChartComponent, ReportTableComponent, TemporalBoxComponent],
   template: `
     @if (reportData(); as report) {
       @if (report.filterGroups.length > 0 || report.hasDateRange) {
@@ -102,53 +101,13 @@ import { UI_COLORS } from '../theme/ui-color';
         }
 
         @if (report.table; as table) {
-          <div class="bg-surface border border-line rounded-xl overflow-hidden flex flex-col shrink-0">
-            @if (table.title; as title) {
-              <div class="px-4 py-2.5 border-b border-line bg-surface-2 text-sm font-semibold text-ink">
-                {{ title }}
-              </div>
-            }
-            <div class="overflow-x-auto">
-              <table class="w-full border-collapse text-sm">
-                <thead>
-                  <tr class="bg-surface-2 border-b border-line text-ink font-medium select-none">
-                    @for (col of table.columns; track col.key) {
-                      <th
-                        [class]="headerCellClass(col, table.columns.length)"
-                        [style.min-width.px]="col.width ?? (col.kind === 'text' ? 180 : 108)"
-                      >
-                        {{ col.label }}
-                      </th>
-                    }
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of table.rows; track $index; let idx = $index) {
-                    <tr [class]="idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'">
-                      @for (col of table.columns; track col.key) {
-                        <td [class]="bodyCellClass(col, row, table.columns.length)">
-                          {{ formatCell(col, row[col.key]) }}
-                        </td>
-                      }
-                    </tr>
-                  }
-                </tbody>
-                @if (table.bottomRows && table.bottomRows.length > 0) {
-                  <tfoot>
-                    @for (row of table.bottomRows; track $index) {
-                      <tr class="bg-surface-2 border-t border-line font-semibold">
-                        @for (col of table.columns; track col.key) {
-                          <td [class]="footerCellClass(col, row, table.columns.length)">
-                            {{ formatCell(col, row[col.key]) }}
-                          </td>
-                        }
-                      </tr>
-                    }
-                  </tfoot>
-                }
-              </table>
-            </div>
-          </div>
+          <ui-report-table [table]="table" />
+        }
+
+        @if (report.tables && report.tables.length > 0) {
+          @for (t of report.tables; track t.key ?? $index) {
+            <ui-report-table [table]="t" />
+          }
         }
       </div>
     }
@@ -341,28 +300,6 @@ export class ReportComponent {
     return formatCellNumber(kpi.value, loc, 0, true);
   }
 
-  protected formatCell(col: ReportColumnDto, raw: unknown): string {
-    if (raw === null || raw === undefined || raw === '') {
-      return '';
-    }
-    if (typeof raw === 'string' && col.kind === 'text') {
-      return raw;
-    }
-    const loc = this.currentLocale();
-    if (col.kind === 'money') {
-      return col.currency
-        ? formatCellAmount(raw, loc, moneyFormatOf({ decimals: 0, currency: col.currency }))
-        : formatCellNumber(raw, loc, 0, true);
-    }
-    if (col.kind === 'number') {
-      return formatCellNumber(raw, loc, 0, true);
-    }
-    if (col.kind === 'percent') {
-      return formatCellAmount(raw, loc, percentFormatOf({ decimals: 1 }));
-    }
-    return String(raw);
-  }
-
   protected hueTextClass(color: string | null | undefined): string {
     const hue = asUiColor(color);
     return hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
@@ -387,56 +324,4 @@ export class ReportComponent {
     }
     return '@3xl/panel:col-span-6';
   }
-
-  protected headerCellClass(col: ReportColumnDto, colCount = 0): string {
-    const align = col.kind === 'text' ? 'text-left' : 'text-right';
-    const pad = colCount > 10 ? 'px-2 text-xs' : 'px-3';
-    const sticky =
-      col.sticky === 'left'
-        ? 'sticky left-0 z-10 bg-surface-2'
-        : col.sticky === 'right'
-          ? 'sticky right-0 z-10 bg-surface-2 border-l border-line'
-          : '';
-    return `h-9 ${pad} border-r border-line whitespace-nowrap ${align} ${sticky}`;
-  }
-
-  protected bodyCellClass(col: ReportColumnDto, row: Record<string, unknown>, colCount = 0): string {
-    const align = col.kind === 'text' ? 'text-left font-medium' : 'text-right tabular-nums';
-    const pad = colCount > 10 ? 'px-2 text-xs' : 'px-3';
-    const sticky =
-      col.sticky === 'left'
-        ? 'sticky left-0 z-10 bg-inherit'
-        : col.sticky === 'right'
-          ? 'sticky right-0 z-10 bg-inherit border-l border-line font-medium'
-          : '';
-    const cellColor =
-      (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
-    const hue = asUiColor(cellColor);
-    const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
-    return `h-9 ${pad} border-r border-b border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
-  }
-
-  protected footerCellClass(col: ReportColumnDto, row: Record<string, unknown>, colCount = 0): string {
-    const align = col.kind === 'text' ? 'text-left' : 'text-right tabular-nums';
-    const pad = colCount > 10 ? 'px-2 text-xs' : 'px-3';
-    const sticky =
-      col.sticky === 'left'
-        ? 'sticky left-0 z-10 bg-surface-2'
-        : col.sticky === 'right'
-          ? 'sticky right-0 z-10 bg-surface-2 border-l border-line'
-          : '';
-    const cellColor =
-      (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
-    const hue = asUiColor(cellColor);
-    const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
-    return `h-9 ${pad} border-r border-t border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
-  }
-}
-
-function asUiColor(color: string | null | undefined): UiColor | null {
-  if (!color) {
-    return null;
-  }
-  const lower = color.toLowerCase();
-  return UI_COLORS.find(c => c === lower) ?? null;
 }
