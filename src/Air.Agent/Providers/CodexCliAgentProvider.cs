@@ -11,24 +11,14 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
   };
 
+  private static readonly Regex SlugMajorRegex = new(
+    @"^[a-z]+-(?<major>\d+)(?:\.\d+)?(?:-|$)",
+    RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
   private IReadOnlyList<AgentModelDto>? _cachedModels;
   private DateTime _cachedCacheWriteUtc;
   private string? _cachedCachePath;
   private readonly SemaphoreSlim _modelsLock = new(1, 1);
-
-  private static readonly IReadOnlyList<AgentModelDto> FallbackModels =
-  [
-    new() { Id = "gpt-6.1-sol-high", Name = "GPT-6.1 Sol (High)", Provider = "Codex" },
-    new() { Id = "gpt-6-astra-high", Name = "GPT-6 Astra (High)", Provider = "Codex" },
-    new() { Id = "gpt-6.1-terra-high", Name = "GPT-6.1 Terra (High)", Provider = "Codex" },
-    new() { Id = "gpt-6.1-sol-medium", Name = "GPT-6.1 Sol (Medium)", Provider = "Codex" },
-    new() { Id = "gpt-6.1-sol-low", Name = "GPT-6.1 Sol (Low)", Provider = "Codex" },
-    new() { Id = "gpt-6-astra-medium", Name = "GPT-6 Astra (Medium)", Provider = "Codex" },
-    new() { Id = "gpt-6.1-terra-medium", Name = "GPT-6.1 Terra (Medium)", Provider = "Codex" },
-    new() { Id = "gpt-6-sol-high", Name = "GPT-6 Sol (High)", Provider = "Codex" },
-    new() { Id = "gpt-6-luna-high", Name = "GPT-6 Luna (High)", Provider = "Codex" },
-    new() { Id = "gpt-5.6-sol-high", Name = "GPT-5.6 Sol (High)", Provider = "Codex" }
-  ];
 
   public string Handle => "Codex";
   public string Name => "Codex CLI (codex)";
@@ -39,7 +29,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     var cachePath = ResolveModelsCachePath();
     if (cachePath is null || !File.Exists(cachePath))
     {
-      return FallbackModels;
+      return [];
     }
 
     var writeUtc = File.GetLastWriteTimeUtc(cachePath);
@@ -73,14 +63,14 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
     {
-      // Fall back to default catalog if cache inspection fails
+      // Ignore cache file read errors
     }
     finally
     {
       _modelsLock.Release();
     }
 
-    return FallbackModels;
+    return _cachedModels ?? [];
   }
 
   private static string? ResolveModelsCachePath()
@@ -105,7 +95,9 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       return [];
     }
 
-    var result = new List<AgentModelDto>();
+    var entries = new List<(string Slug, string Title, int Major, HashSet<string> Efforts)>();
+    var maxMajor = 0;
+
     foreach (var m in modelsArr.EnumerateArray())
     {
       var visibility = m.TryGetProperty("visibility", out var vProp) && vProp.ValueKind == JsonValueKind.String
@@ -124,6 +116,17 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
         continue;
       }
 
+      var major = 0;
+      var match = SlugMajorRegex.Match(slug);
+      if (match.Success && int.TryParse(match.Groups["major"].Value, out var parsedMajor))
+      {
+        major = parsedMajor;
+        if (major > maxMajor)
+        {
+          maxMajor = major;
+        }
+      }
+
       var rawTitle = m.TryGetProperty("display_name", out var dProp) && dProp.ValueKind == JsonValueKind.String
         ? dProp.GetString()?.Trim()
         : slug;
@@ -139,6 +142,17 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
             efforts.Add(eff);
           }
         }
+      }
+
+      entries.Add((slug, title, major, efforts));
+    }
+
+    var result = new List<AgentModelDto>();
+    foreach (var (slug, title, major, efforts) in entries)
+    {
+      if (maxMajor > 0 && major > 0 && major < maxMajor)
+      {
+        continue;
       }
 
       if (efforts.Contains("high") || efforts.Contains("medium") || efforts.Contains("low"))
@@ -174,7 +188,6 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       return rawTitle;
     }
 
-    // Normalize e.g. "GPT-6.1-Sol" -> "GPT-6.1 Sol"
     var idx = rawTitle.IndexOf('-', 4);
     if (idx > 0 && idx + 1 < rawTitle.Length)
     {
@@ -232,11 +245,6 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       }
     }
 
-    if (string.IsNullOrWhiteSpace(baseModel))
-    {
-      baseModel = "gpt-6.1-sol";
-    }
-
     return (baseModel, effort);
   }
 
@@ -266,7 +274,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
       var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 34_000)
+      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {
         var fullPath = Path.Combine(store.WorkspaceDirectory, $"context-{request.SessionId}.json");
         await File.WriteAllTextAsync(fullPath, contextJson, Encoding.UTF8, ct);
@@ -280,11 +288,11 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     }
 
     var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
-    var rawModel = string.IsNullOrWhiteSpace(request.Model) ? "gpt-6.1-sol-high" : request.Model.Trim();
-    var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "gpt-6.1-sol-high";
+    var rawModel = string.IsNullOrWhiteSpace(request.Model) ? string.Empty : request.Model.Trim();
+    var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : ((_cachedModels ?? FallbackModels).FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
     var (cliModel, effort) = ResolveCliModelArgs(selectedModel);
 
     var psi = new ProcessStartInfo
@@ -309,8 +317,12 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       psi.ArgumentList.Add("--skip-git-repo-check");
       psi.ArgumentList.Add("--ignore-user-config");
       psi.ArgumentList.Add("--ignore-rules");
-      psi.ArgumentList.Add("-m");
-      psi.ArgumentList.Add(cliModel);
+      if (!string.IsNullOrWhiteSpace(cliModel))
+      {
+        psi.ArgumentList.Add("-m");
+        psi.ArgumentList.Add(cliModel);
+      }
+
       psi.ArgumentList.Add("-c");
       psi.ArgumentList.Add("sandbox_mode=\"read-only\"");
       psi.ArgumentList.Add("-c");
@@ -329,8 +341,12 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       psi.ArgumentList.Add("read-only");
       psi.ArgumentList.Add("--add-dir");
       psi.ArgumentList.Add(store.WorkspaceDirectory);
-      psi.ArgumentList.Add("-m");
-      psi.ArgumentList.Add(cliModel);
+      if (!string.IsNullOrWhiteSpace(cliModel))
+      {
+        psi.ArgumentList.Add("-m");
+        psi.ArgumentList.Add(cliModel);
+      }
+
       psi.ArgumentList.Add("-c");
       psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
 
@@ -417,9 +433,9 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
           {
             var itemType = completedItem.TryGetProperty("type", out var itProp) ? itProp.GetString() : null;
             if (itemType == "agent_message" &&
-                completedItem.TryGetProperty("text", out var txtProp) &&
-                txtProp.ValueKind == JsonValueKind.String &&
-                txtProp.GetString() is { Length: > 0 } chunk)
+                 completedItem.TryGetProperty("text", out var txtProp) &&
+                 txtProp.ValueKind == JsonValueKind.String &&
+                 txtProp.GetString() is { Length: > 0 } chunk)
             {
               if (fullAssistantText.Length > 0 && !fullAssistantText.ToString().EndsWith('\n'))
               {

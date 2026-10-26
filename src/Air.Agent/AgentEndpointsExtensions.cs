@@ -3,6 +3,19 @@ namespace Platform.Agent;
 public static class AgentEndpointsExtensions
 {
   private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+  private static long _lastAutoSyncTicks;
+
+  private static bool ShouldAttemptAutoSync()
+  {
+    var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+    var prev = Interlocked.Read(ref _lastAutoSyncTicks);
+    if (nowTicks - prev < TimeSpan.FromSeconds(60).Ticks)
+    {
+      return false;
+    }
+
+    return Interlocked.CompareExchange(ref _lastAutoSyncTicks, nowTicks, prev) == prev;
+  }
 
   public static IServiceCollection AddAirAgent(this IServiceCollection services, Action<AgentOptions>? configure = null)
   {
@@ -44,6 +57,19 @@ public static class AgentEndpointsExtensions
         var opts = scope.ServiceProvider.GetService<AgentOptions>();
         AgentModelCatalog.EnsureSeededAsync(db).GetAwaiter().GetResult();
         AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
+
+        if (!db.AppAgentModel.Any() &&
+            scope.ServiceProvider.GetService<IAgentModelSynchronizer>() is { } synchronizer)
+        {
+          try
+          {
+            synchronizer.SyncFromProvidersAsync(db).GetAwaiter().GetResult();
+          }
+          catch
+          {
+            // Non-fatal if CLI provider sync fails on startup
+          }
+        }
       }
     }
     catch
@@ -65,6 +91,7 @@ public static class AgentEndpointsExtensions
     group.MapGet("/status", async (
       HttpContext ctx,
       IEnumerable<IAgentProvider> providers,
+      IAgentModelSynchronizer synchronizer,
       AgentOptions options,
       CancellationToken ct) =>
     {
@@ -73,9 +100,9 @@ public static class AgentEndpointsExtensions
         .ToList();
 
       var db = ctx.RequestServices.GetService<PlatformDbContext>();
-      List<AgentModelDto> models;
-      string defaultModel;
-      string? photoModel;
+      List<AgentModelDto> models = [];
+      var defaultModel = options.DefaultModel;
+      string? photoModel = null;
 
       if (db is not null)
       {
@@ -98,16 +125,29 @@ public static class AgentEndpointsExtensions
           .ThenBy(m => m.Id)
           .ToListAsync(ct);
 
+        if (dbModels.Count == 0 && availableHandles.Count > 0 && ShouldAttemptAutoSync())
+        {
+          try
+          {
+            await synchronizer.SyncFromProvidersAsync(db, ct);
+            dbModels = await db.AppAgentModel
+              .AsNoTracking()
+              .Where(m => m.IsActive && db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
+              .OrderBy(m => m.SortOrder)
+              .ThenBy(m => m.Id)
+              .ToListAsync(ct);
+          }
+          catch
+          {
+            // Ignore transient sync errors
+          }
+        }
+
         if (availableHandles.Count > 0)
         {
           dbModels = dbModels
             .Where(m => availableHandles.Contains(m.ProviderHandle))
             .ToList();
-        }
-
-        if (dbModels.Count == 0 && activeProviderHandles.Count > 0)
-        {
-          dbModels = [.. AgentModelCatalog.DefaultRows().Where(m => m.IsActive && activeProviderHandles.Contains(m.ProviderHandle))];
         }
 
         var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
@@ -122,24 +162,8 @@ public static class AgentEndpointsExtensions
 
         var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
         defaultModel = defRow?.ModelId ?? options.DefaultModel;
-        var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos)
-          ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, AgentModelCatalog.DefaultPhotoModelId, StringComparison.OrdinalIgnoreCase))
-          ?? defRow;
-        photoModel = photoRow?.ModelId ?? AgentModelCatalog.DefaultPhotoModelId;
-      }
-      else
-      {
-        var fallback = AgentModelCatalog.DefaultRows().Where(m => m.IsActive);
-        models = fallback.Select(m => new AgentModelDto
-        {
-          Id = m.ModelId,
-          Name = m.Name,
-          Provider = m.ProviderHandle,
-          IsDefault = m.IsDefault,
-          IsForPhotos = m.IsForPhotos
-        }).ToList();
-        defaultModel = AgentModelCatalog.DefaultModelId;
-        photoModel = AgentModelCatalog.DefaultPhotoModelId;
+        var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos) ?? defRow;
+        photoModel = photoRow?.ModelId;
       }
 
       var list = enabledProviders.Select(p => new AgentProviderDto
@@ -268,6 +292,7 @@ public static class AgentEndpointsExtensions
       McpExecutionBridge bridge,
       ITenantContext tenantContext,
       IEnumerable<IAgentProvider> providers,
+      IAgentModelSynchronizer synchronizer,
       CancellationToken ct) =>
     {
       var culture = !string.IsNullOrWhiteSpace(body.Locale) && body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
@@ -309,21 +334,29 @@ public static class AgentEndpointsExtensions
         var dbModels = await db.AppAgentModel
           .AsNoTracking()
           .Where(m => db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
+          .OrderBy(m => m.SortOrder)
+          .ThenBy(m => m.Id)
           .ToListAsync(ct);
 
-        if (attachments.Count > 0)
+        if (dbModels.Count == 0 && activeProviderHandles.Count > 0 && ShouldAttemptAutoSync())
         {
-          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos && m.IsActive)
-            ?? dbModels.FirstOrDefault(m => m.IsForPhotos)
-            ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, AgentModelCatalog.DefaultPhotoModelId, StringComparison.OrdinalIgnoreCase));
-          if (photoRow is not null)
+          try
           {
-            selectedModel = photoRow.ModelId;
-            selectedModelName = photoRow.Name;
-            providerHandle = photoRow.ProviderHandle;
+            await synchronizer.SyncFromProvidersAsync(db, ct);
+            dbModels = await db.AppAgentModel
+              .AsNoTracking()
+              .Where(m => db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
+              .OrderBy(m => m.SortOrder)
+              .ThenBy(m => m.Id)
+              .ToListAsync(ct);
+          }
+          catch
+          {
+            // Ignore transient sync errors
           }
         }
-        else if (!string.IsNullOrWhiteSpace(selectedModel))
+
+        if (!string.IsNullOrWhiteSpace(selectedModel))
         {
           var matchedRow = (!string.IsNullOrWhiteSpace(body.Provider)
               ? dbModels.FirstOrDefault(m =>
@@ -346,6 +379,18 @@ public static class AgentEndpointsExtensions
               selectedModelName = fallbackDef.Name;
               providerHandle = fallbackDef.ProviderHandle;
             }
+          }
+        }
+        else if (attachments.Count > 0)
+        {
+          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos && m.IsActive)
+            ?? dbModels.FirstOrDefault(m => m.IsDefault && m.IsActive)
+            ?? dbModels.FirstOrDefault(m => m.IsActive);
+          if (photoRow is not null)
+          {
+            selectedModel = photoRow.ModelId;
+            selectedModelName = photoRow.Name;
+            providerHandle = photoRow.ProviderHandle;
           }
         }
         else
@@ -381,13 +426,12 @@ public static class AgentEndpointsExtensions
 
       if (string.IsNullOrWhiteSpace(selectedModelName))
       {
-        var effectiveId = !string.IsNullOrWhiteSpace(selectedModel)
-          ? selectedModel
-          : (attachments.Count > 0 ? AgentModelCatalog.DefaultPhotoModelId : options.DefaultModel);
-        selectedModel = effectiveId;
-        selectedModelName = AgentModelCatalog.DefaultRows()
-          .FirstOrDefault(m => string.Equals(m.ModelId, effectiveId, StringComparison.OrdinalIgnoreCase))?.Name
-          ?? effectiveId;
+        if (string.IsNullOrWhiteSpace(selectedModel))
+        {
+          selectedModel = options.DefaultModel;
+        }
+
+        selectedModelName = selectedModel;
       }
 
       var turnReq = new AgentTurnRequest
@@ -398,7 +442,7 @@ public static class AgentEndpointsExtensions
         Attachments = attachments,
         Locale = culture.TwoLetterISOLanguageName,
         ProviderHandle = provider.Handle,
-        Model = selectedModel,
+        Model = selectedModel ?? string.Empty,
         ModelName = selectedModelName,
         Services = ctx.RequestServices
       };

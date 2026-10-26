@@ -16,20 +16,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
   private string? _cachedBinaryPath;
   private readonly SemaphoreSlim _modelsLock = new(1, 1);
 
-  private static readonly IReadOnlyList<AgentModelDto> FallbackModels =
-  [
-    new() { Id = "claude-fable-5-1-high", Name = "Claude Fable 5.1 (High)", Provider = "Claude" },
-    new() { Id = "claude-fable-5-high", Name = "Claude Fable 5 (High)", Provider = "Claude" },
-    new() { Id = "claude-opus-5-5-high", Name = "Claude Opus 5.5 (High)", Provider = "Claude" },
-    new() { Id = "claude-sonnet-5-5-high", Name = "Claude Sonnet 5.5 (High)", Provider = "Claude" },
-    new() { Id = "claude-haiku-5-5", Name = "Claude Haiku 5.5", Provider = "Claude" },
-    new() { Id = "claude-opus-4-6", Name = "Claude Opus 4.6", Provider = "Claude" },
-    new() { Id = "claude-sonnet-4-6", Name = "Claude Sonnet 4.6", Provider = "Claude" },
-    new() { Id = "claude-haiku-4-5", Name = "Claude Haiku 4.5", Provider = "Claude" }
-  ];
-
   private static readonly Regex BinaryModelRegex = new(
-    @"\bclaude-(?<family>fable|opus|sonnet|haiku)-(?<major>\d{1,2})(?:-(?<minor>\d{1,2}))?(?![0-9-])\b",
+    @"\bclaude-(?<family>opus|sonnet|haiku)-(?<major>\d{1,2})(?:-(?<minor>\d{1,2}))?(?![0-9-])\b",
     RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
   public string Handle => "Claude";
@@ -41,17 +29,18 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     var claudePath = ResolveExecutablePath();
     if (claudePath is null)
     {
-      return FallbackModels;
+      return [];
     }
 
     var realPath = File.ResolveLinkTarget(claudePath, returnFinalTarget: true)?.FullName ?? claudePath;
     if (!File.Exists(realPath))
     {
-      return FallbackModels;
+      return [];
     }
 
     var writeUtc = File.GetLastWriteTimeUtc(realPath);
-    if (_cachedModels is { Count: > 0 } &&
+    if (!forceRefresh &&
+        _cachedModels is { Count: > 0 } &&
         string.Equals(_cachedBinaryPath, realPath, StringComparison.Ordinal) &&
         _cachedBinaryWriteUtc == writeUtc)
     {
@@ -61,7 +50,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     await _modelsLock.WaitAsync(ct);
     try
     {
-      if (_cachedModels is { Count: > 0 } &&
+      if (!forceRefresh &&
+          _cachedModels is { Count: > 0 } &&
           string.Equals(_cachedBinaryPath, realPath, StringComparison.Ordinal) &&
           _cachedBinaryWriteUtc == writeUtc)
       {
@@ -79,14 +69,14 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
     {
-      // Fall back to default catalog if binary inspection fails
+      // Ignore binary inspection errors
     }
     finally
     {
       _modelsLock.Release();
     }
 
-    return FallbackModels;
+    return _cachedModels ?? [];
   }
 
   private static async Task<List<AgentModelDto>> DiscoverModelsFromBinaryStreamAsync(string realPath, CancellationToken ct)
@@ -112,7 +102,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       foreach (Match match in BinaryModelRegex.Matches(chunkText))
       {
         var family = match.Groups["family"].Value.ToLowerInvariant();
-        if (!int.TryParse(match.Groups["major"].Value, out var major) || major < 4)
+        if (!int.TryParse(match.Groups["major"].Value, out var major) || major <= 0)
         {
           continue;
         }
@@ -126,11 +116,6 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
           }
 
           minor = parsedMinor;
-        }
-
-        if (major == 4 && minor is null or 0)
-        {
-          continue;
         }
 
         found.Add((family, major, minor));
@@ -152,13 +137,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       return [];
     }
 
-    found.RemoveWhere(item =>
-      !item.Minor.HasValue &&
-      found.Any(other => other.Family == item.Family && other.Major == item.Major && other.Minor.HasValue));
-
     static int FamilyRank(string family) => family switch
     {
-      "fable" => 40,
       "opus" => 30,
       "sonnet" => 20,
       "haiku" => 10,
@@ -167,14 +147,19 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 
     static string FamilyTitle(string family) => family switch
     {
-      "fable" => "Fable",
       "opus" => "Opus",
       "sonnet" => "Sonnet",
       "haiku" => "Haiku",
       _ => family
     };
 
+    // Select the latest generation (highest major + minor) per family present in the installed CLI binary
     var ordered = found
+      .GroupBy(x => x.Family, StringComparer.OrdinalIgnoreCase)
+      .Select(g => g
+        .OrderByDescending(x => x.Major)
+        .ThenByDescending(x => x.Minor ?? 0)
+        .First())
       .OrderByDescending(x => x.Major)
       .ThenByDescending(x => x.Minor ?? 0)
       .ThenByDescending(x => FamilyRank(x.Family))
@@ -187,7 +172,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       var verText = minor.HasValue ? $"{major}.{minor}" : $"{major}";
       var title = $"Claude {FamilyTitle(family)} {verText}";
 
-      if (major >= 5 && family is "fable" or "opus" or "sonnet")
+      if (family is "opus" or "sonnet")
       {
         result.Add(new AgentModelDto { Id = $"{baseId}-high", Name = $"{title} (High)", Provider = "Claude" });
         result.Add(new AgentModelDto { Id = $"{baseId}-medium", Name = $"{title} (Medium)", Provider = "Claude" });
@@ -235,41 +220,19 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 
   private static (string Model, string Effort) ResolveCliModelArgs(string selectedModel)
   {
-    var lower = selectedModel.ToLowerInvariant()
-      .Replace(".5", "-5", StringComparison.Ordinal)
-      .Replace(".1", "-1", StringComparison.Ordinal);
+    var lower = selectedModel.Trim().ToLowerInvariant();
     var effort = "high";
     var baseModel = lower;
 
-    if (lower.EndsWith("-low", StringComparison.Ordinal))
+    string[] effortSuffixes = ["-high", "-medium", "-low"];
+    foreach (var suffix in effortSuffixes)
     {
-      effort = "low";
-      baseModel = lower[..^4];
-    }
-    else if (lower.EndsWith("-medium", StringComparison.Ordinal))
-    {
-      effort = "medium";
-      baseModel = lower[..^7];
-    }
-    else if (lower.EndsWith("-high", StringComparison.Ordinal))
-    {
-      effort = "high";
-      baseModel = lower[..^5];
-    }
-
-    if (baseModel == "claude-opus-5")
-    {
-      return ("claude-opus-5-5", effort);
-    }
-
-    if (baseModel == "claude-sonnet-5")
-    {
-      return ("claude-sonnet-5-5", effort);
-    }
-
-    if (baseModel == "claude-fable-5")
-    {
-      return ("claude-fable-5-1", effort);
+      if (lower.EndsWith(suffix, StringComparison.Ordinal) && lower.Length > suffix.Length)
+      {
+        effort = suffix[1..];
+        baseModel = lower[..^suffix.Length];
+        break;
+      }
     }
 
     return (baseModel, effort);
@@ -301,7 +264,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
       var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 34_000)
+      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {
         var fullPath = Path.Combine(store.WorkspaceDirectory, $"context-{request.SessionId}.json");
         await File.WriteAllTextAsync(fullPath, contextJson, Encoding.UTF8, ct);
@@ -315,11 +278,11 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     }
 
     var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
-    var rawModel = string.IsNullOrWhiteSpace(request.Model) ? "claude-opus-5-5-high" : request.Model.Trim();
-    var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "claude-opus-5-5-high";
+    var rawModel = string.IsNullOrWhiteSpace(request.Model) ? string.Empty : request.Model.Trim();
+    var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : ((_cachedModels ?? FallbackModels).FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
     var (cliModel, effort) = ResolveCliModelArgs(selectedModel);
 
     var psi = new ProcessStartInfo
@@ -347,8 +310,12 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     psi.ArgumentList.Add("Read");
     psi.ArgumentList.Add("--allowedTools");
     psi.ArgumentList.Add("Read");
-    psi.ArgumentList.Add("--model");
-    psi.ArgumentList.Add(cliModel);
+    if (!string.IsNullOrWhiteSpace(cliModel))
+    {
+      psi.ArgumentList.Add("--model");
+      psi.ArgumentList.Add(cliModel);
+    }
+
     psi.ArgumentList.Add("--effort");
     psi.ArgumentList.Add(effort);
     psi.ArgumentList.Add("--add-dir");

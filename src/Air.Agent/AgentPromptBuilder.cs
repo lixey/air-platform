@@ -2,7 +2,7 @@ namespace Platform.Agent;
 
 public static class AgentPromptBuilder
 {
-  private const int MaxInlinePromptBytes = 42_000;
+  private const int MaxInlinePromptBytes = 105_000;
 
   public static string BuildPrompt(AgentTurnRequest request, string? contextJson, string? workspaceDir = null)
   {
@@ -19,8 +19,8 @@ public static class AgentPromptBuilder
     sb.AppendLine("Your job is to help the user create new records or edit existing records using the available `forms`, `dictionaries`, `largeDictionaries`, and `recentRecords` in the Context JSON below from natural language or attached photos/receipts.");
     sb.AppendLine("IMPORTANT RULES:");
     sb.AppendLine("1. NEVER save records directly without user confirmation. Instead, prepare proposal card(s) by outputting `<air_proposal>` JSON block(s) in your response.");
-    sb.AppendLine("2. Do NOT call external MCP tools. Only read local files (`read_file` / `Read`) if there are attached image/document files or context files listed below.");
-    sb.AppendLine("3. If the user attached image/document file(s) listed below, inspect each attached image (calling `read_file` or `Read` on its `AbsolutePath` if not already attached in your vision input) to read all details (e.g., merchant/counterparty name, date, total amount, and line items with name, qty, price, amount).");
+    sb.AppendLine("2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or any MCP/browser tools! Shell commands are blocked by the sandbox and calling `run_command` will immediately crash and abort your response. The ONLY tool you may ever call is `read_file` (or `view_file` / `Read`) on the exact `AbsolutePath` listed in `[ATTACHED FILES]` or `[AVAILABLE FORMS...]` below.");
+    sb.AppendLine("3. If the user attached image/document file(s) listed in `[ATTACHED FILES]` below, call `read_file` / `Read` on its `AbsolutePath` once (unless the image is already attached in your vision input) to read all details (merchant/counterparty name, date, total amount, and line items with name, qty, price, amount), and then immediately output your response and `<air_proposal>` without calling any other tools.");
     sb.AppendLine("4. CREATING vs EDITING RECORDS:");
     sb.AppendLine("   - To CREATE a new record: omit `id` in `<air_proposal>` and populate the required fields in `values`.");
     sb.AppendLine("   - To EDIT an existing record: find the target record's numeric `id` in `recentRecords` or `dictionaries`. Include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (such as transactions that include a `\"form\"` property), use that record's `form` service.");

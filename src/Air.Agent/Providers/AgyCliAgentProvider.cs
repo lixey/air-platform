@@ -11,23 +11,6 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
   private IReadOnlyList<AgentModelDto>? _cachedModels;
   private readonly SemaphoreSlim _modelsLock = new(1, 1);
 
-  private static readonly IReadOnlyList<AgentModelDto> FallbackModels =
-  [
-    new() { Id = "gemini-4-argon-high", Name = "Gemini 4 Argon (High)", Provider = "Agy", IsDefault = true },
-    new() { Id = "gemini-3.8-flash-high", Name = "Gemini 3.8 Flash (High)", Provider = "Agy", IsForPhotos = true },
-    new() { Id = "claude-opus-5-5-high", Name = "Claude Opus 5.5 (High)", Provider = "Agy" },
-    new() { Id = "claude-sonnet-5-5-high", Name = "Claude Sonnet 5.5 (High)", Provider = "Agy" },
-    new() { Id = "gemini-4-argon-medium", Name = "Gemini 4 Argon (Medium)", Provider = "Agy" },
-    new() { Id = "gemini-4-argon-low", Name = "Gemini 4 Argon (Low)", Provider = "Agy" },
-    new() { Id = "gemini-3.8-flash-medium", Name = "Gemini 3.8 Flash (Medium)", Provider = "Agy" },
-    new() { Id = "gemini-3.8-flash-low", Name = "Gemini 3.8 Flash (Low)", Provider = "Agy" },
-    new() { Id = "claude-opus-5-5-medium", Name = "Claude Opus 5.5 (Medium)", Provider = "Agy" },
-    new() { Id = "claude-opus-5-5-low", Name = "Claude Opus 5.5 (Low)", Provider = "Agy" },
-    new() { Id = "claude-sonnet-5-5-medium", Name = "Claude Sonnet 5.5 (Medium)", Provider = "Agy" },
-    new() { Id = "claude-sonnet-5-5-low", Name = "Claude Sonnet 5.5 (Low)", Provider = "Agy" },
-    new() { Id = "gpt-oss-120b-medium", Name = "GPT-OSS 120B (Medium)", Provider = "Agy" }
-  ];
-
   public string Handle => "Agy";
   public string Name => "Antigravity CLI (agy)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
@@ -42,7 +25,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     var agyPath = ResolveExecutablePath();
     if (agyPath is null)
     {
-      return FallbackModels;
+      return [];
     }
 
     await _modelsLock.WaitAsync(ct);
@@ -68,7 +51,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       using var proc = Process.Start(psi);
       if (proc is null)
       {
-        return FallbackModels;
+        return [];
       }
 
       using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -99,7 +82,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
         var name = line[(firstWs + 1)..].Trim();
         if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(name) && !id.Contains(':'))
         {
-          parsed.Add(new AgentModelDto { Id = id, Name = name });
+          parsed.Add(new AgentModelDto { Id = id, Name = name, Provider = Handle });
         }
       }
 
@@ -111,14 +94,14 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     }
     catch
     {
-      // Fall back to default list if CLI invocation times out or fails
+      // Ignore CLI errors and return empty list
     }
     finally
     {
       _modelsLock.Release();
     }
 
-    return FallbackModels;
+    return _cachedModels ?? [];
   }
 
   public static string? ResolveExecutablePath()
@@ -178,7 +161,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
       var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 34_000)
+      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {
         var fullPath = Path.Combine(store.WorkspaceDirectory, $"context-{request.SessionId}.json");
         await File.WriteAllTextAsync(fullPath, contextJson, Encoding.UTF8, ct);
@@ -192,15 +175,12 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     }
 
     var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
-    var rawModel = string.IsNullOrWhiteSpace(request.Model)
-      ? (request.Attachments.Count > 0 ? AgentModelCatalog.DefaultPhotoModelId : options.DefaultModel)
-      : request.Model.Trim();
-
+    var rawModel = string.IsNullOrWhiteSpace(request.Model) ? options.DefaultModel : request.Model.Trim();
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
       ?? options.DefaultModel;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : (FallbackModels.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
 
     var psi = new ProcessStartInfo
     {
@@ -221,8 +201,12 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     psi.ArgumentList.Add("stream-json");
     psi.ArgumentList.Add("--sandbox");
     psi.ArgumentList.Add("--disable-slash-commands");
-    psi.ArgumentList.Add("--model");
-    psi.ArgumentList.Add(selectedModel);
+    if (!string.IsNullOrWhiteSpace(selectedModel))
+    {
+      psi.ArgumentList.Add("--model");
+      psi.ArgumentList.Add(selectedModel);
+    }
+
     psi.ArgumentList.Add("--add-dir");
     psi.ArgumentList.Add(store.WorkspaceDirectory);
 

@@ -70,6 +70,7 @@ export class AgentService {
   readonly models = signal<readonly AgentModelDto[]>([]);
   readonly model = signal<string>('');
   readonly activeProvider = signal<string>('Agy');
+  readonly userPickedModel = signal(false);
   readonly messages = signal<readonly AgentChatMessage[]>([]);
   readonly pendingAttachments = signal<readonly AgentAttachment[]>([]);
   readonly isUploading = signal(false);
@@ -165,7 +166,7 @@ export class AgentService {
     const startedAt = performance.now();
     const modelsList = this.models();
     const activeModelObj =
-      attachments.length > 0
+      attachments.length > 0 && !this.userPickedModel()
         ? (modelsList.find(m => m.isForPhotos) ??
           modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
           modelsList.find(m => m.id === this.model()))
@@ -214,8 +215,8 @@ export class AgentService {
           message: effectivePrompt,
           attachmentIds: attachments.map(a => a.id),
           locale: this.locale.current(),
-          provider: this.activeProvider(),
-          model: this.model(),
+          provider: activeModelObj?.provider || this.activeProvider(),
+          model: activeModelObj?.id || this.model(),
         }),
         signal: controller.signal,
       });
@@ -443,6 +444,7 @@ export class AgentService {
   async reset(): Promise<void> {
     this.stop();
     const oldSessionId = this.sessionId();
+    this.userPickedModel.set(false);
     this.messages.set([]);
     this.pendingAttachments.set([]);
     this.sessionId.set(Math.random().toString(36).slice(2, 12));

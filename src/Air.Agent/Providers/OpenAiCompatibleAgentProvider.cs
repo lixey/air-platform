@@ -10,10 +10,7 @@ public sealed class OpenAiCompatibleAgentProvider : IAgentProvider
   public bool IsAvailable => false;
 
   public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false) =>
-    Task.FromResult<IReadOnlyList<AgentModelDto>>(
-    [
-      new() { Id = "qwen3-coder-32b", Name = "Qwen 3 Coder 32B (Local)", Provider = Handle }
-    ]);
+    Task.FromResult<IReadOnlyList<AgentModelDto>>([]);
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,

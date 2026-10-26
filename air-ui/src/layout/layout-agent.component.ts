@@ -526,6 +526,7 @@ export class LayoutAgentComponent {
       }
       const model = this.agent.models()[picked.id];
       if (model) {
+        this.agent.userPickedModel.set(!model.isDefault);
         this.agent.model.set(model.id);
         if (model.provider) {
           this.agent.activeProvider.set(model.provider);
