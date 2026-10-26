@@ -3,6 +3,7 @@ import { BtnComponent } from '../../btn/btn.component';
 import type { MessageType } from '../../core/generated/contracts';
 import { TextsService } from '../../core/texts.service';
 import type { UiColor } from '../../theme/ui-color';
+import { ProgressComponent } from '../progress/progress.component';
 import { type AlertMessage, AlertService } from './alert.service';
 
 /** The hue a message type speaks in. Rendered through the hue rules the button reads. */
@@ -21,8 +22,9 @@ const HUE_BY_TYPE: Record<MessageType, UiColor> = {
  */
 @Component({
   selector: 'ui-alert',
-  imports: [BtnComponent],
+  imports: [BtnComponent, ProgressComponent],
   template: `
+    <ui-progress />
     @if (alert.messages().length > 0) {
       <div class="fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2">
         @for (msg of alert.messages(); track msg.id) {

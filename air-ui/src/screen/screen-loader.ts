@@ -29,8 +29,6 @@ export interface ScreenLoader {
   /** The data of the last answer; held alongside `layout` while a transition to another screen is in flight. */
   readonly data: Signal<unknown>;
   readonly isLoading: Signal<boolean>;
-  /** Whether the shown layout belongs to a previous service while a new service's screen is still loading. */
-  readonly isStale: Signal<boolean>;
   readonly error: Signal<unknown>;
   /** Asks the same address again: what a failed load's retry does. */
   reload(): void;
@@ -135,11 +133,6 @@ export function screenLoader(
     asked: computed(() => kept()?.asked ?? null),
     data: computed(() => kept()?.data),
     isLoading: resource.isLoading,
-    isStale: computed(() => {
-      const held = kept();
-      const target = currentAddress()?.target;
-      return !!held && !!target && held.service !== target.service;
-    }),
     error: resource.error,
     reload: () => void resource.reload(),
     show: screen => {
@@ -235,7 +228,7 @@ function keptScreenOf(
       return;
     }
 
-    if (!answer || !isCurrent?.()) {
+    if (!answer || resource.isLoading() || !isCurrent?.()) {
       return;
     }
 

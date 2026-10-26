@@ -36,12 +36,11 @@ import { OverlayRef } from './overlay-ref';
         <ui-btn [label]="texts.of('Retry')" (click)="screen.reload()" />
       </div>
     } @else if (layout(); as l) {
-      <ui-panels [layout]="l" [data]="screen.data()" [attr.inert]="screen.isStale() || null" />
+      <ui-panels [layout]="l" [data]="screen.data()" />
     }
   `,
   host: {
     class: 'flex flex-col grow shrink overflow-hidden min-h-0 min-w-0',
-    '[attr.aria-busy]': 'screen.isLoading() || null',
   },
 })
 export class OverlayScreenComponent implements ScreenHost {

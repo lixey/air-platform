@@ -40,7 +40,7 @@ import { injectForm } from './inject-form';
       <ui-nav [model]="tabs" class="shrink-0 border-b border-line" data-child-tabs />
     }
     @if (screen.layout(); as layout) {
-      <ui-panels [layout]="layout" [data]="screen.data()" [attr.inert]="screen.isStale() || null" class="flex-1 min-h-0" />
+      <ui-panels [layout]="layout" [data]="screen.data()" class="flex-1 min-h-0" />
     } @else if (screen.error()) {
       <div role="alert" class="p-3 flex items-center gap-3 text-sm text-warning">
         {{ errorTitle() }}
@@ -48,7 +48,7 @@ import { injectForm } from './inject-form';
       </div>
     }
   `,
-  host: { class: 'flex flex-col flex-1 w-full h-full min-w-0 min-h-0 overflow-hidden', '[attr.aria-busy]': 'screen.isLoading()' },
+  host: { class: 'flex flex-col flex-1 w-full h-full min-w-0 min-h-0 overflow-hidden' },
 })
 export class FormChildScreenComponent {
   readonly model = input.required<FormChildScreenModel>();

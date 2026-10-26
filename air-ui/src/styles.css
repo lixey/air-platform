@@ -385,7 +385,7 @@
 }
 
 /*
- * The smart request progress bar of `ui-progress`, shown only when a request exceeds 250 ms.
+ * The smart request progress bar of `ui-progress`, shown only when a request exceeds 100 ms.
  * Drawn in the `progress` role (saturated orange) on the compositor alone: hidden at scaleX(0)
  * when idle, creeping towards 85% while `.is-loading`, and filling to 100% then fading out
  * while `.is-done`.
@@ -400,25 +400,16 @@
 
   .ui-progress-bar.is-loading {
     opacity: 1;
-    transition: none;
-    animation: ui-progress-creep 10s cubic-bezier(0.1, 0.6, 0.2, 1) forwards;
+    transform: scaleX(0.85);
+    transition: transform 6s cubic-bezier(0.05, 0.8, 0.1, 1);
   }
 
   .ui-progress-bar.is-done {
     opacity: 0;
     transform: scaleX(1);
     transition:
-      transform 250ms ease-out,
-      opacity 150ms ease-in 250ms;
-  }
-}
-
-@keyframes ui-progress-creep {
-  from {
-    transform: scaleX(0.08);
-  }
-  to {
-    transform: scaleX(0.85);
+      transform 200ms ease-out,
+      opacity 150ms ease-in 180ms;
   }
 }
 

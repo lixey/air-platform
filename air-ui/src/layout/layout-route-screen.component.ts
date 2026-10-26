@@ -36,7 +36,7 @@ import { WORK_AREA } from '../theme/css-classes';
         <ui-btn [label]="texts.of('Retry')" (click)="screen.reload()" />
       </div>
     } @else if (screen.layout(); as layout) {
-      <ui-panels [layout]="layout" [data]="screen.data()" [attr.inert]="screen.isStale() || null" />
+      <ui-panels [layout]="layout" [data]="screen.data()" />
     } @else if (!screen.isLoading()) {
       <router-outlet />
     }
@@ -44,7 +44,6 @@ import { WORK_AREA } from '../theme/css-classes';
   host: {
     // `ui-work`: what the outlet draws is the work area, and reads the slate roles whatever the brand
     class: `${WORK_AREA} flex flex-col grow shrink overflow-hidden min-h-0 min-w-0 w-full h-full @container @container/outlet`,
-    '[attr.aria-busy]': 'screen.isLoading() || null',
   },
 })
 export class LayoutRouteScreenComponent implements ScreenHost {

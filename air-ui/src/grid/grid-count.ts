@@ -18,7 +18,7 @@ const prefetchedCounts = new Map<string, PrefetchedGridCount>();
 /** Registers an in-flight or completed initial `get-count` started alongside `get-data`. */
 export function registerPrefetchedGridCount(service: string, prefetched: PrefetchedGridCount): void {
   for (const [k, v] of prefetchedCounts) {
-    if (!v.isCurrent()) {
+    if (!untracked(v.isCurrent)) {
       prefetchedCounts.delete(k);
     }
   }
@@ -35,7 +35,7 @@ export function consumePrefetchedGridCount(service: string | null | undefined): 
   if (entry) {
     prefetchedCounts.delete(key);
   }
-  return entry && entry.isCurrent() ? entry : null;
+  return entry && untracked(entry.isCurrent) ? entry : null;
 }
 
 /** One request of the counter: whether the grid it was asked for is still current, and an optional prefetched count. */
@@ -74,19 +74,20 @@ export class GridCount {
   /** The last count asked, or none. */
   private readonly request = linkedSignal<unknown, CountRequest | null>({
     source: () => this.options.resetBy(),
-    computation: () => {
-      if (untracked(this.options.totalAtStart) !== null) {
-        return null;
-      }
-      const service = untracked(this.options.service);
-      if (!service || !untracked(this.options.isCounted)) {
-        return null;
-      }
-      return {
-        isCurrent: untracked(this.options.capture),
-        prefetched: consumePrefetchedGridCount(service),
-      };
-    },
+    computation: () =>
+      untracked(() => {
+        if (this.options.totalAtStart() !== null) {
+          return null;
+        }
+        const service = this.options.service();
+        if (!service || !this.options.isCounted()) {
+          return null;
+        }
+        return {
+          isCurrent: this.options.capture(),
+          prefetched: consumePrefetchedGridCount(service),
+        };
+      }),
   });
 
   private readonly countLoader = httpResource<AnswerOf<GridServiceEndpoints, 'get-count'>>(() => {

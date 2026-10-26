@@ -54,7 +54,7 @@ import { SelectService } from './select.service';
           }
         </div>
       } @else if (grid(); as grid) {
-        <div class="flex flex-col flex-1 min-w-0 min-h-0 max-h-96" [attr.inert]="screen.isStale() || null">
+        <div class="flex flex-col flex-1 min-w-0 min-h-0 max-h-96">
           <ui-grid [model]="grid.model" [data]="grid.data" />
         </div>
       } @else if (screen.error()) {
@@ -70,7 +70,6 @@ import { SelectService } from './select.service';
   `,
   host: {
     class: 'flex flex-col min-w-0 max-h-full overflow-hidden',
-    '[attr.aria-busy]': 'screen.isLoading() || null',
   },
 })
 export class SelectOverlayComponent {
