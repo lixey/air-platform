@@ -1,18 +1,17 @@
 import type { PanelLayoutDto, PanelModel } from '../core/generated/contracts';
 
 /**
- * The layout of an overlay whose whole content is one component: one column with one panel sized to its content,
- * because the overlay around it is sized to the panel. The panel is as tall as its content and as wide as the card,
- * which is its content's width or the width the opener asked for, whichever is larger. The panel holds the model,
- * whose kind names the component.
+ * The layout of an overlay whose whole content is one component: one column with one panel sized to its content by
+ * default (`size = 'auto'`), or stretched to fill the overlay (`size = '1fr'`). The panel holds the model, whose kind
+ * names the component.
  */
-export function singlePanelLayout(key: string, model: PanelModel): PanelLayoutDto {
+export function singlePanelLayout(key: string, model: PanelModel, size: 'auto' | '1fr' = 'auto'): PanelLayoutDto {
   return {
     key,
     root: {
       key: 'root',
       direction: 'column',
-      children: [{ key: 'body', model, size: 'auto' }],
+      children: [{ key: 'body', model, size }],
     },
   };
 }

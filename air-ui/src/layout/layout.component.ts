@@ -20,7 +20,7 @@ const AGENT_DIALOG: OverlayDto = {
   closesOnOutside: true,
   width: '100%',
   height: '100%',
-  layout: singlePanelLayout(AGENT_PANEL, { kind: 'LayoutAgent' }),
+  layout: singlePanelLayout(AGENT_PANEL, { kind: 'LayoutAgent' }, '1fr'),
 };
 
 /**

@@ -6,8 +6,8 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 /**
  * The theme of the page: the mode the user chose, kept in the browser under `ui:theme`, and the theme it resolves to,
- * which puts the `dark` class on the document element. The `system` mode follows the browser's colour scheme as it
- * changes.
+ * which puts the `dark` class on the document element and syncs `<meta name="theme-color">` with `--panel-page`. The
+ * `system` mode follows the browser's colour scheme as it changes.
  */
 @Service()
 export class ThemeService {
@@ -49,6 +49,23 @@ export class ThemeService {
 
   private applyTheme(): void {
     this.document.documentElement.classList.toggle('dark', this.isDark());
+    const meta = this.document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (meta && this.window) {
+      const raw = this.window.getComputedStyle(this.document.documentElement).getPropertyValue('--panel-page').trim();
+      if (raw) {
+        meta.content = this.toHexColor(raw);
+      }
+    }
+  }
+
+  private toHexColor(cssColor: string): string {
+    const ctx = this.document.createElement('canvas').getContext('2d');
+    if (!ctx) return cssColor;
+    ctx.fillStyle = cssColor;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    if (!a) return cssColor;
+    return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
   }
 
   private initialMode(): ThemeMode {

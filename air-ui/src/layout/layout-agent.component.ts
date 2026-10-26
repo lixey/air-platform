@@ -72,14 +72,15 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
           <i class="flex items-center justify-center text-mark" [icon]="'bot'"></i>
           <span>{{ texts.of('AgentTitle') }}</span>
         </div>
-        @if (agent.models().length > 0) {
-          <ui-btn variant="ghost" [title]="modelTitle()" (click)="openModelSelect($event)">
-            <span class="sr-only">{{ texts.of('AgentModel') + ': ' }}</span>
-            <span class="min-w-0 max-w-40 truncate">{{ currentModelLabel() }}</span>
-            <i icon="chevron-bottom" class="shrink-0 opacity-60" aria-hidden="true"></i>
-          </ui-btn>
-        }
       </ng-container>
+
+      @if (agent.models().length > 0) {
+        <ui-btn variant="ghost" [title]="modelTitle()" (click)="openModelSelect($event)">
+          <span class="sr-only">{{ texts.of('AgentModel') + ': ' }}</span>
+          <span class="min-w-0 max-w-28 truncate sm:max-w-40">{{ currentModelLabel() }}</span>
+          <i icon="chevron-bottom" class="shrink-0 opacity-60" aria-hidden="true"></i>
+        </ui-btn>
+      }
 
       <ng-container ngProjectAs="[end]">
         <ui-btn variant="ghost" icon="reload" [title]="texts.of('AgentNewChat')" [disabled]="agent.isStreaming()" (click)="agent.reset()" />

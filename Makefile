@@ -8,7 +8,8 @@ AGENT_WEB_PORT ?= 4400
 AUDIT_CLI ?= auto
 AUDIT_MODEL ?= claude-opus-5-5-high
 AUDIT_CLAUDE_MODEL ?= claude-opus-5-5
-AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md (including Section 7 ADR invariants). Report objective bugs/regressions vs controversial design trade-offs concisely.
+AUDIT_TIMEOUT ?= 300
+AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md (including Section 7 ADR invariants). Do NOT run background tasks or subagents. Report objective bugs/regressions vs controversial design trade-offs concisely.
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
 DAEMON_RUN := python3 -c 'import os, sys, subprocess; r, w = os.pipe(); f = open(sys.argv[1], "wb"); subprocess.Popen(sys.argv[2:], stdin=r, stdout=f, stderr=f, pass_fds=(w,), start_new_session=True)'
 
@@ -38,9 +39,9 @@ audit: ## Run controlled code audit on Claude Opus 5.5 (High) via agy CLI with a
 	@if [ "$(AUDIT_CLI)" = "claude" ]; then \
 		claude --model $(AUDIT_CLAUDE_MODEL) --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	elif [ "$(AUDIT_CLI)" = "agy" ]; then \
-		agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	else \
-		agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)" || \
+		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)" || \
 		claude --model $(AUDIT_CLAUDE_MODEL) --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	fi
 
