@@ -8,7 +8,10 @@ import { ProgressService } from './progress.service';
 @Component({
   selector: 'ui-progress',
   template: `
-    <div class="fixed top-0 left-0 right-0 z-60 h-0.75 bg-transparent overflow-hidden pointer-events-none">
+    <div
+      class="fixed z-60 h-0.75 bg-transparent overflow-hidden pointer-events-none"
+      style="top: var(--sat); left: var(--sal); right: var(--sar)"
+    >
       <div class="ui-progress-bar" [class.is-loading]="progress.phase() === 'loading'" [class.is-done]="progress.phase() === 'done'"></div>
     </div>
   `,

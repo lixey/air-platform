@@ -26,7 +26,10 @@ const HUE_BY_TYPE: Record<MessageType, UiColor> = {
   template: `
     <ui-progress />
     @if (alert.messages().length > 0) {
-      <div class="fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2">
+      <div
+        class="fixed z-(--ui-application-overlay-z-index) flex w-[calc(100vw-2rem-var(--sal)-var(--sar))] max-w-sm flex-col gap-2"
+        style="bottom: calc(1rem + var(--sab)); right: calc(1rem + var(--sar))"
+      >
         @for (msg of alert.messages(); track msg.id) {
           <div [attr.role]="roleOf(msg)" [class]="cardClasses(msg)">
             <div class="flex min-w-0 grow flex-col">

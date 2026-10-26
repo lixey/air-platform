@@ -324,9 +324,17 @@ function readUnits(gap: number): OverlayUnits {
 }
 
 function readViewport(): OverlayRect {
-  return typeof window === 'undefined'
-    ? { left: 0, top: 0, width: 0, height: 0 }
-    : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  if (typeof window === 'undefined') {
+    return { left: 0, top: 0, width: 0, height: 0 };
+  }
+  const host = document.getElementById('host');
+  if (host) {
+    const rect = host.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    }
+  }
+  return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
 }
 
 function rectOf(anchor: HTMLElement | null): OverlayRect | null {
