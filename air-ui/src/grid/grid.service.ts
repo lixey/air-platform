@@ -93,6 +93,13 @@ const NO_ROWS: readonly GridRow[] = [];
 @Service({ autoProvided: false })
 export class GridService {
   private static readonly liveGrids = new Set<GridService>();
+  private static readonly reloadListeners = new Set<() => void>();
+
+  /** Registers a listener invoked whenever `reloadServices` runs (e.g. live reports). */
+  static onReloadServices(listener: () => void): () => void {
+    GridService.reloadListeners.add(listener);
+    return () => GridService.reloadListeners.delete(listener);
+  }
 
   /** Reloads every active grid on screen, or those matching the given service names. */
   static reloadServices(services?: readonly string[]): void {
@@ -102,6 +109,9 @@ export class GridService {
       if (!filter || (svc && filter.has(svc))) {
         grid.reload();
       }
+    }
+    for (const listener of GridService.reloadListeners) {
+      listener();
     }
   }
 

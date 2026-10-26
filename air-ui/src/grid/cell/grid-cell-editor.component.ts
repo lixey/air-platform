@@ -257,9 +257,13 @@ export class GridCellEditorComponent {
 
   private onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
-      void this.grid.edits.commit('down');
+      if (!this.hasParseErrors()) {
+        void this.grid.edits.commit('down');
+      }
     } else if (event.key === 'Tab') {
-      void this.grid.edits.commit(event.shiftKey ? 'previous' : 'next');
+      if (!this.hasParseErrors()) {
+        void this.grid.edits.commit(event.shiftKey ? 'previous' : 'next');
+      }
     } else if (event.key === 'Escape') {
       this.grid.edits.cancel();
     } else {
@@ -267,6 +271,17 @@ export class GridCellEditorComponent {
     }
     event.preventDefault();
     event.stopPropagation();
+  }
+
+  private hasParseErrors(): boolean {
+    return (
+      this.numberField()
+        .errors()
+        .some(err => err.kind === 'parse') ||
+      this.textField()
+        .errors()
+        .some(err => err.kind === 'parse')
+    );
   }
 
   /** Focuses the control and types into its box the key that started the edit, the caret after it. */

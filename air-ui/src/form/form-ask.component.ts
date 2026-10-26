@@ -116,6 +116,10 @@ export class FormAskComponent {
     if (this.isSubmitting()) {
       return;
     }
+    if (this.form.refuseParseErrors().length) {
+      afterNextRender(() => this.focusFirstInvalid(), { injector: this.injector });
+      return;
+    }
     const messages = await this.answerOf(inputOf(this.form.value(), this.model()?.elements ?? []));
     if (messages.length) {
       this.form.setMessages(messages);

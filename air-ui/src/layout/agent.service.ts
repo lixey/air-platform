@@ -21,7 +21,6 @@ import { TextsService } from '../core/texts.service';
 import { browserZone } from '../core/time-zone';
 import { GridService } from '../grid/grid.service';
 import { OverlayService } from '../overlay/overlay.service';
-import { ReportComponent } from '../report/report.component';
 
 export type AgentAttachment = AgentAttachmentDto;
 export type AgentProposalField = AgentProposalFieldDto;
@@ -390,7 +389,6 @@ export class AgentService {
       }
 
       GridService.reloadServices(committed.refreshServices);
-      ReportComponent.reloadAll();
     } catch (err) {
       this.updateProposal(messageId, proposalId, p => ({ ...p, status: 'pending' }));
       const msg =
@@ -429,7 +427,6 @@ export class AgentService {
     ref.closed.subscribe(result => {
       if (result !== undefined) {
         GridService.reloadServices(proposal.service ? [proposal.service] : undefined);
-        ReportComponent.reloadAll();
       }
     });
   }

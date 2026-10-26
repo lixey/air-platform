@@ -85,12 +85,15 @@ export function cellClassOf(sectionClass: string, columnClass: string, isActive:
 }
 
 /** A body row's ground through the grid roles: stripes, a hovered row, a selected row, and the active row over both. */
-export function rowClassesOf(index: number, isActive: boolean, isSelected: boolean): string {
+export function rowClassesOf(index: number, isActive: boolean, isSelected: boolean, flagHue?: string | null): string {
   if (isActive) {
     return `${ROW} bg-row-active`;
   }
   if (isSelected) {
     return `${ROW} ${index % 2 === 0 ? 'bg-row-selected' : 'bg-row-selected-2'} hover:bg-row-hover`;
+  }
+  if (flagHue) {
+    return `${ROW} hue-${flagHue} bg-(--btn-ground) hover:bg-(--btn-hover)`;
   }
   return `${ROW} ${index % 2 === 0 ? 'bg-row-stripe' : 'bg-surface'} hover:bg-row-hover`;
 }

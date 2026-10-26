@@ -175,6 +175,9 @@ export class FormService {
     const value = this.value();
     const baseline = this.baseline();
     const elements = this.model()?.elements ?? [];
+    if (this.elements().some(e => this.hasParseError(e))) {
+      return true;
+    }
     if (baseline && value === baseline.value) {
       return elements.some(e => isSecret(e) && !e.isDisabled && !e.isServerOwned && hasSecret(value[e.path]));
     }
@@ -693,11 +696,42 @@ export class FormService {
     }
   }
 
+  /**
+   * Checks whether any editable element holds unparseable raw text (`parseErrors()`), notifying refusal listeners when
+   * so, so the first invalid control takes focus instead of submitting the previous parsed number.
+   */
+  refuseParseErrors(): readonly MessageDto[] {
+    const messages = this.elements()
+      .filter(e => this.hasParseError(e))
+      .map<MessageDto>(e => ({ type: 'error', path: e.path, title: this.texts.of('FormBindingValue') }));
+    if (messages.length) {
+      for (const handler of this.refusals) {
+        handler(messages);
+      }
+    }
+    return messages;
+  }
+
+  private hasParseError(element: FormElementDto): boolean {
+    return (
+      !element.isDisabled &&
+      !element.isServerOwned &&
+      (this.tree[element.path]?.()
+        .errors()
+        .some(err => err.kind === 'parse') ??
+        false)
+    );
+  }
+
   /** `'act'` is the save an action asks for first: it stays, and leaves the reading of a new record's screen to the action. */
   private async performSave(mode: 'stay' | 'close' | 'act' | { approval: CloseApproval }): Promise<FormDataDto | null> {
     const isCurrent = this.capture();
     const service = this.service();
     if (!this.canSave() || !isCurrent() || !service) {
+      return null;
+    }
+    if (this.refuseParseErrors().length) {
+      this._outcome.set('refused');
       return null;
     }
     const wasNew = this.id() === null;

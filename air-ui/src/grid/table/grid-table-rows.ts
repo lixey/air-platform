@@ -1,6 +1,25 @@
+import { UI_COLORS } from '../../theme/ui-color';
 import type { GridCellContext } from '../cell/grid-cell-context';
 import type { GridRow } from '../grid-row';
 import { cellClassOf, rowClassesOf } from './grid-table-classes';
+
+const FLAG_HUES = new Set<string>(UI_COLORS);
+
+function rowFlagHueOf(row: GridRow): string | null {
+  const flags = row['flags'];
+  if (!Array.isArray(flags)) {
+    return null;
+  }
+  for (const flag of flags) {
+    if (typeof flag === 'string') {
+      const lower = flag.toLowerCase();
+      if (FLAG_HUES.has(lower)) {
+        return lower;
+      }
+    }
+  }
+  return null;
+}
 
 /** A row as the table draws it: its cells and the cell class of its section. */
 export interface TableRow {
@@ -74,7 +93,10 @@ export function bodyRowStatesOf(
 ): BodyRowState[] {
   return rows.map(item => {
     const selected = isSelected(item.row);
-    return { classes: rowClassesOf(item.index, item.index === activeIndex, selected), ariaSelected: isSelectable ? selected : null };
+    return {
+      classes: rowClassesOf(item.index, item.index === activeIndex, selected, rowFlagHueOf(item.row)),
+      ariaSelected: isSelectable ? selected : null,
+    };
   });
 }
 

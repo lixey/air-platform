@@ -118,6 +118,8 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     internal IReadOnlyList<Func<Move<TEntity>, CancellationToken, Task>> Effects => _moveEffects;
     internal IReadOnlyList<Func<Follow, CancellationToken, Task>> FollowEffects => _followEffects;
 
+    internal virtual PropertyInfo? GetParentKeyProperty(Type childEntityType) => null;
+
     public ChildRule Do(Func<Move<TEntity>, CancellationToken, Task> effect)
     {
       _moveEffects.Add(effect);
@@ -180,6 +182,11 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     private readonly StatusFlowService<TEntity> _parentFlow;
     private readonly StatusFlowService<TChild> _childFlow;
     private readonly Expression<Func<TChild, long>> _parentKey;
+
+    internal override PropertyInfo? GetParentKeyProperty(Type childEntityType) =>
+      childEntityType == typeof(TChild) && _parentKey.Body is MemberExpression { Expression: ParameterExpression, Member: PropertyInfo pi }
+        ? pi
+        : null;
 
     public ChildFlowRuleBuilder<TChild> Give(
       Transition<TEntity> transition,
@@ -356,6 +363,20 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     IReadOnlyList<TEntity> records,
     CancellationToken ct) =>
     rule.ExecuteAsync(context, records, ct);
+
+  public PropertyInfo? FindParentKeyProperty(Type childEntityType)
+  {
+    EnsureDeclared();
+    foreach (var rule in _childRules)
+    {
+      if (rule.GetParentKeyProperty(childEntityType) is { } prop)
+      {
+        return prop;
+      }
+    }
+
+    return null;
+  }
 
   public async Task FollowMovesAsync(
     IMutationContext context,
@@ -637,10 +658,13 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         var parentEntityType = followerBase?.GetGenericArguments().FirstOrDefault();
         if (parentEntityType != null)
         {
-          var fkProp = typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .FirstOrDefault(p => p.PropertyType == typeof(long) &&
-              (string.Equals(p.Name, parentEntityType.Name + "Id", StringComparison.OrdinalIgnoreCase) ||
-               parentEntityType.Name.EndsWith(p.Name[..^2], StringComparison.OrdinalIgnoreCase)));
+          var fkProp = follower.FindParentKeyProperty(typeof(TEntity))
+            ?? typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+              .FirstOrDefault(p => p.PropertyType == typeof(long) &&
+                p.Name.Length > 2 &&
+                p.Name.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(p.Name, parentEntityType.Name + "Id", StringComparison.OrdinalIgnoreCase) ||
+                 parentEntityType.Name.EndsWith(p.Name[..^2], StringComparison.OrdinalIgnoreCase)));
           if (fkProp != null)
           {
             var parentIds = records.Select(r => (long)fkProp.GetValue(r)!).Where(id => id > 0).ToHashSet();

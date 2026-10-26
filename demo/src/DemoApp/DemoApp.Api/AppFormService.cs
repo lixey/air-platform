@@ -1,7 +1,7 @@
 namespace DemoApp;
 
 public abstract class AppFormService<TEntity, TInput>(AppDbContext db, AppService? app = null)
-  : FormService<TEntity, TInput>(db)
+  : FormService<TEntity, TInput>(db, app)
   where TEntity : class, IEntity, new()
   where TInput : class, new()
 {

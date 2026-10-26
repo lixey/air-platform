@@ -1,3 +1,6 @@
+using Platform.Api.Files.Internals;
+using Platform.App.Files.Internals;
+
 namespace Platform.App.Files;
 
 public abstract partial class FileGridService<TFile>
@@ -278,6 +281,7 @@ public abstract partial class FileGridService<TFile>
 
     var parent = GetParent();
     var parentsLosingCover = new HashSet<object>();
+    var keysToDelete = new List<string>(list.Count * 2);
 
     foreach (var item in list)
     {
@@ -288,27 +292,47 @@ public abstract partial class FileGridService<TFile>
         parentsLosingCover.Add(parentVal);
       }
 
-      db.Set<TFile>().Remove(item);
       if (!string.IsNullOrEmpty(item.StorageKey))
       {
-        try
-        {
-          await storage.DeleteAsync(item.StorageKey, cancellationToken);
-        }
-        catch { }
+        keysToDelete.Add(item.StorageKey);
       }
 
       if (!string.IsNullOrEmpty(item.ThumbnailKey))
       {
+        keysToDelete.Add(item.ThumbnailKey);
+      }
+
+      db.Set<TFile>().Remove(item);
+    }
+
+    await db.SaveChangesAsync(cancellationToken);
+
+    var distinctKeys = keysToDelete.Distinct(StringComparer.Ordinal).ToList();
+    if (distinctKeys.Count > 0)
+    {
+      var referencedKeys = (await db.Set<TFile>()
+        .AsNoTracking()
+        .Where(f => distinctKeys.Contains(f.StorageKey) || f.ThumbnailKey != null && distinctKeys.Contains(f.ThumbnailKey))
+        .Select(f => new { f.StorageKey, f.ThumbnailKey })
+        .ToListAsync(cancellationToken))
+        .SelectMany(f => new[] { f.StorageKey, f.ThumbnailKey })
+        .Where(k => !string.IsNullOrEmpty(k))
+        .ToHashSet(StringComparer.Ordinal);
+
+      foreach (var key in distinctKeys)
+      {
+        if (referencedKeys.Contains(key))
+        {
+          continue;
+        }
+
         try
         {
-          await storage.DeleteAsync(item.ThumbnailKey, cancellationToken);
+          await storage.DeleteAsync(key, cancellationToken);
         }
         catch { }
       }
     }
-
-    await db.SaveChangesAsync(cancellationToken);
 
     if (parentsLosingCover.Count > 0 && parent.BoundProperty != null)
     {

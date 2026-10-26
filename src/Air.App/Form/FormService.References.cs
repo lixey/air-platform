@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
@@ -227,13 +229,26 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var navObj = PropertyAccessorCache.GetValue(entity, el.ReferencePath);
+      var recordId = (entity as IEntity)?.Id ?? (PropertyAccessorCache.GetValue(entity, "Id") is long eid ? eid : 0);
+      var navSource = recordId > 0 && _lastSavedEntity?.Id == recordId
+        ? _lastSavedEntity
+        : recordId > 0 && CurrentEntity?.Id == recordId
+          ? CurrentEntity
+          : entity;
+      var navSourceType = navSource.GetType();
+      var navObj = PropertyAccessorCache.GetValue(navSource, el.ReferencePath)
+        ?? (!ReferenceEquals(navSource, entity) ? PropertyAccessorCache.GetValue(entity, el.ReferencePath) : null);
       if (navObj == null)
       {
         var candidateName = el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
           ? el.Path[..^2]
           : el.Path;
-        if (PropertyAccessorCache.GetProperty(entityType, candidateName) is not null)
+        if (PropertyAccessorCache.GetProperty(navSourceType, candidateName) is not null)
+        {
+          navObj = PropertyAccessorCache.GetValue(navSource, candidateName);
+        }
+
+        if (navObj == null && !ReferenceEquals(navSource, entity) && PropertyAccessorCache.GetProperty(entityType, candidateName) is not null)
         {
           navObj = PropertyAccessorCache.GetValue(entity, candidateName);
         }

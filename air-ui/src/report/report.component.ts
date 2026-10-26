@@ -15,6 +15,7 @@ import type {
 import { TextsService } from '../core/texts.service';
 import { TemporalBoxComponent } from '../datepicker/temporal-box.component';
 import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { GridService } from '../grid/grid.service';
 import { ScreenMutations } from '../screen/screen-mutations';
 import { asUiColor, ReportTableComponent } from './report-table.component';
 
@@ -116,6 +117,9 @@ import { asUiColor, ReportTableComponent } from './report-table.component';
 })
 export class ReportComponent {
   private static readonly liveReports = new Set<ReportComponent>();
+  static {
+    GridService.onReloadServices(() => ReportComponent.reloadAll());
+  }
 
   static reloadAll(): void {
     for (const report of ReportComponent.liveReports) {

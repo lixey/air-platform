@@ -1,3 +1,5 @@
+using Platform.Data.Internals;
+
 namespace Platform.App.Grid;
 
 public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : GridColumn<TProp>(dto, owner)
@@ -25,6 +27,26 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Width(string width)
   {
     base.Width(width);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> MaxWidth(int px)
+  {
+    base.MaxWidth(px);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Sticky(bool sticky = true)
+  {
+    base.Sticky(sticky);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> StickyRight(bool stickyRight = true)
+  {
+    base.StickyRight(stickyRight);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Wrap(bool wrap = true)
+  {
+    base.Wrap(wrap);
     return this;
   }
   public new GridColumn<TEntity, TProp> Sortable(bool sortable = true)

@@ -22,7 +22,18 @@ internal static class MetadataEndpointsExtensions
         var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
 
         var tenants = await authStore.GetActiveTenantsAsync(ct);
-        if (userContext.IsAuthenticated && userContext.UserId is { } uid)
+        if (httpContext.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot && snapshot.IsActive)
+        {
+          if (!snapshot.IsRoot)
+          {
+            var sec = snapshot.ToSecurityInfo();
+            if (!sec.Global && !snapshot.PermissionSet.Contains("*"))
+            {
+              tenants = tenants.Where(t => sec.CanAccessTenant(t.Id) || t.Id == snapshot.HomeTenantId).ToList();
+            }
+          }
+        }
+        else if (userContext.IsAuthenticated && userContext.UserId is { } uid)
         {
           var user = await authStore.FindUserByIdAsync(uid, ct);
           if (user is { IsRoot: false })

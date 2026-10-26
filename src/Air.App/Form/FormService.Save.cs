@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
@@ -42,6 +44,7 @@ public abstract partial class FormService<TEntity, TInput>
     else
     {
       var query = Reachable(asTracking: true);
+      var needsQuery = CurrentEntity?.Id != id!.Value;
       var efModel = db.Model.FindEntityType(typeof(TEntity));
       if (efModel != null)
       {
@@ -70,12 +73,21 @@ public abstract partial class FormService<TEntity, TInput>
           if (!nav.IsCollection && refNames.Contains(nav.Name))
           {
             query = query.Include(nav.Name);
+            if (!needsQuery && PropertyAccessorCache.GetValue(CurrentEntity!, nav.Name) == null)
+            {
+              var fkPropName = nav.ForeignKey.Properties.FirstOrDefault()?.Name;
+              if (fkPropName != null && PropertyAccessorCache.GetValue(CurrentEntity!, fkPropName) is long and > 0)
+              {
+                needsQuery = true;
+              }
+            }
           }
         }
       }
 
-      entity = await query.FirstOrDefaultAsync(e => e.Id == id!.Value, ct)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      entity = needsQuery
+        ? await query.FirstOrDefaultAsync(e => e.Id == id!.Value, ct) ?? throw new KeyNotFoundException(L["FormNotFound"])
+        : CurrentEntity!;
 
       RestoreBoundParentId(entity, parent);
     }
@@ -321,6 +333,8 @@ public abstract partial class FormService<TEntity, TInput>
       {
         await h(newLoadCtx, ct);
       }
+
+      CopyMatchingProperties(newLoadInput, entity);
     }
     else
     {

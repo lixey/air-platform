@@ -135,7 +135,7 @@ export class NumberBoxComponent implements FormValueControl<number | null> {
       }
       const num = Number(val);
       if (Number.isNaN(num)) {
-        return { error: { kind: 'parse' } };
+        return { error: { kind: 'parse', message: this.texts.of('FormBindingValue') } };
       }
       return { value: num };
     },

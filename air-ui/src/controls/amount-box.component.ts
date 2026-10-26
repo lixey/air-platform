@@ -1,5 +1,6 @@
 import { Component, computed, inject, input, model, signal } from '@angular/core';
 import { type FormValueControl, transformedValue } from '@angular/forms/signals';
+import { TextsService } from '../core/texts.service';
 import { fieldClasses } from '../theme/css-classes';
 import { type AmountFormat, type AmountKind, amountUnitText, groupedAmountText, parseAmount, plainAmountText } from './amount-text';
 import { FIELD_DESCRIPTION } from './field-description';
@@ -42,6 +43,7 @@ import { UiControlDirective, type UiControlState } from './ui-control.directive'
 export class AmountBoxComponent implements FormValueControl<number | null>, UiControlState {
   private static next = 0;
 
+  private readonly texts = inject(TextsService);
   private readonly description = inject(FIELD_DESCRIPTION, { optional: true });
   private readonly look = inject(FIELD_LOOK, { optional: true }) ?? 'box';
 
@@ -83,7 +85,7 @@ export class AmountBoxComponent implements FormValueControl<number | null>, UiCo
   protected readonly rawValue = transformedValue(this.value, {
     parse: (text: string) => {
       const amount = parseAmount(text, this.locale(), this.digits());
-      return Number.isNaN(amount) ? { error: { kind: 'parse' } } : { value: amount };
+      return Number.isNaN(amount) ? { error: { kind: 'parse', message: this.texts.of('FormBindingValue') } } : { value: amount };
     },
     format: (amount: number | null) => this.textOf(amount),
   });

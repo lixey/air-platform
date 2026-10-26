@@ -1,5 +1,4 @@
-import { AgentBlockOverlayComponent, type AgentBlockOverlayModel } from './agent/agent-blocks.component';
-import { ChangeDiffComponent } from './change/change-diff.component';
+import type { AgentBlockOverlayModel } from './agent/agent-blocks.component';
 import { defineComponents } from './core/dynamic-component/component-map';
 import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
 import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
@@ -67,7 +66,6 @@ import { GridNavSearchComponent } from './grid/nav/grid-nav-search.component';
 import { GridNavStatusComponent } from './grid/nav/grid-nav-status.component';
 import { GridNavUploadComponent } from './grid/nav/grid-nav-upload.component';
 import { GridPickerOverlayComponent } from './grid/nav/grid-picker-overlay.component';
-import { LayoutAgentComponent } from './layout/layout-agent.component';
 import { LayoutMegaMenuBodyComponent } from './layout/layout-mega-menu-body.component';
 import { LayoutMenuComponent } from './layout/layout-menu.component';
 import { LayoutRouteScreenComponent } from './layout/layout-route-screen.component';
@@ -222,9 +220,9 @@ export type ClientKind = keyof ClientPanelKinds | keyof ClientHeaderKinds;
 /** Every kind the library draws, the platform's and its own, each under the component named after it. */
 export const UI_COMPONENTS = defineComponents({
   LayoutMenu: LayoutMenuComponent,
-  LayoutAgent: LayoutAgentComponent,
-  AgentBlockOverlay: AgentBlockOverlayComponent,
-  ChangeDiff: ChangeDiffComponent,
+  LayoutAgent: () => import('./layout/layout-agent.component').then(m => m.LayoutAgentComponent),
+  AgentBlockOverlay: () => import('./agent/agent-blocks.component').then(m => m.AgentBlockOverlayComponent),
+  ChangeDiff: () => import('./change/change-diff.component').then(m => m.ChangeDiffComponent),
   LayoutTabs: LayoutTabsComponent,
   LayoutRouteScreen: LayoutRouteScreenComponent,
   LayoutMegaMenuBody: LayoutMegaMenuBodyComponent,
