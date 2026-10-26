@@ -2,7 +2,7 @@ import { Component, inject } from '@angular/core';
 import { ProgressService } from './progress.service';
 
 /**
- * The smart request progress bar across the top of the page: stays hidden for fast (< 100 ms) requests,
+ * The smart request progress bar across the top of the page: stays hidden for fast (< 400 ms) requests,
  * creeps smoothly in saturated orange for longer ones, and fills and fades when all requests finish.
  */
 @Component({

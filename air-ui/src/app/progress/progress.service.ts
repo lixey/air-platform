@@ -4,13 +4,13 @@ export type ProgressPhase = 'idle' | 'loading' | 'done';
 
 /**
  * Tracks in-flight HTTP requests and drives the smart top progress bar (`ui-progress`).
- * Fast requests finishing within 100 ms stay in `'idle'` and never flash the bar; longer
+ * Fast requests finishing within 400 ms stay in `'idle'` and never flash the bar; longer
  * requests enter `'loading'` (creeping via compositor CSS) and transition through `'done'`
  * when the last request ends.
  */
 @Service()
 export class ProgressService {
-  private static readonly ShowDelayMs = 100;
+  private static readonly ShowDelayMs = 400;
   private static readonly DoneDurationMs = 350;
 
   private readonly activeRequests = signal(0);

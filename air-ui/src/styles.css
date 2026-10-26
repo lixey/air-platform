@@ -83,7 +83,7 @@
   --panel-frame: var(--color-brand-400);
   --panel-shade: color-mix(in oklch, var(--color-brand-500) 20%, transparent);
   --panel-accent: var(--color-sky-600);
-  --panel-progress: var(--color-orange-500);
+  --panel-progress: var(--color-orange-400);
   --panel-warning: var(--color-amber-700);
   /*
    * A field and a checkbox: their ground; a field's border at rest, pale by the owner's choice and a declared exception of
@@ -130,7 +130,7 @@
   --panel-frame: var(--color-brand-500);
   --panel-shade: color-mix(in oklch, var(--color-brand-950) 35%, transparent);
   --panel-accent: var(--color-sky-400);
-  --panel-progress: var(--color-orange-500);
+  --panel-progress: var(--color-orange-400);
   --panel-warning: var(--color-amber-400);
   --panel-field: var(--color-brand-700);
   --panel-field-edge: var(--color-brand-600);
@@ -385,7 +385,7 @@
 }
 
 /*
- * The smart request progress bar of `ui-progress`, shown only when a request exceeds 100 ms.
+ * The smart request progress bar of `ui-progress`, shown only when a request exceeds 400 ms.
  * Drawn in the `progress` role (saturated orange) on the compositor alone: hidden at scaleX(0)
  * when idle, creeping towards 85% while `.is-loading`, and filling to 100% then fading out
  * while `.is-done`.
