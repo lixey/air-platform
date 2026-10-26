@@ -1,6 +1,6 @@
 import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import type { OverlayConfirmModel } from '../core/generated/contracts';
+import type { MessageDto, OverlayConfirmModel } from '../core/generated/contracts';
 import { singlePanelLayout } from '../panels/single-panel-layout';
 import { OverlayService } from './overlay.service';
 
@@ -43,5 +43,19 @@ export class ConfirmationService {
       cancelLabel: '',
       color: 'primary',
     });
+  }
+
+  /** Opens an informational dialog with a single confirmation button for a list of messages. */
+  noticeMessages(title: string, messages: readonly MessageDto[] | null | undefined): void {
+    if (!messages?.length) {
+      return;
+    }
+    const text = messages
+      .map(m => (m.title && m.detail ? `${m.title}\n${m.detail}` : (m.detail ?? m.title ?? '')))
+      .filter(Boolean)
+      .join('\n\n');
+    if (text) {
+      void this.notice(title, text);
+    }
   }
 }

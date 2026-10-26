@@ -213,7 +213,7 @@ export class GridActionsService {
       isCurrent: mutation.isCurrent,
       input,
       send: call => this.send(call),
-      apply: (answer, call) => this.adopt(answer, call, mutation),
+      apply: (answer, call) => this.adopt(answer, call, mutation, action.label),
       fail: error => {
         own = action.ask ? ownMessages(action.ask, classifyMutationFailure(error).messages) : [];
         this.report(error, own);
@@ -229,18 +229,10 @@ export class GridActionsService {
   }
 
   /** The answer of a plain action: the selection cleared, its warnings, the form it names, the screen told, the page reloaded. */
-  private adopt(answer: GridActionDto | null, call: GridActionCall, mutation: GridNavMutation): void {
+  private adopt(answer: GridActionDto | null, call: GridActionCall, mutation: GridNavMutation, fallbackTitle?: string): void {
     this.grid.selection.clear();
     this.alert.warnings(answer?.warnings, this.grid.model()?.mutationTexts.committedWarningTitle);
-    if (answer?.messages?.length) {
-      const text = answer.messages
-        .map(m => (m.title && m.detail ? `${m.title}\n${m.detail}` : (m.detail ?? m.title ?? '')))
-        .filter(Boolean)
-        .join('\n\n');
-      if (text) {
-        void this.confirmation.notice(answer.title ?? this.texts.of('Confirm'), text);
-      }
-    }
+    this.confirmation.noticeMessages(answer?.title ?? fallbackTitle ?? this.texts.of('Confirm'), answer?.messages);
     if (answer?.openScreen) {
       const id = typeof answer.openId === 'number' ? answer.openId : null;
       this.grid.openForm(id, null, answer.openScreen);

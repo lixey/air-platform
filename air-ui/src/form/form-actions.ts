@@ -194,6 +194,7 @@ export class FormActions {
       }
       if (answer?.outcome === 'committed') {
         this.ctx.alert.warnings(answer.warnings, this.ctx.model()?.mutationTexts.committedWarningTitle);
+        this.ctx.confirmation.noticeMessages(answer.title ?? action.label, answer.messages);
         if (operation) {
           this.ctx.mutations?.publish(operation, { service, recordId: id, operation: 'save' });
         }
