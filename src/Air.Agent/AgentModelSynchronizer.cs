@@ -87,6 +87,11 @@ public sealed class AgentModelSynchronizer(IEnumerable<IAgentProvider> providers
             {
               row.Name = m.Name;
             }
+
+            if (!row.IsActive && isProviderActive && !row.UpdatedAt.HasValue)
+            {
+              row.IsActive = true;
+            }
           }
           else
           {
