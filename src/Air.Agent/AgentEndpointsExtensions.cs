@@ -86,6 +86,10 @@ public static class AgentEndpointsExtensions
         enabledProviders = enabledProviders
           .Where(p => activeProviderHandles.Contains(p.Handle))
           .ToList();
+        var availableHandles = enabledProviders
+          .Where(p => p.IsAvailable)
+          .Select(p => p.Handle)
+          .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var dbModels = await db.AppAgentModel
           .AsNoTracking()
@@ -93,6 +97,13 @@ public static class AgentEndpointsExtensions
           .OrderBy(m => m.SortOrder)
           .ThenBy(m => m.Id)
           .ToListAsync(ct);
+
+        if (availableHandles.Count > 0)
+        {
+          dbModels = dbModels
+            .Where(m => availableHandles.Contains(m.ProviderHandle))
+            .ToList();
+        }
 
         if (dbModels.Count == 0 && activeProviderHandles.Count > 0)
         {
@@ -314,7 +325,13 @@ public static class AgentEndpointsExtensions
         }
         else if (!string.IsNullOrWhiteSpace(selectedModel))
         {
-          var matchedRow = dbModels.FirstOrDefault(m => m.IsActive && string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
+          var matchedRow = (!string.IsNullOrWhiteSpace(body.Provider)
+              ? dbModels.FirstOrDefault(m =>
+                m.IsActive &&
+                string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+              : null)
+            ?? dbModels.FirstOrDefault(m => m.IsActive && string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
           if (matchedRow is not null)
           {
             selectedModelName = matchedRow.Name;

@@ -9,7 +9,7 @@ public sealed class AgentStore
   {
     public AgentOwnerScope Owner { get; } = owner;
     public DateTimeOffset LastAccessUtc { get; set; } = DateTimeOffset.UtcNow;
-    public string? ConversationId { get; set; }
+    public ConcurrentDictionary<string, string> ConversationIds { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<AgentProposalDto> Proposals { get; } = [];
     public ConcurrentQueue<AgentProposalDto> PendingProposals { get; } = new();
   }
@@ -185,7 +185,7 @@ public sealed class AgentStore
     return list;
   }
 
-  public string? GetConversationId(string sessionId, AgentOwnerScope owner)
+  public string? GetConversationId(string sessionId, AgentOwnerScope owner, string providerHandle)
   {
     CleanupExpiredIfNeeded();
     var sKey = SessionKey(owner, sessionId);
@@ -195,15 +195,25 @@ public sealed class AgentStore
     }
 
     session.LastAccessUtc = DateTimeOffset.UtcNow;
-    return session.ConversationId;
+    return session.ConversationIds.TryGetValue(providerHandle, out var cid) ? cid : null;
   }
 
-  public void SetConversationId(string sessionId, AgentOwnerScope owner, string conversationId)
+  public void SetConversationId(string sessionId, AgentOwnerScope owner, string conversationId, string providerHandle)
   {
     var sKey = SessionKey(owner, sessionId);
     var session = _sessions.GetOrAdd(sKey, _ => new SessionState(owner));
     session.LastAccessUtc = DateTimeOffset.UtcNow;
-    session.ConversationId = conversationId;
+    session.ConversationIds[providerHandle] = conversationId;
+  }
+
+  public void RemoveConversationId(string sessionId, AgentOwnerScope owner, string providerHandle)
+  {
+    var sKey = SessionKey(owner, sessionId);
+    if (_sessions.TryGetValue(sKey, out var session) && MatchesOwner(session.Owner, owner))
+    {
+      session.LastAccessUtc = DateTimeOffset.UtcNow;
+      session.ConversationIds.TryRemove(providerHandle, out _);
+    }
   }
 
   public void ResetSession(string sessionId, AgentOwnerScope owner)

@@ -19,14 +19,14 @@ public static class AgentModelCatalog
       Handle = "Claude",
       Name = "Claude CLI (claude)",
       SortOrder = 20,
-      IsActive = false
+      IsActive = true
     },
     new()
     {
       Handle = "Codex",
       Name = "Codex CLI (codex)",
       SortOrder = 30,
-      IsActive = false
+      IsActive = true
     },
     new()
     {
@@ -179,7 +179,7 @@ public static class AgentModelCatalog
       Name = "Claude Opus 5.5 (High)",
       SortOrder = 190,
       IsDefault = false,
-      IsActive = false
+      IsActive = true
     },
     new()
     {
@@ -189,7 +189,7 @@ public static class AgentModelCatalog
       Name = "Claude Sonnet 5.5 (High)",
       SortOrder = 195,
       IsDefault = false,
-      IsActive = false
+      IsActive = true
     },
     new()
     {
@@ -215,9 +215,39 @@ public static class AgentModelCatalog
     {
       ProviderHandle = "Codex",
       ProviderName = "Codex CLI (codex)",
-      ModelId = "gpt-5.3-codex",
-      Name = "GPT-5.3 Codex",
+      ModelId = "gpt-6.1-sol-high",
+      Name = "GPT-6.1 Sol (High)",
       SortOrder = 300,
+      IsDefault = false,
+      IsActive = true
+    },
+    new()
+    {
+      ProviderHandle = "Codex",
+      ProviderName = "Codex CLI (codex)",
+      ModelId = "gpt-6-astra-high",
+      Name = "GPT-6 Astra (High)",
+      SortOrder = 305,
+      IsDefault = false,
+      IsActive = true
+    },
+    new()
+    {
+      ProviderHandle = "Codex",
+      ProviderName = "Codex CLI (codex)",
+      ModelId = "gpt-6.1-terra-high",
+      Name = "GPT-6.1 Terra (High)",
+      SortOrder = 310,
+      IsDefault = false,
+      IsActive = true
+    },
+    new()
+    {
+      ProviderHandle = "Codex",
+      ProviderName = "Codex CLI (codex)",
+      ModelId = "gpt-6.1-sol-medium",
+      Name = "GPT-6.1 Sol (Medium)",
+      SortOrder = 315,
       IsDefault = false,
       IsActive = false
     },
@@ -225,9 +255,9 @@ public static class AgentModelCatalog
     {
       ProviderHandle = "Codex",
       ProviderName = "Codex CLI (codex)",
-      ModelId = "o4-mini-high",
-      Name = "OpenAI o4-mini (High)",
-      SortOrder = 310,
+      ModelId = "gpt-6.1-sol-low",
+      Name = "GPT-6.1 Sol (Low)",
+      SortOrder = 320,
       IsDefault = false,
       IsActive = false
     },
@@ -293,6 +323,19 @@ public static class AgentModelCatalog
     var existing = await db.AppAgentModel.ToListAsync(ct);
     var changed = false;
 
+    var obsoleteCodexModels = existing
+      .Where(e =>
+        string.Equals(e.ProviderHandle, "Codex", StringComparison.OrdinalIgnoreCase) &&
+        (string.Equals(e.ModelId, "gpt-5.3-codex", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(e.ModelId, "o4-mini-high", StringComparison.OrdinalIgnoreCase)))
+      .ToList();
+    foreach (var obsolete in obsoleteCodexModels)
+    {
+      db.AppAgentModel.Remove(obsolete);
+      existing.Remove(obsolete);
+      changed = true;
+    }
+
     foreach (var seedProvider in DefaultProviders())
     {
       var foundProvider = existingProviders.FirstOrDefault(p =>
@@ -302,6 +345,11 @@ public static class AgentModelCatalog
       {
         db.AppAgentProvider.Add(seedProvider);
         existingProviders.Add(seedProvider);
+        changed = true;
+      }
+      else if (foundProvider.UpdatedAt == null && foundProvider.Ver <= 1 && foundProvider.IsActive != seedProvider.IsActive)
+      {
+        foundProvider.IsActive = seedProvider.IsActive;
         changed = true;
       }
     }
@@ -328,9 +376,14 @@ public static class AgentModelCatalog
         existing.Add(seed);
         changed = true;
       }
+      else if (found.UpdatedAt == null && found.Ver <= 1 && found.IsActive != seed.IsActive)
+      {
+        found.IsActive = seed.IsActive;
+        changed = true;
+      }
     }
 
-    SyncProviderModelsStateCore(existingProviders, existing, ref changed);
+    SyncProviderModelsStateCore(existingProviders, existing, ref changed, restoreEmptyActiveProviders: false);
 
     if (changed)
     {
@@ -344,7 +397,7 @@ public static class AgentModelCatalog
     var existingModels = await db.AppAgentModel.ToListAsync(ct);
     var changed = false;
 
-    SyncProviderModelsStateCore(existingProviders, existingModels, ref changed);
+    SyncProviderModelsStateCore(existingProviders, existingModels, ref changed, restoreEmptyActiveProviders: true);
 
     if (changed)
     {
@@ -355,7 +408,8 @@ public static class AgentModelCatalog
   private static void SyncProviderModelsStateCore(
     List<AppAgentProvider> providers,
     List<AppAgentModel> models,
-    ref bool changed)
+    ref bool changed,
+    bool restoreEmptyActiveProviders)
   {
     var activeProviderHandles = providers
       .Where(p => p.IsActive)
@@ -372,6 +426,43 @@ public static class AgentModelCatalog
           m.IsDefault = false;
           m.IsForPhotos = false;
           changed = true;
+        }
+      }
+    }
+
+    if (restoreEmptyActiveProviders)
+    {
+      var defaultActiveKeys = DefaultRows()
+        .Where(r => r.IsActive)
+        .Select(r => $"{r.ProviderHandle}:{r.ModelId}")
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+      foreach (var handle in activeProviderHandles)
+      {
+        var providerModels = models
+          .Where(m => string.Equals(m.ProviderHandle, handle, StringComparison.OrdinalIgnoreCase))
+          .OrderBy(m => m.SortOrder)
+          .ThenBy(m => m.Id)
+          .ToList();
+
+        if (providerModels.Count > 0 && !providerModels.Any(m => m.IsActive))
+        {
+          var activatedAny = false;
+          foreach (var pm in providerModels)
+          {
+            if (defaultActiveKeys.Contains($"{pm.ProviderHandle}:{pm.ModelId}"))
+            {
+              pm.IsActive = true;
+              activatedAny = true;
+              changed = true;
+            }
+          }
+
+          if (!activatedAny)
+          {
+            providerModels[0].IsActive = true;
+            changed = true;
+          }
         }
       }
     }

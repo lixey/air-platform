@@ -82,19 +82,24 @@ export class AgentService {
     this.statusLoaded = true;
     try {
       const status = await firstValueFrom(this.http.get<AgentStatusDto>('/api/agent/status', shownByCaller()));
-      if (status.activeProvider) {
-        this.activeProvider.set(status.activeProvider);
-      }
       if (status.models?.length) {
         this.models.set(status.models);
       }
       const curModel = this.model();
-      if (!curModel || (status.models?.length && !status.models.some(m => m.id === curModel))) {
-        const nextModel = status.defaultModel || status.models?.[0]?.id || '';
+      const curProvider = this.activeProvider();
+      const hasCurrentPair =
+        !!curModel && !!status.models?.some(m => m.id === curModel && (!curProvider || !m.provider || m.provider === curProvider));
+      if (!hasCurrentPair) {
+        const defEntry =
+          status.models?.find(m => m.isDefault) ??
+          (status.defaultModel ? status.models?.find(m => m.id === status.defaultModel) : undefined) ??
+          status.models?.[0];
+        const nextModel = defEntry?.id || status.defaultModel || '';
         this.model.set(nextModel);
-        const matched = status.models?.find(m => m.id === nextModel);
-        if (matched?.provider) {
-          this.activeProvider.set(matched.provider);
+        if (defEntry?.provider) {
+          this.activeProvider.set(defEntry.provider);
+        } else if (status.activeProvider) {
+          this.activeProvider.set(status.activeProvider);
         }
       }
     } catch {
@@ -161,8 +166,11 @@ export class AgentService {
     const modelsList = this.models();
     const activeModelObj =
       attachments.length > 0
-        ? (modelsList.find(m => m.isForPhotos) ?? modelsList.find(m => m.id === this.model()))
-        : modelsList.find(m => m.id === this.model());
+        ? (modelsList.find(m => m.isForPhotos) ??
+          modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
+          modelsList.find(m => m.id === this.model()))
+        : (modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
+          modelsList.find(m => m.id === this.model()));
     const assistantMsg: AgentChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -206,6 +214,7 @@ export class AgentService {
           message: effectivePrompt,
           attachmentIds: attachments.map(a => a.id),
           locale: this.locale.current(),
+          provider: this.activeProvider(),
           model: this.model(),
         }),
         signal: controller.signal,

@@ -291,6 +291,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       yield break;
     }
 
+    var existingConvId = store.GetConversationId(request.SessionId, request.Owner, Handle);
+
     string? contextJson = null;
     try
     {
@@ -324,6 +326,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     {
       FileName = claudePath,
       WorkingDirectory = store.WorkspaceDirectory,
+      RedirectStandardInput = true,
       RedirectStandardOutput = true,
       RedirectStandardError = true,
       UseShellExecute = false,
@@ -337,8 +340,12 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     psi.ArgumentList.Add("--output-format");
     psi.ArgumentList.Add("stream-json");
     psi.ArgumentList.Add("--verbose");
+    psi.ArgumentList.Add("--safe-mode");
+    psi.ArgumentList.Add("--strict-mcp-config");
     psi.ArgumentList.Add("--disable-slash-commands");
     psi.ArgumentList.Add("--tools");
+    psi.ArgumentList.Add("Read");
+    psi.ArgumentList.Add("--allowedTools");
     psi.ArgumentList.Add("Read");
     psi.ArgumentList.Add("--model");
     psi.ArgumentList.Add(cliModel);
@@ -347,8 +354,15 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     psi.ArgumentList.Add("--add-dir");
     psi.ArgumentList.Add(store.WorkspaceDirectory);
 
+    if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
+    {
+      psi.ArgumentList.Add("--resume");
+      psi.ArgumentList.Add(existingConvId);
+    }
+
     using var process = new Process { StartInfo = psi };
     process.Start();
+    process.StandardInput.Close();
     var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
     yield return new AgentStreamEventDto
@@ -391,6 +405,13 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
         using (doc)
         {
           var root = doc.RootElement;
+          if (root.TryGetProperty("session_id", out var sidProp) &&
+              sidProp.ValueKind == JsonValueKind.String &&
+              sidProp.GetString() is { Length: > 0 } sid)
+          {
+            store.SetConversationId(request.SessionId, request.Owner, sid, Handle);
+          }
+
           var type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
           if (type == "assistant" &&
               root.TryGetProperty("message", out var msgObj) &&
@@ -399,8 +420,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
           {
             foreach (var item in contentArr.EnumerateArray())
             {
-              if (item.TryGetProperty("type", out var itProp) &&
-                  itProp.GetString() == "text" &&
+              var itemType = item.TryGetProperty("type", out var itProp) ? itProp.GetString() : null;
+              if (itemType == "text" &&
                   item.TryGetProperty("text", out var txtProp) &&
                   txtProp.GetString() is { Length: > 0 } chunk)
               {
@@ -409,6 +430,14 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
                 {
                   Type = "delta",
                   Text = chunk
+                };
+              }
+              else if (itemType == "tool_use")
+              {
+                yield return new AgentStreamEventDto
+                {
+                  Type = "status",
+                  Text = L["AgentStatusPreparing"]
                 };
               }
             }
@@ -448,11 +477,25 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
               Proposal = staged
             };
           }
+
+          if (type == "result")
+          {
+            break;
+          }
         }
       }
     }
     finally
     {
+      if (!process.HasExited && !ct.IsCancellationRequested)
+      {
+        try
+        {
+          await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch { }
+      }
+
       if (!process.HasExited)
       {
         try
@@ -476,12 +519,17 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       };
     }
 
+    if (emittedError || fullAssistantText.Length == 0 && emittedProposals == 0)
+    {
+      store.RemoveConversationId(request.SessionId, request.Owner, Handle);
+    }
+
     if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && !ct.IsCancellationRequested)
     {
       string? stderr = null;
       try
       {
-        stderr = (await stderrTask).Trim();
+        stderr = (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim();
       }
       catch { }
 

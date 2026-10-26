@@ -168,7 +168,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       yield break;
     }
 
-    var existingConvId = store.GetConversationId(request.SessionId, request.Owner);
+    var existingConvId = store.GetConversationId(request.SessionId, request.Owner, Handle);
 
     string? contextJson = null;
     try
@@ -206,6 +206,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     {
       FileName = agyPath,
       WorkingDirectory = store.WorkspaceDirectory,
+      RedirectStandardInput = true,
       RedirectStandardOutput = true,
       RedirectStandardError = true,
       UseShellExecute = false,
@@ -233,6 +234,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
 
     using var process = new Process { StartInfo = psi };
     process.Start();
+    process.StandardInput.Close();
     var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
     yield return new AgentStreamEventDto
@@ -279,7 +281,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
 
           if (evt == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
           {
-            store.SetConversationId(request.SessionId, request.Owner, cid);
+            store.SetConversationId(request.SessionId, request.Owner, cid, Handle);
           }
           else if (evt == "error")
           {
@@ -331,11 +333,25 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
               Proposal = staged
             };
           }
+
+          if (evt == "result")
+          {
+            break;
+          }
         }
       }
     }
     finally
     {
+      if (!process.HasExited && !ct.IsCancellationRequested)
+      {
+        try
+        {
+          await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch { }
+      }
+
       if (!process.HasExited)
       {
         try
@@ -361,10 +377,11 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
 
     if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && !ct.IsCancellationRequested)
     {
+      store.RemoveConversationId(request.SessionId, request.Owner, Handle);
       string? stderr = null;
       try
       {
-        stderr = (await stderrTask).Trim();
+        stderr = (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim();
       }
       catch { }
 

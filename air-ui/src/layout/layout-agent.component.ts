@@ -488,8 +488,9 @@ export class LayoutAgentComponent {
 
   protected readonly currentModelLabel = computed(() => {
     const id = this.agent.model();
+    const prov = this.agent.activeProvider();
     const list = this.agent.models();
-    return list.find(m => m.id === id)?.name ?? id;
+    return (list.find(m => m.id === id && (!prov || m.provider === prov)) ?? list.find(m => m.id === id))?.name ?? id;
   });
 
   protected readonly modelTitle = computed(() => `${this.texts.of('AgentModel')}: ${this.currentModelLabel()}`);
@@ -554,10 +555,9 @@ export class LayoutAgentComponent {
       id: idx,
       label: m.isForPhotos ? `${m.name} · 📷` : m.name,
     }));
-    const currentIdx = Math.max(
-      0,
-      list.findIndex(m => m.id === this.agent.model()),
-    );
+    const prov = this.agent.activeProvider();
+    const matchedIdx = list.findIndex(m => m.id === this.agent.model() && (!prov || m.provider === prov));
+    const currentIdx = Math.max(0, matchedIdx >= 0 ? matchedIdx : list.findIndex(m => m.id === this.agent.model()));
     this.select.open({ model: { label: this.texts.of('AgentModel'), options }, picked: [options[currentIdx]] }, anchor, this.injector);
   }
 
