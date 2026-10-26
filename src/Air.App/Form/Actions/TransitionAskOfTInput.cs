@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Form.Actions;
 
 public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) : RecordAsk where TInput : class, new()

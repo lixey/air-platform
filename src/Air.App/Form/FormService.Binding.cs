@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>

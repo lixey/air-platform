@@ -1,6 +1,8 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 
+using Platform.Api.Files.Internals;
+
 namespace Platform.Api.Files;
 
 public sealed class FileLinks

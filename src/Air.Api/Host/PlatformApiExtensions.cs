@@ -1,3 +1,5 @@
+using Platform.Api.Host.Internals;
+
 namespace Platform.Api.Host;
 
 public static class PlatformApiExtensions

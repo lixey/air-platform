@@ -1,3 +1,5 @@
+using Platform.Api.Serialization.Internals;
+
 namespace Platform.Api.Serialization;
 
 public static class PlatformJsonOptions

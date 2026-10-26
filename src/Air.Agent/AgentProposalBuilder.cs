@@ -1,3 +1,6 @@
+using Platform.Agent.Internals;
+using static Platform.Agent.Internals.AgentValueHelpers;
+
 namespace Platform.Agent;
 
 public static partial class AgentProposalBuilder

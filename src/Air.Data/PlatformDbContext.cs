@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
+using Platform.Data.Internals;
+
 namespace Platform.Data;
 
 /// <summary>

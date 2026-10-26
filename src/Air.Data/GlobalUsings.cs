@@ -7,5 +7,4 @@ global using System.Text.Json;
 global using System.Text.Json.Serialization;
 global using Microsoft.EntityFrameworkCore;
 global using Microsoft.EntityFrameworkCore.Query;
-global using Platform.Data.Internals;
 global using Platform.Data.Schema;

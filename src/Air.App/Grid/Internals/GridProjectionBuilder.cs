@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Grid.Internals;
 
 internal static class GridProjectionBuilder

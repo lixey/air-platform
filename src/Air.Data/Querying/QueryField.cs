@@ -1,3 +1,5 @@
+using Platform.Data.Internals;
+
 namespace Platform.Data.Querying;
 
 /// <summary>

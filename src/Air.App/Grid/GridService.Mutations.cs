@@ -1,3 +1,6 @@
+using Platform.App.Grid.Internals;
+using Platform.App.Internals;
+
 namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>

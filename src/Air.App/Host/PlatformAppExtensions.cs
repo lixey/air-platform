@@ -1,3 +1,5 @@
+using Platform.App.Host.Internals;
+
 namespace Platform.App.Host;
 
 public static class PlatformAppExtensions

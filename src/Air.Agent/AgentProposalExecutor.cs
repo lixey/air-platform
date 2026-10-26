@@ -1,3 +1,7 @@
+using Platform.Agent.Internals;
+using Platform.App.Files.Internals;
+using static Platform.Agent.Internals.AgentValueHelpers;
+
 namespace Platform.Agent;
 
 public static class AgentProposalExecutor

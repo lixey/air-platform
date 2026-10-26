@@ -1,3 +1,5 @@
+using Platform.Data.Internals;
+
 namespace Platform.Data.Querying;
 
 public sealed class DataProvider<TEntity, TRow>

@@ -1,5 +1,7 @@
 using System.Collections.Frozen;
 
+using Platform.Data.Internals;
+
 namespace Platform.Data.Querying;
 
 /// <summary>

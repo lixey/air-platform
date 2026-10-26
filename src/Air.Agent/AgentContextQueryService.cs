@@ -1,3 +1,5 @@
+using static Platform.Agent.Internals.AgentValueHelpers;
+
 namespace Platform.Agent;
 
 public static class AgentContextQueryService

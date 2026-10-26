@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using Platform.Api.Files.Internals;
+using Platform.App.Files.Internals;
 
 namespace Platform.App.Files;
 
@@ -15,7 +17,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   int IFormFilesSource.PageSize => 25;
 
-  protected FileLinks Links => new();
+  protected FileLinks Links => field ??= new();
 
   protected IFileStores Stores => PlatformApp?.Services.GetService<IFileStores>() ?? new DefaultFileStores(new LocalFileStorage());
 

@@ -12,7 +12,4 @@ global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.DependencyInjection.Extensions;
 global using Platform.Agent.Contracts;
-global using Platform.Agent.Internals;
 global using Platform.Agent.Providers;
-global using Platform.App.Files.Internals;
-global using static Platform.Agent.Internals.AgentValueHelpers;

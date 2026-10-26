@@ -1,3 +1,5 @@
+using Platform.Data.Internals;
+
 namespace Platform.App.Form;
 
 public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) : FormElement<TEntity, TProp>(dto)

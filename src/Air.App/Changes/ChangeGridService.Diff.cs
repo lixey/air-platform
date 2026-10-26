@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Changes;
 
 public abstract partial class ChangeGridService
