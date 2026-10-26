@@ -146,6 +146,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.AsPhone();
     return this;
   }
+  public new GridColumn<TEntity, TProp> AsTel()
+  {
+    base.AsTel();
+    return this;
+  }
   public new GridColumn<TEntity, TProp> AsEmail()
   {
     base.AsEmail();
@@ -154,6 +159,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> AsUrl()
   {
     base.AsUrl();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsWebsite()
+  {
+    base.AsWebsite();
     return this;
   }
   public new GridColumn<TEntity, TProp> Sum()
@@ -208,6 +218,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Editable(condition);
     return this;
   }
+  public GridColumn<TEntity, TProp> EditableWhen(Expression<Func<TEntity, bool>> predicate)
+  {
+    ApplyEditableWhen(predicate);
+    return this;
+  }
   public new GridColumn<TEntity, TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
   {
     base.PickedBy<TSource>(method, minLength);
@@ -216,6 +231,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> AsCover<TFileGrid>() where TFileGrid : class
   {
     base.AsCover<TFileGrid>();
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> AsImage()
+  {
+    base.AsImage();
     return this;
   }
   public new GridReferenceColumn<TEntity, TProp, TProp> AsReference<TGridService>()

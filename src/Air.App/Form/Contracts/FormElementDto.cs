@@ -100,4 +100,10 @@ public sealed class FormElementDto
 
   [JsonIgnore]
   internal bool IsRightsTree { get; set; }
+
+  [JsonIgnore]
+  internal Func<object, object?>? InfoValueGetter { get; set; }
+
+  [JsonIgnore]
+  internal List<string>? InfoNavigationPaths { get; set; }
 }

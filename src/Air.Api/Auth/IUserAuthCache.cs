@@ -14,9 +14,9 @@ public interface IUserAuthCache
     IServiceProvider services,
     CancellationToken ct = default);
 
-  Task EvictSessionAsync(long sessionId, CancellationToken ct = default);
+  Task RemoveSessionAsync(long sessionId, CancellationToken ct = default);
 
-  Task EvictUserAsync(long userId, CancellationToken ct = default);
+  Task RemoveUserAsync(long userId, CancellationToken ct = default);
 
-  Task EvictAllAsync(CancellationToken ct = default);
+  Task ClearAsync(CancellationToken ct = default);
 }

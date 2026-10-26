@@ -709,7 +709,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       await tx.CommitAsync(cancellationToken);
       if (PlatformApp != null)
       {
-        await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, cancellationToken);
+        await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, cancellationToken);
       }
 
       return new FormActionDto

@@ -9,42 +9,7 @@ public abstract partial class GridService<TEntity, TRow>
 {
   protected IQueryable<TEntity> RestrictedQuery()
   {
-    var parent = GetParent();
-    var queryDeclaration = GetQueryDeclaration();
-
-    var query = BaseQuery(db);
-    var restrictions = new UserRestrictions();
-    SetUserRestrictions(restrictions);
-    foreach (var restriction in restrictions.Filters)
-    {
-      query = query.Where(restriction);
-    }
-
-    if (ParentId.HasValue)
-    {
-      if (parent.FilterFunc != null && parent.MatchesService(ParentService))
-      {
-        query = parent.FilterFunc(query, ParentId.Value);
-      }
-      else if (ParentId is > 0 && ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
-      {
-        query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
-      }
-      else if (parent.FilterFunc != null)
-      {
-        query = parent.FilterFunc(query, ParentId.Value);
-      }
-      else if (ParentId is > 0)
-      {
-        query = query.Where(_ => false);
-      }
-    }
-
-    foreach (var filter in queryDeclaration.Filters)
-    {
-      query = query.Where(filter);
-    }
-
+    var query = BuildBaseEntityQuery(null, out _, out var queryDeclaration, preserveParent: true);
     if (queryDeclaration.LabelSelector != null &&
         ExtractNavigationPath(queryDeclaration.LabelSelector.Body) is { } labelNav &&
         !string.IsNullOrWhiteSpace(labelNav))
@@ -207,7 +172,7 @@ public abstract partial class GridService<TEntity, TRow>
       await tx.CommitAsync(cancellationToken);
       if (PlatformApp != null)
       {
-        await PlatformApp.EvictAuthCacheForEntityAsync(target, db, cancellationToken);
+        await PlatformApp.ClearAuthCacheForEntityAsync(target, db, cancellationToken);
       }
 
       return new GridActionDto
@@ -274,7 +239,7 @@ public abstract partial class GridService<TEntity, TRow>
       await tx.CommitAsync(cancellationToken);
       if (PlatformApp != null)
       {
-        await PlatformApp.EvictAuthCacheForEntityAsync(target, db, cancellationToken);
+        await PlatformApp.ClearAuthCacheForEntityAsync(target, db, cancellationToken);
       }
 
       return new GridActionDto
@@ -379,7 +344,7 @@ public abstract partial class GridService<TEntity, TRow>
       await tx.CommitAsync(cancellationToken);
       if (PlatformApp != null)
       {
-        await PlatformApp.EvictAuthCacheForEntityAsync(target, db, cancellationToken);
+        await PlatformApp.ClearAuthCacheForEntityAsync(target, db, cancellationToken);
       }
 
       return new GridActionDto
@@ -537,7 +502,7 @@ public abstract partial class GridService<TEntity, TRow>
       await tx.CommitAsync(cancellationToken);
       if (PlatformApp != null)
       {
-        await PlatformApp.EvictAuthCacheForEntitiesAsync(records, db, cancellationToken);
+        await PlatformApp.ClearAuthCacheForEntitiesAsync(records, db, cancellationToken);
       }
 
       return new GridActionDto
@@ -753,7 +718,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       if (PlatformApp != null)
       {
-        await PlatformApp.EvictAuthCacheForEntitiesAsync(entities, db, ct);
+        await PlatformApp.ClearAuthCacheForEntitiesAsync(entities, db, ct);
       }
 
       return new GridDeleteDto
@@ -876,8 +841,41 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
+        Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
       };
+    }
+
+    TEntity? preloadedEntity = null;
+    if (col.EditableEvaluator != null)
+    {
+      object? evalTarget;
+      if (typeof(TRow) == typeof(TEntity))
+      {
+        preloadedEntity = await IncludeColumnNavigations(RestrictedQuery(), [col]).FirstOrDefaultAsync(e => e.Id == request.Id.Value, ct)
+          ?? throw new KeyNotFoundException(L["FormNotFound"]);
+        evalTarget = preloadedEntity;
+      }
+      else
+      {
+        var baseQuery = IncludeColumnNavigations(BuildBaseEntityQuery(null, out _, out var qDecl, preserveParent: true), [col])
+          .Where(e => e.Id == request.Id.Value);
+        evalTarget = qDecl.Selector != null
+          ? await baseQuery.AsNoTracking().Select(qDecl.Selector).FirstOrDefaultAsync(ct)
+          : await baseQuery.FirstOrDefaultAsync(ct);
+        if (evalTarget == null)
+        {
+          throw new KeyNotFoundException(L["FormNotFound"]);
+        }
+      }
+
+      if (!col.EditableEvaluator(evalTarget))
+      {
+        return new GridCellDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
+        };
+      }
     }
 
     var formType = ResolveFormServiceType(cols);
@@ -893,7 +891,8 @@ public abstract partial class GridService<TEntity, TRow>
       return await form.SaveCellAsync(request.Id.Value, request.Path, request.Value, formReq, token => ReadRowAsync(request.Id.Value, token), ct);
     }
 
-    var entity = await RestrictedQuery().FirstOrDefaultAsync(e => e.Id == request.Id.Value, ct)
+    var entity = preloadedEntity
+      ?? await RestrictedQuery().FirstOrDefaultAsync(e => e.Id == request.Id.Value, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
     if (entity is IHasVersion verEntity && request.Ver.HasValue && verEntity.Ver != request.Ver.Value)
@@ -914,7 +913,7 @@ public abstract partial class GridService<TEntity, TRow>
     await db.SaveChangesAsync(ct);
     if (PlatformApp != null)
     {
-      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, ct);
     }
 
     var updatedRow = await ReadRowAsync(request.Id.Value, ct);

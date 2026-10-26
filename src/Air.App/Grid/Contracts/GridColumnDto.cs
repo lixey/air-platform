@@ -105,4 +105,10 @@ public sealed class GridColumnDto
 
   [JsonIgnore]
   internal System.Linq.Expressions.LambdaExpression? FilterExpression { get; set; }
+
+  [JsonIgnore]
+  internal Func<object, bool>? EditableEvaluator { get; set; }
+
+  [JsonIgnore]
+  internal List<string>? EditableNavPaths { get; set; }
 }

@@ -1,3 +1,4 @@
+using Platform.App.Internals;
 using Platform.Data.Internals;
 
 namespace Platform.App.Form;
@@ -95,9 +96,12 @@ public class Elements
     return new StatusFlowBuilder(this);
   }
 
+  private static readonly ConcurrentDictionary<(Type EntityType, string ExpressionKey), Delegate> CompiledInfoSelectors = new();
+
   public FormElement<TEntity, TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression)
   {
-    var path = ToCamelPath(MemberPath.Of(expression));
+    var memberPath = MemberPath.Of(expression);
+    var path = ToCamelPath(memberPath);
     var el = new FormElementDto
     {
       Path = path,
@@ -108,8 +112,181 @@ public class Elements
       Tab = _currentTab,
       IsDisabled = _disabled
     };
+
+    if (memberPath.Contains('.'))
+    {
+      var navPaths = ExtractNavigationPaths(expression);
+      if (navPaths.Count > 0)
+      {
+        el.InfoNavigationPaths = navPaths;
+      }
+
+      el.InfoValueGetter = obj => PropertyAccessorCache.GetPathValue(obj, memberPath);
+    }
+
     _elements.Add(el);
     return new FormElement<TEntity, TProp>(el);
+  }
+
+  public FormElement<TEntity, TProp> AddInfo<TEntity, TProp>(string label, Expression<Func<TEntity, TProp>> expression, string? key = null)
+  {
+    var navPaths = ExtractNavigationPaths(expression);
+    var exprKey = expression.ToString();
+    var basePath = !string.IsNullOrWhiteSpace(key)
+      ? ToCamelPath(key)
+      : BuildStableInfoPath(expression, exprKey);
+    var path = EnsureUniquePath(basePath);
+
+    var compiled = Grid.GridColumn<object>.ContainsClosure(expression.Body)
+      ? expression.Compile()
+      : (Func<TEntity, TProp>)CompiledInfoSelectors.GetOrAdd(
+          (typeof(TEntity), exprKey),
+          _ => expression.Compile());
+
+    var el = new FormElementDto
+    {
+      Path = path,
+      Label = label,
+      Type = ResolveFieldType(typeof(TProp)),
+      TemporalType = ResolveTemporalType(typeof(TProp)),
+      Model = new FormInfoModel(),
+      Tab = _currentTab,
+      IsDisabled = true,
+      IsServerOwned = true,
+      InfoNavigationPaths = navPaths.Count > 0 ? navPaths : null,
+      InfoValueGetter = obj =>
+      {
+        if (obj is TEntity typed)
+        {
+          try
+          {
+            return compiled(typed);
+          }
+          catch (NullReferenceException)
+          {
+            return null;
+          }
+        }
+
+        return null;
+      }
+    };
+    _elements.Add(el);
+    return new FormElement<TEntity, TProp>(el);
+  }
+
+  private static string BuildStableInfoPath<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression, string exprKey)
+  {
+    var memberPath = MemberPath.Of(expression);
+    if (!string.IsNullOrEmpty(memberPath))
+    {
+      return "info_" + ToCamelPath(memberPath).Replace('.', '_');
+    }
+
+    var chars = exprKey.Where(char.IsLetterOrDigit).Take(24).ToArray();
+    return chars.Length > 0 ? "info_" + new string(chars) : "info";
+  }
+
+  private string EnsureUniquePath(string basePath)
+  {
+    var candidate = basePath;
+    var suffix = 2;
+    while (_elements.Any(e => string.Equals(e.Path, candidate, StringComparison.OrdinalIgnoreCase)))
+    {
+      candidate = $"{basePath}_{suffix++}";
+    }
+
+    return candidate;
+  }
+
+  internal static List<string> ExtractNavigationPaths(LambdaExpression lambda)
+  {
+    var navs = new HashSet<string>(StringComparer.Ordinal);
+    if (lambda.Parameters.Count > 0)
+    {
+      CollectNavigationPaths(lambda.Body, lambda.Parameters[0], navs);
+    }
+
+    return [.. navs];
+  }
+
+  private static void CollectNavigationPaths(Expression? expr, ParameterExpression rootParam, HashSet<string> navs)
+  {
+    if (expr == null)
+    {
+      return;
+    }
+
+    if (expr is MemberExpression me)
+    {
+      var parts = new List<string>(4);
+      Expression? cur = me;
+      while (cur is MemberExpression m)
+      {
+        parts.Add(m.Member.Name);
+        cur = m.Expression;
+      }
+
+      if (cur == rootParam)
+      {
+        if (parts.Count > 1)
+        {
+          parts.Reverse();
+          navs.Add(string.Join('.', parts.Take(parts.Count - 1)));
+        }
+
+        return;
+      }
+
+      CollectNavigationPaths(me.Expression, rootParam, navs);
+      return;
+    }
+
+    switch (expr)
+    {
+      case UnaryExpression u:
+        CollectNavigationPaths(u.Operand, rootParam, navs);
+        break;
+      case BinaryExpression b:
+        CollectNavigationPaths(b.Left, rootParam, navs);
+        CollectNavigationPaths(b.Right, rootParam, navs);
+        break;
+      case ConditionalExpression c:
+        CollectNavigationPaths(c.Test, rootParam, navs);
+        CollectNavigationPaths(c.IfTrue, rootParam, navs);
+        CollectNavigationPaths(c.IfFalse, rootParam, navs);
+        break;
+      case MethodCallExpression call:
+        CollectNavigationPaths(call.Object, rootParam, navs);
+        foreach (var arg in call.Arguments)
+        {
+          CollectNavigationPaths(arg, rootParam, navs);
+        }
+
+        break;
+      case NewArrayExpression arr:
+        foreach (var item in arr.Expressions)
+        {
+          CollectNavigationPaths(item, rootParam, navs);
+        }
+
+        break;
+      case NewExpression n:
+        foreach (var arg in n.Arguments)
+        {
+          CollectNavigationPaths(arg, rootParam, navs);
+        }
+
+        break;
+      case InvocationExpression inv:
+        CollectNavigationPaths(inv.Expression, rootParam, navs);
+        foreach (var arg in inv.Arguments)
+        {
+          CollectNavigationPaths(arg, rootParam, navs);
+        }
+
+        break;
+    }
   }
 
   public FormElement<object, TProp> Add<TProp>(string path)

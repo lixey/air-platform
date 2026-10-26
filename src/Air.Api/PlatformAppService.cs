@@ -61,9 +61,9 @@ public class PlatformAppService(
   }
 
   /// <summary>
-  /// Evicts cached session/user auth snapshots when a security entity is mutated.
+  /// Clears cached session/user auth snapshots when a security entity is mutated.
   /// </summary>
-  public async Task EvictAuthCacheForEntityAsync(object? entity, PlatformDbContext? db = null, CancellationToken ct = default)
+  public async Task ClearAuthCacheForEntityAsync(object? entity, PlatformDbContext? db = null, CancellationToken ct = default)
   {
     if (AuthCache is not { } cache)
     {
@@ -72,7 +72,7 @@ public class PlatformAppService(
 
     if (entity != null)
     {
-      await EvictSingleAsync(cache, entity, ct);
+      await ClearSingleAsync(cache, entity, ct);
     }
 
     if (db != null)
@@ -81,16 +81,16 @@ public class PlatformAppService(
       {
         if (entry.Entity.Id > 0)
         {
-          await cache.EvictSessionAsync(entry.Entity.Id, ct);
+          await cache.RemoveSessionAsync(entry.Entity.Id, ct);
         }
       }
     }
   }
 
   /// <summary>
-  /// Evicts cached session/user auth snapshots when security entities are mutated in a batch.
+  /// Clears cached session/user auth snapshots when security entities are mutated in a batch.
   /// </summary>
-  public async Task EvictAuthCacheForEntitiesAsync(IEnumerable<object> entities, PlatformDbContext? db = null, CancellationToken ct = default)
+  public async Task ClearAuthCacheForEntitiesAsync(IEnumerable<object> entities, PlatformDbContext? db = null, CancellationToken ct = default)
   {
     if (AuthCache is not { } cache)
     {
@@ -99,7 +99,7 @@ public class PlatformAppService(
 
     foreach (var entity in entities)
     {
-      await EvictSingleAsync(cache, entity, ct);
+      await ClearSingleAsync(cache, entity, ct);
     }
 
     if (db != null)
@@ -108,28 +108,28 @@ public class PlatformAppService(
       {
         if (entry.Entity.Id > 0)
         {
-          await cache.EvictSessionAsync(entry.Entity.Id, ct);
+          await cache.RemoveSessionAsync(entry.Entity.Id, ct);
         }
       }
     }
   }
 
-  private static async Task EvictSingleAsync(IUserAuthCache cache, object entity, CancellationToken ct)
+  private static async Task ClearSingleAsync(IUserAuthCache cache, object entity, CancellationToken ct)
   {
     switch (entity)
     {
       case BaseAppUser u:
-        await cache.EvictUserAsync(u.Id, ct);
+        await cache.RemoveUserAsync(u.Id, ct);
         break;
       case BaseAppAuthSession s:
-        await cache.EvictSessionAsync(s.Id, ct);
-        await cache.EvictUserAsync(s.UserId, ct);
+        await cache.RemoveSessionAsync(s.Id, ct);
+        await cache.RemoveUserAsync(s.UserId, ct);
         break;
       case BaseAppAuthAssignment a:
-        await cache.EvictUserAsync(a.UserId, ct);
+        await cache.RemoveUserAsync(a.UserId, ct);
         break;
       case BaseAppAuthRole or BaseAppAuthGrant or BaseAppTenant:
-        await cache.EvictAllAsync(ct);
+        await cache.ClearAsync(ct);
         break;
     }
   }

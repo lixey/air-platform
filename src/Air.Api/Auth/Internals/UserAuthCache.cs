@@ -93,7 +93,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
       ct);
   }
 
-  public async Task EvictSessionAsync(long sessionId, CancellationToken ct = default)
+  public async Task RemoveSessionAsync(long sessionId, CancellationToken ct = default)
   {
     if (sessionId > 0)
     {
@@ -101,7 +101,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
     }
   }
 
-  public async Task EvictUserAsync(long userId, CancellationToken ct = default)
+  public async Task RemoveUserAsync(long userId, CancellationToken ct = default)
   {
     if (userId > 0)
     {
@@ -109,7 +109,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
     }
   }
 
-  public async Task EvictAllAsync(CancellationToken ct = default) =>
+  public async Task ClearAsync(CancellationToken ct = default) =>
     await cache.RemoveByTagAsync(AuthTag, ct);
 
   private static string SessionKey(long sessionId) => $"platform:auth:v1:session:{sessionId}";

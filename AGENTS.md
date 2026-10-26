@@ -44,6 +44,7 @@
 - **Zero Hardcoded Strings**: All user-facing texts must live in `.resx` + `.uk.resx` resources (`PlatformResource` + `UiTexts.cs` for platform, `<Module>Resource` for modules) respecting `CultureInfo.CurrentUICulture`.
 - **Typed Contracts**: Decorate shared DTOs with `[UiContract]` and export via `make contracts`. Never hardcode backend lists or models in the frontend.
 - **PascalCase `Handle` Rule**: Every `Handle` (on modules, dictionary/code entities, menu items, agent providers) MUST be a `PascalCase` identifier (`^[A-Z][a-zA-Z0-9]*$`, e.g. `App`, `Fin`, `En`, `Ua`, `Uah`, `Usd`, `Slate`, `Agy`). Use `Code` or `Id` for external formats (ISO `UAH`, culture `uk-UA`, CLI model IDs).
+- **Simple, Everyday English Vocabulary & Readability Over Line-Count Savings**: Always use clear, common English words in identifiers (e.g., `RemoveUserAsync`, `ClearAsync` instead of rare words like `EvictUserAsync`). Never sacrifice code readability or clarity for small line-count reductions — any deduplication that might obscure flow must be reviewed case-by-case with the user first.
 
 ## 5. UI & Form Conventions
 - **Reuse Platform Primitives**: Always use `air-ui` components, services, and tokens (`ui-nav`, `ui-btn`, `SelectService`, `OverlayService`, `fieldClasses`, `UiIcon` + `ICON_SET`, semantic classes `bg-surface`, `bg-field`, `border-line`, `border-field-edge`) instead of custom native controls. Use `flex items-center justify-center` on `<i [icon]="...">` tags.

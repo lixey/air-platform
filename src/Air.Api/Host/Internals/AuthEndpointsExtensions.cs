@@ -170,10 +170,10 @@ internal static class AuthEndpointsExtensions
         var authCache = ctx.RequestServices.GetService<IUserAuthCache>();
         if (authCache != null)
         {
-          await authCache.EvictUserAsync(user.Id, ct);
+          await authCache.RemoveUserAsync(user.Id, ct);
           if (userContext.SessionId is { } currentSid)
           {
-            await authCache.EvictSessionAsync(currentSid, ct);
+            await authCache.RemoveSessionAsync(currentSid, ct);
           }
         }
 
@@ -270,7 +270,7 @@ internal static class AuthEndpointsExtensions
           await authStore.SaveChangesAsync(ct);
           if (authCache != null)
           {
-            await authCache.EvictSessionAsync(session.Id, ct);
+            await authCache.RemoveSessionAsync(session.Id, ct);
           }
 
           return Results.Unauthorized();
@@ -292,7 +292,7 @@ internal static class AuthEndpointsExtensions
 
       if (authCache != null)
       {
-        await authCache.EvictSessionAsync(session.Id, ct);
+        await authCache.RemoveSessionAsync(session.Id, ct);
       }
 
       var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
@@ -316,7 +316,7 @@ internal static class AuthEndpointsExtensions
         var authCache = ctx.RequestServices.GetService<IUserAuthCache>();
         if (authCache != null)
         {
-          await authCache.EvictSessionAsync(sid, ct);
+          await authCache.RemoveSessionAsync(sid, ct);
         }
       }
 
@@ -347,7 +347,7 @@ internal static class AuthEndpointsExtensions
             await authStore.SaveChangesAsync(ct);
             if (ctx.RequestServices.GetService<IUserAuthCache>() is { } authCache)
             {
-              await authCache.EvictUserAsync(user.Id, ct);
+              await authCache.RemoveUserAsync(user.Id, ct);
             }
           }
 
@@ -421,8 +421,8 @@ internal static class AuthEndpointsExtensions
 
       if (ctx.RequestServices.GetService<IUserAuthCache>() is { } authCache)
       {
-        await authCache.EvictSessionAsync(session.Id, ct);
-        await authCache.EvictUserAsync(user.Id, ct);
+        await authCache.RemoveSessionAsync(session.Id, ct);
+        await authCache.RemoveUserAsync(user.Id, ct);
       }
 
       IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion);

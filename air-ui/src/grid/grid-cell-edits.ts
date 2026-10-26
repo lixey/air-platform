@@ -65,8 +65,12 @@ const EDIT_KINDS: Readonly<Record<string, GridCellEditKind>> = {
 const TYPED_KINDS: ReadonlySet<GridCellEditKind> = new Set(['text', 'email', 'url', 'number', 'money', 'percent']);
 
 /** How a column's cell is edited in place; null for a column the model does not mark editable or a cell no editor takes. */
-export function editKindOf(column: GridColumnDto | null | undefined): GridCellEditKind | null {
+export function editKindOf(column: GridColumnDto | null | undefined, row?: GridRow | null): GridCellEditKind | null {
   if (!column?.isEditable || !column.path) {
+    return null;
+  }
+  const readonlyCells = row?.['readonlyCells'];
+  if (Array.isArray(readonlyCells) && readonlyCells.includes(column.path)) {
     return null;
   }
   return Object.hasOwn(EDIT_KINDS, column.cell.kind) ? EDIT_KINDS[column.cell.kind] : null;
@@ -161,7 +165,7 @@ export class GridCellEdits {
    */
   start(row: GridRow, column: GridColumnDto, typed?: string): boolean {
     const key = keyOf(row);
-    const kind = editKindOf(column);
+    const kind = editKindOf(column, row);
     if (
       this.isAsking ||
       key === null ||
@@ -249,7 +253,7 @@ export class GridCellEdits {
       this.isAsking ||
       key === null ||
       !column.path ||
-      editKindOf(column) !== 'checkbox' ||
+      editKindOf(column, row) !== 'checkbox' ||
       this.options.isPicking() ||
       untracked(() => this.isSaving(key))
     ) {

@@ -222,7 +222,7 @@ export class TableKeyboard {
   private editableCell(): { readonly row: GridRow; readonly column: GridColumnDto } | null {
     const row = this.grid.activeRow();
     const column = this.grid.tableColumns()[this.activeColumn()];
-    return row && editKindOf(column) !== null ? { row, column } : null;
+    return row && editKindOf(column, row) !== null ? { row, column } : null;
   }
 
   /**
@@ -234,7 +234,7 @@ export class TableKeyboard {
     if (!cell) {
       return false;
     }
-    if (editKindOf(cell.column) === 'checkbox') {
+    if (editKindOf(cell.column, cell.row) === 'checkbox') {
       if (typed === undefined) {
         void this.grid.edits.toggle(cell.row, cell.column);
       }

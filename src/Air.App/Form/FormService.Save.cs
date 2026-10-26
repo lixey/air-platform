@@ -49,6 +49,7 @@ public abstract partial class FormService<TEntity, TInput>
       if (efModel != null)
       {
         var refNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rawInfoNavPaths = new List<string>();
         foreach (var el in elements.List)
         {
           if (!string.IsNullOrEmpty(el.ReferencePath))
@@ -58,6 +59,21 @@ public abstract partial class FormService<TEntity, TInput>
           else if (!string.IsNullOrEmpty(el.Path) && el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 2)
           {
             refNames.Add(el.Path[..^2]);
+          }
+
+          if (el.InfoNavigationPaths is { Count: > 0 } navPaths)
+          {
+            rawInfoNavPaths.AddRange(navPaths);
+          }
+        }
+
+        var includePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var validNavPath in ResolveValidEntityNavigationPaths(efModel, rawInfoNavPaths))
+        {
+          refNames.Add(validNavPath.Split('.')[0]);
+          if (validNavPath.Contains('.'))
+          {
+            includePaths.Add(validNavPath);
           }
         }
 
@@ -82,6 +98,11 @@ public abstract partial class FormService<TEntity, TInput>
               }
             }
           }
+        }
+
+        foreach (var incPath in includePaths)
+        {
+          query = query.Include(incPath);
         }
       }
 
@@ -180,6 +201,8 @@ public abstract partial class FormService<TEntity, TInput>
     {
       await PopulateReferencesAsync(dict, entity, ct);
     }
+
+    await PopulateInfoValuesAsync(dict, entity, entityId, ct);
 
     var unavailable = await EvaluateUnavailableAsync(entityId, ct);
 
@@ -464,7 +487,7 @@ public abstract partial class FormService<TEntity, TInput>
     _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
     if (PlatformApp != null)
     {
-      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, ct);
     }
 
     if (!ReferenceEquals(entity, input))
@@ -645,7 +668,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (PlatformApp != null)
     {
-      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, ct);
     }
 
     var row = await readRow(ct);
@@ -740,7 +763,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (PlatformApp != null)
     {
-      await PlatformApp.EvictAuthCacheForEntityAsync(entity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, ct);
     }
   }
 

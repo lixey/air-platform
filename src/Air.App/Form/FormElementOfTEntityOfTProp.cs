@@ -253,6 +253,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     return this;
   }
 
+  public FormElement<TEntity, TProp> AsWebsite() => AsUrl();
+
   public FormElement<TEntity, TProp> AsPhone(params string[] masks)
   {
     dto.Type = UiFieldType.Text;
@@ -262,6 +264,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     };
     return this;
   }
+
+  public FormElement<TEntity, TProp> AsTel(params string[] masks) => AsPhone(masks);
 
   public FormElement<TEntity, TProp> InputOnly()
   {

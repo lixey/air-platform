@@ -681,7 +681,7 @@ export class GridTableComponent {
 
   /** The second press of a double click on an editable cell, a checkbox among them, selects no word of its text. */
   protected keepWordsUnselected(event: MouseEvent, cell: GridCellContext): void {
-    if (event.detail > 1 && editKindOf(cell.column) !== null) {
+    if (event.detail > 1 && editKindOf(cell.column, cell.row) !== null) {
       event.preventDefault();
     }
   }
@@ -689,7 +689,7 @@ export class GridTableComponent {
   /** A click on a cell makes its column the active one; on a body row's editable checkbox it toggles and saves it. */
   protected clickCell(cell: GridCellContext, index: number): void {
     this.keyboard.activateColumn(index);
-    if (cell.row && cell.index >= 0 && !cell.pinned && editKindOf(cell.column) === 'checkbox') {
+    if (cell.row && cell.index >= 0 && !cell.pinned && editKindOf(cell.column, cell.row) === 'checkbox') {
       void this.grid.edits.toggle(cell.row, cell.column);
     }
   }

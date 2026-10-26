@@ -6,12 +6,14 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
 {
   public FormReferenceElement<TEntity, TProp, TSource> PatchOnSelect(
     Expression<Func<TEntity, object?>> target,
-    Expression<Func<TSource, object?>> source) =>
-    PatchOnSelect<TSource>(target, source);
+    Expression<Func<TSource, object?>> source,
+    bool onlyWhenEmpty = false) =>
+    PatchOnSelect<TSource>(target, source, onlyWhenEmpty);
 
   public FormReferenceElement<TEntity, TProp, TSource> PatchOnSelect<TSourceRow>(
     Expression<Func<TEntity, object?>> target,
-    Expression<Func<TSourceRow, object?>> source)
+    Expression<Func<TSourceRow, object?>> source,
+    bool onlyWhenEmpty = false)
   {
     var targetPath = GetMemberName(target.Body);
     var sourcePath = GetMemberName(source.Body);
@@ -21,7 +23,8 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
       dto.SelectPatches.Add(new SelectPatchDto
       {
         TargetField = ToCamel(targetPath),
-        SourceColumn = ToCamel(sourcePath)
+        SourceColumn = ToCamel(sourcePath),
+        OnlyWhenEmpty = onlyWhenEmpty
       });
     }
 

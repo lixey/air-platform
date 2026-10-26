@@ -111,6 +111,129 @@ public abstract partial class FormService<TEntity, TInput>
     await PopulateReferencesCoreAsync(dict, entity, formModel.Elements, ct);
   }
 
+  private async Task PopulateInfoValuesAsync(
+    Dictionary<string, object?> dict,
+    object? entity,
+    long? entityId,
+    CancellationToken ct)
+  {
+    var infoTarget = entity ?? _lastSavedEntity;
+    if (infoTarget == null)
+    {
+      return;
+    }
+
+    var elements = _lastElements;
+    if (elements == null)
+    {
+      elements = new Elements();
+      await SetElementsAsync(elements, ct);
+      LocalizeAndResolveSelectElements(elements);
+      _lastElements = elements;
+    }
+
+    var infoElements = elements.List
+      .Where(el => el.InfoValueGetter != null && (el.Model is FormInfoModel || el.Path.Contains('.')))
+      .ToList();
+    if (infoElements.Count == 0)
+    {
+      return;
+    }
+
+    var efModel = db.Model.FindEntityType(typeof(TEntity));
+    var allNavPaths = ResolveValidEntityNavigationPaths(
+      efModel,
+      infoElements
+        .Where(el => el.InfoNavigationPaths is { Count: > 0 })
+        .SelectMany(el => el.InfoNavigationPaths!));
+
+    if (allNavPaths.Count > 0 && entityId is > 0)
+    {
+      var targetEntity = _lastSavedEntity ?? infoTarget as TEntity;
+      var needsNavReload = targetEntity == null;
+      if (targetEntity != null)
+      {
+        foreach (var navPath in allNavPaths)
+        {
+          var rootNav = navPath.Split('.')[0];
+          var navVal = PropertyAccessorCache.GetValue(targetEntity, rootNav);
+          var fkVal = PropertyAccessorCache.GetValue(targetEntity, rootNav + "Id") as long?;
+          if (fkVal is > 0 && (navVal == null || navVal is IEntity navEntity && navEntity.Id != fkVal.Value))
+          {
+            needsNavReload = true;
+            break;
+          }
+        }
+      }
+
+      if (needsNavReload)
+      {
+        var reloadQuery = Reachable(asTracking: false);
+        foreach (var navPath in allNavPaths)
+        {
+          reloadQuery = reloadQuery.Include(navPath);
+        }
+
+        var reloaded = await reloadQuery.FirstOrDefaultAsync(e => e.Id == entityId.Value, ct);
+        if (reloaded != null)
+        {
+          _lastSavedEntity = reloaded;
+          if (ReferenceEquals(infoTarget, targetEntity))
+          {
+            infoTarget = reloaded;
+          }
+        }
+      }
+    }
+
+    foreach (var el in infoElements)
+    {
+      dict[el.Path] = el.InfoValueGetter!(infoTarget)
+        ?? (_lastSavedEntity != null && !ReferenceEquals(infoTarget, _lastSavedEntity) ? el.InfoValueGetter!(_lastSavedEntity) : null);
+    }
+  }
+
+  private static List<string> ResolveValidEntityNavigationPaths(
+    Microsoft.EntityFrameworkCore.Metadata.IEntityType? rootEntityType,
+    IEnumerable<string> candidatePaths)
+  {
+    var result = new List<string>();
+    if (rootEntityType == null)
+    {
+      return result;
+    }
+
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var candidate in candidatePaths)
+    {
+      var currentType = rootEntityType;
+      var validSegments = new List<string>();
+      foreach (var segment in candidate.Split('.'))
+      {
+        var nav = currentType.GetNavigations()
+          .FirstOrDefault(n => !n.IsCollection && string.Equals(n.Name, segment, StringComparison.OrdinalIgnoreCase));
+        if (nav == null)
+        {
+          break;
+        }
+
+        validSegments.Add(nav.Name);
+        currentType = nav.TargetEntityType;
+      }
+
+      if (validSegments.Count > 0)
+      {
+        var validPath = string.Join('.', validSegments);
+        if (seen.Add(validPath))
+        {
+          result.Add(validPath);
+        }
+      }
+    }
+
+    return result;
+  }
+
   private async Task PopulateReferencesCoreAsync(
     Dictionary<string, object?> dict,
     object entity,

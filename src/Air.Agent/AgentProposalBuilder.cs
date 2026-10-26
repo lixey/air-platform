@@ -484,10 +484,11 @@ public static partial class AgentProposalBuilder
           continue;
         }
 
-        if (!isEdit &&
+        if ((!isEdit || patch.OnlyWhenEmpty) &&
             formValues.TryGetValue(patch.TargetField, out var existingTarget) &&
-            TryConvertToLong(existingTarget, out var existingTargetId) &&
-            existingTargetId > 0)
+            existingTarget != null &&
+            existingTarget.ToString() is { Length: > 0 } existingStr &&
+            existingStr != "0")
         {
           continue;
         }

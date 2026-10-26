@@ -7,12 +7,24 @@ public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
   where TRow : class
 {
-  private IQueryable<TEntity> BuildBaseEntityQuery(GridRequest? gridReq, out Parent parent, out Query queryDeclaration)
+  private IQueryable<TEntity> BuildBaseEntityQuery(
+    GridRequest? gridReq,
+    out Parent parent,
+    out Query queryDeclaration,
+    bool preserveParent = false)
   {
     parent = GetParent();
 
-    ParentService = gridReq?.ParentService;
-    ParentId = gridReq?.ParentId;
+    if (gridReq != null)
+    {
+      ParentService = gridReq.ParentService;
+      ParentId = gridReq.ParentId;
+    }
+    else if (!preserveParent)
+    {
+      ParentService = null;
+      ParentId = null;
+    }
 
     queryDeclaration = GetQueryDeclaration();
 
@@ -711,6 +723,18 @@ public abstract partial class GridService<TEntity, TRow>
             query = query.Include(actualColorNavPath);
           }
           catch { }
+        }
+      }
+
+      if (col.EditableNavPaths is { Count: > 0 } editNavPaths)
+      {
+        foreach (var editNavPath in editNavPaths)
+        {
+          var actualEditNavPath = ResolvePropertyPath(entityType, editNavPath.Split('.'));
+          if (actualEditNavPath != null)
+          {
+            query = query.Include(actualEditNavPath);
+          }
         }
       }
     }

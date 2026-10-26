@@ -103,7 +103,9 @@ export class GridCellCoverComponent extends GridCellBase<GridCellCoverModel> {
     return typeof key === 'number' ? key : null;
   });
 
-  protected readonly canOpen = computed(() => !this.isDisabled() && !!this.model() && this.parentId() !== null);
+  protected readonly canOpen = computed(
+    () => !this.isDisabled() && !!this.model() && (this.model()!.service ? this.parentId() !== null : !!this.cover()),
+  );
 
   protected readonly buttonClasses = `${PICTURE} cursor-pointer ${FOCUS_RING}`;
   protected readonly pictureClasses = PICTURE;
@@ -113,8 +115,30 @@ export class GridCellCoverComponent extends GridCellBase<GridCellCoverModel> {
     event.stopPropagation();
     const model = this.model();
     const cover = this.cover();
+    if (!model || !cover || this.isOpening()) {
+      return;
+    }
+    if (!model.service) {
+      const files = signal<readonly FileView[]>([fileViewOfCover(cover)]);
+      const source: FileViewerSource = {
+        files,
+        canDelete: signal(false),
+        isRefreshing: signal(false),
+        delete: () => Promise.resolve(false),
+        refresh: () => undefined,
+        ...fileInfoSourceOf(this.injector, {
+          place: () => null,
+          canEditInfo: signal(false),
+          canReadMetadata: signal(false),
+          conflictTitle: () => undefined,
+          saved: () => undefined,
+        }),
+      };
+      openFileViewer(this.overlay, this.injector, source, cover.id);
+      return;
+    }
     const parentId = this.parentId();
-    if (!model || !cover || parentId === null || this.isOpening()) {
+    if (parentId === null) {
       return;
     }
     const isCurrent = this.grid?.capture() ?? (() => true);
@@ -168,6 +192,20 @@ export class GridCellCoverComponent extends GridCellBase<GridCellCoverModel> {
 
 /** A cover as the service answers it, or null for anything else: a row without a cover answers none. */
 function coverOf(value: unknown): GridCoverDto | null {
+  if (typeof value === 'string') {
+    const url = value.trim();
+    if (!url) {
+      return null;
+    }
+    const name = url.split('/').pop()?.split('?')[0] || url;
+    return {
+      id: 0,
+      name,
+      url,
+      contentType: 'image/*',
+      thumbUrl: url,
+    };
+  }
   if (!isRecord(value) || typeof value['id'] !== 'number' || typeof value['name'] !== 'string' || typeof value['url'] !== 'string') {
     return null;
   }

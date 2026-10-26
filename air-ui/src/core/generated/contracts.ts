@@ -1805,6 +1805,7 @@ export interface ScreenDto {
 export interface SelectPatchDto {
   targetField: string;
   sourceColumn: string;
+  onlyWhenEmpty?: boolean;
 }
 
 export interface SessionDto {

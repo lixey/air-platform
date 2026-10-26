@@ -116,6 +116,15 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> AsImage()
+  {
+    dto.IsSortable = false;
+    dto.IsFilterable = false;
+    dto.Width ??= 56;
+    dto.Cell = new GridCellCoverModel { Service = string.Empty, ParentService = string.Empty };
+    return this;
+  }
+
   public GridColumn<TProp> AsCheckbox()
   {
     dto.Type = UiFieldType.Checkbox;
@@ -267,6 +276,43 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   public GridColumn<TProp> Editable(Func<bool> condition) =>
     Editable(condition());
 
+  private static readonly ConcurrentDictionary<(Type RowType, string ExpressionKey), Delegate> CompiledEditablePredicates = new();
+
+  internal GridColumn<TProp> ApplyEditableWhen<TRow>(Expression<Func<TRow, bool>> predicate)
+  {
+    Editable(true);
+    var navPaths = Form.Elements.ExtractNavigationPaths(predicate);
+    if (navPaths.Count > 0)
+    {
+      dto.EditableNavPaths = navPaths;
+    }
+
+    var exprKey = predicate.ToString();
+    var compiled = ContainsClosure(predicate.Body)
+      ? predicate.Compile()
+      : (Func<TRow, bool>)CompiledEditablePredicates.GetOrAdd(
+          (typeof(TRow), exprKey),
+          _ => predicate.Compile());
+
+    dto.EditableEvaluator = obj =>
+    {
+      if (obj is TRow row)
+      {
+        try
+        {
+          return compiled(row);
+        }
+        catch (NullReferenceException)
+        {
+          return false;
+        }
+      }
+
+      return false;
+    };
+    return this;
+  }
+
   public GridColumn<TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
   {
     dto.Cell = new GridCellPickerModel
@@ -347,6 +393,8 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> AsTel() => AsPhone();
+
   public GridColumn<TProp> AsEmail()
   {
     dto.Type = UiFieldType.Text;
@@ -360,6 +408,8 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Cell = new GridCellUrlModel();
     return this;
   }
+
+  public GridColumn<TProp> AsWebsite() => AsUrl();
 
   public GridColumn<TProp> Hue(Func<object, string?> selector)
   {
@@ -454,7 +504,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return parts.Count > 1 ? string.Join('.', parts.Take(parts.Count - 1)) : null;
   }
 
-  private static bool ContainsClosure(Expression? expr) =>
+  internal static bool ContainsClosure(Expression? expr) =>
     expr switch
     {
       null or ParameterExpression => false,

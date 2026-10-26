@@ -10,4 +10,10 @@ public class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns owner) 
     Dto.FormServiceResolver = row => row is TRow typed ? resolver(typed) : null;
     return this;
   }
+
+  public GridColumn<TEntity, TRow, TProp> EditableWhen(Expression<Func<TRow, bool>> predicate)
+  {
+    ApplyEditableWhen(predicate);
+    return this;
+  }
 }

@@ -214,6 +214,12 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
     if (patches && patches.length > 0 && picked?.row && typeof picked.row === 'object') {
       const row = picked.row as Record<string, unknown>;
       for (const patch of patches) {
+        if (patch.onlyWhenEmpty) {
+          const cur = this.form.valueOf(patch.targetField);
+          if (cur !== null && cur !== undefined && cur !== '' && !(Array.isArray(cur) && cur.length === 0)) {
+            continue;
+          }
+        }
         const val = valueAt(row, patch.sourceColumn);
         if (val !== undefined && val !== null) {
           const targetEl = this.form.model()?.elements?.find(e => e.path === patch.targetField);
