@@ -2,10 +2,10 @@ namespace Platform.Api.Auth.Internals;
 
 internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
 {
-  private const string EpochCacheKey = "platform:auth:v1:epoch";
+  private const string AuthTag = "platform:auth";
+  private static readonly string[] SessionTags = [AuthTag];
   private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(5);
   private static readonly TimeSpan ProfileTtl = TimeSpan.FromMinutes(10);
-  private static readonly TimeSpan EpochTtl = TimeSpan.FromHours(24);
 
   public async Task<SessionAuthSnapshot?> GetSessionAsync(long sessionId, IAuthStore store, CancellationToken ct = default)
   {
@@ -29,6 +29,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
               dbSession.ExpiresAt);
       },
       SessionTtl,
+      SessionTags,
       ct);
   }
 
@@ -44,12 +45,8 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
       return null;
     }
 
-    var epoch = await GetEpochAsync(ct);
-    var userVer = await cache.GetAsync<string>(UserVersionKey(userId), ct) ?? "1";
-    var key = ProfileKey(epoch, userVer, userId, tenantId);
-
     return await cache.GetOrCreateAsync(
-      key,
+      ProfileKey(userId, tenantId),
       async token =>
       {
         var user = await store.FindUserByIdAsync(userId, token);
@@ -92,6 +89,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
           customData is { Count: > 0 } ? customData : null);
       },
       ProfileTtl,
+      [AuthTag, UserTag(userId)],
       ct);
   }
 
@@ -107,22 +105,15 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
   {
     if (userId > 0)
     {
-      await cache.SetAsync(UserVersionKey(userId), Guid.NewGuid().ToString("N"), EpochTtl, ct);
+      await cache.RemoveByTagAsync(UserTag(userId), ct);
     }
   }
 
   public async Task EvictAllAsync(CancellationToken ct = default) =>
-    await cache.SetAsync(EpochCacheKey, Guid.NewGuid().ToString("N"), EpochTtl, ct);
-
-  private async ValueTask<string> GetEpochAsync(CancellationToken ct) =>
-    await cache.GetOrCreateAsync(
-      EpochCacheKey,
-      static _ => ValueTask.FromResult<string?>(Guid.NewGuid().ToString("N")),
-      EpochTtl,
-      ct) ?? "1";
+    await cache.RemoveByTagAsync(AuthTag, ct);
 
   private static string SessionKey(long sessionId) => $"platform:auth:v1:session:{sessionId}";
-  private static string UserVersionKey(long userId) => $"platform:auth:v1:uver:{userId}";
-  private static string ProfileKey(string epoch, string userVer, long userId, long? tenantId) =>
-    $"platform:auth:v1:profile:{epoch}:{userVer}:{userId}:{tenantId ?? 0}";
+  private static string UserTag(long userId) => $"platform:auth:u:{userId}";
+  private static string ProfileKey(long userId, long? tenantId) =>
+    $"platform:auth:v1:profile:{userId}:{tenantId ?? 0}";
 }

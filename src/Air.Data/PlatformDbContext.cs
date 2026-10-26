@@ -172,6 +172,12 @@ public abstract class PlatformDbContext : DbContext
     return await SaveWithJournalCoreAsync(acceptAllChangesOnSuccess, journalSnapshots, cancellationToken);
   }
 
+  private static readonly ConcurrentDictionary<Type, bool> JournalTableConfirmed = new();
+  private bool _journalTableMissing;
+  private Guid? _runId;
+
+  private Guid RunId => _runId ??= Guid.CreateVersion7();
+
   private int SaveWithJournalCore(
     bool acceptAllChangesOnSuccess,
     List<(EntityEntry Entry, Entities.AppPlatformChange Row)> journalSnapshots)
@@ -183,15 +189,22 @@ public abstract class PlatformDbContext : DbContext
       return result;
     }
 
-    var activeTx = Database.CurrentTransaction;
+    var ctxType = GetType();
+    var confirmed = JournalTableConfirmed.ContainsKey(ctxType);
+    var activeTx = confirmed ? null : Database.CurrentTransaction;
     try
     {
       activeTx?.CreateSavepoint("air_journal");
       AppPlatformChange.AddRange(journalRows);
       base.SaveChanges(acceptAllChangesOnSuccess);
+      if (!confirmed)
+      {
+        JournalTableConfirmed[ctxType] = true;
+      }
     }
-    catch (Exception ex) when (IsMissingJournalTable(ex))
+    catch (Exception ex) when (!confirmed && IsMissingJournalTable(ex))
     {
+      _journalTableMissing = true;
       activeTx?.RollbackToSavepoint("air_journal");
     }
     finally
@@ -214,7 +227,9 @@ public abstract class PlatformDbContext : DbContext
       return result;
     }
 
-    var activeTx = Database.CurrentTransaction;
+    var ctxType = GetType();
+    var confirmed = JournalTableConfirmed.ContainsKey(ctxType);
+    var activeTx = confirmed ? null : Database.CurrentTransaction;
     try
     {
       if (activeTx != null)
@@ -224,9 +239,14 @@ public abstract class PlatformDbContext : DbContext
 
       AppPlatformChange.AddRange(journalRows);
       await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+      if (!confirmed)
+      {
+        JournalTableConfirmed[ctxType] = true;
+      }
     }
-    catch (Exception ex) when (IsMissingJournalTable(ex))
+    catch (Exception ex) when (!confirmed && IsMissingJournalTable(ex))
     {
+      _journalTableMissing = true;
       if (activeTx != null)
       {
         await activeTx.RollbackToSavepointAsync("air_journal", cancellationToken);
@@ -259,6 +279,12 @@ public abstract class PlatformDbContext : DbContext
 
   private List<(EntityEntry Entry, Entities.AppPlatformChange Row)> CaptureJournalSnapshots()
   {
+    if (_journalTableMissing)
+    {
+      _restoredEntities.Clear();
+      return [];
+    }
+
     var pendingEntries = ChangeTracker.Entries()
       .Where(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
       .ToList();
@@ -270,7 +296,7 @@ public abstract class PlatformDbContext : DbContext
     }
 
     var now = DateTimeOffset.UtcNow;
-    var runId = Guid.CreateVersion7();
+    var runId = RunId;
     var tenantId = TenantContext.TenantId ?? 0;
     var userId = TenantContext.UserId;
     var correlationId = TenantContext.CorrelationId;

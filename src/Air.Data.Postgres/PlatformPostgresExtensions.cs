@@ -42,7 +42,7 @@ public static class PlatformPostgresExtensions
     builder.Services.AddDbContext<TContext>(options =>
       options.UsePlatformPostgres(connectionString, npgsql));
 
-    builder.Services.TryAddScoped<PlatformDbContext>(sp => sp.GetRequiredService<TContext>());
+    builder.Services.RegisterPlatformDbContextHierarchy<TContext>();
 
     return builder;
   }

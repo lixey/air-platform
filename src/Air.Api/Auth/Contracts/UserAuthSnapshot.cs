@@ -1,9 +1,12 @@
+using System.ComponentModel;
+
 namespace Platform.Api.Auth.Contracts;
 
 /// <summary>
 /// Immutable cached snapshot of an authenticated user's profile, resolved rights, and custom session data for a tenant scope.
 /// Never stores role names or role IDs: all authorization decisions use compiled permission keys.
 /// </summary>
+[ImmutableObject(true)]
 public sealed record UserAuthSnapshot(
   long Id,
   string Login,

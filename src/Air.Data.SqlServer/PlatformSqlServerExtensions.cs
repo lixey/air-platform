@@ -40,7 +40,7 @@ public static class PlatformSqlServerExtensions
     builder.Services.AddDbContext<TContext>(options =>
       options.UsePlatformSqlServer(connectionString, sqlServer));
 
-    builder.Services.TryAddScoped<PlatformDbContext>(sp => sp.GetRequiredService<TContext>());
+    builder.Services.RegisterPlatformDbContextHierarchy<TContext>();
 
     return builder;
   }

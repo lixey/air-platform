@@ -51,11 +51,7 @@ public static class PlatformApiExtensions
     builder.Services.AddHttpContextAccessor();
     builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
     builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
-    if (builder.Services.All(d => d.ServiceType != typeof(Microsoft.Extensions.Caching.Distributed.IDistributedCache)))
-    {
-      builder.Services.AddDistributedMemoryCache();
-    }
-
+    builder.Services.AddHybridCache();
     builder.Services.TryAddSingleton<ICacheProvider, Caching.Internals.CacheProvider>();
     builder.Services.TryAddSingleton<IUserAuthCache, Auth.Internals.UserAuthCache>();
     var filesPath = builder.Configuration["Files:Path"];
