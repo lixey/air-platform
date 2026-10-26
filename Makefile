@@ -8,7 +8,7 @@ AGENT_WEB_PORT ?= 4400
 AUDIT_CLI ?= auto
 AUDIT_MODEL ?= claude-opus-5-5-high
 AUDIT_CLAUDE_MODEL ?= claude-opus-5-5
-AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md. Report objective bugs/regressions vs controversial design trade-offs concisely.
+AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md (including Section 7 ADR invariants). Report objective bugs/regressions vs controversial design trade-offs concisely.
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
 DAEMON_RUN := python3 -c 'import os, sys, subprocess; r, w = os.pipe(); f = open(sys.argv[1], "wb"); subprocess.Popen(sys.argv[2:], stdin=r, stdout=f, stderr=f, pass_fds=(w,), start_new_session=True)'
 
@@ -62,6 +62,7 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 	 errs.extend([f"{cs}: exceeds 1000 lines ({txt.count(chr(10)) + 1})"] if cs.startswith("src/") and txt.count(chr(10)) + 1 > 1000 else []) \
 	 for cs in sorted(glob.glob("**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs and not cs.endswith(".Designer.cs") and os.path.basename(cs) not in ("GlobalUsings.cs", "Program.cs") for txt in [open(cs, encoding="utf-8").read()]]; \
 	[errs.extend([f"{ts}: exceeds 1000 lines ({ttxt.count(chr(10)) + 1})"] if ttxt.count(chr(10)) + 1 > 1000 else []) for ts in sorted(glob.glob("air-ui/src/**/*.ts", recursive=True)) if not ts.endswith(".spec.ts") and not ts.endswith("contracts.ts") for ttxt in [open(ts, encoding="utf-8").read()]]; \
+	[errs.extend([f"{gu}: forbidden .Internals in GlobalUsings.cs (use local using in .cs files)"] if re.search(r"^global\s+using\s+.*\.Internals\b", open(gu, encoding="utf-8").read(), re.M) else []) for gu in sorted(glob.glob("**/GlobalUsings.cs", recursive=True)) if "/obj/" not in gu and "/bin/" not in gu]; \
 	[errs.extend([f"{rx}: missing in .uk.resx: {sorted(b - u)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())) if os.path.exists(rx[:-5] + ".uk.resx") else set())] if b - u]) for rx in sorted(glob.glob("**/*.resx", recursive=True)) if not rx.endswith(".uk.resx")]; \
 	ui_keys = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*:", open("air-ui/src/ui-components.ts", encoding="utf-8").read(), re.M)); \
 	[errs.extend([f"{cs}: ComponentModel kind {(km.group(1) if km else m.group(1))} missing in air-ui/src/ui-components.ts" for m in [re.search(r"public\s+(?:sealed\s+)?class\s+([A-Za-z0-9_]+)Model\s*:\s*ComponentModel\b", txt)] if m for km in [re.search(r"override\s+string\s+Kind\s*=>\s*\"([^\"]+)\"", txt)] if (km.group(1) if km else m.group(1)) not in ui_keys]) for cs in sorted(glob.glob("src/Air.App/**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs for txt in [open(cs, encoding="utf-8").read()]]; \

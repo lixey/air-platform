@@ -17,7 +17,7 @@
 - **No God-Classes & Strictly One Type Per File**: Keep files small and single-purpose (~150–350 lines). Every class, record, struct, interface, or enum MUST reside in its own dedicated `.cs` file named after the type (use `OfT` suffix for generic overloads, e.g., `PlatformModuleOfT.cs`).
 - **Strict Folder & File Naming Conventions (`Contracts/`, `Internals/`, `*Extensions.cs`)**:
   - **`Contracts/`**: Every wire contract (`*Dto`, `*Request`, `*Model`, contract enums/attributes) MUST live inside a `Contracts/` folder.
-  - **`Internals/`**: Every `internal` helper, parser, cache, or implementation class MUST live inside an `Internals/` (plural) folder.
+  - **`Internals/`**: Every `internal` helper, parser, cache, or implementation class MUST live inside an `Internals/` (plural) folder. Never add `*.Internals` namespaces to `GlobalUsings.cs` — use a standard local `using ...Internals;` at the top of the `.cs` files that consume them.
   - **`*Extensions.cs`**: Every static class containing extension methods (`this ...`) and its `.cs` file MUST end with the suffix `Extensions`.
 - **Brand-Neutral `Platform.*` Namespaces & Physical Path Matching**: The brand `Air` may ONLY appear in `.csproj` / `.slnx` project names. All platform C# root namespaces use `Platform.*` (`Platform.Data`, `Platform.Api`, `Platform.App`, `Platform.Agent`, `Platform.Mcp`, `Platform.UiContracts`) for effortless rebranding. Every `.cs` file's `namespace` MUST strictly match its physical directory path relative to its project root.
 - **Universal Metadata-Driven Design**: Platform code (`src/`, `air-ui/`) must never contain application-specific logic (`Demo`, `MyFin`). All capabilities (including the built-in AI assistant) must be driven universally by declarative metadata on `Feature`, `FormService` (`Elements`, `AsReference`, `PatchOnSelect`, `AddChild`), `GridService`, and `Rights`.
@@ -62,3 +62,17 @@
   - Write commit messages strictly in **English (`en-US`)** with no markdown code fences and no non-breaking spaces.
   - First line format: `<prefix>: <concise summary>` where `<prefix>` is `add:`, `upd:`, `del:`, `fix:`, `style:`, or `chore:`.
   - Never mix mechanical refactorings (`upd:` with first body line `mechanical`) and logic changes in the same commit. Include `breaking: <what>, <who>, <what to do>` when breaking public contracts.
+
+## 7. Architectural Decisions Record (ADR) — Canonical Invariants
+The following architectural decisions are settled and MUST NOT be challenged or reversed in future reviews or audits:
+1. **`Air.Api` and `Air.App` Are Strictly Separate Projects**: `Air.Api` is a lightweight headless API host (used standalone for public/external APIs without backoffice UI engines), while `Air.App` layers the backoffice UI engines (`GridService`, `FormService`, `ReportService`, `ScreenService`, `StatusFlowService`) on top. Never merge `Air.Api` and `Air.App`.
+2. **Application-Local `App` Module (`DemoApp`, `MyApp`, `BccApp`)**: Each application maintains its own `App` module so application-specific identity/organization fields and rules (e.g., `EmployeeId`) never leak into other applications. Common extraction will only be revisited after 3–4 production applications.
+3. **Explicit `public override Feature Feature => ...` in Every Service**: Every service explicitly declares its `Feature` property so developers immediately see which feature and RBAC scope a service belongs to without searching module registrations.
+4. **Module Base Services (`*AppService`, `*GridService`, `*FormService`) & Dedicated Service Files**:
+   - Every service resides in its own dedicated file (even when minimal) so the entry point is always predictable.
+   - If a module needs a grid/lookup over another module's entity with module-specific filtering or columns, it defines its own `*GridService` inside its own module so specificity never leaks into the base module.
+   - Module/app context (`AppService app`, `FinAppService app`, etc.) is injected so `app` is always at hand (`app.Can(...)`, `app.Time`, `app.L[...]`) and provides a natural home for module-level shared logic.
+   - **Canonical Permission Check**: Always write `app.Can(...)` (e.g., `app.Can(Fin.BankSync.Edit)`) in services rather than `User.Can(...)` or `app.User.Can(...)`.
+5. **Separate `*.Migrations.csproj` Assemblies**: EF Core migrations (with multi-thousand-line `*ModelSnapshot.cs` and `*.Designer.cs` files) and `Seeds` MUST live in dedicated `*.Migrations.csproj` projects so they do not bloat `*.Data` compilation or runtime dependencies.
+6. **JetBrains Rider File & Namespace Convention**: Follow standard Rider `New -> Class` behavior (`1 type = 1 file`, and folder names `Contracts/` and `Internals/` included in the `namespace`). However, `*.Internals` namespaces MUST NOT be placed in `GlobalUsings.cs`; use a local `using ...Internals;` directive in the specific `.cs` files that need them.
+7. **`Air.Mcp` & `Air.Agent` Providers Retained**: `Air.Mcp` is actively maintained for external MCP agent integrations; `agy` is the primary AI provider while other providers remain in place.
