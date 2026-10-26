@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace Platform.Data.Entities;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
