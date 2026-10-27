@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, linkedSignal } from '@angular/core';
+import { Component, computed, inject, Injector, input, linkedSignal } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
 import { SearchBoxComponent } from '../controls/search-box.component';
@@ -6,6 +6,7 @@ import type { ReportColumnDto, ReportFilterItemDto, ReportTableDto, UiColor } fr
 import { TextsService } from '../core/texts.service';
 import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { UiIconDirective } from '../icon/ui-icon.directive';
+import { OverlayService } from '../overlay/overlay.service';
 import { UI_COLORS } from '../theme/ui-color';
 
 @Component({
@@ -92,7 +93,14 @@ import { UI_COLORS } from '../theme/ui-color';
             </thead>
             <tbody>
               @for (row of displayedRows(); track $index; let idx = $index) {
-                <tr [class]="rowClass(row, idx)">
+                @let clickable = canOpenRow(row);
+                <tr
+                  [class]="rowClass(row, idx, clickable)"
+                  [attr.tabindex]="clickable ? 0 : null"
+                  (click)="clickable ? openRow(row, $event) : null"
+                  (keydown.enter)="clickable ? openRow(row, $event) : null"
+                  (keydown.space)="clickable ? onRowSpace(row, $event) : null"
+                >
                   @for (col of t.columns; track col.key) {
                     <td [class]="bodyCellClass(t, col, row)">
                       @if (col.kind === 'badge') {
@@ -138,6 +146,8 @@ import { UI_COLORS } from '../theme/ui-color';
 export class ReportTableComponent {
   protected readonly texts = inject(TextsService);
   private readonly locale = inject(LocaleService).current;
+  private readonly overlay = inject(OverlayService);
+  private readonly injector = inject(Injector);
 
   readonly table = input.required<ReportTableDto>();
 
@@ -245,12 +255,50 @@ export class ReportTableComponent {
     return 'text-right tabular-nums';
   }
 
-  protected rowClass(row: Record<string, unknown>, idx: number): string {
+  protected rowClass(row: Record<string, unknown>, idx: number, clickable = false): string {
+    const cursor = clickable ? ' cursor-pointer' : '';
     const rowHue = asUiColor(row['rowColor'] as string | undefined);
     if (rowHue) {
-      return `hue-${rowHue} bg-(--hue-soft)/35 hover:bg-(--hue-soft)/55`;
+      return `hue-${rowHue} bg-(--hue-soft)/35 hover:bg-(--hue-soft)/55${cursor}`;
     }
-    return idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover';
+    return `${idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'}${cursor}`;
+  }
+
+  protected canOpenRow(row: Record<string, unknown>): boolean {
+    return this.openTargetOf(row) !== null;
+  }
+
+  protected onRowSpace(row: Record<string, unknown>, event: Event): void {
+    event.preventDefault();
+    this.openRow(row, event);
+  }
+
+  protected openRow(row: Record<string, unknown>, event: Event): void {
+    const target = this.openTargetOf(row);
+    if (!target) {
+      return;
+    }
+    const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    this.overlay.open(
+      {
+        key: target.service,
+        presentation: 'drawer',
+        closesOnEscape: true,
+        screen: { service: target.service, params: { id: target.id } },
+      },
+      anchor,
+      this.injector,
+    );
+  }
+
+  private openTargetOf(row: Record<string, unknown>): { service: string; id: number } | null {
+    const service = row['openForm'];
+    const rawId = row['openId'];
+    if (typeof service !== 'string' || !service || rawId === null || rawId === undefined) {
+      return null;
+    }
+    const id = typeof rawId === 'number' ? rawId : Number(rawId);
+    return Number.isFinite(id) && id > 0 ? { service, id } : null;
   }
 
   protected badgePillClass(col: ReportColumnDto, row: Record<string, unknown>): string {
