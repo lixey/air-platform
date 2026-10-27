@@ -1108,6 +1108,8 @@ export interface GridColumnDto {
   options?: OptionDto[] | null;
   cell: CellModel;
   header?: HeaderModel | null;
+  selectionSumUnit?: string | null;
+  selectionSumExcludeColor?: UiColor | null;
 }
 
 export interface GridCountDto {

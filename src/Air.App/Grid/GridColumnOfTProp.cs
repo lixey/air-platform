@@ -234,6 +234,13 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
+  public GridColumn<TProp> SelectionSum(string unit = "", string? excludeColor = null)
+  {
+    dto.SelectionSumUnit = unit;
+    dto.SelectionSumExcludeColor = excludeColor?.ToLowerInvariant();
+    return this;
+  }
+
   public GridColumn<TProp> Stepper(bool hasStepper = true)
   {
     dto.NumberEdit ??= new GridNumberEditDto();

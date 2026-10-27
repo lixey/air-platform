@@ -590,12 +590,12 @@ public abstract partial class GridService<TEntity, TRow>
       var b = new ButtonBuilder();
       look?.Invoke(b);
       var targetService = ServicePathResolver.Resolve(typeof(TFormService));
-      var rawLabel = b.LabelText ?? "Add";
+      var rawLabel = b.LabelText ?? (b.TitleText != null ? null : "Add");
       Creates.Add((typeof(TFormService), new GridNavAddModel
       {
         Key = $"add.{targetService.Replace('/', '.')}",
         Service = targetService,
-        Label = _l[rawLabel],
+        Label = !string.IsNullOrEmpty(rawLabel) ? _l[rawLabel] : null,
         Title = b.TitleText != null ? _l[b.TitleText] : null,
         Icon = b.IconHandle ?? UiIcon.Plus,
         Color = b.ColorHandle ?? UiColor.Orange,

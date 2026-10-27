@@ -347,7 +347,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         .Select(c => new GridCreateDescriptor(
           c.FormType,
           c.Model.Service ?? ServicePathResolver.Resolve(c.FormType),
-          c.Model.Label ?? L["Add"],
+          c.Model.Label ?? c.Model.Title ?? L["Add"],
           c.Model.Color))
         .ToList();
     }

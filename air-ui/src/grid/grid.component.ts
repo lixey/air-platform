@@ -2,12 +2,13 @@ import { Component, computed, inject, input, viewChild } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
 import type { GridModel } from '../core/generated/contracts';
+import { valueAt } from '../core/json';
 import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { SelectService } from '../select/select.service';
-import { formatCount } from './cell/grid-cell-format';
+import { formatCellValue, formatCount } from './cell/grid-cell-format';
 import { conjunctsOf, fieldOf, type GridFilter } from './filter/grid-filter-set';
 import { chipLabel, connectorOf } from './filter/grid-filter-text';
 import { GridDeleteOutcomeComponent } from './grid-delete-outcome.component';
@@ -81,6 +82,20 @@ import { GridTableComponent } from './table/grid-table.component';
             <span class="text-muted">/</span>
             <span class="text-muted">{{ total() }}</span>
           </span>
+          @for (sum of selectionSums(); track sum.key) {
+            <span
+              [attr.title]="sum.label"
+              [attr.aria-label]="sum.label ? sum.label + ': ' + sum.text : sum.text"
+              [class]="
+                'hue-' +
+                sum.hue +
+                ' inline-flex items-center gap-1.5 min-h-9 px-2.5 rounded-lg border border-(--btn-edge) bg-(--badge-ground) text-(--badge-ink) text-sm font-semibold tabular-nums shrink-0'
+              "
+            >
+              <span class="font-medium">Σ:</span>
+              <span>{{ sum.text }}</span>
+            </span>
+          }
         </ui-nav>
       }
     }
@@ -137,6 +152,44 @@ export class GridComponent {
   /** The action nav's `n / total`, counted in the session's culture. */
   protected readonly selected = computed(() => formatCount(this.grid.selection.count(), this.locale()));
   protected readonly total = computed(() => formatCount(this.grid.total(), this.locale()));
+
+  /** Sums over the selected rows for columns declaring `selectionSumUnit`, shown in `actionNav` after `Export`. */
+  protected readonly selectionSums = computed(() => {
+    const rows = this.grid.selection.selected();
+    if (rows.length === 0) {
+      return [];
+    }
+    const locale = this.locale();
+    const zone = this.zone();
+    return this.grid
+      .allColumns()
+      .filter(col => col.selectionSumUnit !== undefined && col.selectionSumUnit !== null && !!col.path)
+      .map(col => {
+        const path = col.path!;
+        const colorPath = col.cell?.colorPath ?? `${path}Color`;
+        const excludeColor = col.selectionSumExcludeColor ?? null;
+        const primaryRows = excludeColor ? rows.filter(r => valueAt(r, colorPath) !== excludeColor) : rows;
+        const activeRows = primaryRows.length > 0 ? primaryRows : rows;
+        const isExcludedOnly = excludeColor !== null && primaryRows.length === 0;
+        let sum = 0;
+        for (const r of activeRows) {
+          const val = valueAt(r, path);
+          const num = typeof val === 'number' ? val : Number(val);
+          if (Number.isFinite(num)) {
+            sum += num;
+          }
+        }
+        const formatted = formatCellValue(sum, col, locale, zone);
+        const unit = col.selectionSumUnit ? ` ${col.selectionSumUnit}` : '';
+        const hue = isExcludedOnly && excludeColor ? excludeColor : sum < 0 ? 'rose' : sum > 0 ? 'emerald' : 'slate';
+        return {
+          key: path,
+          label: col.label ?? null,
+          hue,
+          text: `${formatted}${unit}`,
+        };
+      });
+  });
 
   constructor() {
     this.grid.bind(this.model, this.data);

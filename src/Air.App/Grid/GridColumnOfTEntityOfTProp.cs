@@ -188,6 +188,13 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
 
     return this;
   }
+
+  public new GridColumn<TEntity, TProp> SelectionSum(string unit = "", string? excludeColor = null)
+  {
+    base.SelectionSum(unit, excludeColor);
+    return this;
+  }
+
   public new GridColumn<TEntity, TProp> Stepper(bool hasStepper = true)
   {
     base.Stepper(hasStepper);
