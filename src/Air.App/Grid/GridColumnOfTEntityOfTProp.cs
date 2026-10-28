@@ -74,6 +74,11 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Disabled(disabled);
     return this;
   }
+  public new GridColumn<TEntity, TProp> Required(bool required = true)
+  {
+    base.Required(required);
+    return this;
+  }
   public new GridColumn<TEntity, TProp> AsOpenForm<TFormService>() where TFormService : class
   {
     base.AsOpenForm<TFormService>();

@@ -22,6 +22,7 @@ import type { SelectOption } from '../select/select-option';
 import { optionOfPickedValue } from '../select/select-option';
 import type { SelectField } from '../select/select-source';
 import { SelectService } from '../select/select.service';
+import { emptySelectRowOf } from './column/grid-column-select-source';
 import { GridColumnState } from './column/grid-column-state';
 import { SELECTION_COLUMN_DTO } from './column/grid-selection-column';
 import {
@@ -277,8 +278,12 @@ export class GridService {
     if (this.shortOf() !== null) {
       return NO_ROWS;
     }
-    const rows = this.data()?.rows ?? [];
+    const baseRows = this.data()?.rows ?? [];
     const select = this.select;
+    const rows =
+      select?.model().allowEmpty && this.page() === 1 && !this.search() && !baseRows.some(r => keyOf(r) === 0)
+        ? [emptySelectRowOf(select.model().labelPaths, this.allColumns()), ...baseRows]
+        : baseRows;
     if (!select || !select.isMultiple()) {
       return rows;
     }

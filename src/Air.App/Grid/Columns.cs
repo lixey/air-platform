@@ -104,7 +104,7 @@ public class Columns
       last = char.ToUpperInvariant(last[0]) + last[1..];
     }
 
-    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
+    return Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
   }
 
   private static string ResolveFieldType(Type type)

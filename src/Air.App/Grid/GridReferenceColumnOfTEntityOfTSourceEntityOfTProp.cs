@@ -21,6 +21,11 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
     base.Hidden(hidden);
     return this;
   }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Required(bool required = true)
+  {
+    base.Required(required);
+    return this;
+  }
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Label(string label)
   {
     base.Label(label);

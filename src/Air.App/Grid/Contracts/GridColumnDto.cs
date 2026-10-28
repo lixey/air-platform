@@ -105,6 +105,9 @@ public sealed class GridColumnDto
   internal bool IsComputed { get; set; }
 
   [JsonIgnore]
+  internal bool? ExplicitRequired { get; set; }
+
+  [JsonIgnore]
   internal Type? MemberType { get; set; }
 
   [JsonIgnore]

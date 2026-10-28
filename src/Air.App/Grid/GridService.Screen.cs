@@ -1,3 +1,5 @@
+using Platform.App.Grid.Internals;
+
 namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
@@ -244,7 +246,7 @@ public abstract partial class GridService<TEntity, TRow>
           string.Equals(c.FilterPath, rule.Field, StringComparison.OrdinalIgnoreCase));
         if (col?.Options is { Count: > 0 } opts)
         {
-          if (rule.Value is System.Collections.IEnumerable enumerable and not string)
+          if (rule.Value is IEnumerable enumerable and not string)
           {
             rule.Picked = enumerable.Cast<object?>()
               .Where(v => v != null)
@@ -412,6 +414,22 @@ public abstract partial class GridService<TEntity, TRow>
           Color = opt.Color,
           Title = opt.Title != null ? L[opt.Title] : null
         }).ToList();
+      }
+
+      if (col.ExplicitRequired.HasValue)
+      {
+        col.IsRequired = col.ExplicitRequired.Value;
+      }
+      else if (col.FilterExpression is not null)
+      {
+        var retType = col.FilterExpression.ReturnType;
+        var isCollection = retType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(retType);
+        col.IsRequired = !isCollection && retType.IsValueType && Nullable.GetUnderlyingType(retType) is null;
+      }
+      else if (!string.IsNullOrEmpty(col.Path))
+      {
+        col.IsRequired = ColumnRequiredResolver.Resolve(typeof(TEntity), col.Path, db.Model)
+          ?? (typeof(TRow) != typeof(TEntity) ? ColumnRequiredResolver.Resolve(typeof(TRow), col.Path, db.Model) ?? false : false);
       }
 
       if (col.IsFilterable && col.Operators == null)

@@ -141,7 +141,13 @@ export function normalizedFilter(filter: GridFilter): GridFilter | undefined {
 export function referenceFilterOf(field: string, options: readonly SelectOption[]): GridFilter | null {
   return options.length === 0
     ? null
-    : { kind: 'FilterRule', field, operator: 'in', value: options.map(o => o.id), picked: options.map(pickedValueOf) };
+    : {
+        kind: 'FilterRule',
+        field,
+        operator: 'in',
+        value: options.map(o => (o.id === 0 ? null : o.id)),
+        picked: options.map(pickedValueOf),
+      };
 }
 
 /** A set as the request carries it: the filters joined by AND in their normal form (`normalizedFilter`); nothing when nothing is left. */

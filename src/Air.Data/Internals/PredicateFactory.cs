@@ -134,7 +134,7 @@ internal static class PredicateFactory
     }
 
     var hasNull = raw.Any(RequestValue.IsNull);
-    if (hasNull && !field.IsNullableInStore)
+    if (hasNull && !field.IsNullableInStore && !field.IsCollection)
     {
       throw new QueryRequestException(
         QueryError.InvalidValue, $"'{field.Name}' is non-nullable and cannot contain null in an in filter.", field.Name);

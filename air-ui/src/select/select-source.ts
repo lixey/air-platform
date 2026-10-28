@@ -26,6 +26,8 @@ export interface SelectSource {
   readonly referenceFilter?: FilterNode | null;
   /** The grid is asked as a picker, for its own columns (`isReferencePicker`), and its first row is active. */
   readonly isPicker?: boolean;
+  /** Whether the select offers an empty (`id: 0`, `'—'`) choice at the top of the list, as a filter on a non-required column does. */
+  readonly allowEmpty?: boolean;
   /** The parent every request of the list names: that of the grid a picker stands in, for a source that reads it. */
   readonly parent?: Pick<GridRequest, 'parentService' | 'parentId'> | null;
   /** The field of a picker, whose remote the search box of the list's header is; a select has none. */

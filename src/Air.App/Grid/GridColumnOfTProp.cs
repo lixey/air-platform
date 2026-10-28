@@ -80,6 +80,12 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.IsDisabled = disabled;
     return this;
   }
+  public GridColumn<TProp> Required(bool required = true)
+  {
+    dto.IsRequired = required;
+    dto.ExplicitRequired = required;
+    return this;
+  }
   public GridColumn<TProp> Cell(CellModel cell)
   {
     dto.Cell = cell;

@@ -47,6 +47,9 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
       }
     }
     const key = keyOf(row);
+    if (this.grid?.isPicking() && key === 0 && !this.cell().pinned) {
+      return 0;
+    }
     return key !== null && key !== 0 ? key : null;
   });
 
@@ -73,7 +76,7 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
   protected readonly text = computed(() => {
     const value = this.cell().value;
     const key = keyOf(this.cell().row);
-    const hasRow = key !== null && key !== 0;
+    const hasRow = key !== null && (key !== 0 || (this.grid?.isPicking() === true && !this.cell().pinned));
     return hasRow ? formatCellText(value) : '';
   });
 
