@@ -238,10 +238,14 @@ public static class ServiceEndpointsExtensions
       return true;
     }
 
-    return userContext.Can(feat.Export) ||
-           userContext.Can(feat.View) ||
-           userContext.Can(feat.All) ||
-           userContext.Can("*");
+    if (feat.HasAction("Export"))
+    {
+      return userContext.Can(feat.Export) ||
+             userContext.Can(feat.All) ||
+             userContext.Can("*");
+    }
+
+    return CanView(feat, userContext);
   }
 
   public static bool IsCustomActionPermitted(MethodInfo actionMethod, Feature? feat, IUserContext? userContext)

@@ -226,135 +226,105 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
           Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
         };
       }
+
+      if (change.Operation is not ChangeOperations.Modified and not ChangeOperations.Deleted || string.IsNullOrEmpty(change.Before))
+      {
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
+        };
+      }
     }
 
-    return await db.RunMutationAsync(async mutationCt =>
+    foreach (var group in changes.GroupBy(c => GetDbContextForTable(c.Table)))
     {
-      var modifiedContexts = new HashSet<PlatformDbContext>();
-
-      foreach (var change in changes)
+      var targetDb = group.Key;
+      var groupChanges = group.ToList();
+      var groupResult = await targetDb.RunMutationAsync(async mutationCt =>
       {
-        if (change.Operation is not ChangeOperations.Modified and not ChangeOperations.Deleted || string.IsNullOrEmpty(change.Before))
+        foreach (var change in groupChanges)
         {
-          return new GridActionDto
+          var entityType = targetDb.Model.GetEntityTypes()
+            .FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table)?.ClrType;
+          if (entityType == null ||
+              typeof(BaseAppFile).IsAssignableFrom(entityType) ||
+              Attribute.IsDefined(entityType, typeof(NoRestoreAttribute), inherit: true))
           {
-            Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
-          };
-        }
-
-        var targetDb = GetDbContextForTable(change.Table);
-        var entityType = targetDb.Model.GetEntityTypes()
-          .FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table)?.ClrType;
-        if (entityType == null ||
-            typeof(BaseAppFile).IsAssignableFrom(entityType) ||
-            Attribute.IsDefined(entityType, typeof(NoRestoreAttribute), inherit: true))
-        {
-          return new GridActionDto
-          {
-            Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
-          };
-        }
-
-        if (change.Operation == ChangeOperations.Modified)
-        {
-          var entity = await targetDb.FindAsync(entityType, [change.RowId], mutationCt);
-          if (entity == null)
-          {
+            targetDb.MarkMutationRollbackOnly();
             return new GridActionDto
             {
-              Outcome = MutationOutcome.Conflict,
-              Warnings = [new MessageDto { Detail = L["ChangeRestoreMissingRow"], Code = "change.restore.missingRow", Type = MessageType.Error }]
+              Outcome = MutationOutcome.Refused,
+              Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
             };
           }
 
-          var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before);
-          var afterDict = !string.IsNullOrEmpty(change.After)
-            ? JsonSerializer.Deserialize<Dictionary<string, object?>>(change.After)
-            : null;
-          if (beforeDict != null)
+          if (change.Operation == ChangeOperations.Modified)
           {
-            var entry = targetDb.Entry(entity);
-            foreach (var kvp in beforeDict)
+            var entity = await targetDb.FindAsync(entityType, [change.RowId], mutationCt);
+            if (entity == null)
             {
-              if (kvp.Key is "Ver" or "UpdatedAt" or "CreatedAt")
+              targetDb.MarkMutationRollbackOnly();
+              return new GridActionDto
               {
-                continue;
-              }
-
-              var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
-              if (prop == null || prop.Metadata.IsPrimaryKey())
-              {
-                continue;
-              }
-
-              var restoredValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
-
-              if (((MemberInfo?)prop.Metadata.PropertyInfo ?? prop.Metadata.FieldInfo) is { } member &&
-                  Attribute.IsDefined(member, typeof(KeepsVersionAttribute), inherit: true))
-              {
-                if (!Equals(prop.CurrentValue, restoredValue))
-                {
-                  return new GridActionDto
-                  {
-                    Outcome = MutationOutcome.Refused,
-                    Warnings = [new MessageDto { Detail = L["ChangeRestoreKeepsVersion", change.Table, change.RowId], Code = "change.restore.keepsVersion", Type = MessageType.Error }]
-                  };
-                }
-
-                continue;
-              }
-
-              if (afterDict != null && afterDict.TryGetValue(kvp.Key, out var afterRaw))
-              {
-                var expectedAfter = DeserializePropertyValue(afterRaw, prop.Metadata.ClrType);
-                if (!Equals(prop.CurrentValue, expectedAfter))
-                {
-                  return new GridActionDto
-                  {
-                    Outcome = MutationOutcome.Conflict,
-                    Warnings = [new MessageDto { Detail = L["ChangeRestoreStale", change.Table, change.RowId], Code = "change.restore.stale", Type = MessageType.Error }]
-                  };
-                }
-              }
-
-              prop.CurrentValue = restoredValue;
+                Outcome = MutationOutcome.Conflict,
+                Warnings = [new MessageDto { Detail = L["ChangeRestoreMissingRow"], Code = "change.restore.missingRow", Type = MessageType.Error }]
+              };
             }
 
-            if (entity is BaseAppUser restoredUser)
-            {
-              restoredUser.IsActive = false;
-              restoredUser.IsRoot = false;
-            }
-
-            targetDb.MarkRestored(entity);
-            modifiedContexts.Add(targetDb);
-          }
-        }
-        else if (change.Operation == ChangeOperations.Deleted)
-        {
-          var existing = await targetDb.FindAsync(entityType, [change.RowId], mutationCt);
-          if (existing != null)
-          {
-            return new GridActionDto
-            {
-              Outcome = MutationOutcome.Conflict,
-              Warnings = [new MessageDto { Detail = L["ChangeRestoreExists"], Code = "change.restore.exists", Type = MessageType.Error }]
-            };
-          }
-
-          var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before);
-          if (beforeDict != null)
-          {
-            var entity = Activator.CreateInstance(entityType);
-            if (entity != null)
+            var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before!);
+            var afterDict = !string.IsNullOrEmpty(change.After)
+              ? JsonSerializer.Deserialize<Dictionary<string, object?>>(change.After)
+              : null;
+            if (beforeDict != null)
             {
               var entry = targetDb.Entry(entity);
               foreach (var kvp in beforeDict)
               {
+                if (kvp.Key is "Ver" or "UpdatedAt" or "CreatedAt")
+                {
+                  continue;
+                }
+
                 var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
-                prop?.CurrentValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
+                if (prop == null || prop.Metadata.IsPrimaryKey())
+                {
+                  continue;
+                }
+
+                var restoredValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
+
+                if (((MemberInfo?)prop.Metadata.PropertyInfo ?? prop.Metadata.FieldInfo) is { } member &&
+                    Attribute.IsDefined(member, typeof(KeepsVersionAttribute), inherit: true))
+                {
+                  if (!Equals(prop.CurrentValue, restoredValue))
+                  {
+                    targetDb.MarkMutationRollbackOnly();
+                    return new GridActionDto
+                    {
+                      Outcome = MutationOutcome.Refused,
+                      Warnings = [new MessageDto { Detail = L["ChangeRestoreKeepsVersion", change.Table, change.RowId], Code = "change.restore.keepsVersion", Type = MessageType.Error }]
+                    };
+                  }
+
+                  continue;
+                }
+
+                if (afterDict != null && afterDict.TryGetValue(kvp.Key, out var afterRaw))
+                {
+                  var expectedAfter = DeserializePropertyValue(afterRaw, prop.Metadata.ClrType);
+                  if (!Equals(prop.CurrentValue, expectedAfter))
+                  {
+                    targetDb.MarkMutationRollbackOnly();
+                    return new GridActionDto
+                    {
+                      Outcome = MutationOutcome.Conflict,
+                      Warnings = [new MessageDto { Detail = L["ChangeRestoreStale", change.Table, change.RowId], Code = "change.restore.stale", Type = MessageType.Error }]
+                    };
+                  }
+                }
+
+                prop.CurrentValue = restoredValue;
               }
 
               if (entity is BaseAppUser restoredUser)
@@ -363,32 +333,111 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
                 restoredUser.IsRoot = false;
               }
 
-              entry.State = EntityState.Added;
               targetDb.MarkRestored(entity);
-              modifiedContexts.Add(targetDb);
+            }
+          }
+          else if (change.Operation == ChangeOperations.Deleted)
+          {
+            var existing = await targetDb.FindAsync(entityType, [change.RowId], mutationCt);
+            if (existing != null)
+            {
+              targetDb.MarkMutationRollbackOnly();
+              return new GridActionDto
+              {
+                Outcome = MutationOutcome.Conflict,
+                Warnings = [new MessageDto { Detail = L["ChangeRestoreExists"], Code = "change.restore.exists", Type = MessageType.Error }]
+              };
+            }
+
+            var beforeDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(change.Before!);
+            if (beforeDict != null)
+            {
+              var entity = Activator.CreateInstance(entityType);
+              if (entity != null)
+              {
+                var entry = targetDb.Entry(entity);
+                foreach (var kvp in beforeDict)
+                {
+                  var prop = entry.Metadata.FindProperty(kvp.Key) is { } meta ? entry.Property(meta.Name) : null;
+                  prop?.CurrentValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
+                }
+
+                if (entity is BaseAppUser restoredUser)
+                {
+                  restoredUser.IsActive = false;
+                  restoredUser.IsRoot = false;
+                }
+
+                entry.State = EntityState.Added;
+                targetDb.MarkRestored(entity);
+
+                if (targetDb.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                  var efEntityType = targetDb.Model.FindEntityType(entityType);
+                  var tableName = efEntityType?.GetTableName();
+                  var schema = efEntityType?.GetSchema();
+                  if (!string.IsNullOrEmpty(tableName))
+                  {
+                    var qualified = string.IsNullOrEmpty(schema)
+                      ? $"[{tableName.Replace("]", "]]")}]"
+                      : $"[{schema.Replace("]", "]]")}].[{tableName.Replace("]", "]]")}]";
+                    try
+                    {
+                      var onSql = string.Concat("SET IDENTITY_INSERT ", qualified, " ON");
+                      var offSql = string.Concat("SET IDENTITY_INSERT ", qualified, " OFF");
+                      await targetDb.Database.ExecuteSqlRawAsync(onSql, mutationCt);
+                      try
+                      {
+                        await targetDb.SaveChangesAsync(mutationCt);
+                      }
+                      finally
+                      {
+                        await targetDb.Database.ExecuteSqlRawAsync(offSql, mutationCt);
+                      }
+                    }
+                    catch (DbUpdateException)
+                    {
+                      targetDb.MarkMutationRollbackOnly();
+                      return new GridActionDto
+                      {
+                        Outcome = MutationOutcome.Refused,
+                        Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
+                      };
+                    }
+                  }
+                }
+              }
             }
           }
         }
-      }
 
-      try
-      {
-        foreach (var ctx in modifiedContexts)
+        try
         {
-          await ctx.SaveChangesAsync(mutationCt);
+          if (targetDb.ChangeTracker.HasChanges())
+          {
+            await targetDb.SaveChangesAsync(mutationCt);
+          }
         }
-      }
-      catch (DbUpdateException)
-      {
-        return new GridActionDto
+        catch (DbUpdateException)
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
-        };
-      }
+          targetDb.MarkMutationRollbackOnly();
+          return new GridActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = [new MessageDto { Detail = L["ChangeRestoreNotRestorable"], Code = "change.restore.notRestorable", Type = MessageType.Error }]
+          };
+        }
 
-      return new GridActionDto { Outcome = MutationOutcome.Committed };
-    }, ct: cancellationToken);
+        return new GridActionDto { Outcome = MutationOutcome.Committed };
+      }, ct: cancellationToken);
+
+      if (groupResult.Outcome != MutationOutcome.Committed)
+      {
+        return groupResult;
+      }
+    }
+
+    return new GridActionDto { Outcome = MutationOutcome.Committed };
   }
 
   private bool CanRestoreInCurrentScope()

@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Host.Internals;
 
 internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
@@ -123,11 +125,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           {
             req.IsReferencePicker = true;
             req.IsDataOnly = true;
-            req.PatchSourceColumns = null;
-            req.ReferenceLabelPaths = null;
-            req.Filter = null;
+            req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
             req.ColumnFilter = null;
             req.NamedFilters = null;
+            req.PatchSourceColumns = ReferenceLookupAllowlist.FilterPatchColumns(serviceType, req.PatchSourceColumns);
+            req.ReferenceLabelPaths = ReferenceLookupAllowlist.FilterLabelPaths(serviceType, grid.GetReferenceLabelPaths(), req.ReferenceLabelPaths);
             req.PageSize = Math.Min(req.PageSize > 0 ? req.PageSize : 50, 50);
           }
 
@@ -162,7 +164,8 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           if (!canView)
           {
-            req.Filter = null;
+            req.IsReferencePicker = true;
+            req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
             req.ColumnFilter = null;
             req.NamedFilters = null;
           }

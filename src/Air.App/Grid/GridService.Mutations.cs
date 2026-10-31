@@ -48,16 +48,37 @@ public abstract partial class GridService<TEntity, TRow>
       return ([], []);
     }
 
+    var parent = GetParent();
+    if (ParentId is null or <= 0 && parent.BoundProperty is { } boundProp)
+    {
+      var probeRows = await RestrictedQuery().AsNoTracking().Where(e => ids.Contains(e.Id)).ToListAsync(ct);
+      if (probeRows.Count == ids.Distinct().Count())
+      {
+        var distinctParentIds = probeRows
+          .Select(e => boundProp.GetValue(e) as long?)
+          .Where(pid => pid is > 0)
+          .Select(pid => pid!.Value)
+          .Distinct()
+          .OrderBy(pid => pid)
+          .ToList();
+        if (distinctParentIds.Count == 1)
+        {
+          ParentId = distinctParentIds[0];
+          if (!await EnsureParentScopeAsync(lockParent: lockEntities && db.Database.CurrentTransaction != null, ct))
+          {
+            return ([], [new MessageDto { Code = "grid.delete.unavailable", Detail = L["GridDeleteUnavailable"], Type = MessageType.Error }]);
+          }
+        }
+        else if (distinctParentIds.Count > 1 && lockEntities && db.Database.CurrentTransaction != null && parent.BoundParentEntityType is { } parentEntityType)
+        {
+          await MutationContext.AcquireLocksAsync(db, parentEntityType, distinctParentIds.Select(pid => new[] { pid }).ToList(), ct);
+        }
+      }
+    }
+
     if (lockEntities && db.Database.CurrentTransaction != null)
     {
       await MutationContext.AcquireLocksAsync(db, typeof(TEntity), ids.Select(id => new[] { id }).ToList(), ct);
-      foreach (var tracked in db.Set<TEntity>().Local.Where(e => ids.Contains(e.Id)).ToList())
-      {
-        if (db.Entry(tracked).State == EntityState.Unchanged)
-        {
-          await db.Entry(tracked).ReloadAsync(ct);
-        }
-      }
     }
 
     var baseQuery = RestrictedQuery();
@@ -85,24 +106,6 @@ public abstract partial class GridService<TEntity, TRow>
           RecordId = id,
           Type = MessageType.Error
         });
-      }
-    }
-
-    if (missing.Count == 0 && ParentId is null or <= 0 && entities.Count > 0 && GetParent() is { BoundProperty: { } boundProp })
-    {
-      var distinctParentIds = entities
-        .Select(e => boundProp.GetValue(e) as long?)
-        .Where(pid => pid is > 0)
-        .Select(pid => pid!.Value)
-        .Distinct()
-        .ToList();
-      if (distinctParentIds.Count == 1)
-      {
-        ParentId = distinctParentIds[0];
-        if (!await EnsureParentScopeAsync(lockParent: lockEntities && db.Database.CurrentTransaction != null, ct))
-        {
-          return ([], [new MessageDto { Code = "grid.delete.unavailable", Detail = L["GridDeleteUnavailable"], Type = MessageType.Error }]);
-        }
       }
     }
 
@@ -153,8 +156,9 @@ public abstract partial class GridService<TEntity, TRow>
   {
     ParentService = request.ParentService;
     ParentId = request.ParentId;
+    List<TEntity>? batchRecords = null;
 
-    return await db.RunMutationAsync(async mutationCt =>
+    var result = await db.RunMutationAsync(async mutationCt =>
     {
       if (!await EnsureParentScopeAsync(lockParent: true, mutationCt))
       {
@@ -191,6 +195,19 @@ public abstract partial class GridService<TEntity, TRow>
           Outcome = MutationOutcome.Refused,
           Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
         };
+      }
+
+      if (navAction?.Ask != null)
+      {
+        var askFailures = navAction.Ask.Validate(request, L);
+        if (askFailures.Count > 0)
+        {
+          return new GridActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = [.. askFailures]
+          };
+        }
       }
 
       var (records, missing) = await LoadSelectedEntitiesAsync(ids, mutationCt, asTracking: true, lockEntities: true);
@@ -257,6 +274,7 @@ public abstract partial class GridService<TEntity, TRow>
         await db.SaveChangesAsync(mutationCt);
       }
 
+      batchRecords = records;
       if (PlatformApp != null)
       {
         await PlatformApp.ClearAuthCacheForEntitiesAsync(records, db, mutationCt);
@@ -270,6 +288,13 @@ public abstract partial class GridService<TEntity, TRow>
         Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, records, MessageType.Warning) : null
       };
     }, ct: cancellationToken);
+
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && batchRecords is { Count: > 0 })
+    {
+      await PlatformApp.ClearAuthCacheForEntitiesAsync(batchRecords, db, cancellationToken);
+    }
+
+    return result;
   }
 
   public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default)
@@ -393,8 +418,9 @@ public abstract partial class GridService<TEntity, TRow>
   {
     ParentService = request.ParentService;
     ParentId = request.ParentId;
+    List<TEntity>? deletedRecords = null;
 
-    return await db.RunMutationAsync(async mutationCt =>
+    var result = await db.RunMutationAsync(async mutationCt =>
     {
       if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || !CanDelete())
       {
@@ -504,6 +530,7 @@ public abstract partial class GridService<TEntity, TRow>
         };
       }
 
+      deletedRecords = entities;
       if (PlatformApp != null)
       {
         await PlatformApp.ClearAuthCacheForEntitiesAsync(entities, db, mutationCt);
@@ -516,13 +543,25 @@ public abstract partial class GridService<TEntity, TRow>
         Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, entities, MessageType.Warning) : null
       };
     }, ct: ct);
+
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && deletedRecords is { Count: > 0 })
+    {
+      await PlatformApp.ClearAuthCacheForEntitiesAsync(deletedRecords, db, ct);
+    }
+
+    return result;
   }
 
   private static bool HasVersionConflict(GridRequest request, IReadOnlyList<long> ids, IReadOnlyList<TEntity> records)
   {
-    if (request.SelectedVersions is not { Count: > 0 } versions || versions.Count != ids.Count)
+    if (request.SelectedVersions is not { Count: > 0 } versions)
     {
       return false;
+    }
+
+    if (versions.Count != ids.Count)
+    {
+      return true;
     }
 
     var recordMap = records.ToDictionary(r => r.Id);
@@ -724,21 +763,9 @@ public abstract partial class GridService<TEntity, TRow>
     if (queryDeclaration.Selector != null)
     {
       var dataProvider = DataProvider.Create(IncludeColumnNavigations(query.AsNoTracking(), exportColumns), queryMap, queryDeclaration.Selector);
-      if (queryDeclaration.ComputeAction != null)
-      {
-        var listReq = new ListRequest { Page = 1, PageSize = limit + 1, Filter = request.Filter, ColumnFilter = request.ColumnFilter, Sort = request.Sort, Search = request.Search, SearchFields = request.SearchFields };
-        var page = await dataProvider.GetPageAsync(listReq, ct);
-        if (page.Rows.Count > 0)
-        {
-          await queryDeclaration.ComputeAction(page.Rows, ct);
-        }
-
-        rowStream = ToAsyncEnumerable(page.Rows.Select(r => ShapeRow(r, cols.List)));
-      }
-      else
-      {
-        rowStream = ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
-      }
+      rowStream = queryDeclaration.ComputeAction != null
+        ? ShapeComputedStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), queryDeclaration.ComputeAction, cols.List, ct)
+        : ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
     }
     else
     {
@@ -756,7 +783,8 @@ public abstract partial class GridService<TEntity, TRow>
     var label = L.TryGetString(Feature.Name, out var l) ? l : (string.IsNullOrEmpty(Feature.Name) ? typeof(TEntity).Name : Feature.Name);
     var cleanName = Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
     var fileName = $"{cleanName}_{DateTime.UtcNow:yyyyMMdd_HHmm}.xlsx";
-    await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, TimeZoneInfo.Utc, limit, L["ExportTruncated", limit], ct);
+    TimeZones.TryFind(User?.TimeZone, out var exportTimeZone);
+    await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
     fileStream.Position = 0;
     return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
   }

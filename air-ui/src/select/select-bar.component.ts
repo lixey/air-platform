@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, viewChild } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
 import { SearchBoxComponent } from '../controls/search-box.component';
 import { TextsService } from '../core/texts.service';
@@ -52,6 +52,7 @@ export class SelectBarComponent {
   protected readonly texts = inject(TextsService);
   protected readonly select = inject(SelectService);
   protected readonly DEBOUNCE_MS = DEBOUNCE_MS;
+  private readonly box = viewChild(SearchBoxComponent);
 
   /** The search box widens while it holds text. */
   protected readonly searchWidth = computed(() => (this.select.searchText() ? 'w-36' : 'w-28'));
@@ -77,6 +78,9 @@ export class SelectBarComponent {
         this.select.moveActive(-10);
         break;
       case 'Enter':
+        if (this.box()?.flush() || this.select.isLoading()) {
+          break;
+        }
         if (!this.select.pickActive() && this.select.options().length > 0) {
           this.select.pick(this.select.options()[0]);
         }

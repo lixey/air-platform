@@ -162,4 +162,28 @@ public sealed class AgentProposalAndSecurityTests : IDisposable
 
     await Assert.ThrowsAsync<InvalidOperationException>(async () => await AgentProposalExecutor.CommitProposalAsync(editProposal, services, CancellationToken.None));
   }
+
+  [Fact]
+  public void McpExecutionBridge_AndAgentStoreSessionId_IsolateConcurrentSessionsAndSanitizePaths()
+  {
+    var bridge = new McpExecutionBridge();
+    var scopeA = bridge.BeginTurn(1, 10, new HashSet<string>(["A"]), "sess-a");
+    var scopeB = bridge.BeginTurn(2, 20, new HashSet<string>(["B"]), "sess-b");
+
+    Assert.Equal(10, bridge.GetContext("sess-a")?.UserId);
+    Assert.Equal(20, bridge.GetContext("sess-b")?.UserId);
+    Assert.Null(bridge.GetContext("sess-unknown"));
+
+    scopeA.Dispose();
+    Assert.Equal(20, bridge.GetContext("sess-b")?.UserId);
+    Assert.Equal(20, bridge.Active?.UserId);
+
+    scopeB.Dispose();
+    Assert.Null(bridge.Active);
+
+    Assert.True(AgentStore.IsValidSessionId("valid_session-123"));
+    Assert.False(AgentStore.IsValidSessionId("../escape"));
+    var normalized = AgentStore.NormalizeSessionId("../escape");
+    Assert.True(AgentStore.IsValidSessionId(normalized));
+  }
 }

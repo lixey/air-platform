@@ -137,4 +137,22 @@ public sealed class MutationAndServiceSecurityTests : IDisposable
     Assert.True(ServiceEndpointsExtensions.IsCallableServiceAction(attributedMethod));
     Assert.True(ServiceEndpointsExtensions.IsCallableServiceAction(requireActionMethod));
   }
+
+  [Fact]
+  public async Task MarkMutationRollbackOnly_RollsBackCommittedWrites_WhenRefusedResultReturned()
+  {
+    await using var db = CreateDbContext();
+
+    var outcome = await db.RunMutationAsync(async ct =>
+    {
+      db.Items.Add(new ApiTestItem { Name = "DirtyWriteBeforeRefusal" });
+      await db.SaveChangesAsync(ct);
+      db.MarkMutationRollbackOnly();
+      return MutationOutcome.Refused;
+    });
+
+    Assert.Equal(MutationOutcome.Refused, outcome);
+    Assert.Equal(0, await db.Items.CountAsync());
+    Assert.Equal(0, await db.AppPlatformChange.CountAsync());
+  }
 }

@@ -38,7 +38,7 @@ internal static class CascadeLoader
       var loadedCount = 0;
       foreach (var (foreignKey, propIndex, keys) in CollectReferencingKeys(principals))
       {
-        var remaining = MaxCascadeRows - totalLoaded - loadedCount;
+        var remaining = MaxCascadeRows + 1 - totalLoaded - loadedCount;
         if (remaining <= 0)
         {
           break;
@@ -57,6 +57,11 @@ internal static class CascadeLoader
       }
 
       totalLoaded += loadedCount;
+      if (totalLoaded > MaxCascadeRows)
+      {
+        throw new InvalidOperationException($"Cascade delete exceeded the maximum audited dependent limit ({MaxCascadeRows}).");
+      }
+
       db.ChangeTracker.CascadeChanges();
     }
   }
@@ -85,7 +90,7 @@ internal static class CascadeLoader
       var loadedCount = 0;
       foreach (var (foreignKey, propIndex, keys) in CollectReferencingKeys(principals))
       {
-        var remaining = MaxCascadeRows - totalLoaded - loadedCount;
+        var remaining = MaxCascadeRows + 1 - totalLoaded - loadedCount;
         if (remaining <= 0)
         {
           break;
@@ -103,6 +108,11 @@ internal static class CascadeLoader
       }
 
       totalLoaded += loadedCount;
+      if (totalLoaded > MaxCascadeRows)
+      {
+        throw new InvalidOperationException($"Cascade delete exceeded the maximum audited dependent limit ({MaxCascadeRows}).");
+      }
+
       db.ChangeTracker.CascadeChanges();
     }
   }

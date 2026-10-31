@@ -257,6 +257,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, Handle);
 
     string? contextJson = null;
+    string? tempContextFile = null;
     try
     {
       var hasPhoto = request.Attachments.Count > 0;
@@ -266,8 +267,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
       if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {
-        var fullPath = Path.Combine(store.WorkspaceDirectory, $"context-{request.SessionId}.json");
-        await File.WriteAllTextAsync(fullPath, contextJson, Encoding.UTF8, ct);
+        tempContextFile = Path.Combine(store.WorkspaceDirectory, $"context-{AgentStore.NormalizeSessionId(request.SessionId)}.json");
+        await File.WriteAllTextAsync(tempContextFile, contextJson, Encoding.UTF8, ct);
         var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false, includeRecentRecords);
         contextJson = JsonSerializer.Serialize(compactObj, PromptJsonOptions);
       }
@@ -468,6 +469,15 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
         try
         {
           process.Kill(entireProcessTree: true);
+        }
+        catch { }
+      }
+
+      if (tempContextFile is not null)
+      {
+        try
+        {
+          File.Delete(tempContextFile);
         }
         catch { }
       }

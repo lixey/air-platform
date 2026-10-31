@@ -11,6 +11,7 @@ public static class PlatformSqlServerExtensions
   {
     ArgumentNullException.ThrowIfNull(builder);
     ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+    QueryMap.UseCollationComparison = true;
 
     return builder.UseSqlServer(connectionString, o =>
     {

@@ -200,10 +200,12 @@ export class GridService {
     computation: generation => toFilterNode(initialFiltersOf(generation.model).filter(filter => !isPick(filter))),
   });
   readonly filterTree = this._filterTree.asReadonly();
-  /** The general filters as the request joins them by AND: the picks, then the tree. */
+  /** The general filters as the request joins them by AND: the picks, then the tree, and any select reference filter. */
   readonly filters = computed<readonly GridFilter[]>(() => {
     const tree = this.filterTree();
-    return tree ? [...this.filterPicks(), tree] : this.filterPicks();
+    const refFilter = this.select?.model().referenceFilter;
+    const base = tree ? [...this.filterPicks(), tree] : this.filterPicks();
+    return refFilter ? [...base, refFilter] : base;
   });
   /** The filters the columns hold, one per column. */
   readonly columnFilters = this.columnFilterSet.state;
@@ -365,6 +367,7 @@ export class GridService {
       setActive: index => this.setActive(index),
       activeRow: () => this.activeRow(),
       rowCount: () => this.rows().length,
+      isLoading: () => this.isLoading(),
       tableId: () => this.tableIds()?.table ?? null,
       activeCellId: () => this.tableIds()?.activeCell() ?? null,
       tableWidth: () => this.tableIds()?.tableWidth?.() ?? 0,
@@ -386,7 +389,9 @@ export class GridService {
     }
     this.active.keepKey();
     this.requestPage();
-    this.count.requestCount();
+    if (this.hasMore() || this.page() > 1) {
+      this.count.requestCount();
+    }
   }
 
   /** The page request that failed, asked again. */
@@ -667,17 +672,17 @@ export class GridService {
     }
   }
 
-  /** A change of the query and, unless only the order changed, a new count, then back to the first page and a new page. */
+  /** A change of the query and, unless only the order changed, a cleared count settled by page 1, then back to the first page. */
   private changeQuery(change: () => void, recount = true): void {
     change();
     this.selection.clear();
     this.changes.clear();
     this.active.leave();
     this._page.set(1);
-    this.requestPage();
     if (recount) {
-      this.count.requestCount();
+      this.count.clear();
     }
+    this.requestPage();
   }
 
   /** Asks the server for the page the state names, for the data alone once a page is held. */
@@ -727,7 +732,7 @@ export class GridService {
       });
   }
 
-  /** An answer: the rows on screen, its page and page size, and its total when it carries one. */
+  /** An answer: the rows on screen, its page and page size, and its total when it carries one (or a count request when open). */
   private adopt(answer: GridPageDto<GridRow>, askedPage: number | null | undefined): void {
     if (answer.page !== askedPage) {
       this.selection.clear();
@@ -739,6 +744,8 @@ export class GridService {
     this._page.set(answer.page);
     if (typeof answer.total === 'number') {
       this.count.adoptTotal(answer.total);
+    } else if (this.count.countedTotal() === null && !this.count.isCountLoading()) {
+      this.count.requestCount();
     }
   }
 

@@ -13,6 +13,7 @@ public interface IUserContext
   bool IsAuthenticated { get; }
   bool MustChangePassword => false;
   string Language { get; }
+  string TimeZone => "UTC";
   IReadOnlySet<string> Permissions { get; }
 
   /// <summary>

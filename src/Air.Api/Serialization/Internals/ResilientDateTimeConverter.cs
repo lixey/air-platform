@@ -11,11 +11,11 @@ internal sealed class ResilientDateTimeConverter : JsonConverter<DateTime>
 
     if (reader.TokenType == JsonTokenType.String && DateTime.TryParse(reader.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var dt))
     {
-      return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+      return DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
     }
 
-    return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Utc);
+    return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Unspecified);
   }
   public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options) =>
-    writer.WriteStringValue(DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("o"));
+    writer.WriteStringValue(DateTime.SpecifyKind(value, DateTimeKind.Unspecified).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
 }

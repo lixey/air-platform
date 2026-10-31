@@ -21,13 +21,27 @@ public sealed class LocalFileStorage : IFileStorage
     }
 
     var filePath = PathOf(key);
-    var tempPath = filePath + ".tmp";
-    await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, true))
+    var tempPath = $"{filePath}.{Guid.NewGuid():N}.tmp";
+    try
     {
-      await content.CopyToAsync(fs, cancellationToken);
-    }
+      await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, true))
+      {
+        await content.CopyToAsync(fs, cancellationToken);
+      }
 
-    File.Move(tempPath, filePath, overwrite: true);
+      File.Move(tempPath, filePath, overwrite: true);
+    }
+    finally
+    {
+      if (File.Exists(tempPath))
+      {
+        try
+        {
+          File.Delete(tempPath);
+        }
+        catch { }
+      }
+    }
   }
 
   public Task<Stream?> OpenReadAsync(string key, CancellationToken cancellationToken = default)
@@ -75,6 +89,20 @@ public sealed class LocalFileStorage : IFileStorage
       foreach (var file in Directory.GetFiles(_baseDirectory))
       {
         var info = new FileInfo(file);
+        if (file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+        {
+          if (info.CreationTimeUtc < moment.UtcDateTime)
+          {
+            try
+            {
+              File.Delete(file);
+            }
+            catch { }
+          }
+
+          continue;
+        }
+
         if (info.CreationTimeUtc < moment.UtcDateTime)
         {
           list.Add(Path.GetFileName(file));

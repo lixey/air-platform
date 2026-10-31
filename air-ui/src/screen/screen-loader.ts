@@ -4,16 +4,8 @@ import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { AuthService, identityOf } from '../app/auth/auth.service';
 import { browserStorage, userStorageKey } from '../app/auth/user-storage';
 import { type AnswerOf, serviceUrl } from '../core/api';
-import type {
-  GridServiceEndpoints,
-  PanelLayoutDto,
-  PanelNodeDto,
-  ScreenDto,
-  ScreenServiceEndpoints,
-  UserProfileDto,
-} from '../core/generated/contracts';
+import type { PanelLayoutDto, PanelNodeDto, ScreenDto, ScreenServiceEndpoints, UserProfileDto } from '../core/generated/contracts';
 import type { IsCurrent, Lifetime } from '../core/lifetime';
-import { registerPrefetchedGridCount } from '../grid/grid-count';
 import type { ScreenAddress } from './screen-address';
 import { SCREEN_LIFETIME } from './screen-lifetime';
 
@@ -94,38 +86,6 @@ export function screenLoader(
       : undefined;
   });
 
-  const countResource = httpResource<AnswerOf<GridServiceEndpoints, 'get-count'>>(() => {
-    const req = requestTarget();
-    return req?.isGrid
-      ? {
-          url: serviceUrl<GridServiceEndpoints>(req.service, 'get-count'),
-          method: 'POST',
-          body: countBodyOf(req.body),
-          ...shownByCaller(),
-        }
-      : undefined;
-  });
-
-  // Eagerly subscribe to countResource so get-count starts in parallel with get-data before <ui-grid> mounts
-  effect(() => {
-    if (requestTarget()?.isGrid) {
-      void countResource.isLoading();
-    }
-  });
-
-  effect(() => {
-    const req = requestTarget();
-    const isCurrent = captured();
-    if (req?.isGrid && isCurrent) {
-      registerPrefetchedGridCount(req.service, {
-        total: computed(() => (countResource.hasValue() && isCurrent() ? countResource.value()?.total : undefined)),
-        isLoading: countResource.isLoading,
-        isError: computed(() => countResource.status() === 'error'),
-        isCurrent,
-      });
-    }
-  });
-
   const kept = keptScreenOf(currentAddress, captured, resource, auth);
 
   return {
@@ -162,16 +122,6 @@ function rememberedNamedFiltersOf(user: Pick<UserProfileDto, 'id'> | null, servi
   } catch {
     return undefined;
   }
-}
-
-function countBodyOf(params: Readonly<Record<string, unknown>>): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  for (const key of ['parentId', 'parentService', 'filter', 'columnFilter', 'search', 'namedFilters']) {
-    if (params[key] !== undefined) {
-      body[key] = params[key];
-    }
-  }
-  return body;
 }
 
 /** What a screen asks of a dialog showing it: the shape `ScreenLoader.asked` declares, written there alone. */

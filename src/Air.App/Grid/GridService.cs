@@ -99,6 +99,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       : Reachable(asTracking).Where(_ => false);
 
   private object? _preloadedParent;
+  private long? _preloadedParentId;
 
   protected async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
   {
@@ -120,6 +121,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       lockParent,
       ct);
     _preloadedParent = preloaded;
+    _preloadedParentId = ParentId;
     return allowed;
   }
 
@@ -133,6 +135,13 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     if (_preloadedParent is TParent preloaded && preloaded.Id == ParentId.Value)
     {
       return preloaded;
+    }
+
+    var parent = GetParent();
+    if (_preloadedParentId == ParentId.Value &&
+        (parent.BoundParentServiceType != null || !string.IsNullOrEmpty(ParentService)))
+    {
+      return null;
     }
 
     var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);

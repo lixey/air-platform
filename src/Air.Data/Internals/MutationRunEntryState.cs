@@ -10,6 +10,7 @@ internal sealed class MutationRunEntryState
   public long TenantId { get; set; }
   public long RowId { get; set; }
   public required string Operation { get; set; }
+  public bool IsAdded { get; init; }
   public bool IsDeleted { get; set; }
   public Dictionary<string, object?> FirstBefore { get; } = new(StringComparer.Ordinal);
   public Dictionary<string, object?> LatestAfter { get; } = new(StringComparer.Ordinal);

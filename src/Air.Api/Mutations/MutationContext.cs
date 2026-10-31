@@ -45,12 +45,10 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
   public virtual Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
     AcquireLocksAsync(db, typeof(TLocked), keys, cancellationToken);
 
-  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key, long? tenantId = null)
+  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key)
   {
     var numbers = string.Join(':', key.Select(n => n.ToString(CultureInfo.InvariantCulture)));
-    var prefix = tenantId is > 0 && typeof(IHasTenant).IsAssignableFrom(lockedType)
-      ? $"air-lock:{tenantId.Value}:{lockedType.Name}:{numbers}"
-      : $"air-lock:{lockedType.Name}:{numbers}";
+    var prefix = $"air-lock:{lockedType.Name}:{numbers}";
     return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(prefix)));
   }
 
@@ -61,27 +59,36 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
       throw new InvalidOperationException("Cannot acquire a mutation lock outside an active database transaction.");
     }
 
+    var keyArrays = keys as IReadOnlyList<long[]> ?? keys.ToList();
     var isPostgres = db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
     var isSqlServer = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
-    if (!isPostgres && !isSqlServer)
+    if (isPostgres || isSqlServer)
     {
-      return;
+      var lockKeys = keyArrays.Select(k => LockKeyOf(lockedType, k)).Distinct().OrderBy(k => k).ToList();
+      foreach (var lockKey in lockKeys)
+      {
+        if (isPostgres)
+        {
+          await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
+        }
+        else if (isSqlServer)
+        {
+          var resource = $"air-lock:{lockKey}";
+          await db.Database.ExecuteSqlInterpolatedAsync(
+            $"DECLARE @res int; EXEC @res = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000; IF @res < 0 THROW 51000, 'Failed to acquire application lock.', 1;",
+            ct);
+        }
+      }
     }
 
-    var tenantId = db.TenantContext.TenantId;
-    var lockKeys = keys.Select(k => LockKeyOf(lockedType, k, tenantId)).Distinct().OrderBy(k => k).ToList();
-    foreach (var lockKey in lockKeys)
+    var singleIds = keyArrays.Where(k => k.Length == 1).Select(k => k[0]).ToHashSet();
+    if (singleIds.Count > 0)
     {
-      if (isPostgres)
+      foreach (var entry in db.ChangeTracker.Entries()
+        .Where(e => e.State == EntityState.Unchanged && lockedType.IsAssignableFrom(e.Metadata.ClrType) && e.Entity is IEntity ent && singleIds.Contains(ent.Id))
+        .ToList())
       {
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
-      }
-      else if (isSqlServer)
-      {
-        var resource = $"air-lock:{lockKey}";
-        await db.Database.ExecuteSqlInterpolatedAsync(
-          $"DECLARE @res int; EXEC @res = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000; IF @res < 0 THROW 51000, 'Failed to acquire application lock.', 1;",
-          ct);
+        await entry.ReloadAsync(ct);
       }
     }
   }

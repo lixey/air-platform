@@ -35,8 +35,9 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
       }
 
       var val = PropertyAccessorCache.GetValue(target, el.Path);
+      var isSelectOrFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || el.Model is FormSelectModel;
 
-      if (el.IsRequired && (val is null || val is string s && string.IsNullOrWhiteSpace(s)))
+      if (el.IsRequired && (val is null || val is string s && string.IsNullOrWhiteSpace(s) || isSelectOrFk && (val is long l && l <= 0 || val is int i && i <= 0)))
       {
         errors.Add(new MessageDto
         {
@@ -46,6 +47,17 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
           Type = MessageType.Error
         });
         continue;
+      }
+
+      if (el.Model is FormSelectModel { Options: { Count: > 0 } options } && val is long optId && optId > 0 && !options.Any(o => o.Id == optId))
+      {
+        errors.Add(new MessageDto
+        {
+          Path = el.Path,
+          Detail = localizer["FormValidationOption"],
+          Code = "form.validation.option",
+          Type = MessageType.Error
+        });
       }
 
       if (val is string str && str.Length > 0)

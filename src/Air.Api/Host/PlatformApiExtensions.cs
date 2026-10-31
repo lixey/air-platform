@@ -140,6 +140,25 @@ public static class PlatformApiExtensions
             if (isCookie)
             {
               context.Items[AuthClaims.ViaCookieItem] = true;
+              if (!HttpMethods.IsGet(context.Request.Method) &&
+                  !HttpMethods.IsHead(context.Request.Method) &&
+                  !HttpMethods.IsOptions(context.Request.Method) &&
+                  !context.Request.Headers.ContainsKey(AuthClaims.ClientHeader))
+              {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+              }
+            }
+
+            if (user.MustChangePassword)
+            {
+              var reqPath = context.Request.Path.Value ?? "";
+              if (reqPath.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) &&
+                  !reqPath.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase))
+              {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+              }
             }
 
             using (AsyncLocalTenantContext.Use(tenantId, user.PermissionSet, user.Id, context.TraceIdentifier))

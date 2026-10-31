@@ -13,7 +13,20 @@ public abstract partial class GridService<TEntity, TRow>
   {
     ParentService = request?.ParentService;
     ParentId = request?.ParentId;
-    var parent = GetParent();
+    if (ParentId is > 0 && !await EnsureParentScopeAsync(lockParent: false, ct))
+    {
+      return new ScreenDto
+      {
+        Data = new GridPageDto<object>
+        {
+          Rows = [],
+          Total = 0,
+          Number = request?.Page ?? 1,
+          Size = request?.PageSize ?? 50,
+          HasMore = false
+        }
+      };
+    }
 
     var columns = CreateColumns();
 

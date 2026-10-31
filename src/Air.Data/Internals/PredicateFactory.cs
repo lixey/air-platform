@@ -204,14 +204,15 @@ internal static class PredicateFactory
 
   internal static Expression TextMatch(QueryField field, Expression member, TextPattern pattern)
   {
-    var loweredMember = Expression.Call(member, StringToLower);
-    var term = BoundValue.Of(pattern.Term.ToLowerInvariant(), typeof(string));
+    var useCollation = QueryMap.UseCollationComparison;
+    var left = useCollation ? member : Expression.Call(member, StringToLower);
+    var term = BoundValue.Of(useCollation ? pattern.Term : pattern.Term.ToLowerInvariant(), typeof(string));
     Expression match = pattern.Kind switch
     {
-      TextPatternKind.Equals => Expression.Equal(loweredMember, term),
-      TextPatternKind.StartsWith => Expression.Call(loweredMember, StringStartsWith, term),
-      TextPatternKind.EndsWith => Expression.Call(loweredMember, StringEndsWith, term),
-      _ => Expression.Call(loweredMember, StringContains, term)
+      TextPatternKind.Equals => Expression.Equal(left, term),
+      TextPatternKind.StartsWith => Expression.Call(left, StringStartsWith, term),
+      TextPatternKind.EndsWith => Expression.Call(left, StringEndsWith, term),
+      _ => Expression.Call(left, StringContains, term)
     };
     return Guarded(field, member, match);
   }

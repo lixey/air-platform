@@ -353,6 +353,9 @@ export class GridActionsService {
    */
   private report(error: unknown, own: readonly MessageDto[] = []): void {
     const failure = classifyMutationFailure(error);
+    if (failure.outcome === 'conflict') {
+      this.grid.reload();
+    }
     const messages = failure.messages.filter(message => !own.includes(message));
     if (own.length && !messages.length) {
       return;

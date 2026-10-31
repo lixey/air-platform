@@ -122,7 +122,12 @@ public abstract partial class FormService<TEntity, TInput>
     return dict;
   }
 
-  private HashSet<string> BuildProtectedPaths(Elements elements, JsonElement? clientJson = null, bool isNew = true)
+  private HashSet<string> BuildProtectedPaths(
+    Elements elements,
+    JsonElement? clientJson = null,
+    bool isNew = true,
+    TEntity? entity = null,
+    TInput? input = null)
   {
     HashSet<string>? presentInJson = null;
     if (!isNew && clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
@@ -143,7 +148,8 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var acceptsInput = !el.IsDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
+      var isDisabled = el.IsDisabled || (entity != null || input != null) && IsElementDisabled(el, entity, input);
+      var acceptsInput = !isDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
       if (acceptsInput && !(isSeparateInput && el.IsInputOnly))
       {
         if (presentInJson == null || presentInJson.Contains(el.Path))

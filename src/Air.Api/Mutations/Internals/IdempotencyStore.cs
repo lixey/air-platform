@@ -20,7 +20,7 @@ internal static class IdempotencyStore
     var lockId = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
     var sem = KeyLocks.GetOrAdd(lockId, static _ => new SemaphoreSlim(1, 1));
     await sem.WaitAsync(ct);
-    return new ReleaseHandle(lockId, sem);
+    return new ReleaseHandle(sem);
   }
 
   public static bool TryGetCommitted(
@@ -29,23 +29,20 @@ internal static class IdempotencyStore
     string serviceKey,
     string key,
     string payloadHash,
-    out long? recordId,
-    out string? resultJson)
+    out long recordId)
   {
     PruneIfNeeded();
     var storeKey = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
     if (!Entries.TryGetValue(storeKey, out var entry))
     {
-      recordId = null;
-      resultJson = null;
+      recordId = 0;
       return false;
     }
 
     if (DateTimeOffset.UtcNow - entry.CreatedAt > Retention)
     {
       Entries.TryRemove(storeKey, out _);
-      recordId = null;
-      resultJson = null;
+      recordId = 0;
       return false;
     }
 
@@ -56,7 +53,6 @@ internal static class IdempotencyStore
     }
 
     recordId = entry.RecordId;
-    resultJson = entry.ResultJson;
     return true;
   }
 
@@ -66,12 +62,11 @@ internal static class IdempotencyStore
     string serviceKey,
     string key,
     string payloadHash,
-    long? recordId,
-    string? resultJson)
+    long recordId)
   {
     PruneIfNeeded();
     var storeKey = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
-    Entries[storeKey] = new KeptEntry(serviceKey, payloadHash, recordId, resultJson, DateTimeOffset.UtcNow);
+    Entries[storeKey] = new KeptEntry(serviceKey, payloadHash, recordId, DateTimeOffset.UtcNow);
   }
 
   internal static void Clear()
@@ -96,16 +91,19 @@ internal static class IdempotencyStore
 
     foreach (var kv in Entries)
     {
-      if (now - kv.Value.CreatedAt > Retention)
+      if (now - kv.Value.CreatedAt > Retention && Entries.TryRemove(kv.Key, out _))
       {
-        Entries.TryRemove(kv.Key, out _);
+        if (KeyLocks.TryGetValue(kv.Key, out var sem) && sem.CurrentCount == 1)
+        {
+          KeyLocks.TryRemove(KeyValuePair.Create(kv.Key, sem));
+        }
       }
     }
   }
 
-  private sealed record KeptEntry(string ServiceKey, string PayloadHash, long? RecordId, string? ResultJson, DateTimeOffset CreatedAt);
+  private sealed record KeptEntry(string ServiceKey, string PayloadHash, long RecordId, DateTimeOffset CreatedAt);
 
-  private sealed class ReleaseHandle(string lockId, SemaphoreSlim sem) : IDisposable
+  private sealed class ReleaseHandle(SemaphoreSlim sem) : IDisposable
   {
     private int _disposed;
 
@@ -114,10 +112,6 @@ internal static class IdempotencyStore
       if (Interlocked.Exchange(ref _disposed, 1) == 0)
       {
         sem.Release();
-        if (sem.CurrentCount == 1)
-        {
-          KeyLocks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(lockId, sem));
-        }
       }
     }
   }

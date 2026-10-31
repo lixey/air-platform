@@ -273,21 +273,72 @@ public abstract partial class FormService<TEntity, TInput>
     Request = request;
     IsNew = id is null or 0;
 
-    if (IsNew)
-    {
-      return await MutationRunner.RunIdempotentCreateAsync<object>(
+    var savedResult = IsNew
+      ? await MutationRunner.RunIdempotentCreateAsync<object>(
         db,
         Service,
         request.IdempotencyKey,
         request.RawPayload ?? json.GetRawText(),
         mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, mutationCt),
-        async (replayedId, reloadCt) => await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == replayedId, reloadCt),
-        ct);
+        async (replayedId, reloadCt) =>
+        {
+          Request.Id = replayedId;
+          return await GetModelAsync(Request, reloadCt)
+            ?? await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == replayedId, reloadCt);
+        },
+        _ => _lastSavedEntity?.Id,
+        ct)
+      : await db.RunMutationAsync(
+        mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, mutationCt),
+        ct: ct);
+    if (PlatformApp != null && _lastSavedEntity != null)
+    {
+      await PlatformApp.ClearAuthCacheForEntityAsync(_lastSavedEntity, db, ct);
     }
 
-    return await db.RunMutationAsync(
-      mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, mutationCt),
-      ct: ct);
+    return savedResult;
+  }
+
+  private async Task<TEntity> LockAndLoadExistingAsync(long id, Parent parent, CancellationToken ct)
+  {
+    var requestedParentId = Request.ParentId;
+    if (parent.BoundProperty != null &&
+        (parent.MatchesService(Request.ParentService) || ResolveParentChildBuilder(requirePreset: true)?.PresetProvider == null))
+    {
+      var probe = await db.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
+      if (probe != null)
+      {
+        var probeParentId = parent.BoundProperty.GetValue(probe) as long?;
+        if (requestedParentId is > 0 && probeParentId is > 0 && probeParentId.Value != requestedParentId.Value)
+        {
+          throw new FormRefusedException(L["MutationRefused"], L["FormNotFound"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
+        }
+
+        if (!parent.IsOptional || !Request.ParentId.HasValue)
+        {
+          if (probeParentId.HasValue)
+          {
+            Request.ParentId = probeParentId.Value;
+          }
+        }
+      }
+    }
+
+    var lockedParentId = Request.ParentId;
+    await EnsureParentScopeAsync(parent, lockParent: true, ct);
+    await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id]], ct);
+
+    var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
+      ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
+    Request.ParentId = requestedParentId;
+    RestoreBoundParentId(entity, parent);
+    if (Request.ParentId != lockedParentId)
+    {
+      await EnsureParentScopeAsync(parent, lockParent: true, ct);
+    }
+
+    return entity;
   }
 
   private async Task<object> SaveCoreAsync(
@@ -333,15 +384,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
     else
     {
-      await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id!.Value]], ct);
-      var trackedExisting = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id.Value);
-      if (trackedExisting != null && db.Entry(trackedExisting).State == EntityState.Unchanged)
-      {
-        await db.Entry(trackedExisting).ReloadAsync(ct);
-      }
-
-      entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      entity = await LockAndLoadExistingAsync(id!.Value, parent, ct);
 
       if (entity is IHasVersion versionedEntity &&
           (!clientVer.HasValue || clientVer.Value <= 0 || versionedEntity.Ver != clientVer.Value))
@@ -351,9 +394,6 @@ public abstract partial class FormService<TEntity, TInput>
           L["MutationConflict"],
           [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]);
       }
-
-      RestoreBoundParentId(entity, parent);
-      await EnsureParentScopeAsync(parent, lockParent: true, ct);
     }
 
     CurrentEntity = entity;
@@ -414,7 +454,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     NormalizeNullableStrings(elements, input);
-    var protectedPaths = BuildProtectedPaths(elements, entityJson, IsNew);
+    var protectedPaths = BuildProtectedPaths(elements, entityJson, IsNew, entity, input);
     var inputOnlyPaths = BuildInputOnlyPaths(elements);
     CopyMatchingProperties(input, entity, protectedPaths);
     if (id.HasValue && id.Value > 0)
@@ -536,18 +576,11 @@ public abstract partial class FormService<TEntity, TInput>
     IsNew = false;
 
     var parent = GetParent();
+    TEntity? savedEntity = null;
 
-    return await db.RunMutationAsync(async mutationCt =>
+    var result = await db.RunMutationAsync(async mutationCt =>
     {
-      await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id]], mutationCt);
-      var trackedExisting = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id);
-      if (trackedExisting != null && db.Entry(trackedExisting).State == EntityState.Unchanged)
-      {
-        db.Entry(trackedExisting).State = EntityState.Detached;
-      }
-
-      var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, mutationCt)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
 
       if (entity is IHasVersion versionedEntity &&
           (!request.Ver.HasValue || request.Ver.Value <= 0 || versionedEntity.Ver != request.Ver.Value))
@@ -559,16 +592,13 @@ public abstract partial class FormService<TEntity, TInput>
         };
       }
 
-      RestoreBoundParentId(entity, parent);
-      await EnsureParentScopeAsync(parent, lockParent: true, mutationCt);
-
       CurrentEntity = entity;
       var elements = new Elements();
       await SetElementsAsync(elements, mutationCt);
       LocalizeAndResolveSelectElements(elements);
 
       var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase));
-      if (IsReadOnly || targetElement == null || targetElement.IsDisabled || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
+      if (IsReadOnly || targetElement == null || IsElementDisabled(targetElement, entity, entity) || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
       {
         return new GridCellDto
         {
@@ -690,6 +720,7 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
+      savedEntity = entity;
       if (PlatformApp != null)
       {
         await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, mutationCt);
@@ -703,6 +734,13 @@ public abstract partial class FormService<TEntity, TInput>
         Warnings = saveCtx.Warnings.Count > 0 ? saveCtx.Warnings : null
       };
     }, ct: ct);
+
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && savedEntity != null)
+    {
+      await PlatformApp.ClearAuthCacheForEntityAsync(savedEntity, db, ct);
+    }
+
+    return result;
   }
 
   public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
@@ -725,18 +763,11 @@ public abstract partial class FormService<TEntity, TInput>
     IsNew = false;
 
     var parent = GetParent();
+    TEntity? deletedEntity = null;
 
     await db.RunMutationAsync(async mutationCt =>
     {
-      await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id]], mutationCt);
-      var trackedExisting = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id);
-      if (trackedExisting != null && db.Entry(trackedExisting).State == EntityState.Unchanged)
-      {
-        db.Entry(trackedExisting).State = EntityState.Detached;
-      }
-
-      var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, mutationCt)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
 
       if (Request.Ver.HasValue && Request.Ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != Request.Ver.Value)
       {
@@ -745,9 +776,6 @@ public abstract partial class FormService<TEntity, TInput>
           L["MutationConflict"],
           [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]);
       }
-
-      RestoreBoundParentId(entity, parent);
-      await EnsureParentScopeAsync(parent, lockParent: true, mutationCt);
 
       CurrentEntity = entity;
       var elements = new Elements();
@@ -803,6 +831,7 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
+      deletedEntity = entity;
       if (PlatformApp != null)
       {
         await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, mutationCt);
@@ -810,6 +839,11 @@ public abstract partial class FormService<TEntity, TInput>
 
       return true;
     }, ct: ct);
+
+    if (PlatformApp != null && deletedEntity != null)
+    {
+      await PlatformApp.ClearAuthCacheForEntityAsync(deletedEntity, db, ct);
+    }
   }
 
   private async Task PopulateJoinedReferencesAsync(

@@ -1,3 +1,4 @@
+using Platform.App.Internals;
 using Platform.Data.Internals;
 
 namespace Platform.App.Form;
@@ -19,11 +20,13 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     var sourcePath = GetMemberName(source.Body);
     if (targetPath != null && sourcePath != null)
     {
+      var camelSource = ToCamel(sourcePath);
+      ReferenceLookupAllowlist.RegisterPatchColumn(dto.ReferenceServiceType, camelSource);
       dto.SelectPatches ??= [];
       dto.SelectPatches.Add(new SelectPatchDto
       {
         TargetField = ToCamel(targetPath),
-        SourceColumn = ToCamel(sourcePath),
+        SourceColumn = camelSource,
         OnlyWhenEmpty = onlyWhenEmpty
       });
     }
@@ -39,6 +42,7 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     {
       var sourcePath = Elements.ToCamelPath(MemberPath.Of(sourceMember));
       var draftPath = Elements.ToCamelPath(MemberPath.Of(draftMember));
+      ReferenceLookupAllowlist.RegisterFilterField(dto.ReferenceServiceType, sourcePath);
       selectModel.ReferenceDraftRules ??= [];
       selectModel.ReferenceDraftRules.Add(new ReferenceDraftRuleDto
       {
@@ -57,6 +61,7 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     if (dto.Model is FormSelectModel selectModel)
     {
       var sourcePath = Elements.ToCamelPath(MemberPath.Of(sourceMember));
+      ReferenceLookupAllowlist.RegisterFilterField(dto.ReferenceServiceType, sourcePath);
       var rule = FilterNode.Rule(sourcePath, FilterOperator.Equals, value);
       selectModel.ReferenceFilter = CombineFilter(selectModel.ReferenceFilter, rule);
     }

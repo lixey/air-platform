@@ -63,6 +63,7 @@ export class SearchBoxComponent {
   protected readonly texts = inject(TextsService);
   private readonly box = viewChild.required<ElementRef<HTMLInputElement>>('box');
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private pending = false;
 
   /** The text in the box; the owner sets what it starts with and follows what is typed. */
   readonly text = model<string>('');
@@ -105,15 +106,31 @@ export class SearchBoxComponent {
     this.box().nativeElement.focus();
   }
 
+  /** Emits the current text immediately if a debounced search is waiting; returns `true` when it flushed. */
+  flush(): boolean {
+    if (!this.pending) {
+      return false;
+    }
+    clearTimeout(this.timer);
+    this.pending = false;
+    this.searched.emit(this.text());
+    return true;
+  }
+
   protected onInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.text.set(value);
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.searched.emit(value), this.debounce());
+    this.pending = true;
+    this.timer = setTimeout(() => {
+      this.pending = false;
+      this.searched.emit(value);
+    }, this.debounce());
   }
 
   protected clear(): void {
     clearTimeout(this.timer);
+    this.pending = false;
     this.text.set('');
     this.searched.emit('');
     this.focus();

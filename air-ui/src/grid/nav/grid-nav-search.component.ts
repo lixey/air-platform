@@ -1,6 +1,7 @@
-import { Component, inject, model } from '@angular/core';
+import { Component, inject, model, viewChild } from '@angular/core';
 import { SearchBoxComponent } from '../../controls/search-box.component';
 import type { GridNavSearchModel } from '../../core/generated/contracts';
+import type { SelectField } from '../../select/select-source';
 import { GridService } from '../grid.service';
 
 /**
@@ -25,7 +26,7 @@ import { GridService } from '../grid.service';
           [activeDescendant]="grid.tableIds()?.activeCell()"
           [autofocus]="true"
           (searched)="field.searched($event)"
-          (keydown)="field.keydown($event)"
+          (keydown)="onPickerKeydown($event, field)"
         />
       } @else {
         <ui-search-box
@@ -41,6 +42,7 @@ import { GridService } from '../grid.service';
 })
 export class GridNavSearchComponent {
   protected readonly grid = inject(GridService, { optional: true });
+  private readonly box = viewChild(SearchBoxComponent);
 
   readonly model = model<GridNavSearchModel | null>();
 
@@ -50,5 +52,13 @@ export class GridNavSearchComponent {
 
   protected write(text: string): void {
     this.grid?.setSearch(text);
+  }
+
+  protected onPickerKeydown(event: KeyboardEvent, field: SelectField): void {
+    if (event.key === 'Enter' && this.box()?.flush()) {
+      event.preventDefault();
+      return;
+    }
+    field.keydown(event);
   }
 }

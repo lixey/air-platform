@@ -1,47 +1,13 @@
 import { httpResource } from '@angular/common/http';
-import { computed, effect, linkedSignal, type Signal, untracked } from '@angular/core';
+import { computed, effect, linkedSignal, untracked } from '@angular/core';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { type AnswerOf, serviceUrl } from '../core/api';
 import type { GridRequest, GridServiceEndpoints } from '../core/generated/contracts';
 import type { IsCurrent } from '../core/lifetime';
 
-/** An initial count request started in parallel with `get-data` by `screenLoader`. */
-export interface PrefetchedGridCount {
-  readonly total: Signal<number | undefined>;
-  readonly isLoading: Signal<boolean>;
-  readonly isError: Signal<boolean>;
-  readonly isCurrent: IsCurrent;
-}
-
-const prefetchedCounts = new Map<string, PrefetchedGridCount>();
-
-/** Registers an in-flight or completed initial `get-count` started alongside `get-data`. */
-export function registerPrefetchedGridCount(service: string, prefetched: PrefetchedGridCount): void {
-  for (const [k, v] of prefetchedCounts) {
-    if (!untracked(v.isCurrent)) {
-      prefetchedCounts.delete(k);
-    }
-  }
-  prefetchedCounts.set(service.toLowerCase(), prefetched);
-}
-
-/** Consumes the prefetched `get-count` for `service` if one is current. */
-export function consumePrefetchedGridCount(service: string | null | undefined): PrefetchedGridCount | null {
-  if (!service) {
-    return null;
-  }
-  const key = service.toLowerCase();
-  const entry = prefetchedCounts.get(key) ?? null;
-  if (entry) {
-    prefetchedCounts.delete(key);
-  }
-  return entry && untracked(entry.isCurrent) ? entry : null;
-}
-
-/** One request of the counter: whether the grid it was asked for is still current, and an optional prefetched count. */
+/** One request of the counter: whether the grid it was asked for is still current. */
 interface CountRequest {
   readonly isCurrent: IsCurrent;
-  readonly prefetched?: PrefetchedGridCount | null;
 }
 
 /** What the row counter is given of its grid. */
@@ -64,8 +30,7 @@ export interface GridCountOptions {
  * The row counter of one grid: how many rows match its filters, named filters and search, asked apart from the page of
  * rows. A requested count forgets the total it held; its answer is adopted only while the request that asked it is the
  * last one and its capture is current. A page that carries an exact total is adopted without a request. When `resetBy`
- * changes the counter starts over from `totalAtStart`, adopting a prefetched parallel count when available or asking at
- * once when the opening page leaves the total open.
+ * changes the counter starts over from `totalAtStart`, asking at once only when the opening page leaves the total open.
  *
  * Created in a field of the grid service, so its request and its effect live in the service's injection context.
  * It knows nothing of the service: it is given its options.
@@ -85,7 +50,6 @@ export class GridCount {
         }
         return {
           isCurrent: this.options.capture(),
-          prefetched: consumePrefetchedGridCount(service),
         };
       }),
   });
@@ -93,7 +57,7 @@ export class GridCount {
   private readonly countLoader = httpResource<AnswerOf<GridServiceEndpoints, 'get-count'>>(() => {
     const request = this.request();
     const service = this.options.service();
-    if (!request || request.prefetched || !service || !this.options.isCounted() || !request.isCurrent()) {
+    if (!request || !service || !this.options.isCounted() || !request.isCurrent()) {
       return undefined;
     }
     return {
@@ -111,11 +75,7 @@ export class GridCount {
   >({
     source: () => {
       const request = this.request();
-      const total = request?.prefetched
-        ? request.prefetched.total()
-        : this.countLoader.hasValue()
-          ? this.countLoader.value()?.total
-          : undefined;
+      const total = this.countLoader.hasValue() ? this.countLoader.value()?.total : undefined;
       return {
         reset: this.options.resetBy(),
         request,
@@ -135,19 +95,15 @@ export class GridCount {
   });
   readonly countedTotal = this._countedTotal.asReadonly();
 
-  readonly isCountLoading = computed(() => this.request()?.prefetched?.isLoading() ?? this.countLoader.isLoading());
+  readonly isCountLoading = computed(() => this.countLoader.isLoading());
   readonly isCountPending = computed(() => this.isCountLoading() && this.countedTotal() === null);
   /** Whether the last count failed: the total is unknown until it is asked again. */
-  readonly isCountFailed = computed(
-    () =>
-      (this.request()?.prefetched ? this.request()!.prefetched!.isError() : this.countLoader.status() === 'error') &&
-      this.countedTotal() === null,
-  );
+  readonly isCountFailed = computed(() => this.countLoader.status() === 'error' && this.countedTotal() === null);
 
   private hadCountRequest = false;
   private readonly cancelObsoleteCount = effect(() => {
     const request = this.request();
-    const target = !!request && !request.prefetched && !!this.options.service() && this.options.isCounted() && request.isCurrent();
+    const target = !!request && !!this.options.service() && this.options.isCounted() && request.isCurrent();
     if (!target && this.hadCountRequest) {
       this.countLoader.set(undefined);
     }
@@ -156,13 +112,23 @@ export class GridCount {
 
   constructor(private readonly options: GridCountOptions) {}
 
+  /** Clears the held total and cancels any in-flight count request while waiting for page 1 to arrive. */
+  clear(): void {
+    this.request.set(null);
+    this._countedTotal.set(null);
+  }
+
   /** Asks the count again: the total held is forgotten until the answer to this request arrives. */
   requestCount(): void {
+    if (!this.options.isCounted()) {
+      return;
+    }
     this.request.set({ isCurrent: this.options.capture() });
   }
 
   /** A total that came with a page, adopted as the count. */
   adoptTotal(total: number): void {
+    this.request.set(null);
     this._countedTotal.set(total);
   }
 }

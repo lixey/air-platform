@@ -65,6 +65,12 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       base.Confirm(question);
       return this;
     }
+
+    public new Transition RequireRight(Right right)
+    {
+      base.RequireRight(right);
+      return this;
+    }
   }
 
   protected PlatformDbContext Db => db;
@@ -445,6 +451,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     {
       EnsureDeclared();
       return _publicTransitions
+        .Where(IsTransitionPermitted)
         .OrderBy(t =>
         {
           var idx = _statuses.FindIndex(s => s.Id == t.To);
@@ -461,6 +468,18 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         })
         .ToList();
     }
+  }
+
+  private bool IsTransitionPermitted(Transition<TEntity> transition)
+  {
+    if (transition.RequiredRight is not { } reqRight || User == null || !User.IsAuthenticated)
+    {
+      return true;
+    }
+
+    return User.Can(reqRight) ||
+           reqRight.Feature != null && User.Can(reqRight.Feature.All) ||
+           User.Can("*");
   }
 
   public string NameOf(long status) =>
@@ -514,6 +533,12 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     if (!_transitionsByName.TryGetValue(transitionName, out var transition))
     {
       throw new InvalidOperationException($"Transition '{transitionName}' is not declared in '{GetType().Name}'.");
+    }
+
+    if (!IsTransitionPermitted(transition))
+    {
+      context.AddError("status.permission", L["MutationRefused"]);
+      return;
     }
 
     await MoveInternalAsync(context, records, transition, input, transition.NoteOf(input), [], cancellationToken);

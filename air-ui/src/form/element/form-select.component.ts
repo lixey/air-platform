@@ -103,6 +103,12 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
             operator: 'equals',
             value: val,
           });
+        } else {
+          nodes.push({
+            kind: 'FilterRule',
+            field: rule.sourceField,
+            operator: 'isNull',
+          });
         }
       }
     }
@@ -221,9 +227,14 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
           }
         }
         const val = valueAt(row, patch.sourceColumn);
-        if (val !== undefined && val !== null) {
+        if (val !== undefined) {
           const targetEl = this.form.model()?.elements?.find(e => e.path === patch.targetField);
-          if (targetEl?.referencePath && typeof val === 'object' && 'id' in val) {
+          if (val === null) {
+            this.form.setValueAt(patch.targetField, null);
+            if (targetEl?.referencePath) {
+              this.form.setValueAt(targetEl.referencePath, null);
+            }
+          } else if (targetEl?.referencePath && typeof val === 'object' && 'id' in val) {
             const refVal = val as { id: number; name?: string };
             this.form.setValueAt(targetEl.path, refVal.id);
             this.form.setValueAt(targetEl.referencePath, { id: refVal.id, name: refVal.name ?? '' });
@@ -232,6 +243,7 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
           }
         }
       }
+      this.settled.set(untracked(this.dependencies));
     }
     if (this.element().savesOnChange && this.form.id() !== null && this.form.canSave()) {
       void this.form.save();

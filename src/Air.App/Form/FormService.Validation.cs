@@ -78,7 +78,8 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var acceptsInput = !el.IsDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
+      var isDisabledNow = IsElementDisabled(el, entity, input);
+      var acceptsInput = !isDisabledNow && !el.IsServerOwned && el.Model is not FormInfoModel;
       if (onlyAcceptingInput)
       {
         if (!acceptsInput)
@@ -107,7 +108,7 @@ public abstract partial class FormService<TEntity, TInput>
 
       var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
       var isFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || (efProp?.IsForeignKey() ?? false);
-      var isRequiredNow = el.IsRequired || el.RequiredWhenPredicate != null && (el.RequiredWhenPredicate(input) || el.RequiredWhenPredicate(entity));
+      var isRequiredNow = IsElementRequired(el, entity, input);
 
       if (isRequiredNow && !AnswersRequirement(val, isFk))
       {
@@ -313,6 +314,134 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
+  private static bool IsElementDisabled(FormElementDto el, TEntity? entity, object? input)
+  {
+    if (el.IsDisabled)
+    {
+      return true;
+    }
+
+    if (el.DisabledWhenPredicate != null)
+    {
+      return input != null && el.DisabledWhenPredicate(input) || entity != null && el.DisabledWhenPredicate(entity);
+    }
+
+    return el.DisabledWhen != null && EvaluateFilterNode(el.DisabledWhen, input, entity);
+  }
+
+  private static bool IsElementRequired(FormElementDto el, TEntity? entity, object? input)
+  {
+    if (el.IsRequired)
+    {
+      return true;
+    }
+
+    if (el.RequiredWhenPredicate != null)
+    {
+      return input != null && el.RequiredWhenPredicate(input) || entity != null && el.RequiredWhenPredicate(entity);
+    }
+
+    return el.RequiredWhen != null && EvaluateFilterNode(el.RequiredWhen, input, entity);
+  }
+
+  private static bool EvaluateFilterNode(FilterNode node, object? primary, object? fallback)
+  {
+    if (node is FilterGroup group)
+    {
+      if (group.Items.Count == 0)
+      {
+        return false;
+      }
+
+      return FilterLogic.IsOr(group.Logic)
+        ? group.Items.Any(i => EvaluateFilterNode(i, primary, fallback))
+        : group.Items.All(i => EvaluateFilterNode(i, primary, fallback));
+    }
+
+    if (node is not FilterRule rule || string.IsNullOrEmpty(rule.Field))
+    {
+      return false;
+    }
+
+    var val = primary != null && PropertyAccessorCache.GetProperty(primary.GetType(), rule.Field) != null
+      ? PropertyAccessorCache.GetValue(primary, rule.Field)
+      : fallback != null
+        ? PropertyAccessorCache.GetValue(fallback, rule.Field)
+        : null;
+
+    var op = rule.Operator;
+    if (string.Equals(op, FilterOperator.IsNull, StringComparison.OrdinalIgnoreCase))
+    {
+      return val is null || val is string s && string.IsNullOrEmpty(s);
+    }
+
+    if (string.Equals(op, FilterOperator.IsNotNull, StringComparison.OrdinalIgnoreCase))
+    {
+      return val is not null && (val is not string s || !string.IsNullOrEmpty(s));
+    }
+
+    if (string.Equals(op, FilterOperator.In, StringComparison.OrdinalIgnoreCase))
+    {
+      return rule.Value is IEnumerable seq && seq is not string && seq.Cast<object?>().Any(x => CompareFilterValues(val, x) == 0);
+    }
+
+    if (string.Equals(op, FilterOperator.NotIn, StringComparison.OrdinalIgnoreCase))
+    {
+      return rule.Value is not IEnumerable seq || seq is string || !seq.Cast<object?>().Any(x => CompareFilterValues(val, x) == 0);
+    }
+
+    var cmp = CompareFilterValues(val, rule.Value);
+    return op switch
+    {
+      FilterOperator.Equals => cmp == 0,
+      FilterOperator.NotEquals => cmp != 0,
+      FilterOperator.GreaterThan => cmp is > 0,
+      FilterOperator.GreaterThanOrEqual => cmp is >= 0,
+      FilterOperator.LessThan => cmp is < 0,
+      FilterOperator.LessThanOrEqual => cmp is <= 0,
+      _ => false
+    };
+  }
+
+  private static int? CompareFilterValues(object? left, object? right)
+  {
+    if (right is JsonElement je)
+    {
+      right = je.ValueKind switch
+      {
+        JsonValueKind.Null or JsonValueKind.Undefined => null,
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Number when je.TryGetInt64(out var l) => l,
+        JsonValueKind.Number when je.TryGetDecimal(out var d) => d,
+        JsonValueKind.String => je.GetString(),
+        _ => je.ToString()
+      };
+    }
+
+    if (left is null && right is null)
+    {
+      return 0;
+    }
+
+    if (left is null || right is null)
+    {
+      return null;
+    }
+
+    if (TryConvertToDecimal(left, out var leftDec) && TryConvertToDecimal(right, out var rightDec))
+    {
+      return leftDec.CompareTo(rightDec);
+    }
+
+    if (left is bool lb && right is bool rb)
+    {
+      return lb.CompareTo(rb);
+    }
+
+    return string.Compare(left.ToString(), right.ToString(), StringComparison.OrdinalIgnoreCase);
+  }
+
   private static bool AnswersRequirement(object? value, bool foreignKey) => value switch
   {
     null => false,
@@ -459,7 +588,7 @@ public abstract partial class FormService<TEntity, TInput>
     foreach (var el in elements.List)
     {
       if (el.ValueKind != FormValueKind.Reference && el.ValueKind != FormValueKind.List ||
-          el.IsDisabled ||
+          IsElementDisabled(el, entity, input) ||
           el.IsServerOwned ||
           string.IsNullOrEmpty(el.Path))
       {

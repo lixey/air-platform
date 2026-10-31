@@ -252,6 +252,19 @@ public static class AgentProposalExecutor
               }
             }
 
+            if (isEdit && !isAppendLines && childGrid != null && existingLineIds.Count > 0)
+            {
+              var delRes = await childGrid.DeleteAsync(new GridRequest
+              {
+                ParentId = recordId,
+                SelectedIds = existingLineIds
+              }, mutationCt);
+              if (delRes.Outcome != MutationOutcome.Committed)
+              {
+                throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
+              }
+            }
+
             IReadOnlyList<FormElementDto> childElements = [];
             if (ModuleCatalog.Instance.CreateServiceInstance(childFormType, db, app) is IFormService metaChildForm)
             {
@@ -299,19 +312,6 @@ public static class AgentProposalExecutor
                   var lineName = lineDict.TryGetValue("name", out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
                   throw new InvalidOperationException(FormatRefusedException(refusedEx, childElements, lineName), refusedEx);
                 }
-              }
-            }
-
-            if (isEdit && !isAppendLines && childGrid != null && existingLineIds.Count > 0)
-            {
-              var delRes = await childGrid.DeleteAsync(new GridRequest
-              {
-                ParentId = recordId,
-                SelectedIds = existingLineIds
-              }, mutationCt);
-              if (delRes.Outcome != MutationOutcome.Committed)
-              {
-                throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
               }
             }
           }

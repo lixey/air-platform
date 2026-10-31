@@ -238,4 +238,50 @@ public sealed class FormAndGridMutationTests : IDisposable
     Assert.True(map[inv2.Id].ContainsKey("Approve"));
     Assert.False(map[inv2.Id].ContainsKey("Archive"));
   }
+
+  [Fact]
+  public async Task DisabledWhen_TransitionRequireRight_AndSingleQuerySum_AreEnforcedServerSide()
+  {
+    await using var db = CreateDbContext();
+    var fullApp = new TestPlatformAppService(db, new FixedUser(10, "*"));
+
+    var inv = new TestInvoice { Number = "INV-700", Status = 1 };
+    db.Invoices.Add(inv);
+    await db.SaveChangesAsync();
+
+    db.InvoiceLines.AddRange(
+      new TestInvoiceLine { InvoiceId = inv.Id, Title = "L1", Amount = 12.5m },
+      new TestInvoiceLine { InvoiceId = inv.Id, Title = "L2", Amount = 27.5m });
+    await db.SaveChangesAsync();
+
+    var lineGrid = new TestInvoiceLineGridService(db, fullApp);
+    var page = await lineGrid.GetDataAsync(new GridRequest { ParentId = inv.Id, IsDataOnly = true }, CancellationToken.None);
+    Assert.NotNull(page.BottomRows);
+    var sumRow = Assert.Single(page.BottomRows) as IDictionary<string, object?>;
+    Assert.NotNull(sumRow);
+    Assert.Equal(40.0m, Convert.ToDecimal(sumRow["amount"]));
+
+    var editOnlyApp = new TestPlatformAppService(db, new FixedUser(10, "Test.Invoices.Edit"));
+    var editOnlyForm = new TestInvoiceFormService(db, editOnlyApp);
+    var moveDenied = await editOnlyForm.MoveStatusAsync(inv.Id, "Approve", null, inv.Ver, CancellationToken.None);
+    Assert.Equal(MutationOutcome.Refused, moveDenied.Outcome);
+
+    var fullForm = new TestInvoiceFormService(db, fullApp);
+    var moveOk = await fullForm.MoveStatusAsync(inv.Id, "Approve", null, inv.Ver, CancellationToken.None);
+    Assert.Equal(MutationOutcome.Committed, moveOk.Outcome);
+
+    var approvedInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == inv.Id);
+    Assert.Equal(2, approvedInv.Status);
+
+    var tamperNumberJson = JsonSerializer.SerializeToElement(new { number = "TAMPERED-WHEN-APPROVED" });
+    await fullForm.SaveAsync(tamperNumberJson, new FormRequest
+    {
+      Id = approvedInv.Id,
+      Ver = approvedInv.Ver,
+      Value = tamperNumberJson
+    }, CancellationToken.None);
+
+    var afterTamper = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == inv.Id);
+    Assert.Equal("INV-700", afterTamper.Number);
+  }
 }

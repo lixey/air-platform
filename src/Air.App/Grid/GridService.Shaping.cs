@@ -274,13 +274,26 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private static async IAsyncEnumerable<object> ToAsyncEnumerable(IEnumerable<object> source)
+  private async IAsyncEnumerable<object> ShapeComputedStreamAsync(
+    IAsyncEnumerable<TRow> source,
+    Func<IReadOnlyList<TRow>, CancellationToken, Task> computeAction,
+    IReadOnlyList<GridColumnDto> columns,
+    [EnumeratorCancellation] CancellationToken ct)
   {
-    foreach (var item in source)
+    var rows = new List<TRow>();
+    await foreach (var item in source.WithCancellation(ct))
     {
-      yield return item;
+      rows.Add(item);
     }
 
-    await Task.CompletedTask;
+    for (var i = 0; i < rows.Count; i += 500)
+    {
+      var batch = rows.GetRange(i, Math.Min(500, rows.Count - i));
+      await computeAction(batch, ct);
+      foreach (var row in batch)
+      {
+        yield return ShapeRow(row, columns);
+      }
+    }
   }
 }

@@ -33,23 +33,15 @@ internal static class ParentScopeValidator
       return (false, null);
     }
 
-    var parentServiceType = (!string.IsNullOrEmpty(requestParentService)
-      ? ModuleCatalog.Instance.FindServiceType(requestParentService)
-      : null) ?? boundParentServiceType;
+    var parentServiceType = boundParentServiceType
+      ?? (!string.IsNullOrEmpty(requestParentService)
+        ? ModuleCatalog.Instance.FindServiceType(requestParentService)
+        : null);
     var parentEntityType = ModuleCatalog.GetServiceEntityType(parentServiceType) ?? boundParentEntityType;
 
     if (lockParent && parentEntityType != null)
     {
       await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
-      var trackedEntry = db.ChangeTracker.Entries()
-        .FirstOrDefault(e => parentEntityType.IsInstanceOfType(e.Entity) &&
-                             e.Entity is IEntity ent &&
-                             ent.Id == parentId.Value &&
-                             e.State == EntityState.Unchanged);
-      if (trackedEntry != null)
-      {
-        await trackedEntry.ReloadAsync(ct);
-      }
     }
 
     if (parentServiceType != null &&

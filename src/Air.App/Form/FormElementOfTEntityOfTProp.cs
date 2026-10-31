@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Form;
 
 public class FormElement<TEntity, TProp>(FormElementDto dto)
@@ -62,6 +64,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> DisabledWhen(Expression<Func<TEntity, bool>> predicate)
   {
     dto.DisabledWhen = TranslateFilterNode(predicate.Body);
+    var compiled = predicate.Compile();
+    dto.DisabledWhenPredicate = obj => obj is TEntity typed && compiled(typed);
     return this;
   }
   public FormElement<TEntity, TProp> RequiredWhen(FilterNode condition)
@@ -382,6 +386,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     }
 
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
+    ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     dto.Model = new FormSelectModel
     {
       ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
@@ -412,6 +417,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
       labelPaths = ["name"];
     }
 
+    ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), labelPaths);
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
     dto.Model = new FormSelectModel
     {
@@ -435,6 +441,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
     dto.ReferenceServiceType = typeof(TGridService);
+    ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     dto.ReferencePath ??= dto.Path.EndsWith("Ids", StringComparison.Ordinal)
       ? dto.Path[..^3] + "s"
       : (dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path + "Refs");

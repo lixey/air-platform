@@ -148,4 +148,54 @@ public sealed class PlatformDataTests : IDisposable
     Assert.Equal(2, withArchived.Count);
     Assert.All(withArchived, o => Assert.Equal(1, o.TenantId));
   }
+
+  [Fact]
+  public async Task TextMatch_PreservesPercentLiteral_AndRevertedMultiFlushSkipsPhantomJournalRow()
+  {
+    await using var db = CreateDbContext();
+
+    var order1 = new TestOrder { Name = "Discount 50%", Amount = 100m };
+    var order2 = new TestOrder { Name = "Discount 500", Amount = 200m };
+    using (db.BeginMutationRun())
+    {
+      db.Orders.AddRange(order1, order2);
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    var map = QueryMap.FromEntity<TestOrder>().Build();
+    var caseInsensitiveQuery = map.Plan(new ListRequest { Search = "discount 50%" }).Filter(db.Orders);
+    var matchedCi = await caseInsensitiveQuery.ToListAsync();
+    Assert.Single(matchedCi);
+    Assert.Equal(order1.Id, matchedCi[0].Id);
+
+    QueryMap.UseCollationComparison = true;
+    try
+    {
+      var queryWithPercent = map.Plan(new ListRequest { Search = "50%" }).Filter(db.Orders);
+      Assert.DoesNotContain("ToLower", queryWithPercent.Expression.ToString(), StringComparison.OrdinalIgnoreCase);
+      var matched = await queryWithPercent.ToListAsync();
+      Assert.Single(matched);
+      Assert.Equal(order1.Id, matched[0].Id);
+    }
+    finally
+    {
+      QueryMap.UseCollationComparison = false;
+    }
+
+    Guid revertRunId;
+    using (db.BeginMutationRun())
+    {
+      revertRunId = db.CurrentMutationRunId!.Value;
+      order1.Amount = 999m;
+      await db.SaveChangesAsync();
+
+      order1.Amount = 100m;
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    var revertChanges = await db.AppPlatformChange.Where(c => c.RunId == revertRunId).ToListAsync();
+    Assert.Empty(revertChanges);
+  }
 }

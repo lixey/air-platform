@@ -22,12 +22,11 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     var parent = GetParent();
+    TEntity? actionEntity = null;
 
-    return await db.RunMutationAsync(async mutationCt =>
+    var result = await db.RunMutationAsync(async mutationCt =>
     {
-      await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[request.Id.Value]], mutationCt);
-      var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == request.Id.Value, mutationCt)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      var entity = await LockAndLoadExistingAsync(request.Id.Value, parent, mutationCt);
 
       if (entity is IHasVersion versioned)
       {
@@ -40,9 +39,6 @@ public abstract partial class FormService<TEntity, TInput>
           };
         }
       }
-
-      RestoreBoundParentId(entity, parent);
-      await EnsureParentScopeAsync(parent, lockParent: true, mutationCt);
 
       var nav = new Nav(Service, L);
       await SetNavAsync(nav, mutationCt);
@@ -57,6 +53,22 @@ public abstract partial class FormService<TEntity, TInput>
           Outcome = MutationOutcome.Refused,
           Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
         };
+      }
+
+      if (navEntry?.Ask != null)
+      {
+        var askInput = request.GetType() != typeof(FormRequest)
+          ? request
+          : navEntry.Ask.Read(request.Value);
+        var askFailures = navEntry.Ask.Validate(askInput, L);
+        if (askFailures.Count > 0)
+        {
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = [.. askFailures]
+          };
+        }
       }
 
       if (navEntry is { Offers.Count: > 0 })
@@ -94,6 +106,7 @@ public abstract partial class FormService<TEntity, TInput>
         await db.SaveChangesAsync(mutationCt);
       }
 
+      actionEntity = entity;
       if (PlatformApp != null)
       {
         await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, mutationCt);
@@ -107,6 +120,13 @@ public abstract partial class FormService<TEntity, TInput>
         Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
       };
     }, ct: cancellationToken);
+
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && actionEntity != null)
+    {
+      await PlatformApp.ClearAuthCacheForEntityAsync(actionEntity, db, cancellationToken);
+    }
+
+    return result;
   }
 
   public virtual async Task<FormActionDto> MoveStatusAsync(
@@ -129,18 +149,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     return await db.RunMutationAsync(async mutationCt =>
     {
-      await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id]], mutationCt);
-      var trackedExisting = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id);
-      if (trackedExisting != null && db.Entry(trackedExisting).State == EntityState.Unchanged)
-      {
-        await db.Entry(trackedExisting).ReloadAsync(mutationCt);
-      }
-
-      var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, mutationCt)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
-
-      RestoreBoundParentId(entity, parent);
-      await EnsureParentScopeAsync(parent, lockParent: true, mutationCt);
+      var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
 
       CurrentEntity = entity;
       var elements = new Elements();
@@ -175,10 +184,10 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       var transition = statusFlow.Transitions.FirstOrDefault(t =>
-        string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase))
-        ?? throw new InvalidOperationException($"Transition '{transitionName}' not found in '{statusFlow.GetType().Name}'.");
+        string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
 
-      if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+      if (transition == null ||
+          User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
       {
         return new FormActionDto
         {

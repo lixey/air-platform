@@ -19,6 +19,7 @@ public class Transition<TEntity>
   public long To { get; }
   public string? Question { get; private set; }
   public RecordAsk? Asked { get; private set; }
+  public Right? RequiredRight { get; private set; }
   public IReadOnlyList<RecordAvailability> Availability => _availability;
   public IReadOnlyList<(Func<Move<TEntity>, CancellationToken, Task<bool>> Passes, string Refusal, string? Path)> Guards => _guards;
   public IReadOnlyList<Func<Move<TEntity>, CancellationToken, Task>> Effects => _effects;
@@ -66,6 +67,13 @@ public class Transition<TEntity>
   public Transition<TEntity> Confirm(string question)
   {
     Question = question;
+    return this;
+  }
+
+  public Transition<TEntity> RequireRight(Right right)
+  {
+    ArgumentNullException.ThrowIfNull(right);
+    RequiredRight = right;
     return this;
   }
 }

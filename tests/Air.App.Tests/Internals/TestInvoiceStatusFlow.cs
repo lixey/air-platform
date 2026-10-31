@@ -10,5 +10,5 @@ internal sealed class TestInvoiceStatusFlow(AppTestDbContext db) : StatusFlowSer
     flow.Initial(1);
   }
 
-  public Transition Approve => From(1).To(2);
+  public Transition Approve => From(1).To(2).RequireRight(TestAppModule.ApproveInvoice);
 }

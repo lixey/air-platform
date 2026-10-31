@@ -14,7 +14,7 @@ internal sealed class TestInvoiceLineGridService(AppTestDbContext db, PlatformAp
   {
     columns.UseForm<TestInvoiceLineFormService>();
     columns.Add(l => l.Title);
-    columns.Add(l => l.Amount);
+    columns.Add(l => l.Amount).Sum();
   }
 
   public Task<GridActionDto> AttachTag(GridPickRequest req, CancellationToken ct = default) =>

@@ -40,7 +40,7 @@ internal static class AuthEndpointsExtensions
           Name = snapshot.Name,
           Email = snapshot.Email,
           Language = IsUkrainian(ctx.Request) ? "uk" : "en",
-          TimeZone = snapshot.TimeZone,
+          TimeZone = !string.IsNullOrEmpty(snapshot.TimeZone) ? snapshot.TimeZone : "UTC",
           MustChangePassword = snapshot.MustChangePassword,
           Permissions = snapshot.Permissions.ToList()
         });
@@ -111,8 +111,8 @@ internal static class AuthEndpointsExtensions
       );
       await authStore.SaveChangesAsync(ct);
 
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
-      IssueRefreshCookie(ctx.Response, refreshToken, now.AddDays(30));
+      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
+      IssueRefreshCookie(ctx.Response, refreshToken, now.AddDays(30), ctx.Request.IsHttps);
 
       return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
     });
@@ -175,8 +175,13 @@ internal static class AuthEndpointsExtensions
         }
 
         var now = DateTimeOffset.UtcNow;
-        var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
         var session = userContext.SessionId is { } sid ? await authStore.FindSessionAsync(sid, ct) : null;
+        SecurityInfo securityInfo;
+        using (AsyncLocalTenantContext.Use(session?.TenantId ?? (user as IHasTenant)?.TenantId, null, user.Id))
+        {
+          securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+        }
+
         string? newRefreshToken = null;
 
         if (session != null)
@@ -200,10 +205,10 @@ internal static class AuthEndpointsExtensions
           await authStore.SaveChangesAsync(ct);
         }
 
-        IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
+        IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
         if (newRefreshToken != null)
         {
-          IssueRefreshCookie(ctx.Response, newRefreshToken, now.AddDays(30));
+          IssueRefreshCookie(ctx.Response, newRefreshToken, now.AddDays(30), ctx.Request.IsHttps);
         }
 
         return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
@@ -275,7 +280,7 @@ internal static class AuthEndpointsExtensions
         session.RotatedAt = now;
         session.LastUsedAt = now;
         await authStore.SaveChangesAsync(ct);
-        IssueRefreshCookie(ctx.Response, nextRefresh, session.ExpiresAt);
+        IssueRefreshCookie(ctx.Response, nextRefresh, session.ExpiresAt, ctx.Request.IsHttps);
       }
 
       if (authCache != null)
@@ -283,33 +288,45 @@ internal static class AuthEndpointsExtensions
         await authCache.RemoveSessionAsync(session.Id, ct);
       }
 
-      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
+      SecurityInfo securityInfo;
+      using (AsyncLocalTenantContext.Use(session.TenantId ?? (user as IHasTenant)?.TenantId, null, user.Id))
+      {
+        securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      }
+
+      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
 
       return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
     });
 
     api.MapPost("/auth/logout", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
+      BaseAppAuthSession? session = null;
       if (userContext.SessionId is { } sid)
       {
-        var session = await authStore.FindSessionAsync(sid, ct);
-        if (session != null)
-        {
-          session.RevokedAt = DateTimeOffset.UtcNow;
-          session.RevokedReason = "self";
-          await authStore.SaveChangesAsync(ct);
-        }
+        session = await authStore.FindSessionAsync(sid, ct);
+      }
+      else if (ctx.Request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var refreshCookie) &&
+               !string.IsNullOrWhiteSpace(refreshCookie))
+      {
+        session = await authStore.FindSessionByHashAsync(SessionTokenService.HashRefreshToken(refreshCookie), ct);
+      }
+
+      if (session != null)
+      {
+        session.RevokedAt = DateTimeOffset.UtcNow;
+        session.RevokedReason = "self";
+        await authStore.SaveChangesAsync(ct);
 
         var authCache = ctx.RequestServices.GetService<IUserAuthCache>();
         if (authCache != null)
         {
-          await authCache.RemoveSessionAsync(sid, ct);
+          await authCache.RemoveSessionAsync(session.Id, ct);
         }
       }
 
-      ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions { Path = "/", SameSite = SameSiteMode.Lax, HttpOnly = true });
-      ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions { Path = "/api/auth", SameSite = SameSiteMode.Lax, HttpOnly = true });
+      ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions { Path = "/", SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = ctx.Request.IsHttps });
+      ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions { Path = "/api/auth", SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = ctx.Request.IsHttps });
 
       return Results.Ok(new { });
     });
@@ -440,7 +457,7 @@ internal static class AuthEndpointsExtensions
     return null;
   }
 
-  private static void IssueAccessCookie(HttpResponse response, long sessionId, long userId, DateTimeOffset expires, int tokenVersion = 1)
+  private static void IssueAccessCookie(HttpResponse response, long sessionId, long userId, DateTimeOffset expires, int tokenVersion = 1, bool isSecure = false)
   {
     var accessToken = SessionTokenService.CreateAccessToken(sessionId, userId, expires, tokenVersion);
     response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
@@ -448,18 +465,20 @@ internal static class AuthEndpointsExtensions
       Path = "/",
       Expires = expires,
       SameSite = SameSiteMode.Lax,
-      HttpOnly = true
+      HttpOnly = true,
+      Secure = isSecure
     });
   }
 
-  private static void IssueRefreshCookie(HttpResponse response, string refreshToken, DateTimeOffset expires)
+  private static void IssueRefreshCookie(HttpResponse response, string refreshToken, DateTimeOffset expires, bool isSecure = false)
   {
     response.Cookies.Append(AuthClaims.RefreshCookie, refreshToken, new CookieOptions
     {
       Path = "/api/auth",
       Expires = expires,
       SameSite = SameSiteMode.Lax,
-      HttpOnly = true
+      HttpOnly = true,
+      Secure = isSecure
     });
   }
 

@@ -77,7 +77,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
           user.Login,
           user.Name ?? user.Login,
           user.Email ?? string.Empty,
-          user.TimeZone ?? "UTC",
+          user.TimeZone ?? string.Empty,
           user.IsActive,
           user.IsRoot,
           user.TokenVersion,

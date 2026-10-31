@@ -37,6 +37,11 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
 
   public string Language => CultureInfo.CurrentUICulture.Name;
 
+  public string TimeZone =>
+    Snapshot?.TimeZone is { Length: > 0 } tz
+      ? tz
+      : (httpContextAccessor.HttpContext?.Request.Headers[AuthClaims.TimeZoneHeader].FirstOrDefault() ?? "UTC");
+
   public IReadOnlySet<string> Permissions =>
     field ??= Snapshot?.PermissionSet
       ?? (httpContextAccessor.HttpContext == null && AsyncLocalTenantContext.Instance.Rights is { } ambient

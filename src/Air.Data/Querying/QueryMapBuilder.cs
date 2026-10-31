@@ -100,13 +100,13 @@ public sealed class QueryMapBuilder<TEntity> where TEntity : class
   internal QueryMapBuilder<TEntity> AddSelector<TRow>(Expression<Func<TEntity, TRow>> selector) =>
     DeclareAll(InferredFields.FromSelector(selector));
 
-  public QueryMapBuilder<TEntity> AddEntityProperties()
+  public QueryMapBuilder<TEntity> AddEntityProperties(bool searchable = true)
   {
     foreach (var (name, expression) in InferredFields.FromEntity<TEntity>())
     {
       if (FindExpression(name) is null)
       {
-        Declare(name, expression, null);
+        Declare(name, expression, searchable ? null : f => f.Searchable(false));
       }
     }
 

@@ -173,6 +173,9 @@ export class GridNavPickerComponent {
    */
   protected onKeydown(event: KeyboardEvent): void {
     if (!this.menu.isOpen()) {
+      if (event.key === 'Enter' && this.box()?.flush()) {
+        event.preventDefault();
+      }
       return;
     }
     switch (event.key) {
@@ -183,6 +186,9 @@ export class GridNavPickerComponent {
         this.select.moveActive(-1);
         break;
       case 'Enter':
+        if (this.box()?.flush() || this.select.isLoading()) {
+          break;
+        }
         this.select.pickActive();
         break;
       case 'Escape':

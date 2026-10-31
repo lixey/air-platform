@@ -15,7 +15,13 @@ public static class MutationRunner
     if (db.IsInMutationRun)
     {
       using var nested = db.BeginMutationRun();
-      return await action(ct);
+      var nestedResult = await action(ct);
+      if (nestedResult is MutationResultDto { Outcome: not null and not MutationOutcome.Committed })
+      {
+        db.MarkMutationRollbackOnly();
+      }
+
+      return nestedResult;
     }
 
     return await MutationExecutionStrategy.RunAsync(db, async token =>
@@ -28,7 +34,8 @@ public static class MutationRunner
       try
       {
         var result = await action(token);
-        if (result is MutationResultDto { Outcome: not null and not MutationOutcome.Committed })
+        var wasRollbackOnly = db.IsMutationRollbackOnly;
+        if (wasRollbackOnly || result is MutationResultDto { Outcome: not null and not MutationOutcome.Committed })
         {
           if (tx != null)
           {
@@ -36,6 +43,22 @@ public static class MutationRunner
           }
 
           db.ResetMutationState();
+          if (wasRollbackOnly)
+          {
+            if (result is MutationResultDto { Outcome: null or MutationOutcome.Committed } dto)
+            {
+              dto.Outcome = MutationOutcome.Refused;
+            }
+            else if (result is MutationOutcome.Committed)
+            {
+              return (TResult)(object)MutationOutcome.Refused;
+            }
+            else if (result is not MutationResultDto and not string)
+            {
+              throw new InvalidOperationException("Nested mutation was marked rollback-only.");
+            }
+          }
+
           return result;
         }
 
@@ -88,6 +111,7 @@ public static class MutationRunner
     string rawPayload,
     Func<CancellationToken, Task<TResult>> executeCreate,
     Func<long, CancellationToken, Task<TResult?>>? reloadById = null,
+    Func<TResult, long?>? extractId = null,
     CancellationToken ct = default)
     where TResult : class
   {
@@ -102,31 +126,32 @@ public static class MutationRunner
     var payloadHash = IdempotencyStore.ComputePayloadHash(rawPayload);
 
     using var keyLock = await IdempotencyStore.AcquireLockAsync(tenantId, userId, trimmedKey, ct);
-    if (IdempotencyStore.TryGetCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, out var recordId, out var resultJson))
+    if (IdempotencyStore.TryGetCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, out var recordId))
     {
-      if (recordId is > 0 && reloadById != null)
+      if (recordId > 0 && reloadById != null)
       {
-        var reloaded = await reloadById(recordId.Value, ct);
+        var reloaded = await reloadById(recordId, ct);
         if (reloaded != null)
         {
           return reloaded;
         }
       }
-
-      if (!string.IsNullOrEmpty(resultJson))
-      {
-        var deserialized = JsonSerializer.Deserialize<TResult>(resultJson, PlatformJsonOptions.DefaultOptions);
-        if (deserialized != null)
-        {
-          return deserialized;
-        }
-      }
     }
 
     var created = await RunAsync(db, executeCreate, ct);
-    var createdId = (created as IEntity)?.Id;
-    var serialized = created is IEntity ? null : JsonSerializer.Serialize(created, PlatformJsonOptions.DefaultOptions);
-    IdempotencyStore.SaveCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, createdId is > 0 ? createdId : null, serialized);
+    if (created is MutationResultDto { Outcome: not null and not MutationOutcome.Committed })
+    {
+      return created;
+    }
+
+    var createdId = extractId != null
+      ? extractId(created)
+      : (created as IEntity)?.Id;
+    if (createdId is > 0)
+    {
+      IdempotencyStore.SaveCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, createdId.Value);
+    }
+
     return created;
   }
 }

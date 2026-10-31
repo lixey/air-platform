@@ -30,7 +30,7 @@ public static class GrantedRights
     }
 
     var isGlobal = activeRoles.Any(r => r.TenantId == null);
-    var homeTenantId = activeRoles.FirstOrDefault(r => r.TenantId != null)?.TenantId;
+    var homeTenantId = activeRoles.Where(r => r.TenantId != null).OrderBy(r => r.TenantId).FirstOrDefault()?.TenantId;
     var allowedTenantIds = activeRoles
       .Where(r => r.TenantId != null)
       .Select(r => r.TenantId!.Value)

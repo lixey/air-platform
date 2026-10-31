@@ -2,6 +2,8 @@ namespace Platform.Data.Querying;
 
 public static class QueryMap
 {
+  public static bool UseCollationComparison { get; set; }
+
   public static QueryMapBuilder<TEntity> For<TEntity>() where TEntity : class => new();
 
   public static QueryMapBuilder<TEntity> FromSelector<TEntity, TRow>(Expression<Func<TEntity, TRow>> selector)

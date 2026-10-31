@@ -187,74 +187,96 @@ public abstract partial class FileGridService<TFile>
       }
 
       string? thumbKey = null;
-      var thumbFile = files["thumbnail"];
-      if (thumbFile != null && thumbFile.Length > 0 && thumbFile.Length <= FileTypeTable.ThumbnailMaxBytes)
+      try
       {
-        thumbKey = FileKeys.New();
-        await using var thumbStream = thumbFile.OpenReadStream();
-        await storage.WriteAsync(thumbKey, thumbStream, mutationCt);
-      }
-
-      var entity = new TFile
-      {
-        Name = cleanedName,
-        ContentType = normalizedType,
-        Size = file.Length,
-        StorageKey = storageKey,
-        ThumbnailKey = thumbKey,
-        Store = storeKey,
-        Sha256 = sha256,
-        Metadata = normalizedMetadata,
-        UploadedById = User?.UserId,
-        CreatedAt = DateTimeOffset.UtcNow,
-        SortOrder = 0
-      };
-
-      if (parentId.HasValue && parent.BoundProperty != null && siblings != null)
-      {
-        if (parent.BoundProperty.PropertyType == typeof(long))
+        var thumbFile = files["thumbnail"];
+        if (thumbFile != null && thumbFile.Length > 0 && thumbFile.Length <= FileTypeTable.ThumbnailMaxBytes)
         {
-          parent.BoundProperty.SetValue(entity, parentId.Value);
-        }
-        else if (parent.BoundProperty.PropertyType == typeof(long?))
-        {
-          parent.BoundProperty.SetValue(entity, (long?)parentId.Value);
+          thumbKey = FileKeys.New();
+          await using var thumbStream = thumbFile.OpenReadStream();
+          await storage.WriteAsync(thumbKey, thumbStream, mutationCt);
         }
 
-        var place = request.AfterId is { } afterId && siblings.FindIndex(f => f.Id == afterId) is >= 0 and var idx
-          ? idx + 1
-          : siblings.Count;
-
-        if (Between(place > 0 ? siblings[place - 1].SortOrder : null, place < siblings.Count ? siblings[place].SortOrder : null) is { } order)
+        var entity = new TFile
         {
-          entity.SortOrder = order;
-        }
-        else
+          Name = cleanedName,
+          ContentType = normalizedType,
+          Size = file.Length,
+          StorageKey = storageKey,
+          ThumbnailKey = thumbKey,
+          Store = storeKey,
+          Sha256 = sha256,
+          Metadata = normalizedMetadata,
+          UploadedById = User?.UserId,
+          CreatedAt = DateTimeOffset.UtcNow,
+          SortOrder = 0
+        };
+
+        if (parentId.HasValue && parent.BoundProperty != null && siblings != null)
         {
-          siblings.Insert(place, entity);
-          Renumber(siblings);
+          if (parent.BoundProperty.PropertyType == typeof(long))
+          {
+            parent.BoundProperty.SetValue(entity, parentId.Value);
+          }
+          else if (parent.BoundProperty.PropertyType == typeof(long?))
+          {
+            parent.BoundProperty.SetValue(entity, (long?)parentId.Value);
+          }
+
+          var place = request.AfterId is { } afterId && siblings.FindIndex(f => f.Id == afterId) is >= 0 and var idx
+            ? idx + 1
+            : siblings.Count;
+
+          if (Between(place > 0 ? siblings[place - 1].SortOrder : null, place < siblings.Count ? siblings[place].SortOrder : null) is { } order)
+          {
+            entity.SortOrder = order;
+          }
+          else
+          {
+            siblings.Insert(place, entity);
+            Renumber(siblings);
+          }
+
+          if (entity is IHasCoverFile coverFile && rules.Cover == FileCover.Auto)
+          {
+            coverFile.IsCover = !siblings.OfType<IHasCoverFile>().Any(s => !ReferenceEquals(s, entity) && s.IsCover);
+          }
         }
 
-        if (entity is IHasCoverFile coverFile && rules.Cover == FileCover.Auto)
-        {
-          coverFile.IsCover = !siblings.OfType<IHasCoverFile>().Any(s => !ReferenceEquals(s, entity) && s.IsCover);
-        }
-      }
-
-      await db.Set<TFile>().AddAsync(entity, mutationCt);
-      await db.SaveChangesAsync(mutationCt);
-
-      await AfterUploadAsync(entity, fileBytes, mutationCt);
-      if (db.ChangeTracker.HasChanges())
-      {
+        await db.Set<TFile>().AddAsync(entity, mutationCt);
         await db.SaveChangesAsync(mutationCt);
-      }
 
-      return new GridActionDto
+        await AfterUploadAsync(entity, fileBytes, mutationCt);
+        if (db.ChangeTracker.HasChanges())
+        {
+          await db.SaveChangesAsync(mutationCt);
+        }
+
+        return new GridActionDto
+        {
+          Outcome = MutationOutcome.Committed,
+          Id = entity.Id
+        };
+      }
+      catch
       {
-        Outcome = MutationOutcome.Committed,
-        Id = entity.Id
-      };
+        try
+        {
+          await storage.DeleteAsync(storageKey, CancellationToken.None);
+        }
+        catch { }
+
+        if (thumbKey != null)
+        {
+          try
+          {
+            await storage.DeleteAsync(thumbKey, CancellationToken.None);
+          }
+          catch { }
+        }
+
+        throw;
+      }
     }, ct: cancellationToken);
   }
 

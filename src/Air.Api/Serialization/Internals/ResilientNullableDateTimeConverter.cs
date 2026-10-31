@@ -19,11 +19,11 @@ internal sealed class ResilientNullableDateTimeConverter : JsonConverter<DateTim
 
       if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var dt))
       {
-        return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
       }
     }
 
-    return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Utc);
+    return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Unspecified);
   }
   public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
   {
@@ -33,7 +33,7 @@ internal sealed class ResilientNullableDateTimeConverter : JsonConverter<DateTim
     }
     else
     {
-      writer.WriteStringValue(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc).ToString("o"));
+      writer.WriteStringValue(DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
     }
   }
 }

@@ -232,10 +232,10 @@ public static class AgentEndpointsExtensions
 
     group.MapPost("/reset", (AgentResetRequest req, HttpContext ctx, AgentStore store) =>
     {
-      if (!string.IsNullOrWhiteSpace(req.SessionId))
+      if (AgentStore.IsValidSessionId(req.SessionId))
       {
         var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-        store.ResetSession(req.SessionId, owner);
+        store.ResetSession(req.SessionId!, owner);
       }
 
       return Results.Ok(new { ok = true });
@@ -301,10 +301,14 @@ public static class AgentEndpointsExtensions
       CultureInfo.CurrentCulture = culture;
       CultureInfo.CurrentUICulture = culture;
 
+      if (!string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))
+      {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+      }
+
       var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      var sessionId = string.IsNullOrWhiteSpace(body.SessionId)
-        ? Guid.NewGuid().ToString("N")[..12]
-        : body.SessionId;
+      var sessionId = AgentStore.NormalizeSessionId(body.SessionId);
 
       var enabledProviders = providers
         .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))

@@ -62,6 +62,27 @@ public sealed class AgentStore
   private static string SessionKey(AgentOwnerScope owner, string sessionId) =>
     $"{owner.TenantId}:{owner.UserId ?? 0}:{sessionId}";
 
+  public static bool IsValidSessionId(string? sessionId)
+  {
+    if (string.IsNullOrWhiteSpace(sessionId) || sessionId.Length > 64)
+    {
+      return false;
+    }
+
+    foreach (var ch in sessionId)
+    {
+      if (!char.IsLetterOrDigit(ch) && ch is not ('-' or '_'))
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  public static string NormalizeSessionId(string? sessionId) =>
+    IsValidSessionId(sessionId) ? sessionId! : Guid.NewGuid().ToString("N")[..12];
+
   public async Task<AgentAttachmentDto> SaveAttachmentAsync(
     AgentOwnerScope owner,
     string fileName,

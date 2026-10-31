@@ -7,7 +7,7 @@ internal sealed class TestInvoiceFormService(AppTestDbContext db, PlatformAppSer
   protected override void SetElements(Elements elements)
   {
     elements.UseStatusOf(new TestInvoiceStatusFlow(db));
-    elements.Add(i => i.Number).Required();
+    elements.Add(i => i.Number).Required().DisabledWhen(i => i.Status == 2);
     elements.Add(i => i.Status);
     elements.Add(i => i.TagIds).AsReferences<TestTagGridService, TestInvoiceTag>(j => j.InvoiceId, j => j.TagId);
     elements.AddChild<TestInvoiceLineGridService>();

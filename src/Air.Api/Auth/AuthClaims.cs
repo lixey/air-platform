@@ -14,6 +14,8 @@ public static class AuthClaims
   public const string Tenant = "tenant";
   public const string ViaCookieItem = "Platform.Auth.ViaCookie";
   public const string SnapshotItem = "Platform.Auth.Snapshot";
+  public const string ClientHeader = "X-Platform-Client";
+  public const string TimeZoneHeader = "X-Platform-Time-Zone";
   public const string AccessCookie = "platform_access";
   public const string RefreshCookie = "platform_refresh";
 }

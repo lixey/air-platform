@@ -25,6 +25,7 @@ export interface SelectGridLink {
   setActive(index: number): void;
   activeRow(): Readonly<Record<string, unknown>> | null;
   rowCount(): number;
+  isLoading?(): boolean;
   /** The id of the grid's table, the list a search box controls; null before it is drawn. */
   tableId(): string | null;
   /** The id of the active row's active cell; null with none. */
@@ -186,6 +187,11 @@ export class SelectService {
   /** The grid inside the overlay says it is there; the search box and the keys reach it through this. */
   attachGrid(link: SelectGridLink): void {
     this.gridLink.set(link);
+  }
+
+  /** Whether the grid inside the select overlay is currently loading a page. */
+  isLoading(): boolean {
+    return untracked(this.gridLink)?.isLoading?.() ?? false;
   }
 
   search(text: string): void {

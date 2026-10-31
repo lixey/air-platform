@@ -215,6 +215,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
   private object? _preloadedParent;
+  private long? _preloadedParentId;
 
   public void SetRequest(FormRequest request) => Request = request;
 
@@ -271,6 +272,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     }
 
     _preloadedParent = preloaded;
+    _preloadedParentId = Request.ParentId;
   }
 
   protected async Task PreloadParentRecordAsync(Parent parent, CancellationToken ct)
@@ -293,6 +295,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       lockParent: false,
       ct);
     _preloadedParent = preloaded;
+    _preloadedParentId = Request.ParentId;
   }
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
@@ -305,6 +308,13 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     if (_preloadedParent is TParent preloaded && preloaded.Id == ParentId.Value)
     {
       return preloaded;
+    }
+
+    var parent = GetParent();
+    if (_preloadedParentId == ParentId.Value &&
+        (parent.BoundParentServiceType != null || !string.IsNullOrEmpty(Request.ParentService)))
+    {
+      return null;
     }
 
     var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);

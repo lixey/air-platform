@@ -44,6 +44,13 @@ public abstract class PlatformDbContext : DbContext
 
   public bool IsInMutationRun => _activeMutationRun != null;
 
+  public bool IsMutationRollbackOnly => _activeMutationRun?.IsRollbackOnly == true;
+
+  public void MarkMutationRollbackOnly()
+  {
+    _activeMutationRun?.IsRollbackOnly = true;
+  }
+
   internal Guid? CurrentMutationRunId => _activeMutationRun?.RunId;
 
   public IDisposable BeginMutationRun()
@@ -409,6 +416,7 @@ public abstract class PlatformDbContext : DbContext
           ClrType = entry.Metadata.ClrType,
           Table = table,
           TenantId = rowTenantId,
+          IsAdded = true,
           Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Added
         };
         run.JournalEntries[entry.Entity] = state;
@@ -416,7 +424,7 @@ public abstract class PlatformDbContext : DbContext
       }
       else if (entry.State == EntityState.Modified)
       {
-        if (state != null && state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored)
+        if (state is { IsAdded: true })
         {
           toCompleteAfterFlush.Add(state);
           continue;
@@ -461,7 +469,7 @@ public abstract class PlatformDbContext : DbContext
       }
       else if (entry.State == EntityState.Deleted)
       {
-        if (state != null && state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored)
+        if (state is { IsAdded: true })
         {
           state.IsDeleted = true;
           run.JournalEntries.Remove(entry.Entity);
@@ -518,7 +526,7 @@ public abstract class PlatformDbContext : DbContext
         continue;
       }
 
-      if (state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored)
+      if (state.IsAdded)
       {
         state.RowId = ((IEntity)state.Entry.Entity).Id;
         var excluded = EntityAuditMetadata.For(state.ClrType).ExcludedProperties;
@@ -560,7 +568,7 @@ public abstract class PlatformDbContext : DbContext
         Operation = state.Operation
       };
 
-      if (state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored && state.FirstBefore.Count == 0)
+      if (state.IsAdded)
       {
         row.After = System.Text.Json.JsonSerializer.Serialize(state.LatestAfter, AuditJsonOptions);
         rows.Add(row);
@@ -575,7 +583,7 @@ public abstract class PlatformDbContext : DbContext
         var changedProps = state.TouchedProperties
           .Where(prop => !Equals(state.FirstBefore.GetValueOrDefault(prop), state.LatestAfter.GetValueOrDefault(prop)))
           .ToList();
-        if (changedProps.Count == 0)
+        if (!changedProps.Any(prop => prop is not (nameof(IHasTimestamps.UpdatedAt) or nameof(IHasTimestamps.CreatedAt) or nameof(IHasVersion.Ver))))
         {
           continue;
         }

@@ -19,9 +19,11 @@ public static partial class AgentProposalBuilder
     var L = Localizer.Instance;
     var owner = AgentStore.ResolveOwner(services);
 
-    var sessionId = TryGetString(args, "sessionId")
-      ?? bridge?.Active?.SessionId
-      ?? "default";
+    var argSessionId = TryGetString(args, "sessionId");
+    var sessionId = AgentStore.NormalizeSessionId(
+      argSessionId
+      ?? bridge?.GetContext(argSessionId)?.SessionId
+      ?? "default");
 
     var descriptors = AgentFeatureRegistry.DiscoverForms(db, app);
     if (descriptors.Count == 0)

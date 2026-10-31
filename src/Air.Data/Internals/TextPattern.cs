@@ -2,7 +2,7 @@ namespace Platform.Data.Internals;
 
 internal readonly record struct TextPattern(TextPatternKind Kind, string Term)
 {
-  private static readonly char[] Masks = ['*', '%'];
+  private static readonly char[] Masks = ['*'];
 
   public bool IsEmpty => Term.Length == 0;
 

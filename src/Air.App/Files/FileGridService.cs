@@ -133,9 +133,15 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   public virtual async Task<FileInfoDto> GetInfo(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
+    ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
     var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
       ?? throw new InvalidOperationException("File ID required.");
+
+    if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken))
+    {
+      throw new KeyNotFoundException("File not found.");
+    }
 
     var file = await RestrictedQuery().AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken)
       ?? throw new KeyNotFoundException("File not found.");
@@ -178,9 +184,15 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   public virtual async Task<FileMetadataDto?> FileMetadata(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
+    ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
     var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
       ?? throw new InvalidOperationException("File ID required.");
+
+    if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken))
+    {
+      throw new KeyNotFoundException("File not found.");
+    }
 
     var file = await RestrictedQuery().AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken)
       ?? throw new KeyNotFoundException("File not found.");
@@ -208,11 +220,17 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     ArgumentNullException.ThrowIfNull(request);
     var parent = GetParent();
     var parentId = request.ParentId ?? ParentId;
+    ParentService = request.ParentService ?? ParentService;
     ParentId = parentId;
 
     if (parent.BoundProperty != null && (!parentId.HasValue || parentId.Value <= 0))
     {
       throw new InvalidOperationException("Parent ID required.");
+    }
+
+    if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken))
+    {
+      throw new KeyNotFoundException("File not found.");
     }
 
     var query = RestrictedQuery();
@@ -310,7 +328,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       return null;
     }
 
-    var existing = await db.Set<TFile>()
+    var existing = await RestrictedQuery()
       .AsNoTracking()
       .Where(f => f.Sha256 == sha256)
       .OrderByDescending(f => f.Id)
