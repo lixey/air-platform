@@ -818,7 +818,14 @@ public abstract class PlatformDbContext : DbContext
       {
         if (entry.Entity is IHasTimestamps timestamps)
         {
-          timestamps.CreatedAt = now;
+          if (!_restoredEntities.Contains(entry.Entity) || timestamps.CreatedAt == default)
+          {
+            timestamps.CreatedAt = now;
+          }
+          else
+          {
+            timestamps.UpdatedAt = now;
+          }
         }
 
         if (entry.Entity is IHasTenant tenantEntity)

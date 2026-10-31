@@ -284,4 +284,92 @@ public sealed class FormAndGridMutationTests : IDisposable
     var afterTamper = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == inv.Id);
     Assert.Equal("INV-700", afterTamper.Number);
   }
+
+  [Fact]
+  public async Task SingleDeleteDefault_AllowMultiDelete_AfterRestore_SensitiveInputOnly_AndNoAuditVsKeepsVersion()
+  {
+    await using var db = CreateDbContext();
+    var fullApp = new TestPlatformAppService(db, new FixedUser(10, "*"));
+
+    // 1. [Sensitive] + .InputOnly() on FormService
+    var form = new TestInvoiceFormService(db, fullApp);
+    var createJson = JsonSerializer.SerializeToElement(new { number = "INV-800", apiSecret = "secret-v1" });
+    var created = Assert.IsType<TestInvoice>(await form.SaveAsync(createJson, new FormRequest { Value = createJson }, CancellationToken.None));
+    var dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
+    Assert.Equal("secret-v1", dbInv.ApiSecret);
+
+    // Outgoing FormDataDto redacts [Sensitive] / InputOnly
+    var formData = await form.BuildFormDataAsync(dbInv, ct: CancellationToken.None);
+    Assert.Null(formData.Value.GetValueOrDefault("apiSecret"));
+
+    // Updating without providing a new secret preserves the existing secret
+    var updateEmptySecret = JsonSerializer.SerializeToElement(new { number = "INV-800-A", apiSecret = "" });
+    await form.SaveAsync(updateEmptySecret, new FormRequest { Id = dbInv.Id, Ver = dbInv.Ver, Value = updateEmptySecret }, CancellationToken.None);
+    dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
+    Assert.Equal("INV-800-A", dbInv.Number);
+    Assert.Equal("secret-v1", dbInv.ApiSecret);
+
+    // Updating with a non-empty secret replaces the stored secret
+    var updateNewSecret = JsonSerializer.SerializeToElement(new { number = "INV-800-B", apiSecret = "secret-v2" });
+    await form.SaveAsync(updateNewSecret, new FormRequest { Id = dbInv.Id, Ver = dbInv.Ver, Value = updateNewSecret }, CancellationToken.None);
+    dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
+    Assert.Equal("secret-v2", dbInv.ApiSecret);
+
+    // 2. [NoAudit] increments Ver without creating AppPlatformChange; [KeepsVersion] keeps Ver
+    var verBefore = dbInv.Ver;
+    Guid noAuditRunId;
+    using (db.BeginMutationRun())
+    {
+      noAuditRunId = db.CurrentMutationRunId!.Value;
+      var tracked = await db.Invoices.FirstAsync(i => i.Id == created.Id);
+      tracked.InternalMemo = "memo-1";
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
+    Assert.Equal(verBefore + 1, dbInv.Ver);
+    Assert.Empty(await db.AppPlatformChange.Where(c => c.RunId == noAuditRunId).ToListAsync());
+
+    // 3. Single-delete default on TestInvoiceGridService vs AllowMultiDelete + AfterRestore on TestInvoiceLineGridService
+    var inv2 = new TestInvoice { Number = "INV-801", Status = 1 };
+    db.Invoices.Add(inv2);
+    await db.SaveChangesAsync();
+
+    var invGrid = new TestInvoiceGridService(db, fullApp);
+    var multiDelRefused = await invGrid.DeleteAsync(new GridRequest { SelectedIds = [created.Id, inv2.Id] }, CancellationToken.None);
+    Assert.Equal(MutationOutcome.Refused, multiDelRefused.Outcome);
+
+    var line1 = new TestInvoiceLine { InvoiceId = created.Id, Title = "L1", Amount = 30m };
+    var line2 = new TestInvoiceLine { InvoiceId = created.Id, Title = "L2", Amount = 70m };
+    using (db.BeginMutationRun())
+    {
+      db.InvoiceLines.AddRange(line1, line2);
+      var trackedInv = await db.Invoices.FirstAsync(i => i.Id == created.Id);
+      trackedInv.CachedLineTotal = 100m;
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    var lineGrid = new TestInvoiceLineGridService(db, fullApp);
+    var multiLineDel = await lineGrid.DeleteAsync(new GridRequest { ParentId = created.Id, SelectedIds = [line1.Id, line2.Id] }, CancellationToken.None);
+    Assert.Equal(MutationOutcome.Committed, multiLineDel.Outcome);
+    Assert.Equal(2, multiLineDel.Deleted);
+
+    dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
+    Assert.Equal(0m, dbInv.CachedLineTotal);
+
+    var deletedLineChanges = await db.AppPlatformChange
+      .Where(c => c.Table == nameof(AppTestDbContext.InvoiceLines) && c.Operation == ChangeOperations.Deleted)
+      .Select(c => c.Id)
+      .ToListAsync();
+    Assert.Equal(2, deletedLineChanges.Count);
+
+    var changeGrid = new TestChangeGridService(db, fullApp);
+    var restoreRes = await changeGrid.Restore(new GridRequest { SelectedIds = deletedLineChanges }, CancellationToken.None);
+    Assert.Equal(MutationOutcome.Committed, restoreRes.Outcome);
+
+    dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
+    Assert.Equal(100m, dbInv.CachedLineTotal);
+  }
 }

@@ -175,11 +175,30 @@ public abstract partial class FormService<TEntity, TInput>
       set.Add(parent.BoundProperty.Name);
     }
 
+    var inputOnlyPaths = BuildInputOnlyPaths(elements);
     foreach (var prop in PropertyAccessorCache.GetProperties(typeof(TEntity)))
     {
-      if (!editablePaths.Contains(prop.Name) || prop.GetCustomAttribute<SensitiveAttribute>() != null)
+      if (!editablePaths.Contains(prop.Name))
       {
         set.Add(prop.Name);
+        continue;
+      }
+
+      var isSensitive = prop.GetCustomAttribute<SensitiveAttribute>() != null;
+      var isInputOnly = inputOnlyPaths.Contains(prop.Name);
+      if (isSensitive && !isInputOnly)
+      {
+        set.Add(prop.Name);
+        continue;
+      }
+
+      if ((isSensitive || isInputOnly) && !isNew && input != null)
+      {
+        var incoming = PropertyAccessorCache.GetValue(input, prop.Name);
+        if (incoming is null || incoming is string s && string.IsNullOrEmpty(s))
+        {
+          set.Add(prop.Name);
+        }
       }
     }
 

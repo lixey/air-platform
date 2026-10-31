@@ -268,6 +268,7 @@ export class ReportComponent {
       return;
     }
 
+    const previous = current;
     this.reportData.set({
       ...current,
       activeFilters: nextFilters,
@@ -289,6 +290,7 @@ export class ReportComponent {
         },
         error: () => {
           this.isLoading.set(false);
+          this.reportData.set(previous);
         },
       });
   }

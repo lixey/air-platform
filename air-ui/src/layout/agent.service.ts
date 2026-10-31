@@ -202,24 +202,35 @@ export class AgentService {
     let rawAccumulated = '';
 
     try {
-      const response = await fetch('/api/agent/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          [PLATFORM_CLIENT_HEADER]: 'browser',
-          [PLATFORM_TIME_ZONE_HEADER]: browserZone(),
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          sessionId: this.sessionId(),
-          message: effectivePrompt,
-          attachmentIds: attachments.map(a => a.id),
-          locale: this.locale.current(),
-          provider: activeModelObj?.provider || this.activeProvider(),
-          model: activeModelObj?.id || this.model(),
-        }),
-        signal: controller.signal,
-      });
+      const doFetch = () =>
+        fetch('/api/agent/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            [PLATFORM_CLIENT_HEADER]: 'browser',
+            [PLATFORM_TIME_ZONE_HEADER]: browserZone(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            sessionId: this.sessionId(),
+            message: effectivePrompt,
+            attachmentIds: attachments.map(a => a.id),
+            locale: this.locale.current(),
+            provider: activeModelObj?.provider || this.activeProvider(),
+            model: activeModelObj?.id || this.model(),
+          }),
+          signal: controller.signal,
+        });
+
+      let response = await doFetch();
+      if (response.status === 401) {
+        const refreshed = await firstValueFrom(this.http.post('/api/auth/refresh', {}, shownByCaller()))
+          .then(() => true)
+          .catch(() => false);
+        if (refreshed) {
+          response = await doFetch();
+        }
+      }
 
       if (!response.ok || !response.body) {
         throw new Error(`${this.texts.of('RequestFailed')} (${response.status})`);
@@ -329,7 +340,9 @@ export class AgentService {
         createdAt: new Date(),
       }));
       this.isStreaming.set(false);
-      this.abortController = null;
+      if (this.abortController === controller) {
+        this.abortController = null;
+      }
     }
   }
 

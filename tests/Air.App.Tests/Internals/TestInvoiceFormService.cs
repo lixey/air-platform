@@ -9,6 +9,7 @@ internal sealed class TestInvoiceFormService(AppTestDbContext db, PlatformAppSer
     elements.UseStatusOf(new TestInvoiceStatusFlow(db));
     elements.Add(i => i.Number).Required().DisabledWhen(i => i.Status == 2);
     elements.Add(i => i.Status);
+    elements.Add(i => i.ApiSecret).InputOnly().AsPassword();
     elements.Add(i => i.TagIds).AsReferences<TestTagGridService, TestInvoiceTag>(j => j.InvoiceId, j => j.TagId);
     elements.AddChild<TestInvoiceLineGridService>();
   }

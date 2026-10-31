@@ -34,7 +34,7 @@ internal sealed class EntityAuditMetadata
         excluded.Add(prop.Name);
       }
 
-      if (isKeepsVersion || isNoAudit)
+      if (isKeepsVersion)
       {
         keepsVersion.Add(prop.Name);
       }

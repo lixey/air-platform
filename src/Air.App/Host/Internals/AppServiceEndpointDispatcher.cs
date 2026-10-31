@@ -123,6 +123,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           if (!canView)
           {
+            ReferenceLookupAllowlist.EnsureWarm(services);
             req.IsReferencePicker = true;
             req.IsDataOnly = true;
             req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
@@ -164,6 +165,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           if (!canView)
           {
+            ReferenceLookupAllowlist.EnsureWarm(services);
             req.IsReferencePicker = true;
             req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
             req.ColumnFilter = null;
@@ -181,7 +183,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           }
 
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-          if (!CanView(feat, userContext))
+          if (!grid.CanView(req, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -510,55 +512,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           return PlatformEndpointsExtensions.ToMutationResult(result);
         }
 
-      case "delete":
-        {
-          if (userContext is null or { IsAuthenticated: false })
-          {
-            return Results.Unauthorized();
-          }
-
-          var (req, ids) = await ExtractDeleteRequestAsync(httpRequest, ct);
-          form.SetRequest(req);
-          var deleted = 0;
-          try
-          {
-            await form.DbContext.RunMutationAsync(async mutationCt =>
-            {
-              foreach (var id in ids)
-              {
-                form.SetRequest(new FormRequest
-                {
-                  Id = id,
-                  ParentId = req.ParentId,
-                  ParentService = req.ParentService,
-                  Ver = ids.Count == 1 ? req.Ver : null
-                });
-                await form.DeleteAsync(id, mutationCt);
-                deleted++;
-              }
-
-              return true;
-            }, ct: ct);
-          }
-          catch (FormRefusedException ex)
-          {
-            return ex.Outcome == MutationOutcome.Conflict
-              ? Results.Conflict(new MutationResultDto { Outcome = ex.Outcome, Title = ex.Title, Messages = ex.Messages.ToList() })
-              : Results.UnprocessableEntity(new MutationResultDto { Outcome = ex.Outcome, Title = ex.Title, Messages = ex.Messages.ToList() });
-          }
-          catch (DbUpdateException)
-          {
-            return Results.UnprocessableEntity(new MutationResultDto
-            {
-              Outcome = MutationOutcome.Refused,
-              Title = Localizer.Instance["DeleteRefused"],
-              Messages = [new MessageDto { Detail = Localizer.Instance["DeleteRefused"], Type = MessageType.Error }]
-            });
-          }
-
-          return Results.Ok(new GridDeleteDto { Deleted = deleted, Outcome = MutationOutcome.Committed });
-        }
-
       default:
         return await DispatchCustomServiceMethodAsync(serviceType, form, method, feat, httpRequest, services, ct);
     }
@@ -768,55 +721,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     }
 
     return req;
-  }
-
-  private static async Task<(FormRequest Request, List<long> Ids)> ExtractDeleteRequestAsync(HttpRequest request, CancellationToken ct)
-  {
-    List<long> ids = [];
-    FormRequest? req = null;
-
-    if (request.ContentLength > 0)
-    {
-      try
-      {
-        using var doc = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
-        req = BindFormRequest(request, doc.RootElement);
-        if (doc.RootElement.TryGetProperty("selectedIds", out var sel) && sel.ValueKind == JsonValueKind.Array)
-        {
-          foreach (var item in sel.EnumerateArray())
-          {
-            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var id))
-            {
-              ids.Add(id);
-            }
-            else if (item.ValueKind == JsonValueKind.String && long.TryParse(item.GetString(), out var sid))
-            {
-              ids.Add(sid);
-            }
-          }
-        }
-        else if (doc.RootElement.TryGetProperty("id", out var idProp))
-        {
-          if (idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var id))
-          {
-            ids.Add(id);
-          }
-          else if (idProp.ValueKind == JsonValueKind.String && long.TryParse(idProp.GetString(), out var sid))
-          {
-            ids.Add(sid);
-          }
-        }
-      }
-      catch { }
-    }
-
-    req ??= BindFormRequest(request, default);
-    if (ids.Count == 0 && req.Id is > 0)
-    {
-      ids.Add(req.Id.Value);
-    }
-
-    return (req, ids);
   }
 
   private static async Task<ReportRequest> ReadReportRequestAsync(HttpRequest request, CancellationToken ct)

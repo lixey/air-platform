@@ -434,8 +434,6 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     internal List<Action<FormSaveContext<TEntity, TInput>>> BeforeValidateActions { get; } = [];
     internal List<Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task>> BeforeSaveActions { get; } = [];
     internal List<Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task>> AfterSaveActions { get; } = [];
-    internal List<Func<FormDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
-    internal List<Func<FormDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
 
     public void AfterLoad(Func<FormLoadContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterLoadActions.Add(handler);
     public void AfterLoad(Action<FormLoadContext<TEntity, TInput>> handler) =>
@@ -458,24 +456,6 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     public void AfterSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterSaveActions.Add(handler);
     public void AfterSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
       AfterSaveActions.Add((c, ct) =>
-      {
-        handler(c);
-        return Task.CompletedTask;
-      });
-
-    public void BeforeDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
-    public void BeforeDelete(Action<FormDeleteContext<TEntity>> handler) =>
-      BeforeDeleteActions.Add((c, ct) =>
-      {
-        handler(c);
-        return Task.CompletedTask;
-      });
-    public void ValidateDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
-    public void ValidateDelete(Action<FormDeleteContext<TEntity>> handler) => BeforeDelete(handler);
-
-    public void AfterDelete(Func<FormDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
-    public void AfterDelete(Action<FormDeleteContext<TEntity>> handler) =>
-      AfterDeleteActions.Add((c, ct) =>
       {
         handler(c);
         return Task.CompletedTask;

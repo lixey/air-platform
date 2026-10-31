@@ -535,14 +535,21 @@ export class LayoutAgentComponent {
     });
     inject(DestroyRef).onDestroy(() => subscription.unsubscribe());
 
+    let lastMessageCount = 0;
     effect(() => {
-      this.agent.messages();
-      queueMicrotask(() => {
-        const el = this.scrollContainer()?.nativeElement;
-        if (el) {
-          el.scrollTop = el.scrollHeight;
-        }
-      });
+      const msgs = this.agent.messages();
+      const countChanged = msgs.length !== lastMessageCount;
+      lastMessageCount = msgs.length;
+      const el = this.scrollContainer()?.nativeElement;
+      const wasNearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
+      if (countChanged || wasNearBottom) {
+        queueMicrotask(() => {
+          const container = this.scrollContainer()?.nativeElement;
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        });
+      }
     });
   }
 
@@ -642,6 +649,13 @@ export class LayoutAgentComponent {
 
   protected onDragLeave(event: DragEvent): void {
     event.preventDefault();
+    if (
+      event.currentTarget instanceof HTMLElement &&
+      event.relatedTarget instanceof Node &&
+      event.currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
     this.isDragging.set(false);
   }
 

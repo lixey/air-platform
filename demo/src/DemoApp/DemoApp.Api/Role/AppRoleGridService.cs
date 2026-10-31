@@ -19,8 +19,30 @@ public sealed class AppRoleGridService(AppDbContext db, AppService? app = null)
   protected override void SetHooks(Hooks hooks) =>
     hooks.BeforeDelete(async (c, cancellationToken) =>
     {
+      foreach (var r in c.Records)
+      {
+        if (await IsLastActiveAdminRoleAsync(r.Id, r.TenantId, cancellationToken))
+        {
+          c.Refuse(L["The last administrator role cannot be deleted."], r.Id);
+          return;
+        }
+      }
+
       var roles = c.Records.Select(r => r.Id).ToList();
       db.RemoveRange(await db.AppAuthAssignment.Where(a => roles.Contains(a.AuthRoleId)).ToListAsync(cancellationToken));
       db.RemoveRange(await db.AppAuthGrant.Where(g => roles.Contains(g.AuthRoleId)).ToListAsync(cancellationToken));
     });
+
+  private async Task<bool> IsLastActiveAdminRoleAsync(long roleId, long? tenantId, CancellationToken cancellationToken)
+  {
+    if (!await db.AppAuthGrant.AnyAsync(g => g.AuthRoleId == roleId && g.Permission == "*", cancellationToken))
+    {
+      return false;
+    }
+
+    return !await db.AppAuthRole.AnyAsync(
+      r => r.Id != roleId && r.TenantId == tenantId && r.IsActive &&
+           db.AppAuthGrant.Any(g => g.AuthRoleId == r.Id && g.Permission == "*"),
+      cancellationToken);
+  }
 }

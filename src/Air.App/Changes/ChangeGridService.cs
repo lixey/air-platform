@@ -243,6 +243,8 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       var groupChanges = group.ToList();
       var groupResult = await targetDb.RunMutationAsync(async mutationCt =>
       {
+        var restoredByType = new Dictionary<Type, List<object>>();
+
         foreach (var change in groupChanges)
         {
           var entityType = targetDb.Model.GetEntityTypes()
@@ -334,6 +336,12 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
               }
 
               targetDb.MarkRestored(entity);
+              if (!restoredByType.TryGetValue(entityType, out var list))
+              {
+                restoredByType[entityType] = list = [];
+              }
+
+              list.Add(entity);
             }
           }
           else if (change.Operation == ChangeOperations.Deleted)
@@ -368,15 +376,28 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
                   restoredUser.IsRoot = false;
                 }
 
+                if (entity is IHasVersion versioned)
+                {
+                  versioned.Ver = Math.Max(1, versioned.Ver + 1);
+                }
+
                 entry.State = EntityState.Added;
                 targetDb.MarkRestored(entity);
+                if (!restoredByType.TryGetValue(entityType, out var list))
+                {
+                  restoredByType[entityType] = list = [];
+                }
+
+                list.Add(entity);
 
                 if (targetDb.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true)
                 {
                   var efEntityType = targetDb.Model.FindEntityType(entityType);
+                  var hasIdentityPk = efEntityType?.FindPrimaryKey()?.Properties is [var pkProp] &&
+                                      pkProp.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd;
                   var tableName = efEntityType?.GetTableName();
                   var schema = efEntityType?.GetSchema();
-                  if (!string.IsNullOrEmpty(tableName))
+                  if (hasIdentityPk && !string.IsNullOrEmpty(tableName))
                   {
                     var qualified = string.IsNullOrEmpty(schema)
                       ? $"[{tableName.Replace("]", "]]")}]"
@@ -392,7 +413,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
                       }
                       finally
                       {
-                        await targetDb.Database.ExecuteSqlRawAsync(offSql, mutationCt);
+                        await targetDb.Database.ExecuteSqlRawAsync(offSql, CancellationToken.None);
                       }
                     }
                     catch (DbUpdateException)
@@ -413,6 +434,28 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
         try
         {
+          if (targetDb.ChangeTracker.HasChanges())
+          {
+            await targetDb.SaveChangesAsync(mutationCt);
+          }
+
+          foreach (var (restoredType, restoredEntities) in restoredByType)
+          {
+            if (ResolveGridServiceForEntity(restoredType, targetDb) is { } gridService)
+            {
+              var restoreErrors = await gridService.OnRestoredAsync(restoredEntities, mutationCt);
+              if (restoreErrors.Count > 0)
+              {
+                targetDb.MarkMutationRollbackOnly();
+                return new GridActionDto
+                {
+                  Outcome = MutationOutcome.Refused,
+                  Warnings = [.. restoreErrors]
+                };
+              }
+            }
+          }
+
           if (targetDb.ChangeTracker.HasChanges())
           {
             await targetDb.SaveChangesAsync(mutationCt);
@@ -492,6 +535,27 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
     var tableFeat = ModuleCatalog.Instance.FindFeatureForEntity(entityType, table);
     return tableFeat is { HasHistory: true } && (User.Can(tableFeat.Restore) || User.Can(tableFeat.All));
+  }
+
+  private IGridService? ResolveGridServiceForEntity(Type entityType, PlatformDbContext targetDb)
+  {
+    Type? gridType = null;
+    if (ModuleCatalog.Instance.FindFeatureForEntity(entityType) is { ServiceType: { } featSvcType } &&
+        typeof(IGridService).IsAssignableFrom(featSvcType))
+    {
+      gridType = featSvcType;
+    }
+
+    gridType ??= ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+      typeof(IGridService).IsAssignableFrom(t) &&
+      ModuleCatalog.GetServiceEntityType(t) == entityType);
+
+    if (gridType == null)
+    {
+      return null;
+    }
+
+    return ModuleCatalog.Instance.CreateServiceInstance(gridType, targetDb, PlatformApp, services ?? PlatformApp?.Services) as IGridService;
   }
 
   private string ResolveParentTableName(string parentService)

@@ -443,6 +443,17 @@ public abstract partial class GridService<TEntity, TRow>
         return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
       }
 
+      var hooks = GetHooks();
+      if (!hooks.IsMultiDeleteAllowed && ids.Count > 1)
+      {
+        return new GridDeleteDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Deleted = 0,
+          Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+        };
+      }
+
       var (entities, missing) = await LoadSelectedEntitiesAsync(ids, mutationCt, asTracking: true, lockEntities: true);
       if (missing.Count > 0)
       {
@@ -474,7 +485,6 @@ public abstract partial class GridService<TEntity, TRow>
         };
       }
 
-      var hooks = GetHooks();
       var ctx = new GridDeleteContext<TEntity>(ids, entities, token => db.SaveChangesAsync(token), db);
 
       foreach (var h in hooks.BeforeDeleteActions)
@@ -550,6 +560,30 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     return result;
+  }
+
+  public virtual async Task<IReadOnlyList<MessageDto>> OnRestoredAsync(IReadOnlyList<object> restoredEntities, CancellationToken ct = default)
+  {
+    var hooks = GetHooks();
+    if (hooks.AfterRestoreActions.Count == 0 || restoredEntities.Count == 0)
+    {
+      return [];
+    }
+
+    var typed = restoredEntities.OfType<TEntity>().ToList();
+    if (typed.Count == 0)
+    {
+      return [];
+    }
+
+    var ids = typed.Select(e => e.Id).ToList();
+    var ctx = new GridBatchContext<TEntity>(ids, typed, token => db.SaveChangesAsync(token), db);
+    foreach (var h in hooks.AfterRestoreActions)
+    {
+      await h(ctx, ct);
+    }
+
+    return ctx.Errors.Count > 0 ? FormatErrors(ctx.Errors, typed, MessageType.Error) : [];
   }
 
   private static bool HasVersionConflict(GridRequest request, IReadOnlyList<long> ids, IReadOnlyList<TEntity> records)

@@ -55,15 +55,6 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
       return EcomDocActions.SaveAsync(db, c, User?.UserId, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
     });
-    hooks.BeforeDelete((c, _) =>
-    {
-      if (Status is not { IsEditable: true })
-      {
-        c.AddError(EcomDocActions.NotEditable, EcomDocTexts.Of(L).NotEditable, null);
-      }
-
-      return Task.CompletedTask;
-    });
   }
 }
 

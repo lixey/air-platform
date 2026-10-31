@@ -10,6 +10,12 @@ internal sealed class TestInvoice : IEntity, IHasTenant, IHasVersion
   public bool IsHidden { get; set; }
   [KeepsVersion]
   public int PrintedCount { get; set; }
+  [NoAudit]
+  public string? InternalMemo { get; set; }
+  [Sensitive]
+  public string? ApiSecret { get; set; }
+  [NoAudit, KeepsVersion]
+  public decimal CachedLineTotal { get; set; }
   [System.ComponentModel.DataAnnotations.Schema.NotMapped]
   public List<long> TagIds { get; set; } = [];
 }

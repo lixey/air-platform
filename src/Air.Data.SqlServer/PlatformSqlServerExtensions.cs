@@ -92,14 +92,18 @@ public static class PlatformSqlServerExtensions
     var schema = entityType.GetSchema();
     var storeObject = StoreObjectIdentifier.Table(tableName, schema);
     var qualifiedTable = string.IsNullOrWhiteSpace(schema)
-      ? $"[{tableName}]"
-      : $"[{schema}].[{tableName}]";
+      ? $"[{tableName.Replace("]", "]]")}]"
+      : $"[{schema.Replace("]", "]]")}].[{tableName.Replace("]", "]]")}]";
 
     var now = DateTimeOffset.UtcNow;
     var tenantId = db.TenantContext.TenantId;
 
     var properties = entityType.GetProperties()
-      .Where(p => !p.IsShadowProperty() && p.PropertyInfo is not null && p.GetColumnName(storeObject) is not null)
+      .Where(p => !p.IsShadowProperty() &&
+                  p.PropertyInfo is not null &&
+                  p.GetColumnName(storeObject) is not null &&
+                  p.GetComputedColumnSql(storeObject) is null &&
+                  p.ValueGenerated is not Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate)
       .Select(p => (
         Property: p,
         Getter: p.GetGetter(),
@@ -195,7 +199,7 @@ public static class PlatformSqlServerExtensions
           IF OBJECTPROPERTY(OBJECT_ID(@tbl), 'TableHasIdentity') = 1
           BEGIN
             DECLARE @cur bigint = ISNULL(IDENT_CURRENT(@tbl), 0);
-            IF @maxId > @cur
+            IF @maxId >= @cur
               DBCC CHECKIDENT (@tbl, RESEED, @maxId) WITH NO_INFOMSGS;
           END
           """;

@@ -27,6 +27,7 @@ public abstract partial class FormService<TEntity, TInput>
     var result = await db.RunMutationAsync(async mutationCt =>
     {
       var entity = await LockAndLoadExistingAsync(request.Id.Value, parent, mutationCt);
+      CurrentEntity = entity;
 
       if (entity is IHasVersion versioned)
       {

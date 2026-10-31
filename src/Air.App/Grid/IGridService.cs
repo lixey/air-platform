@@ -17,6 +17,10 @@ public interface IGridService : IPlatformService
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   string? GetRecordLabel(object? entity) => null;
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
+  bool AllowsMultiDelete => false;
+  Task<IReadOnlyList<MessageDto>> OnRestoredAsync(IReadOnlyList<object> restoredEntities, CancellationToken ct = default) =>
+    Task.FromResult<IReadOnlyList<MessageDto>>([]);
+  void RegisterMetadata() { }
   bool CanView(GridRequest request, IUserContext? user) => ServiceEndpointsExtensions.CanView(Feature, user);
   bool CanLookup(GridRequest request, IUserContext? user) => CanView(request, user);
   new void AttachPlatformApp(PlatformAppService app);

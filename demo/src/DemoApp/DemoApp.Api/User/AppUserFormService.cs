@@ -67,31 +67,6 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
   protected override void SetHooks(Hooks hooks)
   {
-    hooks.BeforeDelete(async (c, cancellationToken) =>
-    {
-      if (c.Entity.Id == 1 || c.Entity.IsRoot)
-      {
-        c.Refuse(L["The root user cannot be deleted."]);
-        return;
-      }
-
-      if (User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
-      {
-        c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
-        return;
-      }
-
-      var now = DateTimeOffset.UtcNow;
-      var sessions = await db.AppAuthSession
-        .Where(s => s.UserId == c.Entity.Id && s.RevokedAt == null)
-        .ToListAsync(cancellationToken);
-      foreach (var session in sessions)
-      {
-        session.RevokedAt = now;
-        session.RevokedReason = "demo-user-deleted";
-      }
-    });
-
     hooks.AfterLoad(async (c, cancellationToken) => c.Input.RoleIds = c.IsNew
         ? []
         : await db.Set<AppAuthAssignment>()

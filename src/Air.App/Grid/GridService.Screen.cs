@@ -242,6 +242,7 @@ public abstract partial class GridService<TEntity, TRow>
         Service = servicePath,
         Method = "delete",
         NeedsSelection = true,
+        IsSingle = !GetHooks().IsMultiDeleteAllowed,
         Color = UiColor.Red,
         Variant = ButtonVariant.Soft,
         Icon = UiIcon.Trash,

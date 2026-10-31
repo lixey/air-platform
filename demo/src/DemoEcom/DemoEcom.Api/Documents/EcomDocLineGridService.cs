@@ -21,6 +21,7 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
   protected override void SetHooks(Hooks hooks)
   {
     base.SetHooks(hooks);
+    hooks.AllowMultiDelete();
     hooks.ValidateDelete(ctx =>
     {
       if (ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true })

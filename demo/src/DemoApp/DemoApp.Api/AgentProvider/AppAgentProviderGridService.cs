@@ -27,6 +27,24 @@ public sealed class AppAgentProviderGridService(AppDbContext db, AppService? app
       .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
+  protected override void SetHooks(Hooks hooks) =>
+    hooks.BeforeDelete(async (c, ct) =>
+    {
+      foreach (var rec in c.Records)
+      {
+        var isBuiltIn = AgentModelCatalog.DefaultProviders()
+          .Any(p => string.Equals(p.Handle, rec.Handle, StringComparison.OrdinalIgnoreCase));
+        var hasModels = await db.AppAgentModel
+          .AnyAsync(m => m.ProviderHandle == rec.Handle, ct);
+
+        if (isBuiltIn || hasModels)
+        {
+          c.Refuse(L["Cannot delete a provider that has models or is built-in."], rec.Id);
+          return;
+        }
+      }
+    });
+
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);

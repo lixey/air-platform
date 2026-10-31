@@ -14,7 +14,7 @@ export function steppedNumber(
   max: number | undefined,
 ): number {
   const by = step && step > 0 ? step : DEFAULT_STEP;
-  const next = value === null ? (min ?? 0) : Number((value + direction * by).toFixed(decimalsOf(by)));
+  const next = value === null ? (min ?? 0) : Number((value + direction * by).toFixed(Math.max(decimalsOf(by), decimalsOf(value))));
   return heldWithin(next, min, max);
 }
 

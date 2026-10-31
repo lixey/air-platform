@@ -1,3 +1,4 @@
+using Platform.App.Internals;
 using Platform.Data.Internals;
 
 namespace Platform.App.Grid;
@@ -344,6 +345,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
     dto.ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TGridService));
+    ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
     {
       dto.FilterPath = dto.Path + "Id";
@@ -370,6 +372,11 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
         .Select(e => Columns.ToCamelPath(MemberPath.Of(e)))
         .Where(s => !string.IsNullOrEmpty(s))
         .ToList();
+      ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), dto.ReferenceLabelPaths);
+    }
+    else
+    {
+      ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     }
 
     return this;
@@ -380,6 +387,11 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     var path = Columns.ToCamelPath(MemberPath.Of(sourceMember));
     var rule = FilterNode.Rule(path, FilterOperator.Equals, value);
     dto.ReferenceFilter = CombineFilter(dto.ReferenceFilter, rule);
+    if (!string.IsNullOrEmpty(dto.ReferenceService))
+    {
+      ReferenceLookupAllowlist.RegisterFilterField(ModuleCatalog.Instance.FindServiceType(dto.ReferenceService), path);
+    }
+
     return this;
   }
 

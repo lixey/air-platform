@@ -23,6 +23,8 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   protected override void SetQuery(Query query) => query.SortBy(r => r.SortOrder).ThenByDescending(r => r.Id);
 
+  protected override void SetHooks(Hooks hooks) => hooks.AllowMultiDelete();
+
   protected override void SetColumns(Columns columns)
   {
     columns.Add(r => r.Name).Cell(new GridCellFileModel());
@@ -43,7 +45,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     if (!IsReadOnly)
     {
       var rules = FileRulesAttribute.Of(typeof(TFile));
-      var canReadMeta = User == null || !User.IsAuthenticated || User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All);
+      var canReadMeta = User is { IsAuthenticated: true } && (User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All));
       var upload = new GridNavUploadModel
       {
         Key = "upload",
@@ -257,7 +259,12 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
           continue;
         }
 
-        var entryName = file.Name;
+        var entryName = Path.GetFileName((file.Name ?? string.Empty).Replace('\\', '/'));
+        if (string.IsNullOrWhiteSpace(entryName))
+        {
+          entryName = $"file_{file.Id}";
+        }
+
         if (seenNames.TryGetValue(entryName, out var count))
         {
           seenNames[entryName] = count + 1;
@@ -294,7 +301,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   {
     var rules = FileRulesAttribute.Of(typeof(TFile));
     var canEdit = !IsReadOnly;
-    var canReadMeta = User == null || !User.IsAuthenticated || User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All);
+    var canReadMeta = User is { IsAuthenticated: true } && (User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All));
     return new FormFilesModel
     {
       Key = key,

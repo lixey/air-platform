@@ -21,6 +21,11 @@ public abstract partial class FormService<TEntity, TInput>
     var elements = _lastElements;
     if (elements == null)
     {
+      if (!IsNew && CurrentEntity?.Id != id!.Value)
+      {
+        CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct);
+      }
+
       elements = new Elements();
       await SetElementsAsync(elements, ct);
       LocalizeAndResolveSelectElements(elements);
@@ -114,6 +119,7 @@ public abstract partial class FormService<TEntity, TInput>
       RestoreBoundParentId(entity, parent);
     }
 
+    CurrentEntity = entity;
     _lastSavedEntity = entity;
 
     var input = entity is TInput same ? same : new TInput();
@@ -185,6 +191,20 @@ public abstract partial class FormService<TEntity, TInput>
 
     var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
     var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    var inputOnlyPaths = _lastElements != null ? BuildInputOnlyPaths(_lastElements) : null;
+    foreach (var prop in PropertyAccessorCache.GetProperties(typeof(TEntity)))
+    {
+      if (prop.GetCustomAttribute<SensitiveAttribute>() != null ||
+          inputOnlyPaths != null && inputOnlyPaths.Contains(prop.Name))
+      {
+        var camel = Elements.ToCamelPath(prop.Name);
+        if (dict.ContainsKey(camel))
+        {
+          dict[camel] = null;
+        }
+      }
+    }
+
     if (outcome == null && entity is IReadOnlyEntity && dict.TryGetValue("name", out var nameObj) && nameObj != null)
     {
       var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
@@ -557,7 +577,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (!ReferenceEquals(entity, input))
     {
-      CopyMatchingProperties(entity, input);
+      CopyMatchingProperties(entity, input, inputOnlyPaths);
     }
 
     return input;
@@ -741,109 +761,6 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     return result;
-  }
-
-  public virtual async Task DeleteAsync(long id, CancellationToken ct = default)
-  {
-    if (!Feature.HasDelete || User != null && User.IsAuthenticated && !User.Can(Feature.Delete) && !User.Can(Feature.All))
-    {
-      throw new FormRefusedException(
-        MutationOutcome.Refused,
-        L["MutationRefused"],
-        [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]);
-    }
-
-    Request = new FormRequest
-    {
-      Id = id,
-      ParentId = Request.ParentId,
-      ParentService = Request.ParentService,
-      Ver = Request.Ver
-    };
-    IsNew = false;
-
-    var parent = GetParent();
-    TEntity? deletedEntity = null;
-
-    await db.RunMutationAsync(async mutationCt =>
-    {
-      var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
-
-      if (Request.Ver.HasValue && Request.Ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != Request.Ver.Value)
-      {
-        throw new FormRefusedException(
-          MutationOutcome.Conflict,
-          L["MutationConflict"],
-          [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]);
-      }
-
-      CurrentEntity = entity;
-      var elements = new Elements();
-      await SetElementsAsync(elements, mutationCt);
-
-      if (IsReadOnly)
-      {
-        throw new FormRefusedException(
-          MutationOutcome.Refused,
-          L["MutationRefused"],
-          [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
-      }
-
-      var hooks = GetHooks();
-
-      var deleteCtx = new FormDeleteContext<TEntity> { Entity = entity };
-      foreach (var h in hooks.BeforeDeleteActions)
-      {
-        await h(deleteCtx, mutationCt);
-      }
-
-      if (deleteCtx.Errors.Count > 0)
-      {
-        throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], deleteCtx.Errors);
-      }
-
-      foreach (var el in elements.List)
-      {
-        if (el.JoinSyncer != null)
-        {
-          await el.JoinSyncer(db, entity.Id, [], mutationCt);
-        }
-      }
-
-      db.Set<TEntity>().Remove(entity);
-      await db.SaveChangesAsync(mutationCt);
-
-      if (hooks.AfterDeleteActions.Count > 0)
-      {
-        foreach (var h in hooks.AfterDeleteActions)
-        {
-          await h(deleteCtx, mutationCt);
-        }
-
-        if (deleteCtx.Errors.Count > 0)
-        {
-          throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], deleteCtx.Errors);
-        }
-
-        if (db.ChangeTracker.HasChanges())
-        {
-          await db.SaveChangesAsync(mutationCt);
-        }
-      }
-
-      deletedEntity = entity;
-      if (PlatformApp != null)
-      {
-        await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, mutationCt);
-      }
-
-      return true;
-    }, ct: ct);
-
-    if (PlatformApp != null && deletedEntity != null)
-    {
-      await PlatformApp.ClearAuthCacheForEntityAsync(deletedEntity, db, ct);
-    }
   }
 
   private async Task PopulateJoinedReferencesAsync(

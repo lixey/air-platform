@@ -59,6 +59,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public virtual bool CanView(GridRequest request, IUserContext? user) =>
     ServiceEndpointsExtensions.CanView(Feature, user);
 
+  public bool AllowsMultiDelete => GetHooks().IsMultiDeleteAllowed;
+
   public virtual bool CanLookup(GridRequest request, IUserContext? user)
   {
     if (user is null or { IsAuthenticated: false })
@@ -335,6 +337,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected virtual void SetHooks(Hooks hooks) { }
   protected virtual void SetColumns(Columns columns) { }
   protected virtual void SetColumns(Columns<TRow> columns) { }
+
+  public void RegisterMetadata() => CreateColumns();
 
   private Columns CreateColumns()
   {

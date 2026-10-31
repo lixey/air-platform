@@ -441,6 +441,11 @@ public abstract partial class GridService<TEntity, TRow>
       {
         if (ModuleCatalog.Instance.CreateServiceInstance(fileGridType, db, PlatformApp) is Files.Internals.IFileCoverSource coverSource)
         {
+          if (coverSource is IGridService coverGrid && !coverGrid.CanView(new GridRequest(), User))
+          {
+            return;
+          }
+
           var covers = await coverSource.CoversAsync(ownerIds, ct);
           foreach (var rowObj in shapedRows)
           {

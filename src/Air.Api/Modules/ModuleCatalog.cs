@@ -15,6 +15,7 @@ public sealed class ModuleCatalog
 
   public IReadOnlyList<IPlatformModule> Modules => _modules;
   public IEnumerable<Feature> AllFeatures => _featuresByPath.Values.Distinct();
+  public IEnumerable<Type> AllServiceTypes => _servicesByPath.Values.Distinct();
 
   public void Register(IPlatformModule module)
   {

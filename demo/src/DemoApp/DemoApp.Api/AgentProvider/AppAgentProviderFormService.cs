@@ -41,19 +41,6 @@ public sealed class AppAgentProviderFormService(AppDbContext db, AppService? app
       return Task.CompletedTask;
     });
 
-    hooks.BeforeDelete(async (c, ct) =>
-    {
-      var isBuiltIn = AgentModelCatalog.DefaultProviders()
-        .Any(p => string.Equals(p.Handle, c.Entity.Handle, StringComparison.OrdinalIgnoreCase));
-      var hasModels = await db.AppAgentModel
-        .AnyAsync(m => m.ProviderHandle == c.Entity.Handle, ct);
-
-      if (isBuiltIn || hasModels)
-      {
-        c.Refuse(L["Cannot delete a provider that has models or is built-in."]);
-      }
-    });
-
     hooks.BeforeSave(async (c, ct) =>
     {
       CodeRows.EnsurePascalCaseHandle(c.Entity.Handle, nameof(AppAgentProvider));

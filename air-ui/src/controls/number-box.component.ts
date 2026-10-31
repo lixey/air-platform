@@ -126,7 +126,10 @@ export class NumberBoxComponent implements FormValueControl<number | null> {
   private readonly isFixed = computed(() => this.disabled() || this.readonly());
   protected readonly canDecrease = computed(() => this.canStepTo(-1));
   protected readonly canIncrease = computed(() => this.canStepTo(1));
-  protected readonly formattedValue = computed(() => (this.value() == null ? '' : String(this.value())));
+  protected readonly formattedValue = computed(() => {
+    const v = this.value();
+    return v == null ? '' : Object.is(v, -0) ? '-0' : String(v);
+  });
 
   protected readonly rawValue = transformedValue(this.value, {
     parse: (val: string) => {

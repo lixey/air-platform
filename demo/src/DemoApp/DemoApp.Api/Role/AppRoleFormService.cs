@@ -54,14 +54,6 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeValidate(c => c.Entity.TenantId = c.Input.TenantId);
 
-    hooks.BeforeDelete(async (c, cancellationToken) =>
-    {
-      if (await IsLastActiveAdminRoleAsync(c.Entity.Id, c.Entity.TenantId, cancellationToken))
-      {
-        c.Refuse(L["The last administrator role cannot be deleted."]);
-      }
-    });
-
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
       if (c.IsNew)

@@ -5,6 +5,51 @@ internal static class ReferenceLookupAllowlist
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedLabels = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedPatches = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedFilters = new();
+  private static readonly Lock WarmLock = new();
+  private static volatile bool _warmed;
+
+  public static void EnsureWarm(IServiceProvider? services)
+  {
+    if (_warmed || services == null)
+    {
+      return;
+    }
+
+    lock (WarmLock)
+    {
+      if (_warmed)
+      {
+        return;
+      }
+
+      var appInstance = services.GetService<PlatformAppService>();
+      foreach (var serviceType in ModuleCatalog.Instance.AllServiceTypes)
+      {
+        try
+        {
+          if (typeof(IFormService).IsAssignableFrom(serviceType))
+          {
+            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is IFormService form)
+            {
+              form.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+          }
+          else if (typeof(IGridService).IsAssignableFrom(serviceType))
+          {
+            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is IGridService grid)
+            {
+              grid.RegisterMetadata();
+            }
+          }
+        }
+        catch
+        {
+        }
+      }
+
+      _warmed = true;
+    }
+  }
 
   public static void RegisterLabels(Type? serviceType, IEnumerable<string> labelPaths)
   {

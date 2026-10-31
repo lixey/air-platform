@@ -719,8 +719,12 @@ public abstract partial class GridService<TEntity, TRow>
 
   public sealed class Hooks
   {
+    internal bool IsMultiDeleteAllowed { get; private set; }
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
+    internal List<Func<GridBatchContext<TEntity>, CancellationToken, Task>> AfterRestoreActions { get; } = [];
+
+    public void AllowMultiDelete(bool allow = true) => IsMultiDeleteAllowed = allow;
 
     public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>
@@ -735,6 +739,14 @@ public abstract partial class GridService<TEntity, TRow>
     public void AfterDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
     public void AfterDelete(Action<GridDeleteContext<TEntity>> handler) =>
       AfterDeleteActions.Add((c, ct) =>
+      {
+        handler(c);
+        return Task.CompletedTask;
+      });
+
+    public void AfterRestore(Func<GridBatchContext<TEntity>, CancellationToken, Task> handler) => AfterRestoreActions.Add(handler);
+    public void AfterRestore(Action<GridBatchContext<TEntity>> handler) =>
+      AfterRestoreActions.Add((c, ct) =>
       {
         handler(c);
         return Task.CompletedTask;

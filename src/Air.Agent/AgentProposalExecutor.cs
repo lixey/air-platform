@@ -254,14 +254,32 @@ public static class AgentProposalExecutor
 
             if (isEdit && !isAppendLines && childGrid != null && existingLineIds.Count > 0)
             {
-              var delRes = await childGrid.DeleteAsync(new GridRequest
+              if (childGrid.AllowsMultiDelete || existingLineIds.Count <= 1)
               {
-                ParentId = recordId,
-                SelectedIds = existingLineIds
-              }, mutationCt);
-              if (delRes.Outcome != MutationOutcome.Committed)
+                var delRes = await childGrid.DeleteAsync(new GridRequest
+                {
+                  ParentId = recordId,
+                  SelectedIds = existingLineIds
+                }, mutationCt);
+                if (delRes.Outcome != MutationOutcome.Committed)
+                {
+                  throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
+                }
+              }
+              else
               {
-                throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
+                foreach (var lineId in existingLineIds)
+                {
+                  var delRes = await childGrid.DeleteAsync(new GridRequest
+                  {
+                    ParentId = recordId,
+                    SelectedIds = [lineId]
+                  }, mutationCt);
+                  if (delRes.Outcome != MutationOutcome.Committed)
+                  {
+                    throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
+                  }
+                }
               }
             }
 

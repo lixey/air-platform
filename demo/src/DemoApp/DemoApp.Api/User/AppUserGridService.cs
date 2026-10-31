@@ -25,10 +25,19 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
   {
     hooks.BeforeDelete(async (c, cancellationToken) =>
     {
-      if (c.Records.Any(u => u.Id == 1))
+      if (c.Records.Any(u => u.Id == 1 || u.IsRoot))
       {
         c.Refuse(L["The root user cannot be deleted."]);
         return;
+      }
+
+      foreach (var u in c.Records)
+      {
+        if (User?.UserId != u.Id && !await CoversUserGrantsAsync(u.Id, cancellationToken))
+        {
+          c.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
+          return;
+        }
       }
 
       var ids = c.Records.Select(u => u.Id).ToList();
@@ -42,6 +51,22 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
         session.RevokedReason = "demo-user-deleted";
       }
     });
+  }
+
+  private async Task<bool> CoversUserGrantsAsync(long userId, CancellationToken cancellationToken)
+  {
+    var grants = await db.Set<AppAuthGrant>()
+      .Where(g => db.Set<AppAuthAssignment>().Any(a => a.UserId == userId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
+      .Select(g => g.Permission)
+      .Distinct()
+      .ToListAsync(cancellationToken);
+    if (app != null)
+    {
+      return app.Covers(grants);
+    }
+
+    var held = db.TenantContext.Rights ?? User?.Permissions;
+    return held != null && grants.All(p => HeldRights.Covers(held, p));
   }
 
   protected override void SetNav(Nav nav)
