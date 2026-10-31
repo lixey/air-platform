@@ -33,40 +33,15 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
 
       foreach (var u in c.Records)
       {
-        if (User?.UserId != u.Id && !await CoversUserGrantsAsync(u.Id, cancellationToken))
+        if (!await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, cancellationToken))
         {
           c.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
           return;
         }
       }
 
-      var ids = c.Records.Select(u => u.Id).ToList();
-      var now = DateTimeOffset.UtcNow;
-      var sessions = await db.AppAuthSession
-        .Where(s => ids.Contains(s.UserId) && s.RevokedAt == null)
-        .ToListAsync(cancellationToken);
-      foreach (var session in sessions)
-      {
-        session.RevokedAt = now;
-        session.RevokedReason = "demo-user-deleted";
-      }
+      await PlatformAppService.RevokeUserSessionsAsync(db, [.. c.Records.Select(u => u.Id)], "app-user-deleted", cancellationToken);
     });
-  }
-
-  private async Task<bool> CoversUserGrantsAsync(long userId, CancellationToken cancellationToken)
-  {
-    var grants = await db.Set<AppAuthGrant>()
-      .Where(g => db.Set<AppAuthAssignment>().Any(a => a.UserId == userId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
-      .Select(g => g.Permission)
-      .Distinct()
-      .ToListAsync(cancellationToken);
-    if (app != null)
-    {
-      return app.Covers(grants);
-    }
-
-    var held = db.TenantContext.Rights ?? User?.Permissions;
-    return held != null && grants.All(p => HeldRights.Covers(held, p));
   }
 
   protected override void SetNav(Nav nav)
@@ -75,6 +50,7 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
     nav.AddAction(Deactivate, b => b.Label(L["Deactivate"]).Icon(UiIcon.Ban), L["Deactivate the selected users and end their sessions?"]);
   }
 
+  [RequireRight<AppUserGridService>(EndpointAction.Edit)]
   public Task<GridActionDto> Deactivate(GridRequest request, CancellationToken cancellationToken) =>
     ExecuteBatchAsync(request, async (context, token) =>
     {
@@ -86,28 +62,19 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
 
       foreach (var u in context.Records)
       {
-        if (User?.UserId != u.Id && !await CoversUserGrantsAsync(u.Id, token))
+        if (!await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, token))
         {
           context.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
           return;
         }
       }
 
-      var ids = context.Records.Select(u => u.Id).ToList();
-      var now = DateTimeOffset.UtcNow;
       foreach (var user in context.Records)
       {
         user.IsActive = false;
       }
 
-      var sessions = await db.AppAuthSession
-        .Where(s => ids.Contains(s.UserId) && s.RevokedAt == null)
-        .ToListAsync(token);
-      foreach (var session in sessions)
-      {
-        session.RevokedAt = now;
-        session.RevokedReason = "demo-user-deactivated";
-      }
+      await PlatformAppService.RevokeUserSessionsAsync(db, [.. context.Records.Select(u => u.Id)], "app-user-deactivated", token);
     }, cancellationToken);
 }
 

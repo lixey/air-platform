@@ -20,7 +20,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
-    User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*");
+    User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
 
@@ -111,7 +111,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
                                  !parent.IsOptional &&
                                  Feature.ServiceType != null &&
                                  Feature.ServiceType != GetType();
-    var (allowed, preloaded) = await ParentScopeValidator.ValidateAndLoadAsync(
+    var (allowed, preloaded, parentChildren) = await ParentScopeValidator.ValidateAndLoadAsync(
       db,
       PlatformApp,
       ParentId,
@@ -125,6 +125,18 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ct);
     _preloadedParent = preloaded;
     _preloadedParentId = ParentId;
+    var effectiveParentService = !string.IsNullOrEmpty(ParentService)
+      ? ParentService
+      : parent.BoundParentService;
+    if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
+    {
+      var myService = ServicePathResolver.Resolve(GetType());
+      var matchedChild = parentChildren.FirstOrDefault(c =>
+        c.ServiceType == GetType() ||
+        string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
+      _cachedParentChild = (effectiveParentService, ParentId, matchedChild);
+    }
+
     return allowed;
   }
 

@@ -84,8 +84,9 @@ public static class AgentPromptBuilder
     {
       var currentBytes = Encoding.UTF8.GetByteCount(sb.ToString());
       var contextBytes = Encoding.UTF8.GetByteCount(contextJson);
+      var normalizedSessionId = AgentStore.NormalizeSessionId(request.SessionId);
       var fullContextFile = !string.IsNullOrWhiteSpace(workspaceDir)
-        ? Path.Combine(workspaceDir, $"context-{request.SessionId}.json")
+        ? Path.Combine(workspaceDir, $"context-{normalizedSessionId}.json")
         : null;
 
       if (currentBytes + contextBytes + 128 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
@@ -104,7 +105,7 @@ public static class AgentPromptBuilder
       }
       else
       {
-        var contextPath = Path.Combine(workspaceDir, $"context-{request.SessionId}.json");
+        var contextPath = Path.Combine(workspaceDir, $"context-{normalizedSessionId}.json");
         if (!File.Exists(contextPath))
         {
           File.WriteAllText(contextPath, contextJson, Encoding.UTF8);

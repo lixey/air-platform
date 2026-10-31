@@ -144,7 +144,7 @@ public static class ServiceEndpointsExtensions
     var usesRawHttpRequest = parameters.Any(p => p.ParameterType == typeof(HttpRequest) || p.ParameterType == typeof(HttpContext));
 
     JsonElement? rawBody = null;
-    if (!usesRawHttpRequest && httpRequest.ContentLength > 0 && !httpRequest.HasFormContentType)
+    if (!usesRawHttpRequest && HasJsonBody(httpRequest) && !httpRequest.HasFormContentType)
     {
       try
       {
@@ -207,6 +207,11 @@ public static class ServiceEndpointsExtensions
     return await InvokeServiceMethodAsync(actionMethod, serviceInstance, args);
   }
 
+  public static bool HasJsonBody(HttpRequest httpRequest) =>
+    httpRequest.ContentLength is > 0 ||
+    httpRequest.ContentLength is null &&
+    (httpRequest.HasJsonContentType() || httpRequest.Body.CanSeek && httpRequest.Body.Length > 0);
+
   public static bool CanView(Feature? feat, IUserContext? userContext)
   {
     if (userContext is null or { IsAuthenticated: false })
@@ -222,6 +227,23 @@ public static class ServiceEndpointsExtensions
     return userContext.Can(feat.View) ||
            userContext.Can(feat.MenuView) ||
            userContext.Can(feat.Edit) ||
+           userContext.Can(feat.All) ||
+           userContext.Can("*");
+  }
+
+  public static bool CanEdit(Feature? feat, IUserContext? userContext)
+  {
+    if (userContext is null or { IsAuthenticated: false } || feat is { IsReadOnly: true })
+    {
+      return false;
+    }
+
+    if (feat == null || string.IsNullOrEmpty(feat.Module))
+    {
+      return true;
+    }
+
+    return userContext.Can(feat.Edit) ||
            userContext.Can(feat.All) ||
            userContext.Can("*");
   }

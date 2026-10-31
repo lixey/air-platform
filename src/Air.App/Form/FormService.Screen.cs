@@ -137,29 +137,16 @@ public abstract partial class FormService<TEntity, TInput>
     {
       var customNav = new Nav(servicePath, L);
       await SetNavAsync(customNav, ct);
-      var isUserReadOnly = User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
+      var isUserReadOnly = User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
       var permittedActions = new List<FormNavActionEntry>();
       foreach (var entry in customNav.Actions)
       {
         var methodInfo = entry.Method.Method;
-        var reqAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true);
-        var reqAction = methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true);
-        var hasRight = true;
-        if (reqAttr != null && User != null && User.IsAuthenticated)
-        {
-          if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
-          {
-            hasRight = User.Can(targetFeat.Action(reqAttr.ActionName)) || User.Can(targetFeat.All) || User.Can(Feature.All);
-          }
-        }
-        else if (reqAction != null && User != null && User.IsAuthenticated)
-        {
-          hasRight = User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
-        }
-        else if (!entry.IsAllowedInReadOnly && (IsReadOnly || isUserReadOnly))
-        {
-          hasRight = false;
-        }
+        var hasExplicitAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
+                              methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null;
+        var hasRight = hasExplicitAttr && User is { IsAuthenticated: true }
+          ? ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, Feature, User)
+          : entry.IsAllowedInReadOnly || !IsReadOnly && !isUserReadOnly;
 
         if (hasRight)
         {
@@ -742,9 +729,7 @@ public abstract partial class FormService<TEntity, TInput>
       return null;
     }
 
-    if (typeof(AppPlatformChange).IsAssignableFrom(typeof(TEntity)) ||
-        typeof(BaseAppAuthSession).IsAssignableFrom(typeof(TEntity)) ||
-        Attribute.IsDefined(typeof(TEntity), typeof(NoAuditAttribute), inherit: true))
+    if (Attribute.IsDefined(typeof(TEntity), typeof(NoAuditAttribute), inherit: true))
     {
       return null;
     }
@@ -854,16 +839,10 @@ public abstract partial class FormService<TEntity, TInput>
       return null;
     }
 
-    if (_lastElements == null)
-    {
-      var elements = new Elements();
-      await SetElementsAsync(elements, ct);
-      LocalizeAndResolveSelectElements(elements);
-      _lastElements = elements;
-    }
+    var elements = await EnsureElementsAsync(ct);
 
     var offers = new List<(string ActionKey, int ReasonIndex, Expression<Func<TEntity, bool>> Condition)>();
-    if (_lastElements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
+    if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
       foreach (var transition in statusFlow.Transitions)
       {

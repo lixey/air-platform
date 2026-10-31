@@ -211,7 +211,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
-    User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
+    User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
   private object? _preloadedParent;
@@ -251,7 +251,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   protected async Task EnsureParentScopeAsync(Parent parent, bool lockParent, CancellationToken ct)
   {
-    var (allowed, preloaded) = await ParentScopeValidator.ValidateAndLoadAsync(
+    var (allowed, preloaded, parentChildren) = await ParentScopeValidator.ValidateAndLoadAsync(
       db,
       PlatformApp,
       Request.ParentId,
@@ -273,6 +273,13 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
     _preloadedParent = preloaded;
     _preloadedParentId = Request.ParentId;
+    var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
+      ? Request.ParentService
+      : parent.BoundParentService;
+    if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
+    {
+      _cachedParentChildren = (effectiveParentService, Request.ParentId, parentChildren);
+    }
   }
 
   protected async Task PreloadParentRecordAsync(Parent parent, CancellationToken ct)
@@ -282,7 +289,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       return;
     }
 
-    var (_, preloaded) = await ParentScopeValidator.ValidateAndLoadAsync(
+    var (_, preloaded, parentChildren) = await ParentScopeValidator.ValidateAndLoadAsync(
       db,
       PlatformApp,
       Request.ParentId,
@@ -296,6 +303,13 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       ct);
     _preloadedParent = preloaded;
     _preloadedParentId = Request.ParentId;
+    var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
+      ? Request.ParentService
+      : parent.BoundParentService;
+    if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
+    {
+      _cachedParentChildren = (effectiveParentService, Request.ParentId, parentChildren);
+    }
   }
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
@@ -836,6 +850,20 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity, id);
 
+  private async Task<Elements> EnsureElementsAsync(CancellationToken ct = default, bool reload = false)
+  {
+    if (!reload && _lastElements != null)
+    {
+      return _lastElements;
+    }
+
+    var elements = new Elements();
+    await SetElementsAsync(elements, ct);
+    LocalizeAndResolveSelectElements(elements);
+    _lastElements = elements;
+    return elements;
+  }
+
   public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
   {
     IsNew = Request.Id is null or <= 0;
@@ -844,9 +872,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       CurrentEntity = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == Request.Id.Value);
     }
 
-    var elements = new Elements();
-    await SetElementsAsync(elements, ct);
-    LocalizeAndResolveSelectElements(elements);
+    var elements = await EnsureElementsAsync(ct, reload: true);
     if (Feature.IsReadOnly)
     {
       foreach (var child in elements.Children)
@@ -855,7 +881,6 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       }
     }
 
-    _lastElements = elements;
     return (elements.List, elements.Children);
   }
 }

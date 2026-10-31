@@ -296,20 +296,28 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
                 var restoredValue = DeserializePropertyValue(kvp.Value, prop.Metadata.ClrType);
 
-                if (((MemberInfo?)prop.Metadata.PropertyInfo ?? prop.Metadata.FieldInfo) is { } member &&
-                    Attribute.IsDefined(member, typeof(KeepsVersionAttribute), inherit: true))
+                if (((MemberInfo?)prop.Metadata.PropertyInfo ?? prop.Metadata.FieldInfo) is { } member)
                 {
-                  if (!Equals(prop.CurrentValue, restoredValue))
+                  if (Attribute.IsDefined(member, typeof(NoAuditAttribute), inherit: true) ||
+                      Attribute.IsDefined(member, typeof(SensitiveAttribute), inherit: true))
                   {
-                    targetDb.MarkMutationRollbackOnly();
-                    return new GridActionDto
-                    {
-                      Outcome = MutationOutcome.Refused,
-                      Warnings = [new MessageDto { Detail = L["ChangeRestoreKeepsVersion", change.Table, change.RowId], Code = "change.restore.keepsVersion", Type = MessageType.Error }]
-                    };
+                    continue;
                   }
 
-                  continue;
+                  if (member.GetCustomAttribute<KeepsVersionAttribute>(inherit: true) is { IsConcurrencyToken: true })
+                  {
+                    if (!Equals(prop.CurrentValue, restoredValue))
+                    {
+                      targetDb.MarkMutationRollbackOnly();
+                      return new GridActionDto
+                      {
+                        Outcome = MutationOutcome.Refused,
+                        Warnings = [new MessageDto { Detail = L["ChangeRestoreKeepsVersion", change.Table, change.RowId], Code = "change.restore.keepsVersion", Type = MessageType.Error }]
+                      };
+                    }
+
+                    continue;
+                  }
                 }
 
                 if (afterDict != null && afterDict.TryGetValue(kvp.Key, out var afterRaw))
@@ -596,34 +604,22 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
   private async Task<Dictionary<long, string>> LoadUserNamesAsync(IReadOnlyCollection<long> userIds, CancellationToken ct)
   {
     var result = new Dictionary<long, string>();
-    if (userIds.Count == 0)
-    {
-      return result;
-    }
-
-    var userClrType = db.Model.GetEntityTypes()
-      .Select(e => e.ClrType)
-      .FirstOrDefault(t => typeof(BaseAppUser).IsAssignableFrom(t) && !t.IsAbstract);
-    if (userClrType == null)
+    if (userIds.Count == 0 || db.SetOfBase<BaseAppUser>() is not { } userQuery)
     {
       return result;
     }
 
     try
     {
-      var setMethod = typeof(DbContext).GetMethod(nameof(DbContext.Set), Type.EmptyTypes)!.MakeGenericMethod(userClrType);
-      if (setMethod.Invoke(db, null) is IQueryable<BaseAppUser> userQuery)
-      {
-        var rows = await userQuery
-          .AsNoTracking()
-          .Where(u => userIds.Contains(u.Id))
-          .Select(u => new { u.Id, u.Name, u.Login })
-          .ToListAsync(ct);
+      var rows = await userQuery
+        .AsNoTracking()
+        .Where(u => userIds.Contains(u.Id))
+        .Select(u => new { u.Id, u.Name, u.Login })
+        .ToListAsync(ct);
 
-        foreach (var r in rows)
-        {
-          result[r.Id] = !string.IsNullOrWhiteSpace(r.Name) ? r.Name : r.Login;
-        }
+      foreach (var r in rows)
+      {
+        result[r.Id] = !string.IsNullOrWhiteSpace(r.Name) ? r.Name : r.Login;
       }
     }
     catch { }

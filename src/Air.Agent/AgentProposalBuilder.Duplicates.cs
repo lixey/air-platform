@@ -121,7 +121,8 @@ public static partial class AgentProposalBuilder
           }
 
           var rAmt = 0m;
-          var hasAmt = (row.TryGetValue(moneyPath, out var rAmtObj) || row.TryGetValue("signedAmount", out rAmtObj)) &&
+          var hasAmt = (row.TryGetValue(moneyPath, out var rAmtObj) ||
+                        (rAmtObj = row.FirstOrDefault(kv => kv.Key.EndsWith("Amount", StringComparison.OrdinalIgnoreCase)).Value) != null) &&
                        TryConvertToDecimal(rAmtObj, out rAmt);
           if (!hasAmt || Math.Abs(Math.Abs(rAmt) - proposedAmt) >= 0.01m)
           {
@@ -186,8 +187,8 @@ public static partial class AgentProposalBuilder
           }
         }
 
-        if ((matchedRow.TryGetValue("signedAmount", out var saVal) ||
-             !string.IsNullOrEmpty(moneyPath) && matchedRow.TryGetValue(moneyPath, out saVal)) &&
+        if ((!string.IsNullOrEmpty(moneyPath) && matchedRow.TryGetValue(moneyPath, out var saVal) ||
+             (saVal = matchedRow.FirstOrDefault(kv => kv.Key.EndsWith("Amount", StringComparison.OrdinalIgnoreCase)).Value) != null) &&
             TryConvertToDecimal(saVal, out var saDec) &&
             saDec != 0m)
         {

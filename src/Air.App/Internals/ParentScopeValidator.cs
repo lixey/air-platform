@@ -2,7 +2,7 @@ namespace Platform.App.Internals;
 
 internal static class ParentScopeValidator
 {
-  public static async Task<(bool Allowed, object? PreloadedParent)> ValidateAndLoadAsync(
+  public static async Task<(bool Allowed, object? PreloadedParent, IReadOnlyList<Form.ChildGridBuilder>? ParentChildren)> ValidateAndLoadAsync(
     PlatformDbContext db,
     PlatformAppService? app,
     long? parentId,
@@ -17,12 +17,12 @@ internal static class ParentScopeValidator
   {
     if (hasRequiredBoundParent && parentId is null or <= 0)
     {
-      return (false, null);
+      return (false, null, null);
     }
 
     if (parentId is not > 0)
     {
-      return (true, null);
+      return (true, null, null);
     }
 
     var effectiveParentService = !string.IsNullOrEmpty(requestParentService)
@@ -30,13 +30,12 @@ internal static class ParentScopeValidator
       : boundParentService;
     if (!string.IsNullOrEmpty(effectiveParentService) && !matchesService(effectiveParentService))
     {
-      return (false, null);
+      return (false, null, null);
     }
 
-    var parentServiceType = boundParentServiceType
-      ?? (!string.IsNullOrEmpty(requestParentService)
-        ? ModuleCatalog.Instance.FindServiceType(requestParentService)
-        : null);
+    var parentServiceType = (!string.IsNullOrEmpty(requestParentService)
+      ? ModuleCatalog.Instance.FindServiceType(requestParentService)
+      : null) ?? boundParentServiceType;
     var parentEntityType = ModuleCatalog.GetServiceEntityType(parentServiceType) ?? boundParentEntityType;
 
     if (lockParent && parentEntityType != null)
@@ -50,15 +49,21 @@ internal static class ParentScopeValidator
     {
       parentForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
       var loaded = await parentForm.LoadParentRecordAsync(parentId.Value, ct);
-      return loaded != null ? (true, loaded) : (false, null);
+      if (loaded == null)
+      {
+        return (false, null, null);
+      }
+
+      var (_, children) = await parentForm.GetElementsMetadataAsync(ct);
+      return (true, loaded, children);
     }
 
     if (parentEntityType != null)
     {
       var loaded = await db.FindAsync(parentEntityType, [parentId.Value], ct);
-      return loaded != null ? (true, loaded) : (false, null);
+      return loaded != null ? (true, loaded, null) : (false, null, null);
     }
 
-    return (true, null);
+    return (true, null, null);
   }
 }

@@ -315,7 +315,7 @@ public sealed class FormAndGridMutationTests : IDisposable
     dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
     Assert.Equal("secret-v2", dbInv.ApiSecret);
 
-    // 2. [NoAudit] increments Ver without creating AppPlatformChange; [KeepsVersion] keeps Ver
+    // 2. [NoAudit] vs [KeepsVersion]: [NoAudit] bumps Ver without creating AppPlatformChange
     var verBefore = dbInv.Ver;
     Guid noAuditRunId;
     using (db.BeginMutationRun())

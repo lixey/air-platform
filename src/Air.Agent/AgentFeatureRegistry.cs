@@ -2,36 +2,11 @@ namespace Platform.Agent;
 
 public static class AgentFeatureRegistry
 {
-  public static bool CanViewFeature(Feature? feat, PlatformAppService app)
-  {
-    if (feat == null || string.IsNullOrEmpty(feat.Module) || app.User is not { IsAuthenticated: true } user)
-    {
-      return true;
-    }
+  public static bool CanViewFeature(Feature? feat, PlatformAppService app) =>
+    ServiceEndpointsExtensions.CanView(feat, app.User);
 
-    return user.Can(feat.View) ||
-           user.Can(feat.MenuView) ||
-           user.Can(feat.Edit) ||
-           user.Can(feat.All) ||
-           user.Can("*");
-  }
-
-  public static bool CanEditFeature(Feature? feat, PlatformAppService app)
-  {
-    if (feat == null || feat.IsReadOnly)
-    {
-      return false;
-    }
-
-    if (string.IsNullOrEmpty(feat.Module) || app.User is not { IsAuthenticated: true } user)
-    {
-      return true;
-    }
-
-    return user.Can(feat.Edit) ||
-           user.Can(feat.All) ||
-           user.Can("*");
-  }
+  public static bool CanEditFeature(Feature? feat, PlatformAppService app) =>
+    ServiceEndpointsExtensions.CanEdit(feat, app.User);
 
   public static bool IsEditableElement(FormElementDto el) =>
     !el.IsDisabled && !el.IsServerOwned && !el.IsHidden && el.Model is not FormInfoModel;
@@ -279,10 +254,6 @@ public static class AgentFeatureRegistry
       catch { }
     }
 
-    var prefix = referenceService.EndsWith("-grid", StringComparison.OrdinalIgnoreCase)
-      ? referenceService[..^5]
-      : referenceService;
-    var candidateFormPath = $"{prefix}-form";
-    return agentForms.FirstOrDefault(f => string.Equals(f.ServicePath, candidateFormPath, StringComparison.OrdinalIgnoreCase));
+    return null;
   }
 }

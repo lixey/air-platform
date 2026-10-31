@@ -626,23 +626,12 @@ public static class AgentContextQueryService
       return values;
     }
 
-    if (modelObj is FormDataDto dto && dto.Value != null)
-    {
-      foreach (var (k, v) in dto.Value)
-      {
-        values[k] = UnwrapReferenceValue(v);
-      }
-
-      return values;
-    }
-
     var jsonEl = JsonSerializer.SerializeToElement(modelObj, WebJson);
-    if (jsonEl.ValueKind != JsonValueKind.Object)
+    if (jsonEl.ValueKind == JsonValueKind.Object)
     {
-      return values;
+      PopulateValuesFromJsonElement(jsonEl, editableElements, values, ignoreZeroNumbers: false);
     }
 
-    PopulateValuesFromJsonElement(jsonEl, editableElements, values, ignoreZeroNumbers: false);
     return values;
   }
 
@@ -660,23 +649,11 @@ public static class AgentContextQueryService
         return defaults;
       }
 
-      if (modelObj is FormDataDto dto && dto.Value != null)
-      {
-        foreach (var (k, v) in dto.Value)
-        {
-          defaults[k] = UnwrapReferenceValue(v);
-        }
-
-        return defaults;
-      }
-
       var jsonEl = JsonSerializer.SerializeToElement(modelObj, WebJson);
-      if (jsonEl.ValueKind != JsonValueKind.Object)
+      if (jsonEl.ValueKind == JsonValueKind.Object)
       {
-        return defaults;
+        PopulateValuesFromJsonElement(jsonEl, editableElements, defaults, ignoreZeroNumbers: true);
       }
-
-      PopulateValuesFromJsonElement(jsonEl, editableElements, defaults, ignoreZeroNumbers: true);
     }
     catch
     {
@@ -775,10 +752,9 @@ public static class AgentContextQueryService
   private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
   {
     "додай", "додати", "створи", "створити", "зміни", "змінити", "відредагуй", "редагуй",
-    "операцію", "операція", "витрату", "витрата", "дохід", "переказ", "запис", "суму", "сума",
-    "розбери", "прикріплене", "фото", "чек", "чека", "скріншот", "підготуй", "записи",
-    "грн", "uah", "usd", "eur", "на", "в", "у", "за", "від", "до", "та", "і", "й", "або", "що", "це", "як", "по", "із", "зі",
-    "add", "create", "edit", "update", "change", "record", "transaction", "expense", "income", "transfer", "amount", "for", "from", "to", "in", "on", "at", "the", "and", "with", "parse", "attached", "photo", "receipt", "image"
+    "запис", "записи", "суму", "сума", "розбери", "прикріплене", "фото", "скріншот", "підготуй",
+    "на", "в", "у", "за", "від", "до", "та", "і", "й", "або", "що", "це", "як", "по", "із", "зі",
+    "add", "create", "edit", "update", "change", "record", "amount", "for", "from", "to", "in", "on", "at", "the", "and", "with", "parse", "attached", "photo", "image"
   };
 
   private static IReadOnlyList<string> ExtractSearchTokens(string? message)

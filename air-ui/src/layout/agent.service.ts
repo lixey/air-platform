@@ -1,3 +1,4 @@
+import { Location } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Service, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
@@ -5,6 +6,7 @@ import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from '../agent/agent-bloc
 import { parseAgentBlocks } from '../agent/agent-block-parser';
 import { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
+import { AuthService } from '../app/auth/auth.service';
 import { PLATFORM_CLIENT_HEADER, PLATFORM_TIME_ZONE_HEADER } from '../app/auth/credentials.interceptor';
 import { LocaleService } from '../app/locale.service';
 import type {
@@ -56,6 +58,8 @@ function stripProposalBlocks(raw: string): string {
 @Service()
 export class AgentService {
   private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthService);
+  private readonly location = inject(Location);
   private readonly overlay = inject(OverlayService);
   private readonly alert = inject(AlertService);
   private readonly locale = inject(LocaleService);
@@ -223,12 +227,15 @@ export class AgentService {
         });
 
       let response = await doFetch();
-      if (response.status === 401) {
-        const refreshed = await firstValueFrom(this.http.post('/api/auth/refresh', {}, shownByCaller()))
-          .then(() => true)
-          .catch(() => false);
-        if (refreshed) {
+      if (response.status === 401 && this.auth.isLoggedIn()) {
+        const refreshed = await firstValueFrom(this.auth.refresh()).catch(() => null);
+        if (refreshed === true) {
           response = await doFetch();
+          if (response.status === 401 && this.auth.isLoggedIn()) {
+            this.auth.sessionLost(this.location.path() || null);
+          }
+        } else if (refreshed === false && this.auth.isLoggedIn()) {
+          this.auth.sessionLost(this.location.path() || null);
         }
       }
 

@@ -52,6 +52,67 @@ public class PlatformAppService(
   }
 
   /// <summary>
+  /// Whether the principal's held permissions cover every active role grant held by <paramref name="targetUserId"/>.
+  /// </summary>
+  public static async Task<bool> CoversUserGrantsAsync(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    IUserContext? user,
+    long targetUserId,
+    CancellationToken ct = default)
+  {
+    if (user?.UserId == targetUserId)
+    {
+      return true;
+    }
+
+    if (db.SetOfBase<BaseAppAuthGrant>() is not { } grantsSet ||
+        db.SetOfBase<BaseAppAuthAssignment>() is not { } assignmentsSet)
+    {
+      return false;
+    }
+
+    var grants = await grantsSet
+      .Where(g => assignmentsSet.Any(a => a.UserId == targetUserId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
+      .Select(g => g.Permission)
+      .Distinct()
+      .ToListAsync(ct);
+
+    if (app != null)
+    {
+      return app.Covers(grants);
+    }
+
+    var held = db.TenantContext.Rights ?? user?.Permissions;
+    return held != null && grants.All(p => HeldRights.Covers(held, p));
+  }
+
+  /// <summary>
+  /// Revokes all active authentication sessions for the specified users.
+  /// </summary>
+  public static async Task RevokeUserSessionsAsync(
+    PlatformDbContext db,
+    IReadOnlyCollection<long> userIds,
+    string reason,
+    CancellationToken ct = default)
+  {
+    if (userIds.Count == 0 || db.SetOfBase<BaseAppAuthSession>() is not { } sessionsSet)
+    {
+      return;
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var sessions = await sessionsSet
+      .Where(s => userIds.Contains(s.UserId) && s.RevokedAt == null)
+      .ToListAsync(ct);
+    foreach (var session in sessions)
+    {
+      session.RevokedAt = now;
+      session.RevokedReason = reason;
+    }
+  }
+
+  /// <summary>
   /// Whether the current principal may open the specified screen type.
   /// </summary>
   public bool CanOpen(Type screen)

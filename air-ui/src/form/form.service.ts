@@ -43,6 +43,7 @@ import {
   isSecret,
   type SplitDraft,
   splitDraft,
+  stableJson,
   stripUntouchedSecrets,
 } from './form-value';
 
@@ -808,7 +809,7 @@ export class FormService {
     this._isRecovering.set(true);
     let operation: ScreenOperation | undefined;
     try {
-      if (JSON.stringify(this.buildSubmission()) !== JSON.stringify(kept.submission) && !(await this.confirmReplacement())) {
+      if (stableJson(this.buildSubmission()) !== stableJson(kept.submission) && !(await this.confirmReplacement())) {
         return;
       }
       if (!isCurrent()) {

@@ -114,24 +114,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           }
 
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-          var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          var canView = grid.CanView(req, userContext);
-          if (!canView && (!isPicker || !grid.CanLookup(req, userContext)))
+          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext, services))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
-          }
-
-          if (!canView)
-          {
-            ReferenceLookupAllowlist.EnsureWarm(services);
-            req.IsReferencePicker = true;
-            req.IsDataOnly = true;
-            req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
-            req.ColumnFilter = null;
-            req.NamedFilters = null;
-            req.PatchSourceColumns = ReferenceLookupAllowlist.FilterPatchColumns(serviceType, req.PatchSourceColumns);
-            req.ReferenceLabelPaths = ReferenceLookupAllowlist.FilterLabelPaths(serviceType, grid.GetReferenceLabelPaths(), req.ReferenceLabelPaths);
-            req.PageSize = Math.Min(req.PageSize > 0 ? req.PageSize : 50, 50);
           }
 
           if (req.IsDataOnly)
@@ -156,20 +141,9 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           }
 
           var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-          var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
-          var canView = grid.CanView(req, userContext);
-          if (!canView && (!isPicker || !grid.CanLookup(req, userContext)))
+          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext, services))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
-          }
-
-          if (!canView)
-          {
-            ReferenceLookupAllowlist.EnsureWarm(services);
-            req.IsReferencePicker = true;
-            req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
-            req.ColumnFilter = null;
-            req.NamedFilters = null;
           }
 
           return Results.Ok(await grid.GetCountAsync(req, ct));
@@ -233,7 +207,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           GridRequest? req = null;
           var actionMethodKey = subMethod ?? "";
-          if (httpRequest.ContentLength > 0)
+          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
           {
             try
             {
@@ -263,7 +237,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           GridRequest? req = null;
           JsonElement? bodyElement = null;
-          if (httpRequest.ContentLength > 0)
+          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
           {
             try
             {
@@ -464,7 +438,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           FormRequest? req = null;
           var actionMethodKey = subMethod ?? "";
-          if (httpRequest.ContentLength > 0)
+          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
           {
             try
             {
@@ -491,25 +465,30 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.Unauthorized();
           }
 
+          JsonDocument? jsonDoc = null;
           JsonElement? bodyElement = null;
-          using var jsonDoc = httpRequest.ContentLength > 0
-            ? await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct)
-            : null;
-
-          if (jsonDoc != null)
+          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
           {
-            bodyElement = jsonDoc.RootElement;
+            try
+            {
+              jsonDoc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
+              bodyElement = jsonDoc.RootElement;
+            }
+            catch { }
           }
 
-          var req = BindFormRequest(httpRequest, bodyElement ?? default);
-          if (req.Id == null)
+          using (jsonDoc)
           {
-            return Results.BadRequest(new { detail = "Record id is required for move-status." });
-          }
+            var req = BindFormRequest(httpRequest, bodyElement ?? default);
+            if (req.Id == null)
+            {
+              return Results.BadRequest(new { detail = "Record id is required for move-status." });
+            }
 
-          form.SetRequest(req);
-          var result = await form.MoveStatusAsync(req.Id.Value, subMethod, bodyElement, req.Ver, ct);
-          return PlatformEndpointsExtensions.ToMutationResult(result);
+            form.SetRequest(req);
+            var result = await form.MoveStatusAsync(req.Id.Value, subMethod, bodyElement, req.Ver, ct);
+            return PlatformEndpointsExtensions.ToMutationResult(result);
+          }
         }
 
       default:
@@ -599,11 +578,41 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
   private static Task<IResult> InvokeServiceMethodAsync(MethodInfo method, object target, object?[] args) =>
     ServiceEndpointsExtensions.InvokeServiceMethodAsync(method, target, args);
 
+  private static bool AuthorizeAndSanitizeGridRead(
+    Type serviceType,
+    IGridService grid,
+    GridRequest req,
+    IUserContext userContext,
+    IServiceProvider services)
+  {
+    var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
+    var canView = grid.CanView(req, userContext);
+    if (!canView && (!isPicker || !grid.CanLookup(req, userContext)))
+    {
+      return false;
+    }
+
+    if (!canView)
+    {
+      ReferenceLookupAllowlist.EnsureWarm(services);
+      req.IsReferencePicker = true;
+      req.IsDataOnly = true;
+      req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
+      req.ColumnFilter = null;
+      req.NamedFilters = null;
+      req.PatchSourceColumns = ReferenceLookupAllowlist.FilterPatchColumns(serviceType, req.PatchSourceColumns);
+      req.ReferenceLabelPaths = ReferenceLookupAllowlist.FilterLabelPaths(serviceType, grid.GetReferenceLabelPaths(), req.ReferenceLabelPaths);
+      req.PageSize = Math.Min(req.PageSize > 0 ? req.PageSize : 50, 50);
+    }
+
+    return true;
+  }
+
   private static async Task<T> ReadGridRequestAsync<T>(HttpRequest httpRequest, CancellationToken ct)
     where T : GridRequest, new()
   {
     T? req = null;
-    if (httpRequest.ContentLength > 0)
+    if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
     {
       try
       {
@@ -613,23 +622,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     }
 
     req ??= new T();
-    ApplyGridQueryParams(httpRequest, req);
-    return req;
-  }
-
-  private static async Task<GridRequest> ReadGridRequestAsync(HttpRequest httpRequest, Type requestType, CancellationToken ct)
-  {
-    GridRequest? req = null;
-    if (httpRequest.ContentLength > 0)
-    {
-      try
-      {
-        req = (GridRequest?)await httpRequest.ReadFromJsonAsync(requestType, cancellationToken: ct);
-      }
-      catch { }
-    }
-
-    req ??= (GridRequest)Activator.CreateInstance(requestType)!;
     ApplyGridQueryParams(httpRequest, req);
     return req;
   }
@@ -654,7 +646,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
   private static async Task<FormRequest> ReadFormRequestAsync(HttpRequest httpRequest, CancellationToken ct)
   {
-    if (httpRequest.ContentLength > 0)
+    if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
     {
       try
       {
@@ -669,18 +661,18 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
   private static FormRequest BindFormRequest(HttpRequest httpRequest, JsonElement root)
   {
-    var req = new FormRequest();
-    if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
+    var (req, _) = FormRequest.Normalize(root, allowNestedFallback: false);
+    if (req.Id is null or <= 0 && httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
     {
       req.Id = parsedId;
     }
 
-    if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid))
+    if (req.ParentId is null && httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid))
     {
       req.ParentId = parsedPid;
     }
 
-    if (httpRequest.Query.TryGetValue("parentService", out var psStr))
+    if (string.IsNullOrEmpty(req.ParentService) && httpRequest.Query.TryGetValue("parentService", out var psStr))
     {
       req.ParentService = psStr;
     }
@@ -690,42 +682,12 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       req.IdempotencyKey = idemVals.ToString().Trim();
     }
 
-    if (root.ValueKind == JsonValueKind.Object)
-    {
-      req.RawPayload = root.GetRawText();
-
-      if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId))
-      {
-        req.Id = bodyId;
-      }
-
-      if (root.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var bodyVer))
-      {
-        req.Ver = bodyVer;
-      }
-
-      if (root.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var bodyPid))
-      {
-        req.ParentId = bodyPid;
-      }
-
-      if (root.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } bodyPs)
-      {
-        req.ParentService = bodyPs;
-      }
-
-      if (root.TryGetProperty("value", out var valProp) && valProp.ValueKind == JsonValueKind.Object)
-      {
-        req.Value = valProp.Clone();
-      }
-    }
-
     return req;
   }
 
   private static async Task<ReportRequest> ReadReportRequestAsync(HttpRequest request, CancellationToken ct)
   {
-    if (request.ContentLength is null or 0)
+    if (!ServiceEndpointsExtensions.HasJsonBody(request))
     {
       return new ReportRequest();
     }

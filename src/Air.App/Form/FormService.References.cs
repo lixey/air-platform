@@ -21,40 +21,29 @@ public abstract partial class FormService<TEntity, TInput>
         ? hasTenant.TenantId
         : db.TenantContext.TenantId;
     string? resolvedZone = null;
-    if (startTenantId is > 0)
+    if (startTenantId is > 0 && db.SetOfBase<BaseAppTenant>() is { } tenantQuery)
     {
-      var tenantClrType = db.Model.GetEntityTypes()
-        .Select(t => t.ClrType)
-        .FirstOrDefault(t => typeof(BaseAppTenant).IsAssignableFrom(t) && !t.IsAbstract);
-
-      if (tenantClrType != null)
+      var currentId = startTenantId;
+      var visited = new HashSet<long>();
+      while (currentId is > 0 && visited.Add(currentId.Value))
       {
-        var setMethod = typeof(DbContext).GetMethod(nameof(DbContext.Set), Type.EmptyTypes)!.MakeGenericMethod(tenantClrType);
-        if (setMethod.Invoke(db, null) is IQueryable<BaseAppTenant> tenantQuery)
+        var row = await tenantQuery.IgnoreQueryFilters()
+          .AsNoTracking()
+          .Where(t => t.Id == currentId.Value)
+          .Select(t => new { t.ParentId, t.TimeZone })
+          .FirstOrDefaultAsync(ct);
+        if (row == null)
         {
-          var currentId = startTenantId;
-          var visited = new HashSet<long>();
-          while (currentId is > 0 && visited.Add(currentId.Value))
-          {
-            var row = await tenantQuery.IgnoreQueryFilters()
-              .AsNoTracking()
-              .Where(t => t.Id == currentId.Value)
-              .Select(t => new { t.ParentId, t.TimeZone })
-              .FirstOrDefaultAsync(ct);
-            if (row == null)
-            {
-              break;
-            }
-
-            if (!string.IsNullOrWhiteSpace(row.TimeZone))
-            {
-              resolvedZone = row.TimeZone;
-              break;
-            }
-
-            currentId = row.ParentId;
-          }
+          break;
         }
+
+        if (!string.IsNullOrWhiteSpace(row.TimeZone))
+        {
+          resolvedZone = row.TimeZone;
+          break;
+        }
+
+        currentId = row.ParentId;
       }
     }
 
@@ -80,15 +69,8 @@ public abstract partial class FormService<TEntity, TInput>
       return;
     }
 
-    if (_lastElements == null)
-    {
-      var elements = new Elements();
-      await SetElementsAsync(elements, ct);
-      LocalizeAndResolveSelectElements(elements);
-      _lastElements = elements;
-    }
-
-    await PopulateReferencesCoreAsync(dict, entity, _lastElements.List, ct);
+    var elements = await EnsureElementsAsync(ct);
+    await PopulateReferencesCoreAsync(dict, entity, elements.List, ct);
   }
 
   public virtual async Task PopulateReferencesAsync(
@@ -123,14 +105,7 @@ public abstract partial class FormService<TEntity, TInput>
       return;
     }
 
-    var elements = _lastElements;
-    if (elements == null)
-    {
-      elements = new Elements();
-      await SetElementsAsync(elements, ct);
-      LocalizeAndResolveSelectElements(elements);
-      _lastElements = elements;
-    }
+    var elements = await EnsureElementsAsync(ct);
 
     var infoElements = elements.List
       .Where(el => el.InfoValueGetter != null && (el.Model is FormInfoModel || el.Path.Contains('.')))

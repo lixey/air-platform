@@ -176,6 +176,10 @@ export function canonicalJson(value: Record<string, unknown>, elements: readonly
   return JSON.stringify(entries);
 }
 
+export function stableJson(value: unknown): string {
+  return JSON.stringify(stable(value));
+}
+
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) {
     return ['array', ...value.map(stable)];

@@ -43,7 +43,7 @@ public abstract partial class GridService<TEntity, TRow>
     LocalizeAndConfigureColumns(columns.List);
 
     var parentChild = ResolveParentChildBuilder();
-    var isUserReadOnly = User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
+    var isUserReadOnly = User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
     var isGridReadOnly = IsReadOnly || isUserReadOnly || parentChild?.IsReadOnly == true;
 
     var navStart = new List<NavElementModel>();
@@ -79,24 +79,11 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var entry in nav.Actions)
     {
       var methodInfo = entry.Method.Method;
-      var reqAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true);
-      var reqAction = methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true);
-      var hasRight = true;
-      if (reqAttr != null && User != null && User.IsAuthenticated)
-      {
-        if (Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat))
-        {
-          hasRight = User.Can(targetFeat.Action(reqAttr.ActionName)) || User.Can(targetFeat.All) || User.Can(Feature.All);
-        }
-      }
-      else if (reqAction != null && User != null && User.IsAuthenticated)
-      {
-        hasRight = User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
-      }
-      else if (!entry.IsAllowedInReadOnly && (isUserReadOnly || parentChild?.IsReadOnly == true))
-      {
-        hasRight = false;
-      }
+      var hasExplicitAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
+                            methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null;
+      var hasRight = hasExplicitAttr && User is { IsAuthenticated: true }
+        ? ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, Feature, User)
+        : entry.IsAllowedInReadOnly || !isUserReadOnly && parentChild?.IsReadOnly != true;
 
       if (hasRight)
       {

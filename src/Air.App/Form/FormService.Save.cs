@@ -26,10 +26,7 @@ public abstract partial class FormService<TEntity, TInput>
         CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct);
       }
 
-      elements = new Elements();
-      await SetElementsAsync(elements, ct);
-      LocalizeAndResolveSelectElements(elements);
-      _lastElements = elements;
+      elements = await EnsureElementsAsync(ct, reload: true);
     }
 
     TEntity entity;
@@ -243,63 +240,29 @@ public abstract partial class FormService<TEntity, TInput>
 
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
-    var entityJson = json.ValueKind == JsonValueKind.Object && (json.TryGetProperty("value", out var val) || json.TryGetProperty("entity", out val))
-      ? val
-      : json;
-
+    var (req, entityJson) = FormRequest.Normalize(json, request);
     var input = JsonSerializer.Deserialize<TInput>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
       ?? new TInput();
 
-    var id = request?.Id;
-    if (id is null or <= 0 && input is IEntity inpEntity && inpEntity.Id > 0)
+    if (req.Id is null or <= 0 && input is IEntity { Id: > 0 } inpEntity)
     {
-      id = inpEntity.Id;
-    }
-    else if (id is null or <= 0 && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("id", out var idProp))
-    {
-      if (idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var rootId) && rootId > 0)
-      {
-        id = rootId;
-      }
-      else if (idProp.ValueKind == JsonValueKind.String && long.TryParse(idProp.GetString(), out var strId) && strId > 0)
-      {
-        id = strId;
-      }
+      req.Id = inpEntity.Id;
     }
 
-    var clientVer = request?.Ver;
-    if (clientVer is null && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var rootVer))
-    {
-      clientVer = rootVer;
-    }
-    else if (clientVer is null && entityJson.ValueKind == JsonValueKind.Object && entityJson.TryGetProperty("ver", out var entityVerProp) && entityVerProp.ValueKind == JsonValueKind.Number && entityVerProp.TryGetInt32(out var entityVer) && entityVer > 0)
-    {
-      clientVer = entityVer;
-    }
-
-    request ??= new FormRequest();
-    request.Id = id;
-    request.Ver = clientVer;
-    if (!request.ParentId.HasValue && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("parentId", out var pidProp) && pidProp.ValueKind == JsonValueKind.Number && pidProp.TryGetInt64(out var jsonPid))
-    {
-      request.ParentId = jsonPid;
-    }
-
-    if (string.IsNullOrEmpty(request.ParentService) && json.ValueKind == JsonValueKind.Object && json.TryGetProperty("parentService", out var psProp) && psProp.ValueKind == JsonValueKind.String && psProp.GetString() is { } jsonPs)
-    {
-      request.ParentService = jsonPs;
-    }
-
-    Request = request;
+    var id = req.Id;
+    var clientVer = req.Ver;
+    Request = req;
     IsNew = id is null or 0;
+    _lastSavedEntity = null;
+    _lastSaveWarnings = null;
 
     var savedResult = IsNew
       ? await MutationRunner.RunIdempotentCreateAsync<object>(
         db,
         Service,
-        request.IdempotencyKey,
-        request.RawPayload ?? json.GetRawText(),
-        mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, mutationCt),
+        req.IdempotencyKey,
+        req.RawPayload ?? json.GetRawText(),
+        mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, cellPatch: null, mutationCt),
         async (replayedId, reloadCt) =>
         {
           Request.Id = replayedId;
@@ -309,7 +272,7 @@ public abstract partial class FormService<TEntity, TInput>
         _ => _lastSavedEntity?.Id,
         ct)
       : await db.RunMutationAsync(
-        mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, mutationCt),
+        mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, cellPatch: null, mutationCt),
         ct: ct);
     if (PlatformApp != null && _lastSavedEntity != null)
     {
@@ -331,7 +294,7 @@ public abstract partial class FormService<TEntity, TInput>
         var probeParentId = parent.BoundProperty.GetValue(probe) as long?;
         if (requestedParentId is > 0 && probeParentId is > 0 && probeParentId.Value != requestedParentId.Value)
         {
-          throw new FormRefusedException(L["MutationRefused"], L["FormNotFound"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
+          throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
         }
 
         if (!parent.IsOptional || !Request.ParentId.HasValue)
@@ -366,6 +329,7 @@ public abstract partial class FormService<TEntity, TInput>
     TInput input,
     long? id,
     int? clientVer,
+    (string Path, JsonElement Value)? cellPatch,
     CancellationToken ct)
   {
     var parent = GetParent();
@@ -412,17 +376,25 @@ public abstract partial class FormService<TEntity, TInput>
         throw new FormRefusedException(
           MutationOutcome.Conflict,
           L["MutationConflict"],
-          [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]);
+          [new MessageDto { Detail = L["FormRecordChanged"], Path = cellPatch?.Path, Type = MessageType.Error }]);
       }
     }
 
     CurrentEntity = entity;
-    var elements = new Elements();
-    await SetElementsAsync(elements, ct);
-    LocalizeAndResolveSelectElements(elements);
-    _lastElements = elements;
+    var elements = await EnsureElementsAsync(ct, reload: true);
 
-    if (IsReadOnly)
+    if (cellPatch is { } cp)
+    {
+      var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
+      if (IsReadOnly || targetElement == null || IsElementDisabled(targetElement, entity, entity) || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
+      {
+        throw new FormRefusedException(
+          MutationOutcome.Refused,
+          L["FormReadOnly"],
+          [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
+      }
+    }
+    else if (IsReadOnly)
     {
       throw new FormRefusedException(
         MutationOutcome.Refused,
@@ -456,8 +428,12 @@ public abstract partial class FormService<TEntity, TInput>
     }
     else
     {
-      var baselineInput = new TInput();
-      CopyMatchingProperties(entity, baselineInput);
+      var baselineInput = cellPatch.HasValue && entity is TInput same ? same : new TInput();
+      if (!ReferenceEquals(entity, baselineInput))
+      {
+        CopyMatchingProperties(entity, baselineInput);
+      }
+
       await PopulateJoinedReferencesAsync(elements, entity, baselineInput, ct);
       var baselineLoadCtx = new FormLoadContext<TEntity, TInput>
       {
@@ -471,43 +447,62 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       originalValues = SnapshotValues(baselineInput);
-    }
 
-    NormalizeNullableStrings(elements, input);
-    var protectedPaths = BuildProtectedPaths(elements, entityJson, IsNew, entity, input);
-    var inputOnlyPaths = BuildInputOnlyPaths(elements);
-    CopyMatchingProperties(input, entity, protectedPaths);
-    if (id.HasValue && id.Value > 0)
-    {
-      entity.Id = id.Value;
-    }
-
-    if (IsNew)
-    {
-      ApplyBoundParentId(entity, parent, Request.ParentId);
-    }
-
-    if (parent.BoundProperty != null && !parent.IsOptional)
-    {
-      var boundParentVal = PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name);
-      if (boundParentVal is not long pid || pid <= 0)
+      if (cellPatch is { } patch)
       {
-        throw new FormRefusedException(
-          MutationOutcome.Refused,
-          L["FormInvalid"],
-          [new MessageDto
-          {
-            Path = Elements.ToCamelPath(parent.BoundProperty.Name),
-            Detail = L["Required"],
-            Code = "form.validation.required",
-            Type = MessageType.Error
-          }]);
+        input = baselineInput;
+        SetPropertyValue(input, patch.Path, patch.Value);
+        if (!ReferenceEquals(entity, input))
+        {
+          SetPropertyValue(entity, patch.Path, patch.Value);
+        }
+
+        NormalizeNullableStrings(elements, input);
+        if (!ReferenceEquals(entity, input))
+        {
+          NormalizeNullableStrings(elements, entity);
+        }
       }
     }
 
-    if (!ReferenceEquals(entity, input))
+    var inputOnlyPaths = BuildInputOnlyPaths(elements);
+    if (cellPatch == null)
     {
-      CopyMatchingProperties(entity, input, inputOnlyPaths);
+      NormalizeNullableStrings(elements, input);
+      var protectedPaths = BuildProtectedPaths(elements, entityJson, IsNew, entity, input);
+      CopyMatchingProperties(input, entity, protectedPaths);
+      if (id.HasValue && id.Value > 0)
+      {
+        entity.Id = id.Value;
+      }
+
+      if (IsNew)
+      {
+        ApplyBoundParentId(entity, parent, Request.ParentId);
+      }
+
+      if (parent.BoundProperty != null && !parent.IsOptional)
+      {
+        var boundParentVal = PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name);
+        if (boundParentVal is not long pid || pid <= 0)
+        {
+          throw new FormRefusedException(
+            MutationOutcome.Refused,
+            L["FormInvalid"],
+            [new MessageDto
+            {
+              Path = Elements.ToCamelPath(parent.BoundProperty.Name),
+              Detail = L["Required"],
+              Code = "form.validation.required",
+              Type = MessageType.Error
+            }]);
+        }
+      }
+
+      if (!ReferenceEquals(entity, input))
+      {
+        CopyMatchingProperties(entity, input, inputOnlyPaths);
+      }
     }
 
     var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, input, originalValues, ct);
@@ -526,7 +521,7 @@ public abstract partial class FormService<TEntity, TInput>
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
     }
 
-    if (!ReferenceEquals(entity, input))
+    if (cellPatch == null && !ReferenceEquals(entity, input))
     {
       CopyMatchingProperties(entity, input, inputOnlyPaths);
     }
@@ -570,12 +565,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     _lastSavedEntity = entity;
     _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
-    if (PlatformApp != null)
-    {
-      await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, ct);
-    }
-
-    if (!ReferenceEquals(entity, input))
+    if (cellPatch == null && !ReferenceEquals(entity, input))
     {
       CopyMatchingProperties(entity, input, inputOnlyPaths);
     }
@@ -594,156 +584,25 @@ public abstract partial class FormService<TEntity, TInput>
     request.Id ??= id;
     Request = request;
     IsNew = false;
-
-    var parent = GetParent();
-    TEntity? savedEntity = null;
+    _lastSavedEntity = null;
+    _lastSaveWarnings = null;
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
-      var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
-
-      if (entity is IHasVersion versionedEntity &&
-          (!request.Ver.HasValue || request.Ver.Value <= 0 || versionedEntity.Ver != request.Ver.Value))
+      try
       {
+        await SaveCoreAsync(default, new TInput(), id, request.Ver, (path, value), mutationCt);
+      }
+      catch (FormRefusedException ex)
+      {
+        db.MarkMutationRollbackOnly();
         return new GridCellDto
         {
-          Outcome = MutationOutcome.Conflict,
-          Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Path = path, Type = MessageType.Error }]
+          Outcome = ex.Outcome,
+          Warnings = ex.Messages.Select(m => m.Path == null
+            ? new MessageDto { Detail = m.Detail, Path = path, Code = m.Code, Type = m.Type }
+            : m).ToList()
         };
-      }
-
-      CurrentEntity = entity;
-      var elements = new Elements();
-      await SetElementsAsync(elements, mutationCt);
-      LocalizeAndResolveSelectElements(elements);
-
-      var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase));
-      if (IsReadOnly || targetElement == null || IsElementDisabled(targetElement, entity, entity) || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
-      {
-        return new GridCellDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FormReadOnly"], Path = path, Type = MessageType.Error }]
-        };
-      }
-
-      var input = entity is TInput same ? same : new TInput();
-      if (!ReferenceEquals(entity, input))
-      {
-        CopyMatchingProperties(entity, input);
-      }
-
-      await PopulateJoinedReferencesAsync(elements, entity, input, mutationCt);
-
-      var hooks = GetHooks();
-
-      var loadCtx = new FormLoadContext<TEntity, TInput>
-      {
-        Entity = entity,
-        Input = input,
-        IsNew = false
-      };
-
-      foreach (var h in hooks.AfterLoadActions)
-      {
-        await h(loadCtx, mutationCt);
-      }
-
-      var originalValues = SnapshotValues(input);
-
-      SetPropertyValue(input, path, value);
-      if (!ReferenceEquals(entity, input))
-      {
-        SetPropertyValue(entity, path, value);
-      }
-
-      NormalizeNullableStrings(elements, input);
-      if (!ReferenceEquals(entity, input))
-      {
-        NormalizeNullableStrings(elements, entity);
-      }
-
-      var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, input, originalValues, mutationCt);
-      if (ruleCtx.Failures.Count > 0)
-      {
-        return new GridCellDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = ruleCtx.Failures.Select(f => new MessageDto
-          {
-            Detail = f.Detail,
-            Path = f.Path ?? path,
-            Code = f.Code,
-            Type = MessageType.Error
-          }).ToList()
-        };
-      }
-
-      foreach (var h in hooks.BeforeSaveActions)
-      {
-        await h(saveCtx, mutationCt);
-      }
-
-      if (saveCtx.Errors.Count > 0)
-      {
-        return new GridCellDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = saveCtx.Errors
-        };
-      }
-
-      ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
-      if (ruleCtx.Failures.Count > 0)
-      {
-        return new GridCellDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = ruleCtx.Failures.Select(f => new MessageDto
-          {
-            Detail = f.Detail,
-            Path = f.Path ?? path,
-            Code = f.Code,
-            Type = MessageType.Error
-          }).ToList()
-        };
-      }
-
-      if (db.Entry(entity).State == EntityState.Detached)
-      {
-        db.Set<TEntity>().Update(entity);
-      }
-
-      await db.SaveChangesAsync(mutationCt);
-
-      await SyncJoinedReferencesAsync(elements, entity, input, mutationCt);
-
-      if (hooks.AfterSaveActions.Count > 0)
-      {
-        foreach (var h in hooks.AfterSaveActions)
-        {
-          await h(saveCtx, mutationCt);
-        }
-
-        if (saveCtx.Errors.Count > 0)
-        {
-          return new GridCellDto
-          {
-            Outcome = MutationOutcome.Refused,
-            Warnings = saveCtx.Errors
-          };
-        }
-
-        if (db.ChangeTracker.HasChanges())
-        {
-          await db.SaveChangesAsync(mutationCt);
-        }
-      }
-
-      savedEntity = entity;
-      if (PlatformApp != null)
-      {
-        await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, mutationCt);
       }
 
       var row = await readRow(mutationCt);
@@ -751,13 +610,13 @@ public abstract partial class FormService<TEntity, TInput>
       {
         Row = row,
         Outcome = MutationOutcome.Committed,
-        Warnings = saveCtx.Warnings.Count > 0 ? saveCtx.Warnings : null
+        Warnings = _lastSaveWarnings?.ToList()
       };
     }, ct: ct);
 
-    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && savedEntity != null)
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && _lastSavedEntity != null)
     {
-      await PlatformApp.ClearAuthCacheForEntityAsync(savedEntity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(_lastSavedEntity, db, ct);
     }
 
     return result;

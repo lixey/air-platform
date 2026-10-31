@@ -348,7 +348,7 @@ public abstract partial class FormService<TEntity, TInput>
     var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
     if (!IsNew && Request.ParentId is > 0 && storedParentId is > 0 && storedParentId.Value != Request.ParentId.Value)
     {
-      throw new FormRefusedException(L["MutationRefused"], L["FormNotFound"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
+      throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
     }
 
     if (!IsNew && !parent.IsOptional || !Request.ParentId.HasValue)

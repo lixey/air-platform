@@ -1,16 +1,9 @@
-using System.Collections.Frozen;
-
 namespace Platform.Data.Entities;
 
 [NoRestore]
 [Comment("Base user entity model with security and session control")]
 public abstract class BaseAppUser : BaseEntity
 {
-  internal static readonly FrozenSet<string> LoginCounters = new[]
-  {
-    nameof(LastLoggedIn), nameof(AccessFailedCount), nameof(LockoutCount), nameof(LockoutEnd)
-  }.ToFrozenSet(StringComparer.Ordinal);
-
   [MaxLength(128), Comment("User unique login name, unique across the installation")]
   public string Login { get; set; } = string.Empty;
 
@@ -26,16 +19,16 @@ public abstract class BaseAppUser : BaseEntity
   [Comment("Token version; advancing it revokes every session")]
   public int TokenVersion { get; set; } = 1;
 
-  [Comment("Consecutive failed login attempts since the last success")]
+  [NoAudit, KeepsVersion(IsConcurrencyToken = false), Comment("Consecutive failed login attempts since the last success")]
   public int AccessFailedCount { get; set; }
 
-  [Comment("How many lockouts in a row; picks the progressive lockout step")]
+  [NoAudit, KeepsVersion(IsConcurrencyToken = false), Comment("How many lockouts in a row; picks the progressive lockout step")]
   public int LockoutCount { get; set; }
 
-  [Comment("Lockout end timestamp")]
+  [NoAudit, KeepsVersion(IsConcurrencyToken = false), Comment("Lockout end timestamp")]
   public DateTimeOffset? LockoutEnd { get; set; }
 
-  [Comment("Last successful login timestamp")]
+  [NoAudit, KeepsVersion(IsConcurrencyToken = false), Comment("Last successful login timestamp")]
   public DateTimeOffset? LastLoggedIn { get; set; }
 
   [Comment("Active status flag")]

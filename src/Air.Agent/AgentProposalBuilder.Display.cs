@@ -86,101 +86,24 @@ public static partial class AgentProposalBuilder
         continue;
       }
 
-      if (el.Model is FormSelectModel select)
-      {
-        if (select.IsMultiple || el.ValueKind == FormValueKind.List)
-        {
-          var names = new List<string>();
-          if (formValues.TryGetValue(el.Path, out var listVal) && listVal is IEnumerable<long> idList)
-          {
-            var ids = idList.ToList();
-            if (ids.Count > 0)
-            {
-              names.AddRange(ResolveMultipleNames(ids, select, dictionaries));
-            }
-          }
-
-          names.AddRange(elNewRefs.Select(r => r.Name));
-          if (names.Count > 0)
-          {
-            displayFields.Add(new AgentProposalFieldDto
-            {
-              Label = label,
-              Value = string.Join(", ", names),
-              Badge = elNewRefs.Count > 0 ? L["AgentNewBadge"] : null,
-              Color = elNewRefs.Count > 0 ? UiColor.Emerald : null
-            });
-          }
-
-          continue;
-        }
-
-        if (elNewRefs.Count > 0)
-        {
-          displayFields.Add(new AgentProposalFieldDto
-          {
-            Label = label,
-            Value = elNewRefs[0].Name,
-            Badge = L["AgentNewBadge"],
-            Color = UiColor.Emerald
-          });
-          continue;
-        }
-
-        if (formValues.TryGetValue(el.Path, out var singleVal) && TryConvertToLong(singleVal, out var refId) && refId > 0)
-        {
-          var refName = ResolveSingleName(refId, select, dictionaries);
-          if (!string.IsNullOrWhiteSpace(refName))
-          {
-            displayFields.Add(new AgentProposalFieldDto { Label = label, Value = refName });
-          }
-        }
-
-        continue;
-      }
-
-      if (!formValues.TryGetValue(el.Path, out var val) || val == null)
+      if (el.Type == UiFieldType.Checkbox &&
+          formValues.TryGetValue(el.Path, out var cObj) &&
+          cObj is true &&
+          !explicitlyProvided.Contains(el.Path))
       {
         continue;
       }
 
-      if (el.Model is FormMoneyModel)
+      var createDisplay = FormatFieldDisplayValue(el, formValues, elNewRefs, currencyLabel, dictionaries, L, includeZeroMoney: false);
+      if (!string.IsNullOrWhiteSpace(createDisplay))
       {
-        if (TryConvertToDecimal(val, out var decVal) && decVal != 0m)
+        displayFields.Add(new AgentProposalFieldDto
         {
-          var formatted = string.IsNullOrEmpty(currencyLabel)
-            ? decVal.ToString("N2", CultureInfo.CurrentUICulture)
-            : $"{decVal.ToString("N2", CultureInfo.CurrentUICulture)} {currencyLabel}";
-          displayFields.Add(new AgentProposalFieldDto { Label = label, Value = formatted });
-        }
-
-        continue;
-      }
-
-      if (el.Type == UiFieldType.Checkbox && val is bool bVal)
-      {
-        if (explicitlyProvided.Contains(el.Path) || !bVal)
-        {
-          displayFields.Add(new AgentProposalFieldDto { Label = label, Value = bVal ? L["Yes"] : L["No"] });
-        }
-
-        continue;
-      }
-
-      if (el.Type == UiFieldType.Number)
-      {
-        if (TryConvertToDecimal(val, out var numVal) && numVal != 0m)
-        {
-          displayFields.Add(new AgentProposalFieldDto { Label = label, Value = numVal.ToString("G29", CultureInfo.CurrentUICulture) });
-        }
-
-        continue;
-      }
-
-      var str = val.ToString();
-      if (!string.IsNullOrWhiteSpace(str))
-      {
-        displayFields.Add(new AgentProposalFieldDto { Label = label, Value = str });
+          Label = label,
+          Value = createDisplay,
+          Badge = elNewRefs.Count > 0 ? L["AgentNewBadge"] : null,
+          Color = elNewRefs.Count > 0 ? UiColor.Emerald : null
+        });
       }
     }
 
@@ -328,20 +251,6 @@ public static partial class AgentProposalBuilder
       if (row == null)
       {
         continue;
-      }
-
-      if (row.TryGetValue("name", out var accNameObj) && accNameObj is string accName)
-      {
-        var openIdx = accName.LastIndexOf('(');
-        var closeIdx = accName.LastIndexOf(')');
-        if (openIdx >= 0 && closeIdx > openIdx + 1)
-        {
-          var token = accName[(openIdx + 1)..closeIdx].Trim();
-          if (token.Length is >= 2 and <= 5 && token.All(char.IsLetter))
-          {
-            return token.ToUpperInvariant();
-          }
-        }
       }
 
       if (row.TryGetValue("currency", out var currObj))

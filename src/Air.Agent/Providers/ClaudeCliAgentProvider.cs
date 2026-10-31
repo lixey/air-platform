@@ -1,3 +1,5 @@
+using Platform.Agent.Providers.Internals;
+
 namespace Platform.Agent.Providers;
 
 /// <summary>
@@ -5,12 +7,6 @@ namespace Platform.Agent.Providers;
 /// </summary>
 public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 {
-  private static readonly JsonSerializerOptions PromptJsonOptions = new(JsonSerializerDefaults.Web)
-  {
-    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-  };
-
   private IReadOnlyList<AgentModelDto>? _cachedModels;
   private DateTime _cachedBinaryWriteUtc;
   private string? _cachedBinaryPath;
@@ -190,52 +186,11 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
   public static string? ResolveExecutablePath()
   {
     var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var candidates = new[]
-    {
+    return CliTurnRunner.ResolveExecutablePath(
+      "claude",
       "/opt/homebrew/bin/claude",
       "/usr/local/bin/claude",
-      Path.Combine(home, ".local", "bin", "claude")
-    };
-
-    foreach (var candidate in candidates)
-    {
-      if (File.Exists(candidate))
-      {
-        return candidate;
-      }
-    }
-
-    var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-    foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-    {
-      var full = Path.Combine(dir, "claude");
-      if (File.Exists(full))
-      {
-        return full;
-      }
-    }
-
-    return null;
-  }
-
-  private static (string Model, string Effort) ResolveCliModelArgs(string selectedModel)
-  {
-    var lower = selectedModel.Trim().ToLowerInvariant();
-    var effort = "high";
-    var baseModel = lower;
-
-    string[] effortSuffixes = ["-high", "-medium", "-low"];
-    foreach (var suffix in effortSuffixes)
-    {
-      if (lower.EndsWith(suffix, StringComparison.Ordinal) && lower.Length > suffix.Length)
-      {
-        effort = suffix[1..];
-        baseModel = lower[..^suffix.Length];
-        break;
-      }
-    }
-
-    return (baseModel, effort);
+      Path.Combine(home, ".local", "bin", "claude"));
   }
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
@@ -243,286 +198,123 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     [EnumeratorCancellation] CancellationToken ct)
   {
     var L = Localizer.Instance;
-    var claudePath = ResolveExecutablePath();
-    if (claudePath is null)
-    {
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = L["AgentErrorCliMissing"]
-      };
-      yield break;
-    }
-
-    var existingConvId = store.GetConversationId(request.SessionId, request.Owner, Handle);
-
-    string? contextJson = null;
-    string? tempContextFile = null;
-    try
-    {
-      var hasPhoto = request.Attachments.Count > 0;
-      var includeReports = !hasPhoto;
-      var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
-      contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
-      {
-        tempContextFile = Path.Combine(store.WorkspaceDirectory, $"context-{AgentStore.NormalizeSessionId(request.SessionId)}.json");
-        await File.WriteAllTextAsync(tempContextFile, contextJson, Encoding.UTF8, ct);
-        var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false, includeRecentRecords);
-        contextJson = JsonSerializer.Serialize(compactObj, PromptJsonOptions);
-      }
-    }
-    catch
-    {
-      // Ignore context prefetch errors
-    }
-
-    var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
     var rawModel = string.IsNullOrWhiteSpace(request.Model) ? string.Empty : request.Model.Trim();
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
       : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
-    var (cliModel, effort) = ResolveCliModelArgs(selectedModel);
+    var (cliModel, effort) = CliTurnRunner.ResolveCliModelArgs(selectedModel, "-high", "-medium", "-low");
 
-    var psi = new ProcessStartInfo
-    {
-      FileName = claudePath,
-      WorkingDirectory = store.WorkspaceDirectory,
-      RedirectStandardInput = true,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
-      UseShellExecute = false,
-      CreateNoWindow = true,
-      StandardOutputEncoding = Encoding.UTF8,
-      StandardErrorEncoding = Encoding.UTF8
-    };
-
-    psi.ArgumentList.Add("--print");
-    psi.ArgumentList.Add(prompt);
-    psi.ArgumentList.Add("--output-format");
-    psi.ArgumentList.Add("stream-json");
-    psi.ArgumentList.Add("--verbose");
-    psi.ArgumentList.Add("--safe-mode");
-    psi.ArgumentList.Add("--strict-mcp-config");
-    psi.ArgumentList.Add("--disable-slash-commands");
-    psi.ArgumentList.Add("--tools");
-    psi.ArgumentList.Add("Read");
-    psi.ArgumentList.Add("--allowedTools");
-    psi.ArgumentList.Add("Read");
-    if (!string.IsNullOrWhiteSpace(cliModel))
-    {
-      psi.ArgumentList.Add("--model");
-      psi.ArgumentList.Add(cliModel);
-    }
-
-    psi.ArgumentList.Add("--effort");
-    psi.ArgumentList.Add(effort);
-    psi.ArgumentList.Add("--add-dir");
-    psi.ArgumentList.Add(store.WorkspaceDirectory);
-
-    if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
-    {
-      psi.ArgumentList.Add("--resume");
-      psi.ArgumentList.Add(existingConvId);
-    }
-
-    using var process = new Process { StartInfo = psi };
-    process.Start();
-    process.StandardInput.Close();
-    var stderrTask = process.StandardError.ReadToEndAsync(ct);
-
-    yield return new AgentStreamEventDto
-    {
-      Type = "status",
-      Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
-      ModelId = selectedModel,
-      ModelName = modelDisplayName
-    };
-
-    var fullAssistantText = new StringBuilder();
-    var emittedProposals = 0;
-    var emittedError = false;
-
-    try
-    {
-      while (!ct.IsCancellationRequested)
+    await foreach (var evt in CliTurnRunner.StreamTurnAsync(
+      store,
+      Handle,
+      ResolveExecutablePath(),
+      request,
+      selectedModel,
+      modelDisplayName,
+      (psi, prompt, existingConvId) =>
       {
-        var line = await process.StandardOutput.ReadLineAsync(ct);
-        if (line is null)
+        psi.ArgumentList.Add("--print");
+        psi.ArgumentList.Add(prompt);
+        psi.ArgumentList.Add("--output-format");
+        psi.ArgumentList.Add("stream-json");
+        psi.ArgumentList.Add("--verbose");
+        psi.ArgumentList.Add("--safe-mode");
+        psi.ArgumentList.Add("--strict-mcp-config");
+        psi.ArgumentList.Add("--disable-slash-commands");
+        psi.ArgumentList.Add("--tools");
+        psi.ArgumentList.Add("Read");
+        psi.ArgumentList.Add("--allowedTools");
+        psi.ArgumentList.Add("Read");
+        if (!string.IsNullOrWhiteSpace(cliModel))
         {
-          break;
+          psi.ArgumentList.Add("--model");
+          psi.ArgumentList.Add(cliModel);
         }
 
-        if (string.IsNullOrWhiteSpace(line) || !line.StartsWith('{'))
+        psi.ArgumentList.Add("--effort");
+        psi.ArgumentList.Add(effort);
+        psi.ArgumentList.Add("--add-dir");
+        psi.ArgumentList.Add(store.WorkspaceDirectory);
+
+        if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
         {
-          continue;
+          psi.ArgumentList.Add("--resume");
+          psi.ArgumentList.Add(existingConvId);
+        }
+      },
+      (root, fullAssistantText, pendingEvents) =>
+      {
+        if (root.TryGetProperty("session_id", out var sidProp) &&
+            sidProp.ValueKind == JsonValueKind.String &&
+            sidProp.GetString() is { Length: > 0 } sid)
+        {
+          store.SetConversationId(request.SessionId, request.Owner, sid, Handle);
         }
 
-        JsonDocument? doc = null;
-        try
-        {
-          doc = JsonDocument.Parse(line);
-        }
-        catch
-        {
-          continue;
-        }
+        var type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
+        var emittedError = false;
 
-        using (doc)
+        if (type == "assistant" &&
+            root.TryGetProperty("message", out var msgObj) &&
+            msgObj.TryGetProperty("content", out var contentArr) &&
+            contentArr.ValueKind == JsonValueKind.Array)
         {
-          var root = doc.RootElement;
-          if (root.TryGetProperty("session_id", out var sidProp) &&
-              sidProp.ValueKind == JsonValueKind.String &&
-              sidProp.GetString() is { Length: > 0 } sid)
+          foreach (var item in contentArr.EnumerateArray())
           {
-            store.SetConversationId(request.SessionId, request.Owner, sid, Handle);
-          }
-
-          var type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
-          if (type == "assistant" &&
-              root.TryGetProperty("message", out var msgObj) &&
-              msgObj.TryGetProperty("content", out var contentArr) &&
-              contentArr.ValueKind == JsonValueKind.Array)
-          {
-            foreach (var item in contentArr.EnumerateArray())
+            var itemType = item.TryGetProperty("type", out var itProp) ? itProp.GetString() : null;
+            if (itemType == "text" &&
+                item.TryGetProperty("text", out var txtProp) &&
+                txtProp.GetString() is { Length: > 0 } chunk)
             {
-              var itemType = item.TryGetProperty("type", out var itProp) ? itProp.GetString() : null;
-              if (itemType == "text" &&
-                  item.TryGetProperty("text", out var txtProp) &&
-                  txtProp.GetString() is { Length: > 0 } chunk)
-              {
-                fullAssistantText.Append(chunk);
-                yield return new AgentStreamEventDto
-                {
-                  Type = "delta",
-                  Text = chunk
-                };
-              }
-              else if (itemType == "tool_use")
-              {
-                yield return new AgentStreamEventDto
-                {
-                  Type = "status",
-                  Text = L["AgentStatusPreparing"]
-                };
-              }
-            }
-          }
-          else if (type == "result" &&
-                   fullAssistantText.Length == 0 &&
-                   root.TryGetProperty("result", out var resProp) &&
-                   resProp.ValueKind == JsonValueKind.String &&
-                   resProp.GetString() is { Length: > 0 } resText)
-          {
-            if (root.TryGetProperty("is_error", out var errFlag) && errFlag.ValueKind == JsonValueKind.True)
-            {
-              emittedError = true;
-              yield return new AgentStreamEventDto
-              {
-                Type = "error",
-                Text = resText
-              };
-            }
-            else
-            {
-              fullAssistantText.Append(resText);
-              yield return new AgentStreamEventDto
+              fullAssistantText.Append(chunk);
+              pendingEvents.Add(new AgentStreamEventDto
               {
                 Type = "delta",
-                Text = resText
-              };
+                Text = chunk
+              });
+            }
+            else if (itemType == "tool_use")
+            {
+              pendingEvents.Add(new AgentStreamEventDto
+              {
+                Type = "status",
+                Text = L["AgentStatusPreparing"]
+              });
             }
           }
-
-          foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
+        }
+        else if (type == "result" &&
+                 fullAssistantText.Length == 0 &&
+                 root.TryGetProperty("result", out var resProp) &&
+                 resProp.ValueKind == JsonValueKind.String &&
+                 resProp.GetString() is { Length: > 0 } resText)
+        {
+          if (root.TryGetProperty("is_error", out var errFlag) && errFlag.ValueKind == JsonValueKind.True)
           {
-            emittedProposals++;
-            yield return new AgentStreamEventDto
+            emittedError = true;
+            pendingEvents.Add(new AgentStreamEventDto
             {
-              Type = "proposal",
-              Proposal = staged
-            };
+              Type = "error",
+              Text = resText
+            });
           }
-
-          if (type == "result")
+          else
           {
-            break;
+            fullAssistantText.Append(resText);
+            pendingEvents.Add(new AgentStreamEventDto
+            {
+              Type = "delta",
+              Text = resText
+            });
           }
         }
-      }
-    }
-    finally
+
+        return (type == "result", emittedError);
+      },
+      ct))
     {
-      if (!process.HasExited && !ct.IsCancellationRequested)
-      {
-        try
-        {
-          await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
-        }
-        catch { }
-      }
-
-      if (!process.HasExited)
-      {
-        try
-        {
-          process.Kill(entireProcessTree: true);
-        }
-        catch { }
-      }
-
-      if (tempContextFile is not null)
-      {
-        try
-        {
-          File.Delete(tempContextFile);
-        }
-        catch { }
-      }
+      yield return evt;
     }
-
-    var completeText = fullAssistantText.ToString();
-    await AgentPromptBuilder.StageInlineProposalsAsync(completeText, request, ct);
-
-    foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
-    {
-      emittedProposals++;
-      yield return new AgentStreamEventDto
-      {
-        Type = "proposal",
-        Proposal = staged
-      };
-    }
-
-    if (emittedError || fullAssistantText.Length == 0 && emittedProposals == 0)
-    {
-      store.RemoveConversationId(request.SessionId, request.Owner, Handle);
-    }
-
-    if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && !ct.IsCancellationRequested)
-    {
-      string? stderr = null;
-      try
-      {
-        stderr = (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim();
-      }
-      catch { }
-
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = !string.IsNullOrWhiteSpace(stderr) ? stderr : L["AgentErrorRequest"]
-      };
-    }
-
-    yield return new AgentStreamEventDto
-    {
-      Type = "done",
-      SessionId = request.SessionId,
-      ModelId = selectedModel,
-      ModelName = modelDisplayName
-    };
   }
 }

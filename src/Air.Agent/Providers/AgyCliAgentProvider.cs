@@ -1,13 +1,9 @@
+using Platform.Agent.Providers.Internals;
+
 namespace Platform.Agent.Providers;
 
 public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) : IAgentProvider
 {
-  private static readonly JsonSerializerOptions PromptJsonOptions = new(JsonSerializerDefaults.Web)
-  {
-    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-  };
-
   private IReadOnlyList<AgentModelDto>? _cachedModels;
   private readonly SemaphoreSlim _modelsLock = new(1, 1);
 
@@ -107,32 +103,11 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
   public static string? ResolveExecutablePath()
   {
     var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var candidates = new[]
-    {
+    return CliTurnRunner.ResolveExecutablePath(
+      "agy",
       Path.Combine(home, ".local", "bin", "agy"),
       "/usr/local/bin/agy",
-      "/opt/homebrew/bin/agy"
-    };
-
-    foreach (var candidate in candidates)
-    {
-      if (File.Exists(candidate))
-      {
-        return candidate;
-      }
-    }
-
-    var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-    foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-    {
-      var full = Path.Combine(dir, "agy");
-      if (File.Exists(full))
-      {
-        return full;
-      }
-    }
-
-    return null;
+      "/opt/homebrew/bin/agy");
   }
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
@@ -140,42 +115,6 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
     [EnumeratorCancellation] CancellationToken ct)
   {
     var L = Localizer.Instance;
-    var agyPath = ResolveExecutablePath();
-    if (agyPath is null)
-    {
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = L["AgentErrorCliMissing"]
-      };
-      yield break;
-    }
-
-    var existingConvId = store.GetConversationId(request.SessionId, request.Owner, Handle);
-
-    string? contextJson = null;
-    string? tempContextFile = null;
-    try
-    {
-      var hasPhoto = request.Attachments.Count > 0;
-      var includeReports = !hasPhoto;
-      var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
-      contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
-      {
-        tempContextFile = Path.Combine(store.WorkspaceDirectory, $"context-{AgentStore.NormalizeSessionId(request.SessionId)}.json");
-        await File.WriteAllTextAsync(tempContextFile, contextJson, Encoding.UTF8, ct);
-        var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false, includeRecentRecords);
-        contextJson = JsonSerializer.Serialize(compactObj, PromptJsonOptions);
-      }
-    }
-    catch
-    {
-      // Ignore context prefetch errors
-    }
-
-    var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
     var rawModel = string.IsNullOrWhiteSpace(request.Model) ? options.DefaultModel : request.Model.Trim();
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
       ?? options.DefaultModel;
@@ -183,215 +122,91 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       ? request.ModelName
       : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
 
-    var psi = new ProcessStartInfo
-    {
-      FileName = agyPath,
-      WorkingDirectory = store.WorkspaceDirectory,
-      RedirectStandardInput = true,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
-      UseShellExecute = false,
-      CreateNoWindow = true,
-      StandardOutputEncoding = Encoding.UTF8,
-      StandardErrorEncoding = Encoding.UTF8
-    };
-
-    psi.ArgumentList.Add("--print");
-    psi.ArgumentList.Add(prompt);
-    psi.ArgumentList.Add("--output-format");
-    psi.ArgumentList.Add("stream-json");
-    psi.ArgumentList.Add("--sandbox");
-    psi.ArgumentList.Add("--disable-slash-commands");
-    if (!string.IsNullOrWhiteSpace(selectedModel))
-    {
-      psi.ArgumentList.Add("--model");
-      psi.ArgumentList.Add(selectedModel);
-    }
-
-    psi.ArgumentList.Add("--add-dir");
-    psi.ArgumentList.Add(store.WorkspaceDirectory);
-
-    if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
-    {
-      psi.ArgumentList.Add("--conversation");
-      psi.ArgumentList.Add(existingConvId);
-    }
-
-    using var process = new Process { StartInfo = psi };
-    process.Start();
-    process.StandardInput.Close();
-    var stderrTask = process.StandardError.ReadToEndAsync(ct);
-
-    yield return new AgentStreamEventDto
-    {
-      Type = "status",
-      Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
-      ModelId = selectedModel,
-      ModelName = modelDisplayName
-    };
-
-    var fullAssistantText = new StringBuilder();
-    var emittedProposals = 0;
-    var emittedError = false;
-
-    try
-    {
-      while (!ct.IsCancellationRequested)
+    await foreach (var evt in CliTurnRunner.StreamTurnAsync(
+      store,
+      Handle,
+      ResolveExecutablePath(),
+      request,
+      selectedModel,
+      modelDisplayName,
+      (psi, prompt, existingConvId) =>
       {
-        var line = await process.StandardOutput.ReadLineAsync(ct);
-        if (line is null)
+        psi.ArgumentList.Add("--print");
+        psi.ArgumentList.Add(prompt);
+        psi.ArgumentList.Add("--output-format");
+        psi.ArgumentList.Add("stream-json");
+        psi.ArgumentList.Add("--sandbox");
+        psi.ArgumentList.Add("--disable-slash-commands");
+        if (!string.IsNullOrWhiteSpace(selectedModel))
         {
-          break;
+          psi.ArgumentList.Add("--model");
+          psi.ArgumentList.Add(selectedModel);
         }
 
-        if (string.IsNullOrWhiteSpace(line) || !line.StartsWith('{'))
-        {
-          continue;
-        }
+        psi.ArgumentList.Add("--add-dir");
+        psi.ArgumentList.Add(store.WorkspaceDirectory);
 
-        JsonDocument? doc = null;
-        try
+        if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
         {
-          doc = JsonDocument.Parse(line);
+          psi.ArgumentList.Add("--conversation");
+          psi.ArgumentList.Add(existingConvId);
         }
-        catch
+      },
+      (root, fullAssistantText, pendingEvents) =>
+      {
+        var evtType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;
+        var emittedError = false;
+
+        if (evtType == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
         {
-          continue;
+          store.SetConversationId(request.SessionId, request.Owner, cid, Handle);
         }
-
-        using (doc)
+        else if (evtType == "error")
         {
-          var root = doc.RootElement;
-          var evt = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;
-
-          if (evt == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
+          var errMsg = root.TryGetProperty("error", out var errProp) && errProp.ValueKind == JsonValueKind.String
+            ? errProp.GetString()
+            : (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String ? msgProp.GetString() : null);
+          if (!string.IsNullOrWhiteSpace(errMsg))
           {
-            store.SetConversationId(request.SessionId, request.Owner, cid, Handle);
-          }
-          else if (evt == "error")
-          {
-            var errMsg = root.TryGetProperty("error", out var errProp) && errProp.ValueKind == JsonValueKind.String
-              ? errProp.GetString()
-              : (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String ? msgProp.GetString() : null);
-            if (!string.IsNullOrWhiteSpace(errMsg))
+            emittedError = true;
+            pendingEvents.Add(new AgentStreamEventDto
             {
-              emittedError = true;
-              yield return new AgentStreamEventDto
+              Type = "error",
+              Text = errMsg
+            });
+          }
+        }
+        else if (evtType == "step_update" && root.TryGetProperty("step_update", out var step))
+        {
+          var stepType = step.TryGetProperty("step_type", out var stProp) ? stProp.GetString() : null;
+          if (stepType == "agent_response" && step.TryGetProperty("text_delta", out var deltaProp))
+          {
+            var delta = deltaProp.GetString();
+            if (!string.IsNullOrEmpty(delta))
+            {
+              fullAssistantText.Append(delta);
+              pendingEvents.Add(new AgentStreamEventDto
               {
-                Type = "error",
-                Text = errMsg
-              };
+                Type = "delta",
+                Text = delta
+              });
             }
           }
-          else if (evt == "step_update" && root.TryGetProperty("step_update", out var step))
+          else if (stepType is "tool_call" or "mcp_tool_call")
           {
-            var stepType = step.TryGetProperty("step_type", out var stProp) ? stProp.GetString() : null;
-            if (stepType == "agent_response" && step.TryGetProperty("text_delta", out var deltaProp))
+            pendingEvents.Add(new AgentStreamEventDto
             {
-              var delta = deltaProp.GetString();
-              if (!string.IsNullOrEmpty(delta))
-              {
-                fullAssistantText.Append(delta);
-                yield return new AgentStreamEventDto
-                {
-                  Type = "delta",
-                  Text = delta
-                };
-              }
-            }
-            else if (stepType is "tool_call" or "mcp_tool_call")
-            {
-              yield return new AgentStreamEventDto
-              {
-                Type = "status",
-                Text = L["AgentStatusPreparing"]
-              };
-            }
-          }
-
-          foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
-          {
-            emittedProposals++;
-            yield return new AgentStreamEventDto
-            {
-              Type = "proposal",
-              Proposal = staged
-            };
-          }
-
-          if (evt == "result")
-          {
-            break;
+              Type = "status",
+              Text = L["AgentStatusPreparing"]
+            });
           }
         }
-      }
-    }
-    finally
+
+        return (evtType == "result", emittedError);
+      },
+      ct))
     {
-      if (!process.HasExited && !ct.IsCancellationRequested)
-      {
-        try
-        {
-          await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
-        }
-        catch { }
-      }
-
-      if (!process.HasExited)
-      {
-        try
-        {
-          process.Kill(entireProcessTree: true);
-        }
-        catch { }
-      }
-
-      if (tempContextFile is not null)
-      {
-        try
-        {
-          File.Delete(tempContextFile);
-        }
-        catch { }
-      }
+      yield return evt;
     }
-
-    var completeText = fullAssistantText.ToString();
-    await AgentPromptBuilder.StageInlineProposalsAsync(completeText, request, ct);
-
-    foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
-    {
-      emittedProposals++;
-      yield return new AgentStreamEventDto
-      {
-        Type = "proposal",
-        Proposal = staged
-      };
-    }
-
-    if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && !ct.IsCancellationRequested)
-    {
-      store.RemoveConversationId(request.SessionId, request.Owner, Handle);
-      string? stderr = null;
-      try
-      {
-        stderr = (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim();
-      }
-      catch { }
-
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = !string.IsNullOrWhiteSpace(stderr) ? stderr : L["AgentErrorRequest"]
-      };
-    }
-
-    yield return new AgentStreamEventDto
-    {
-      Type = "done",
-      SessionId = request.SessionId,
-      ModelId = selectedModel,
-      ModelName = modelDisplayName
-    };
   }
 }

@@ -14,7 +14,7 @@ internal sealed class TestInvoice : IEntity, IHasTenant, IHasVersion
   public string? InternalMemo { get; set; }
   [Sensitive]
   public string? ApiSecret { get; set; }
-  [NoAudit, KeepsVersion]
+  [NoAudit]
   public decimal CachedLineTotal { get; set; }
   [System.ComponentModel.DataAnnotations.Schema.NotMapped]
   public List<long> TagIds { get; set; } = [];

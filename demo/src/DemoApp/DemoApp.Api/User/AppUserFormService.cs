@@ -76,7 +76,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
-      if (!c.IsNew && User?.UserId != c.Entity.Id && !await CoversUserGrantsAsync(c.Entity.Id, cancellationToken))
+      if (!c.IsNew && !await PlatformAppService.CoversUserGrantsAsync(db, app, User, c.Entity.Id, cancellationToken))
       {
         c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
         return;
@@ -124,15 +124,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       if (!c.IsNew && c.Changed(e => e.Login, e => e.IsActive, e => e.MustChangePassword, e => e.Password, e => e.RoleIds))
       {
         c.Entity.TokenVersion++;
-        var now = DateTimeOffset.UtcNow;
-        var sessions = await db.AppAuthSession
-          .Where(s => s.UserId == c.Entity.Id && s.RevokedAt == null)
-          .ToListAsync(cancellationToken);
-        foreach (var session in sessions)
-        {
-          session.RevokedAt = now;
-          session.RevokedReason = "app-user-security-changed";
-        }
+        await PlatformAppService.RevokeUserSessionsAsync(db, [c.Entity.Id], "app-user-security-changed", cancellationToken);
       }
     });
 
@@ -152,22 +144,6 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         db.Add(new AppAuthAssignment { UserId = c.Entity.Id, AuthRoleId = role, IsActive = true });
       }
     });
-  }
-
-  private async Task<bool> CoversUserGrantsAsync(long userId, CancellationToken cancellationToken)
-  {
-    var grants = await db.Set<AppAuthGrant>()
-      .Where(g => db.Set<AppAuthAssignment>().Any(a => a.UserId == userId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
-      .Select(g => g.Permission)
-      .Distinct()
-      .ToListAsync(cancellationToken);
-    if (app != null)
-    {
-      return app.Covers(grants);
-    }
-
-    var held = db.TenantContext.Rights ?? User?.Permissions;
-    return held != null && grants.All(p => HeldRights.Covers(held, p));
   }
 }
 
