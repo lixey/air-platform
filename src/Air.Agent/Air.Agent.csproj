@@ -10,4 +10,7 @@
     <ProjectReference Include="..\Air.Mcp\Air.Mcp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Air.Agent.Tests" />
+  </ItemGroup>
 </Project>

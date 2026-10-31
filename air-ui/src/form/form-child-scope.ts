@@ -14,6 +14,7 @@ export class FormChildScope {
   private readonly heldAttempts = new Map<OverlayRef, CloseDecision>();
   readonly mutations: ScreenMutations;
   private readonly changes = new Set<() => void>();
+  private suppressChanges = false;
 
   constructor(parent: Lifetime) {
     this.lifetime = parent.child();
@@ -28,6 +29,18 @@ export class FormChildScope {
   onChange(changed: () => void): () => void {
     this.changes.add(changed);
     return () => this.changes.delete(changed);
+  }
+
+  /** Refreshes the child screen's listeners for a mutation committed in the parent form or a sibling child screen. */
+  refresh(service: string): void {
+    this.suppressChanges = true;
+    try {
+      const op = this.mutations.begin();
+      this.mutations.publish(op, { service, operation: 'refresh' });
+      this.mutations.finish(op);
+    } finally {
+      this.suppressChanges = false;
+    }
   }
 
   capture(): () => boolean {
@@ -108,6 +121,9 @@ export class FormChildScope {
     this.mutations.subscribe({
       accepts: () => true,
       refresh: () => {
+        if (this.suppressChanges) {
+          return;
+        }
         for (const changed of [...this.changes]) {
           changed();
         }

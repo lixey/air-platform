@@ -40,6 +40,44 @@ public abstract class PlatformDbContext : DbContext
   public long RequiredTenantId => TenantContext.TenantId
     ?? throw new InvalidOperationException("Operation requires an active tenant, but none was resolved.");
 
+  private MutationRunScope? _activeMutationRun;
+
+  public bool IsInMutationRun => _activeMutationRun != null;
+
+  internal Guid? CurrentMutationRunId => _activeMutationRun?.RunId;
+
+  public IDisposable BeginMutationRun()
+  {
+    if (_activeMutationRun != null)
+    {
+      _activeMutationRun.Depth++;
+      return new NestedMutationScope(() =>
+      {
+        if (_activeMutationRun != null && --_activeMutationRun.Depth <= 0)
+        {
+          _activeMutationRun = null;
+        }
+      });
+    }
+
+    var scope = new MutationRunScope(() =>
+    {
+      if (_activeMutationRun != null && --_activeMutationRun.Depth <= 0)
+      {
+        _activeMutationRun = null;
+      }
+    });
+    _activeMutationRun = scope;
+    return scope;
+  }
+
+  public void ResetMutationState()
+  {
+    _activeMutationRun = null;
+    _restoredEntities.Clear();
+    ChangeTracker.Clear();
+  }
+
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
     base.OnModelCreating(modelBuilder);
@@ -68,7 +106,7 @@ public abstract class PlatformDbContext : DbContext
         var filterBody = Expression.OrElse(isSystemScopeExpr, equality);
 
         var lambda = Expression.Lambda(filterBody, parameter);
-        modelBuilder.Entity(clrType).HasQueryFilter(lambda);
+        modelBuilder.Entity(clrType).HasQueryFilter(TenantFilterExtensions.Name, lambda);
       }
 
       if (typeof(IInheritedByChildTenants).IsAssignableFrom(clrType))
@@ -91,7 +129,7 @@ public abstract class PlatformDbContext : DbContext
         var filterBody = Expression.OrElse(isSystemScopeExpr, Expression.OrElse(nullTenantCheck, equality));
 
         var lambda = Expression.Lambda(filterBody, parameter);
-        modelBuilder.Entity(clrType).HasQueryFilter(lambda);
+        modelBuilder.Entity(clrType).HasQueryFilter(TenantFilterExtensions.Inherited, lambda);
         modelBuilder.Entity(clrType).Property(nameof(IInheritedByChildTenants.TenantId)).IsConcurrencyToken();
       }
 
@@ -125,9 +163,22 @@ public abstract class PlatformDbContext : DbContext
   public override int SaveChanges(bool acceptAllChangesOnSuccess)
   {
     ChangeTracker.DetectChanges();
+    if (!_journalTableMissing)
+    {
+      CascadeLoader.LoadDependents(this);
+    }
+
     ApplyEntityConventions();
 
-    var journalSnapshots = CaptureJournalSnapshots();
+    if (_activeMutationRun != null)
+    {
+      var pending = CaptureRunFlushStates(_activeMutationRun);
+      var res = base.SaveChanges(acceptAllChangesOnSuccess);
+      CompleteRunFlushStates(pending);
+      return res;
+    }
+
+    var journalSnapshots = CaptureJournalSnapshots(Guid.CreateVersion7());
     if (journalSnapshots.Count == 0)
     {
       return base.SaveChanges(acceptAllChangesOnSuccess);
@@ -150,9 +201,22 @@ public abstract class PlatformDbContext : DbContext
   public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
   {
     ChangeTracker.DetectChanges();
+    if (!_journalTableMissing)
+    {
+      await CascadeLoader.LoadDependentsAsync(this, cancellationToken);
+    }
+
     ApplyEntityConventions();
 
-    var journalSnapshots = CaptureJournalSnapshots();
+    if (_activeMutationRun != null)
+    {
+      var pending = CaptureRunFlushStates(_activeMutationRun);
+      var res = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+      CompleteRunFlushStates(pending);
+      return res;
+    }
+
+    var journalSnapshots = CaptureJournalSnapshots(Guid.CreateVersion7());
     if (journalSnapshots.Count == 0)
     {
       return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -172,11 +236,30 @@ public abstract class PlatformDbContext : DbContext
     return await SaveWithJournalCoreAsync(acceptAllChangesOnSuccess, journalSnapshots, cancellationToken);
   }
 
+  public async Task FlushMutationJournalAsync(CancellationToken cancellationToken = default)
+  {
+    if (_activeMutationRun == null || _activeMutationRun.Depth > 1)
+    {
+      return;
+    }
+
+    if (ChangeTracker.HasChanges())
+    {
+      await SaveChangesAsync(cancellationToken);
+    }
+
+    var rows = BuildConsolidatedJournalRows(_activeMutationRun);
+    _activeMutationRun.JournalEntries.Clear();
+    if (rows.Count == 0)
+    {
+      return;
+    }
+
+    await PersistJournalRowsAsync(true, rows, cancellationToken);
+  }
+
   private static readonly ConcurrentDictionary<Type, bool> JournalTableConfirmed = new();
   private bool _journalTableMissing;
-  private Guid? _runId;
-
-  private Guid RunId => _runId ??= Guid.CreateVersion7();
 
   private int SaveWithJournalCore(
     bool acceptAllChangesOnSuccess,
@@ -189,6 +272,28 @@ public abstract class PlatformDbContext : DbContext
       return result;
     }
 
+    PersistJournalRows(acceptAllChangesOnSuccess, journalRows);
+    return result;
+  }
+
+  private async Task<int> SaveWithJournalCoreAsync(
+    bool acceptAllChangesOnSuccess,
+    List<(EntityEntry Entry, Entities.AppPlatformChange Row)> journalSnapshots,
+    CancellationToken cancellationToken)
+  {
+    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    var journalRows = CompleteJournalRows(journalSnapshots);
+    if (journalRows.Count == 0)
+    {
+      return result;
+    }
+
+    await PersistJournalRowsAsync(acceptAllChangesOnSuccess, journalRows, cancellationToken);
+    return result;
+  }
+
+  private void PersistJournalRows(bool acceptAllChangesOnSuccess, List<Entities.AppPlatformChange> journalRows)
+  {
     var ctxType = GetType();
     var confirmed = JournalTableConfirmed.ContainsKey(ctxType);
     var activeTx = confirmed ? null : Database.CurrentTransaction;
@@ -211,22 +316,13 @@ public abstract class PlatformDbContext : DbContext
     {
       DetachJournalRows(journalRows);
     }
-
-    return result;
   }
 
-  private async Task<int> SaveWithJournalCoreAsync(
+  private async Task PersistJournalRowsAsync(
     bool acceptAllChangesOnSuccess,
-    List<(EntityEntry Entry, Entities.AppPlatformChange Row)> journalSnapshots,
+    List<Entities.AppPlatformChange> journalRows,
     CancellationToken cancellationToken)
   {
-    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-    var journalRows = CompleteJournalRows(journalSnapshots);
-    if (journalRows.Count == 0)
-    {
-      return result;
-    }
-
     var ctxType = GetType();
     var confirmed = JournalTableConfirmed.ContainsKey(ctxType);
     var activeTx = confirmed ? null : Database.CurrentTransaction;
@@ -256,8 +352,6 @@ public abstract class PlatformDbContext : DbContext
     {
       DetachJournalRows(journalRows);
     }
-
-    return result;
   }
 
   private static bool IsMissingJournalTable(Exception ex)
@@ -277,7 +371,233 @@ public abstract class PlatformDbContext : DbContext
     _restoredEntities.Add(entity);
   }
 
-  private List<(EntityEntry Entry, Entities.AppPlatformChange Row)> CaptureJournalSnapshots()
+  private List<MutationRunEntryState> CaptureRunFlushStates(MutationRunScope run)
+  {
+    if (_journalTableMissing)
+    {
+      _restoredEntities.Clear();
+      return [];
+    }
+
+    var pendingEntries = ChangeTracker.Entries()
+      .Where(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      .ToList();
+
+    if (pendingEntries.Count == 0)
+    {
+      _restoredEntities.Clear();
+      return [];
+    }
+
+    var tenantId = TenantContext.TenantId ?? 0;
+    var toCompleteAfterFlush = new List<MutationRunEntryState>(pendingEntries.Count);
+
+    foreach (var entry in pendingEntries)
+    {
+      var isRestored = _restoredEntities.Remove(entry.Entity);
+      var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
+      var rowTenantId = entry.Entity is IHasTenant t && t.TenantId != 0 ? t.TenantId : tenantId;
+      var excluded = EntityAuditMetadata.For(entry.Metadata.ClrType).ExcludedProperties;
+
+      run.JournalEntries.TryGetValue(entry.Entity, out var state);
+
+      if (entry.State == EntityState.Added)
+      {
+        state = new MutationRunEntryState
+        {
+          Entry = entry,
+          ClrType = entry.Metadata.ClrType,
+          Table = table,
+          TenantId = rowTenantId,
+          Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Added
+        };
+        run.JournalEntries[entry.Entity] = state;
+        toCompleteAfterFlush.Add(state);
+      }
+      else if (entry.State == EntityState.Modified)
+      {
+        if (state != null && state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored)
+        {
+          toCompleteAfterFlush.Add(state);
+          continue;
+        }
+
+        if (state == null)
+        {
+          state = new MutationRunEntryState
+          {
+            Entry = entry,
+            ClrType = entry.Metadata.ClrType,
+            Table = table,
+            TenantId = rowTenantId,
+            RowId = ((IEntity)entry.Entity).Id,
+            Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Modified
+          };
+          run.JournalEntries[entry.Entity] = state;
+        }
+        else if (isRestored)
+        {
+          state.Operation = Entities.ChangeOperations.Restored;
+        }
+
+        foreach (var p in entry.Properties)
+        {
+          if (!p.IsModified || Equals(p.OriginalValue, p.CurrentValue) || excluded.Contains(p.Metadata.Name))
+          {
+            continue;
+          }
+
+          if (!state.FirstBefore.ContainsKey(p.Metadata.Name))
+          {
+            state.FirstBefore[p.Metadata.Name] = p.OriginalValue;
+          }
+
+          state.LatestAfter[p.Metadata.Name] = p.CurrentValue;
+          if (p.Metadata.Name != nameof(IHasVersion.Ver))
+          {
+            state.TouchedProperties.Add(p.Metadata.Name);
+          }
+        }
+      }
+      else if (entry.State == EntityState.Deleted)
+      {
+        if (state != null && state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored)
+        {
+          state.IsDeleted = true;
+          run.JournalEntries.Remove(entry.Entity);
+          continue;
+        }
+
+        if (state == null)
+        {
+          state = new MutationRunEntryState
+          {
+            Entry = entry,
+            ClrType = entry.Metadata.ClrType,
+            Table = table,
+            TenantId = rowTenantId,
+            RowId = ((IEntity)entry.Entity).Id,
+            Operation = Entities.ChangeOperations.Deleted,
+            IsDeleted = true
+          };
+          run.JournalEntries[entry.Entity] = state;
+        }
+        else
+        {
+          state.Operation = Entities.ChangeOperations.Deleted;
+          state.IsDeleted = true;
+        }
+
+        foreach (var p in entry.Properties)
+        {
+          if (excluded.Contains(p.Metadata.Name))
+          {
+            continue;
+          }
+
+          if (!state.FirstBefore.ContainsKey(p.Metadata.Name))
+          {
+            state.FirstBefore[p.Metadata.Name] = p.OriginalValue;
+          }
+        }
+
+        state.LatestAfter.Clear();
+      }
+    }
+
+    _restoredEntities.Clear();
+    return toCompleteAfterFlush;
+  }
+
+  private static void CompleteRunFlushStates(List<MutationRunEntryState> states)
+  {
+    foreach (var state in states)
+    {
+      if (state.IsDeleted)
+      {
+        continue;
+      }
+
+      if (state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored)
+      {
+        state.RowId = ((IEntity)state.Entry.Entity).Id;
+        var excluded = EntityAuditMetadata.For(state.ClrType).ExcludedProperties;
+        state.LatestAfter.Clear();
+        foreach (var p in state.Entry.Properties)
+        {
+          if (!excluded.Contains(p.Metadata.Name))
+          {
+            state.LatestAfter[p.Metadata.Name] = p.CurrentValue;
+          }
+        }
+      }
+    }
+  }
+
+  private List<Entities.AppPlatformChange> BuildConsolidatedJournalRows(MutationRunScope run)
+  {
+    if (_journalTableMissing || run.JournalEntries.Count == 0)
+    {
+      return [];
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var userId = TenantContext.UserId;
+    var correlationId = TenantContext.CorrelationId;
+    var rows = new List<Entities.AppPlatformChange>(run.JournalEntries.Count);
+
+    foreach (var state in run.JournalEntries.Values)
+    {
+      var row = new Entities.AppPlatformChange
+      {
+        RunId = run.RunId,
+        At = now,
+        UserId = userId,
+        CorrelationId = correlationId,
+        TenantId = state.TenantId,
+        Table = state.Table,
+        RowId = state.RowId,
+        Operation = state.Operation
+      };
+
+      if (state.Operation is Entities.ChangeOperations.Added or Entities.ChangeOperations.Restored && state.FirstBefore.Count == 0)
+      {
+        row.After = System.Text.Json.JsonSerializer.Serialize(state.LatestAfter, AuditJsonOptions);
+        rows.Add(row);
+      }
+      else if (state.Operation == Entities.ChangeOperations.Deleted)
+      {
+        row.Before = System.Text.Json.JsonSerializer.Serialize(state.FirstBefore, AuditJsonOptions);
+        rows.Add(row);
+      }
+      else
+      {
+        var changedProps = state.TouchedProperties
+          .Where(prop => !Equals(state.FirstBefore.GetValueOrDefault(prop), state.LatestAfter.GetValueOrDefault(prop)))
+          .ToList();
+        if (changedProps.Count == 0)
+        {
+          continue;
+        }
+
+        var beforeDict = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var afterDict = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var prop in changedProps)
+        {
+          beforeDict[prop] = state.FirstBefore.GetValueOrDefault(prop);
+          afterDict[prop] = state.LatestAfter.GetValueOrDefault(prop);
+        }
+
+        row.Before = System.Text.Json.JsonSerializer.Serialize(beforeDict, AuditJsonOptions);
+        row.After = System.Text.Json.JsonSerializer.Serialize(afterDict, AuditJsonOptions);
+        rows.Add(row);
+      }
+    }
+
+    return rows;
+  }
+
+  private List<(EntityEntry Entry, Entities.AppPlatformChange Row)> CaptureJournalSnapshots(Guid runId)
   {
     if (_journalTableMissing)
     {
@@ -296,7 +616,6 @@ public abstract class PlatformDbContext : DbContext
     }
 
     var now = DateTimeOffset.UtcNow;
-    var runId = RunId;
     var tenantId = TenantContext.TenantId ?? 0;
     var userId = TenantContext.UserId;
     var correlationId = TenantContext.CorrelationId;
@@ -515,9 +834,14 @@ public abstract class PlatformDbContext : DbContext
           inherited.TenantId = tenantId;
         }
 
-        if (entry.Entity is IHasVersion version && version.Ver == 0)
+        if (entry.Entity is IHasVersion version)
         {
-          version.Ver = 1;
+          if (version.Ver == 0)
+          {
+            version.Ver = 1;
+          }
+
+          _activeMutationRun?.VersionIncrementedEntities.Add(entry.Entity);
         }
       }
       else if (entry.State == EntityState.Modified)
@@ -546,18 +870,29 @@ public abstract class PlatformDbContext : DbContext
 
         if (entry.Entity is IHasVersion version)
         {
-          if (keepsVersion)
+          var verProp = entry.Property(nameof(IHasVersion.Ver));
+          if (keepsVersion || _activeMutationRun != null && !_activeMutationRun.VersionIncrementedEntities.Add(entry.Entity))
           {
-            entry.Property(nameof(IHasVersion.Ver)).IsModified = false;
+            if (verProp.OriginalValue is int origV)
+            {
+              version.Ver = origV;
+            }
+
+            verProp.IsModified = false;
           }
           else
           {
-            var origVer = entry.Property(nameof(IHasVersion.Ver)).OriginalValue as int? ?? version.Ver;
+            var origVer = verProp.OriginalValue as int? ?? version.Ver;
             version.Ver = origVer + 1;
           }
         }
       }
     }
+  }
+
+  private sealed class NestedMutationScope(Action onDispose) : IDisposable
+  {
+    public void Dispose() => onDispose();
   }
 
   private sealed class LocalDateTimeConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(

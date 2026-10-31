@@ -458,7 +458,10 @@ public abstract partial class FormService<TEntity, TInput>
   {
     foreach (var el in elements.List)
     {
-      if (el.ValueKind != FormValueKind.Reference || el.IsDisabled || el.IsServerOwned || string.IsNullOrEmpty(el.Path))
+      if (el.ValueKind != FormValueKind.Reference && el.ValueKind != FormValueKind.List ||
+          el.IsDisabled ||
+          el.IsServerOwned ||
+          string.IsNullOrEmpty(el.Path))
       {
         continue;
       }
@@ -479,7 +482,10 @@ public abstract partial class FormService<TEntity, TInput>
         ? PropertyAccessorCache.GetValue(input, inputProp.Name)
         : PropertyAccessorCache.GetValue(entity, entityProp!.Name);
 
-      if (val is not long refId || refId <= 0)
+      var refGridType = el.ReferenceServiceType
+        ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? ModuleCatalog.Instance.FindServiceType(rs) : null);
+
+      if (refGridType == null)
       {
         continue;
       }
@@ -506,28 +512,112 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
-      if (!IsNew &&
-          !draftRulesChanged &&
-          originalValues != null &&
-          originalValues.TryGetValue((inputProp ?? entityProp!).Name, out var origVal) &&
-          origVal is long origId &&
-          origId == refId)
+      List<long> idsToValidate;
+      if (el.ValueKind == FormValueKind.List)
       {
-        continue;
+        if (val is not IEnumerable listEnum)
+        {
+          continue;
+        }
+
+        var rawIds = new List<long>();
+        var hasNonPositive = false;
+        foreach (var item in listEnum)
+        {
+          if (item is long l)
+          {
+            if (l <= 0)
+            {
+              hasNonPositive = true;
+            }
+            else
+            {
+              rawIds.Add(l);
+            }
+          }
+          else if (item != null && long.TryParse(item.ToString(), out var parsed))
+          {
+            if (parsed <= 0)
+            {
+              hasNonPositive = true;
+            }
+            else
+            {
+              rawIds.Add(parsed);
+            }
+          }
+        }
+
+        if (hasNonPositive)
+        {
+          ruleCtx.Failures.Add(new MessageDto
+          {
+            Path = el.Path,
+            Detail = L["FormValidationReference"],
+            Code = "form.validation.reference",
+            Type = MessageType.Error
+          });
+          continue;
+        }
+
+        idsToValidate = rawIds.Distinct().ToList();
+        if (!IsNew &&
+            !draftRulesChanged &&
+            originalValues != null &&
+            originalValues.TryGetValue((inputProp ?? entityProp!).Name, out var origListVal) &&
+            origListVal is IEnumerable origEnum)
+        {
+          var origSet = new HashSet<long>();
+          foreach (var oItem in origEnum)
+          {
+            if (oItem is long ol)
+            {
+              origSet.Add(ol);
+            }
+            else if (oItem != null && long.TryParse(oItem.ToString(), out var op))
+            {
+              origSet.Add(op);
+            }
+          }
+
+          idsToValidate = idsToValidate.Where(id => !origSet.Contains(id)).ToList();
+        }
+
+        if (idsToValidate.Count == 0)
+        {
+          continue;
+        }
+      }
+      else
+      {
+        if (val is not long refId || refId <= 0)
+        {
+          continue;
+        }
+
+        if (!IsNew &&
+            !draftRulesChanged &&
+            originalValues != null &&
+            originalValues.TryGetValue((inputProp ?? entityProp!).Name, out var origVal) &&
+            origVal is long origId &&
+            origId == refId)
+        {
+          continue;
+        }
+
+        idsToValidate = [refId];
       }
 
-      var refGridType = el.ReferenceServiceType
-        ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? ModuleCatalog.Instance.FindServiceType(rs) : null);
-
-      if (refGridType == null ||
-          ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, PlatformApp) is not Grid.IGridService refGrid)
+      if (ModuleCatalog.Instance.CreateServiceInstance(refGridType, db, PlatformApp) is not Grid.IGridService refGrid)
       {
         continue;
       }
 
       var filterItems = new List<Platform.Data.Contracts.FilterNode>
       {
-        Platform.Data.Contracts.FilterNode.Rule("id", Platform.Data.Contracts.FilterOperator.Equals, refId)
+        idsToValidate.Count == 1
+          ? Platform.Data.Contracts.FilterNode.Rule("id", Platform.Data.Contracts.FilterOperator.Equals, idsToValidate[0])
+          : Platform.Data.Contracts.FilterNode.Rule("id", Platform.Data.Contracts.FilterOperator.In, idsToValidate)
       };
 
       if (el.Model is FormSelectModel selectModel)
@@ -566,7 +656,7 @@ public abstract partial class FormService<TEntity, TInput>
         : Platform.Data.Contracts.FilterNode.All(filterItems.ToArray());
 
       var countDto = await refGrid.GetCountAsync(new GridRequest { Filter = combinedFilter }, ct);
-      if (countDto.Total <= 0)
+      if (countDto.Total != idsToValidate.Count)
       {
         ruleCtx.Failures.Add(new MessageDto
         {

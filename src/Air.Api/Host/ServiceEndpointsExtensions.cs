@@ -7,6 +7,7 @@ public static class ServiceEndpointsExtensions
     nameof(Object),
     nameof(IPlatformService),
     nameof(PlatformService),
+    nameof(PlatformAppService),
     "IGridService",
     "GridService`1",
     "GridService`2",
@@ -16,7 +17,9 @@ public static class ServiceEndpointsExtensions
     "IReportService",
     "ReportService",
     "IScreenService",
-    "ScreenService"
+    "ScreenService",
+    "StatusFlowService",
+    "StatusFlowService`1"
   };
 
   public static void MapServiceEndpoints(this RouteGroupBuilder api)
@@ -109,7 +112,7 @@ public static class ServiceEndpointsExtensions
     }
 
     var actionMethod = serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-      .Where(m => !m.IsSpecialName && m.DeclaringType != null && !ExcludedBaseTypeNames.Contains(m.DeclaringType.Name))
+      .Where(IsCallableServiceAction)
       .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
     if (actionMethod == null)
@@ -326,5 +329,45 @@ public static class ServiceEndpointsExtensions
     }
 
     return PlatformEndpointsExtensions.ToMutationResult(resultTask ?? new MutationResultDto { Outcome = MutationOutcome.Committed });
+  }
+
+  public static bool IsCallableServiceAction(MethodInfo m)
+  {
+    if (m.IsSpecialName || m.IsGenericMethodDefinition || m.DeclaringType == null)
+    {
+      return false;
+    }
+
+    if (m.GetCustomAttribute<ServiceActionAttribute>(inherit: true) != null ||
+        m.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null ||
+        m.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
+        m.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null ||
+        m.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null)
+    {
+      return true;
+    }
+
+    if (ExcludedBaseTypeNames.Contains(m.DeclaringType.Name) ||
+        m.DeclaringType.Namespace?.StartsWith("Platform.", StringComparison.Ordinal) == true)
+    {
+      return false;
+    }
+
+    var ret = m.ReturnType;
+    if (typeof(IResult).IsAssignableFrom(ret))
+    {
+      return true;
+    }
+
+    if (ret.IsGenericType && ret.GetGenericTypeDefinition() == typeof(Task<>))
+    {
+      var inner = ret.GetGenericArguments()[0];
+      if (typeof(IResult).IsAssignableFrom(inner) || typeof(MutationResultDto).IsAssignableFrom(inner))
+      {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

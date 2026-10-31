@@ -18,5 +18,8 @@
     <InternalsVisibleTo Include="Air.Api" />
     <InternalsVisibleTo Include="Air.App" />
     <InternalsVisibleTo Include="Air.Agent" />
+    <InternalsVisibleTo Include="Air.Api.Tests" />
+    <InternalsVisibleTo Include="Air.App.Tests" />
+    <InternalsVisibleTo Include="Air.Agent.Tests" />
   </ItemGroup>
 </Project>

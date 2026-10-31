@@ -75,7 +75,10 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         typeof(BaseAppAuthRole).IsAssignableFrom(typeof(TEntity)) ||
         typeof(BaseAppAuthGrant).IsAssignableFrom(typeof(TEntity)) ||
         typeof(BaseAppAuthAssignment).IsAssignableFrom(typeof(TEntity)) ||
-        typeof(BaseAppAuthSession).IsAssignableFrom(typeof(TEntity)))
+        typeof(BaseAppAuthSession).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(AppPlatformChange).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(AppAgentMemory).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(AppAgentModel).IsAssignableFrom(typeof(TEntity)))
     {
       return false;
     }
@@ -95,11 +98,41 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ? Reachable(asTracking).Where(e => SelectedIds.Contains(e.Id))
       : Reachable(asTracking).Where(_ => false);
 
+  private object? _preloadedParent;
+
+  protected async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
+  {
+    var parent = GetParent();
+    var hasRequiredBoundParent = parent.BoundProperty != null &&
+                                 !parent.IsOptional &&
+                                 Feature.ServiceType != null &&
+                                 Feature.ServiceType != GetType();
+    var (allowed, preloaded) = await ParentScopeValidator.ValidateAndLoadAsync(
+      db,
+      PlatformApp,
+      ParentId,
+      ParentService,
+      hasRequiredBoundParent,
+      parent.MatchesService,
+      parent.BoundParentService,
+      parent.BoundParentServiceType,
+      parent.BoundParentEntityType,
+      lockParent,
+      ct);
+    _preloadedParent = preloaded;
+    return allowed;
+  }
+
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
   {
     if (ParentId == null || ParentId.Value <= 0)
     {
       return null;
+    }
+
+    if (_preloadedParent is TParent preloaded && preloaded.Id == ParentId.Value)
+    {
+      return preloaded;
     }
 
     var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);

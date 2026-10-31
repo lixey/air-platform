@@ -8,7 +8,7 @@ import { followedLifetime } from './followed-lifetime';
 
 export interface ScreenMutationEvent {
   readonly service: string;
-  readonly operation: 'save' | 'delete';
+  readonly operation: 'save' | 'delete' | 'refresh';
   readonly recordId?: number | null;
   readonly selectedIds?: readonly (number | string)[];
   readonly data?: FormDataDto;

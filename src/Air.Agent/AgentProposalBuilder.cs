@@ -53,8 +53,11 @@ public static partial class AgentProposalBuilder
 
     Dictionary<string, object?> originalFormValues;
     Dictionary<string, object?> formValues;
+    int? recordVer = null;
     if (isEdit)
     {
+      var existingEntity = await formInst.LoadParentRecordAsync(recordId!.Value, ct);
+      recordVer = (existingEntity as IHasVersion)?.Ver;
       var existingValues = await AgentContextQueryService.GetExistingFormValuesAsync(formInst, recordId!.Value, editableElements, ct);
       originalFormValues = CloneFormValues(existingValues);
       formValues = CloneFormValues(existingValues);
@@ -911,6 +914,7 @@ public static partial class AgentProposalBuilder
     {
       Service = targetDesc.ServicePath,
       RecordId = recordId,
+      Ver = recordVer,
       Values = formValues,
       NewReferences = orderedNewRefs,
       ChildFormService = childFormDesc?.ServicePath,

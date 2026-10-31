@@ -10,6 +10,8 @@ public interface IFormService : IPlatformService
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, (long?)null, ct);
   Task<object?> GetModelAsync(long? id, CancellationToken ct = default);
   Task<object?> GetModelAsync(FormRequest request, CancellationToken ct = default);
+  void SetRequest(FormRequest request);
+  Task<object?> LoadParentRecordAsync(long id, CancellationToken ct = default);
   Task<FormDataDto> BuildFormDataAsync(object? entity, ScreenDto? screen = null, string? outcome = null, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);

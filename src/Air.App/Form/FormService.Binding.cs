@@ -320,9 +320,14 @@ public abstract partial class FormService<TEntity, TInput>
       return;
     }
 
+    var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
+    if (!IsNew && Request.ParentId is > 0 && storedParentId is > 0 && storedParentId.Value != Request.ParentId.Value)
+    {
+      throw new FormRefusedException(L["MutationRefused"], L["FormNotFound"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
+    }
+
     if (!IsNew && !parent.IsOptional || !Request.ParentId.HasValue)
     {
-      var storedParentId = parent.BoundProperty.GetValue(entity) as long?;
       if (storedParentId.HasValue)
       {
         Request.ParentId = storedParentId.Value;
@@ -350,33 +355,38 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private (string? Service, IReadOnlyList<ChildGridBuilder> Children)? _cachedParentChildren;
+  private (string? Service, long? ParentId, IReadOnlyList<ChildGridBuilder> Children)? _cachedParentChildren;
 
   private ChildGridBuilder? ResolveParentChildBuilder(bool requirePreset = false)
   {
-    if (string.IsNullOrEmpty(Request.ParentService))
+    var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
+      ? Request.ParentService
+      : GetParent().BoundParentService;
+    if (string.IsNullOrEmpty(effectiveParentService))
     {
       return null;
     }
 
     IReadOnlyList<ChildGridBuilder> children;
     if (_cachedParentChildren is { } cached &&
-        string.Equals(cached.Service, Request.ParentService, StringComparison.OrdinalIgnoreCase))
+        string.Equals(cached.Service, effectiveParentService, StringComparison.OrdinalIgnoreCase) &&
+        cached.ParentId == Request.ParentId)
     {
       children = cached.Children;
     }
     else
     {
       children = [];
-      var parentFormType = ModuleCatalog.Instance.FindServiceType(Request.ParentService);
+      var parentFormType = ModuleCatalog.Instance.FindServiceType(effectiveParentService);
       if (parentFormType != null &&
           typeof(IFormService).IsAssignableFrom(parentFormType) &&
           ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is IFormService parentForm)
       {
+        parentForm.SetRequest(new FormRequest { Id = Request.ParentId });
         (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
       }
 
-      _cachedParentChildren = (Request.ParentService, children);
+      _cachedParentChildren = (effectiveParentService, Request.ParentId, children);
     }
 
     return children.FirstOrDefault(c =>

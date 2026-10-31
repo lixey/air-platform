@@ -233,11 +233,14 @@ function keptScreenOf(
     }
 
     if (answer.layout) {
+      const prev = untracked(kept);
+      const layout =
+        prev?.service === service ? { ...answer.layout, root: sharingModels(prev.layout.root, answer.layout.root) } : answer.layout;
       layoutOf = service;
       const { overlayWidth: width, overlayHeight: height } = answer;
       kept.set({
         service,
-        layout: answer.layout,
+        layout,
         asked: width == null && height == null ? null : { width, height },
         data: answer.data,
       });

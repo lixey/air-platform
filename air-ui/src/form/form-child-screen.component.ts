@@ -90,14 +90,39 @@ export class FormChildScreenComponent {
 
     // A new model, which a read in place does not hand a page it leaves as it is, closes what the child opened for the
     // former one and starts the child's new epoch
+    const form = injectForm();
+    let seenRevision = untracked(() => form()?.dataRevision() ?? 0);
+
     effect(() => {
       this.model();
-      untracked(() => this.scope.reset());
+      untracked(() => {
+        seenRevision = form()?.dataRevision() ?? 0;
+        this.scope.reset();
+      });
     });
 
-    // The form of the layout reads its screen again for a change under this page
-    const form = injectForm();
-    const unregisterChange = this.scope.onChange(() => form()?.refresh());
+    // The form of the layout and its sibling child screens refresh for a change under this page
+    const unregisterChange = this.scope.onChange(() => {
+      const parentForm = form();
+      if (parentForm) {
+        parentForm.notifyChildMutated();
+        seenRevision = untracked(() => parentForm.dataRevision());
+      }
+    });
+
+    effect(() => {
+      const rev = form()?.dataRevision() ?? 0;
+      if (rev !== seenRevision) {
+        seenRevision = rev;
+        untracked(() => {
+          if (this.screen.error()) {
+            this.screen.reload();
+          } else {
+            this.scope.refresh(this.model().service);
+          }
+        });
+      }
+    });
 
     inject(DestroyRef).onDestroy(() => {
       unregisterChange();

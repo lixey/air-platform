@@ -55,45 +55,58 @@ public abstract partial class GridService<TEntity, TRow>
       {
         query = parent.FilterFunc(query, ParentId.Value);
       }
-      else if (ParentId is > 0)
+      else if (ParentId is > 0 && !parent.HasRead)
       {
         query = query.Where(_ => false);
       }
+    }
+    else if (parent.BoundProperty != null &&
+             !parent.IsOptional &&
+             Feature.ServiceType != null &&
+             Feature.ServiceType != GetType() &&
+             !(gridReq?.IsReferencePicker ?? false) &&
+             gridReq?.ReferenceLabelPaths is not { Count: > 0 })
+    {
+      query = query.Where(_ => false);
     }
 
     return query;
   }
 
-  private (string? Service, Form.ChildGridBuilder? Builder)? _cachedParentChild;
+  private (string? Service, long? ParentId, Form.ChildGridBuilder? Builder)? _cachedParentChild;
 
   private Form.ChildGridBuilder? ResolveParentChildBuilder()
   {
-    if (string.IsNullOrEmpty(ParentService))
+    var effectiveParentService = !string.IsNullOrEmpty(ParentService)
+      ? ParentService
+      : GetParent().BoundParentService;
+    if (string.IsNullOrEmpty(effectiveParentService))
     {
       return null;
     }
 
     if (_cachedParentChild is { } cached &&
-        string.Equals(cached.Service, ParentService, StringComparison.OrdinalIgnoreCase))
+        string.Equals(cached.Service, effectiveParentService, StringComparison.OrdinalIgnoreCase) &&
+        cached.ParentId == ParentId)
     {
       return cached.Builder;
     }
 
     Form.ChildGridBuilder? resolved = null;
-    var parentFormType = ModuleCatalog.Instance.FindServiceType(ParentService);
+    var parentFormType = ModuleCatalog.Instance.FindServiceType(effectiveParentService);
     if (parentFormType != null &&
         typeof(Form.IFormService).IsAssignableFrom(parentFormType) &&
         ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is Form.IFormService parentForm)
     {
+      parentForm.SetRequest(new Form.Contracts.FormRequest { Id = ParentId });
       var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
       var myService = ServicePathResolver.Resolve(GetType());
       resolved = children.FirstOrDefault(c =>
-        !c.IsFiles &&
-        (c.ServiceType == GetType() ||
-         string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase)));
+        c.ServiceType == GetType() ||
+        string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
     }
 
-    _cachedParentChild = (ParentService, resolved);
+    _cachedParentChild = (effectiveParentService, ParentId, resolved);
     return resolved;
   }
 
@@ -156,6 +169,16 @@ public abstract partial class GridService<TEntity, TRow>
   public virtual async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
   {
     var gridReq = request as GridRequest;
+    if (gridReq is { ParentId: > 0 })
+    {
+      ParentService = gridReq.ParentService;
+      ParentId = gridReq.ParentId;
+      if (!await EnsureParentScopeAsync(lockParent: false, ct))
+      {
+        return new GridPageDto<object> { Rows = [], Total = 0, Number = request.Page, Size = request.PageSize, HasMore = false };
+      }
+    }
+
     var filteredQuery = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
     var cols = CreateColumns();
     var allColumns = cols.List.ToList();
@@ -165,7 +188,11 @@ public abstract partial class GridService<TEntity, TRow>
     {
       var defaultLabel = cols.List
         .FirstOrDefault(c => !string.Equals(c.Path, "id", StringComparison.OrdinalIgnoreCase))?.Path ?? "name";
-      var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 } ? gridReq.ReferenceLabelPaths : [defaultLabel, "name"];
+      var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 }
+        ? gridReq.ReferenceLabelPaths
+        : GetReferenceLabelPaths() is { Count: > 0 } declLabels
+          ? declLabels
+          : [defaultLabel, "name"];
       var patchColumns = gridReq?.PatchSourceColumns ?? [];
       var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
       foreach (var p in patchColumns)
@@ -287,6 +314,16 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
   {
+    if (request.ParentId is > 0)
+    {
+      ParentService = request.ParentService;
+      ParentId = request.ParentId;
+      if (!await EnsureParentScopeAsync(lockParent: false, ct))
+      {
+        return new GridCountDto { Total = 0 };
+      }
+    }
+
     var baseEntityQuery = BuildBaseEntityQuery(request, out _, out var queryDeclaration);
     var query = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration);
     var cols = CreateColumns();
@@ -325,44 +362,15 @@ public abstract partial class GridService<TEntity, TRow>
       return;
     }
 
+    var offers = new List<(string ActionKey, int ReasonIndex, Expression<Func<TEntity, bool>> Condition)>();
     foreach (var transition in transitionsWithOffers)
     {
       var actionKey = $"status.{transition.Name.ToLowerInvariant()}";
       for (var i = 0; i < transition.Offers.Count; i++)
       {
-        if (transition.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond)
+        if (transition.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
-          continue;
-        }
-
-        var passedIds = (await db.Set<TEntity>()
-          .Where(e => rowIds.Contains(e.Id))
-          .Where(cond)
-          .Select(e => e.Id)
-          .ToListAsync(ct)).ToHashSet();
-
-        foreach (var rowObj in shapedRows)
-        {
-          if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
-          {
-            continue;
-          }
-
-          if (!long.TryParse(idVal.ToString(), out var parsedId))
-          {
-            continue;
-          }
-
-          if (!passedIds.Contains(parsedId))
-          {
-            if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
-            {
-              unav = new Dictionary<string, int>(StringComparer.Ordinal);
-              dict["unavailable"] = unav;
-            }
-
-            unav.TryAdd(actionKey, i);
-          }
+          offers.Add((actionKey, i, cond));
         }
       }
     }
@@ -372,39 +380,40 @@ public abstract partial class GridService<TEntity, TRow>
       var actionKey = action.Model.Key;
       for (var i = 0; i < action.Offers.Count; i++)
       {
-        if (action.Offers[i].Condition is not Expression<Func<TEntity, bool>> cond)
+        if (action.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
-          continue;
+          offers.Add((actionKey, i, cond));
         }
+      }
+    }
 
-        var passedIds = (await db.Set<TEntity>()
-          .Where(e => rowIds.Contains(e.Id))
-          .Where(cond)
-          .Select(e => e.Id)
-          .ToListAsync(ct)).ToHashSet();
+    if (offers.Count == 0)
+    {
+      return;
+    }
 
-        foreach (var rowObj in shapedRows)
+    var evaluated = await OfferBatchEvaluator.EvaluateAsync(db, rowIds, offers, ct);
+    foreach (var rowObj in shapedRows)
+    {
+      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
+      {
+        continue;
+      }
+
+      if (!long.TryParse(idVal.ToString(), out var parsedId) || !evaluated.TryGetValue(parsedId, out var rowUnav) || rowUnav.Count == 0)
+      {
+        continue;
+      }
+
+      if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
+      {
+        dict["unavailable"] = rowUnav;
+      }
+      else
+      {
+        foreach (var kvp in rowUnav)
         {
-          if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
-          {
-            continue;
-          }
-
-          if (!long.TryParse(idVal.ToString(), out var parsedId))
-          {
-            continue;
-          }
-
-          if (!passedIds.Contains(parsedId))
-          {
-            if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
-            {
-              unav = new Dictionary<string, int>(StringComparer.Ordinal);
-              dict["unavailable"] = unav;
-            }
-
-            unav.TryAdd(actionKey, i);
-          }
+          unav.TryAdd(kvp.Key, kvp.Value);
         }
       }
     }

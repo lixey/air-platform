@@ -4,6 +4,7 @@ internal sealed class StagedProposalPayload
 {
   public string Service { get; set; } = string.Empty;
   public long? RecordId { get; set; }
+  public int? Ver { get; set; }
   public Dictionary<string, object?> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
   public List<PendingNewReference> NewReferences { get; set; } = [];
   public string? ChildFormService { get; set; }

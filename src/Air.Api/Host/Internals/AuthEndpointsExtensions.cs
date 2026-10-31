@@ -79,18 +79,15 @@ internal static class AuthEndpointsExtensions
       if (string.IsNullOrEmpty(user.PasswordHash) ||
           hasher.VerifyPassword(req.Password, user.PasswordHash) == PasswordVerification.Failed)
       {
-        if (!user.IsRoot)
+        user.AccessFailedCount++;
+        if (user.AccessFailedCount >= 5)
         {
-          user.AccessFailedCount++;
-          if (user.AccessFailedCount >= 5)
-          {
-            user.LockoutCount++;
-            user.AccessFailedCount = 0;
-            user.LockoutEnd = now.AddMinutes(Math.Min(60, 5 * user.LockoutCount));
-          }
-
-          await authStore.SaveChangesAsync(ct);
+          user.LockoutCount++;
+          user.AccessFailedCount = 0;
+          user.LockoutEnd = now.AddMinutes(Math.Min(60, 5 * user.LockoutCount));
         }
+
+        await authStore.SaveChangesAsync(ct);
 
         return Results.Unauthorized();
       }
@@ -236,15 +233,6 @@ internal static class AuthEndpointsExtensions
       {
         providedHash = SessionTokenService.HashRefreshToken(rawRefresh);
         session = await authStore.FindSessionByHashAsync(providedHash, ct);
-      }
-
-      if (session == null)
-      {
-        var sessionId = ResolveSessionId(ctx.Request, userContext);
-        if (sessionId != null)
-        {
-          session = await authStore.FindSessionAsync(sessionId.Value, ct);
-        }
       }
 
       if (session == null || session.RevokedAt != null || session.ExpiresAt <= now)

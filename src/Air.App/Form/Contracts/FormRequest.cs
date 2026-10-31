@@ -18,4 +18,10 @@ public class FormRequest
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public JsonElement? Value { get; set; }
+
+  [JsonIgnore]
+  public string? IdempotencyKey { get; set; }
+
+  [JsonIgnore]
+  public string? RawPayload { get; set; }
 }

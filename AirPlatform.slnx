@@ -22,4 +22,10 @@
     <Project Path="demo/src/Demo.Api/Demo.Api.csproj" />
     <Project Path="demo/src/Demo.DevMigrations/Demo.DevMigrations.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Air.Data.Tests/Air.Data.Tests.csproj" />
+    <Project Path="tests/Air.Api.Tests/Air.Api.Tests.csproj" />
+    <Project Path="tests/Air.App.Tests/Air.App.Tests.csproj" />
+    <Project Path="tests/Air.Agent.Tests/Air.Agent.Tests.csproj" />
+  </Folder>
 </Solution>

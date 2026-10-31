@@ -123,9 +123,16 @@ public static class PlatformSqlServerExtensions
         ts.CreatedAt = now;
       }
 
-      if (item is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && tenantId.HasValue)
+      if (item is IHasTenant tenantEntity)
       {
-        tenantEntity.TenantId = tenantId.Value;
+        if (tenantEntity.TenantId == 0 && tenantId.HasValue)
+        {
+          tenantEntity.TenantId = tenantId.Value;
+        }
+        else if (tenantId.HasValue && tenantEntity.TenantId != 0 && tenantEntity.TenantId != tenantId.Value)
+        {
+          throw new InvalidOperationException($"Cannot bulk import '{typeof(TEntity).Name}' belonging to another tenant.");
+        }
       }
 
       if (item is IHasVersion ver && ver.Ver == 0)

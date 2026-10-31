@@ -1,4 +1,4 @@
-.PHONY: all help build clean contracts export-contracts format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
+.PHONY: all help build test clean contracts export-contracts format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
 
 VOLUME ?= default
 WEB := demo/web
@@ -21,6 +21,10 @@ help: ## Show available targets
 build: ## Build the entire solution
 	dotnet build AirPlatform.slnx
 
+test: ## Run all layered xUnit tests (tests/*) and air-ui Vitest specs
+	dotnet test AirPlatform.slnx --nologo
+	@cd $(WEB) && ./node_modules/.bin/vitest run libs/air-ui/src/form/form-child-scope.spec.ts
+
 format: ## Format all C# files via dotnet format (.editorconfig) and frontend/docs via Prettier
 	@dotnet format AirPlatform.slnx --verbosity minimal && cd $(WEB) && npx prettier --write --log-level warn --config .prettierrc $(PRETTIER_PATHS)
 
@@ -33,7 +37,7 @@ check-paths: check-arch ## Verify zero absolute filesystem paths and architectur
 check-ts: ## Verify TypeScript and Angular template compilation for air-ui and demo
 	@cd $(WEB) && npx ngc -p apps/demo/tsconfig.app.json --noEmit
 
-gate: format-check check-paths check-arch check-ts build ## Run unified verification gate (format, paths, arch, ts, build)
+gate: format-check check-paths check-arch check-ts build test ## Run unified verification gate (format, paths, arch, ts, build, test)
 
 audit: ## Run controlled code audit on Claude Opus 5.5 (High) via agy CLI with automatic fallback to claude CLI
 	@if [ "$(AUDIT_CLI)" = "claude" ]; then \

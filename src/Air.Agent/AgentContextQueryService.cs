@@ -521,6 +521,7 @@ public static class AgentContextQueryService
         ?? throw new InvalidOperationException("No agent-enabled forms are registered.");
       var resolvedDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(descriptors, baseDesc, requestedService, recordId.Value, db, app, ct);
       if (ModuleCatalog.Instance.CreateServiceInstance(resolvedDesc.FormServiceType, db, app) is not IFormService formInst ||
+          !formInst.Feature.AllowsAgent ||
           !AgentFeatureRegistry.CanViewFeature(formInst.Feature, app))
       {
         throw new InvalidOperationException($"Access denied or form service '{resolvedDesc.ServicePath}' not available.");
@@ -585,6 +586,7 @@ public static class AgentContextQueryService
 
     if (gridType == null ||
         ModuleCatalog.Instance.CreateServiceInstance(gridType, db, app) is not IGridService gridInst ||
+        !gridInst.Feature.AllowsAgent ||
         !AgentFeatureRegistry.CanViewFeature(gridInst.Feature, app))
     {
       throw new InvalidOperationException($"Grid service for '{requestedService}' was not found or access is denied.");

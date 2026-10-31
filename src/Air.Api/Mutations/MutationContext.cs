@@ -45,17 +45,20 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
   public virtual Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
     AcquireLocksAsync(db, typeof(TLocked), keys, cancellationToken);
 
-  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key)
+  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key, long? tenantId = null)
   {
     var numbers = string.Join(':', key.Select(n => n.ToString(CultureInfo.InvariantCulture)));
-    return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"air-lock:{lockedType.Name}:{numbers}")));
+    var prefix = tenantId is > 0 && typeof(IHasTenant).IsAssignableFrom(lockedType)
+      ? $"air-lock:{tenantId.Value}:{lockedType.Name}:{numbers}"
+      : $"air-lock:{lockedType.Name}:{numbers}";
+    return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(prefix)));
   }
 
   internal static async Task AcquireLocksAsync(PlatformDbContext? db, Type lockedType, IEnumerable<long[]> keys, CancellationToken ct)
   {
     if (db == null || db.Database.CurrentTransaction == null)
     {
-      return;
+      throw new InvalidOperationException("Cannot acquire a mutation lock outside an active database transaction.");
     }
 
     var isPostgres = db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
@@ -65,7 +68,8 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
       return;
     }
 
-    var lockKeys = keys.Select(k => LockKeyOf(lockedType, k)).Distinct().OrderBy(k => k).ToList();
+    var tenantId = db.TenantContext.TenantId;
+    var lockKeys = keys.Select(k => LockKeyOf(lockedType, k, tenantId)).Distinct().OrderBy(k => k).ToList();
     foreach (var lockKey in lockKeys)
     {
       if (isPostgres)

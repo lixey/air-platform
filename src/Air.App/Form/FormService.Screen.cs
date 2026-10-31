@@ -28,6 +28,8 @@ public abstract partial class FormService<TEntity, TInput>
       }
     }
 
+    await PreloadParentRecordAsync(parent, ct);
+
     CurrentEntity = entity;
 
     var elements = new Elements();
@@ -860,27 +862,17 @@ public abstract partial class FormService<TEntity, TInput>
       _lastElements = elements;
     }
 
-    Dictionary<string, int>? unavailable = null;
+    var offers = new List<(string ActionKey, int ReasonIndex, Expression<Func<TEntity, bool>> Condition)>();
     if (_lastElements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
       foreach (var transition in statusFlow.Transitions)
       {
-        if (transition.Offers.Count == 0)
-        {
-          continue;
-        }
-
+        var actionKey = $"status.{transition.Name.ToLowerInvariant()}";
         for (var i = 0; i < transition.Offers.Count; i++)
         {
           if (transition.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
           {
-            var passes = await db.Set<TEntity>().Where(e => e.Id == id.Value).AnyAsync(cond, ct);
-            if (!passes)
-            {
-              unavailable ??= new Dictionary<string, int>(StringComparer.Ordinal);
-              unavailable[$"status.{transition.Name.ToLowerInvariant()}"] = i;
-              break;
-            }
+            offers.Add((actionKey, i, cond));
           }
         }
       }
@@ -890,27 +882,22 @@ public abstract partial class FormService<TEntity, TInput>
     await SetNavAsync(customNav, ct);
     foreach (var entry in customNav.Actions)
     {
-      if (entry.Offers.Count == 0)
-      {
-        continue;
-      }
-
       for (var i = 0; i < entry.Offers.Count; i++)
       {
         if (entry.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
-          var passes = await db.Set<TEntity>().Where(e => e.Id == id.Value).AnyAsync(cond, ct);
-          if (!passes)
-          {
-            unavailable ??= new Dictionary<string, int>(StringComparer.Ordinal);
-            unavailable[entry.Model.Key] = i;
-            break;
-          }
+          offers.Add((entry.Model.Key, i, cond));
         }
       }
     }
 
-    return unavailable;
+    if (offers.Count == 0)
+    {
+      return null;
+    }
+
+    var evaluated = await OfferBatchEvaluator.EvaluateAsync(db, [id.Value], offers, ct);
+    return evaluated.TryGetValue(id.Value, out var unav) && unav.Count > 0 ? unav : null;
   }
 
   private void BuildChildPagePanels(PanelLayoutBuilder layout, string servicePath, long id, List<ChildGridBuilder> pageChildren)

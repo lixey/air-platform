@@ -122,6 +122,9 @@ export class FormService {
   private readonly _adoption = signal(0);
   /** Counts the records the form adopted: one given, one read again, the answer of a save or of an action, and none. */
   readonly adoption = this._adoption.asReadonly();
+  private readonly _dataRevision = signal(0);
+  /** Counts committed mutations of the record or its child screens so sibling child screens reload in sync. */
+  readonly dataRevision = this._dataRevision.asReadonly();
   private readonly _unavailable = signal<Unavailable>(frozenCopy({}));
   /** What the record the form holds does not offer; empty for a new record and for a record that offers all. */
   readonly unavailable = this._unavailable.asReadonly();
@@ -475,6 +478,12 @@ export class FormService {
     return this.isDirty() || this.isUnsettled() || (this.isBusy() && !this.awaitsScreen());
   }
 
+  /** Tells the form and its sibling child screens that a child screen committed a mutation. */
+  notifyChildMutated(): void {
+    this._dataRevision.update(v => v + 1);
+    this.refresh();
+  }
+
   /** What a change under the form asks: a clean idle form reads its screen again in place, any other turns stale. */
   refresh(): void {
     const service = this.service();
@@ -669,6 +678,7 @@ export class FormService {
    * record itself, its read in flight as the post was.
    */
   private readAgain(service: string, id: number, method: string | null, isCurrent: () => boolean): void {
+    this._dataRevision.update(v => v + 1);
     if (this.host) {
       this.actions.setReading(method);
       this.host.reload({ id });
@@ -847,6 +857,7 @@ export class FormService {
    */
   private adoptCommit(answer: FormDataDto, service: string, operation: ScreenOperation | undefined, reloads: boolean): FormDataDto {
     this.adopt(answer);
+    this._dataRevision.update(v => v + 1);
     this.alert.warnings(answer.warnings, this.model()?.mutationTexts.committedWarningTitle);
     if (reloads && this.host) {
       this.actions.setReading(null);

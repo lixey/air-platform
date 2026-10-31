@@ -221,6 +221,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.Unauthorized();
           }
 
+          if (!CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
           GridRequest? req = null;
           var actionMethodKey = subMethod ?? "";
           if (httpRequest.ContentLength > 0)
@@ -403,6 +408,15 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           {
             entity = await form.SaveAsync(doc.RootElement, req, ct);
           }
+          catch (IdempotencyConflictException ex)
+          {
+            return Results.UnprocessableEntity(new MutationResultDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Title = Localizer.Instance["MutationRefused"],
+              Messages = [new MessageDto { Detail = ex.Message, Type = MessageType.Error }]
+            });
+          }
           catch (FormRefusedException ex)
           {
             return ex.Outcome == MutationOutcome.Conflict
@@ -438,6 +452,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.Unauthorized();
           }
 
+          if (!CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
           FormRequest? req = null;
           var actionMethodKey = subMethod ?? "";
           if (httpRequest.ContentLength > 0)
@@ -467,8 +486,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.Unauthorized();
           }
 
-          long? id = null;
-          int? ver = null;
           JsonElement? bodyElement = null;
           using var jsonDoc = httpRequest.ContentLength > 0
             ? await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct)
@@ -477,52 +494,48 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           if (jsonDoc != null)
           {
             bodyElement = jsonDoc.RootElement;
-            if (bodyElement.Value.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var parsedId))
-            {
-              id = parsedId;
-            }
-
-            if (bodyElement.Value.TryGetProperty("ver", out var verProp) && verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt32(out var parsedVer))
-            {
-              ver = parsedVer;
-            }
           }
 
-          if (id == null && httpRequest.Query.TryGetValue("id", out var qIdStr) && long.TryParse(qIdStr, out var qId))
-          {
-            id = qId;
-          }
-
-          if (ver == null && httpRequest.Query.TryGetValue("ver", out var qVerStr) && int.TryParse(qVerStr, out var qVer))
-          {
-            ver = qVer;
-          }
-
-          if (id == null)
+          var req = BindFormRequest(httpRequest, bodyElement ?? default);
+          if (req.Id == null)
           {
             return Results.BadRequest(new { detail = "Record id is required for move-status." });
           }
 
-          var result = await form.MoveStatusAsync(id.Value, subMethod, bodyElement, ver, ct);
+          form.SetRequest(req);
+          var result = await form.MoveStatusAsync(req.Id.Value, subMethod, bodyElement, req.Ver, ct);
           return PlatformEndpointsExtensions.ToMutationResult(result);
         }
 
       case "delete":
         {
-          if (userContext is { IsAuthenticated: false })
+          if (userContext is null or { IsAuthenticated: false })
           {
-            return Results.StatusCode(StatusCodes.Status403Forbidden);
+            return Results.Unauthorized();
           }
 
-          var ids = await ExtractIdsAsync(httpRequest, ct);
+          var (req, ids) = await ExtractDeleteRequestAsync(httpRequest, ct);
+          form.SetRequest(req);
           var deleted = 0;
           try
           {
-            foreach (var id in ids)
+            await form.DbContext.RunMutationAsync(async mutationCt =>
             {
-              await form.DeleteAsync(id, ct);
-              deleted++;
-            }
+              foreach (var id in ids)
+              {
+                form.SetRequest(new FormRequest
+                {
+                  Id = id,
+                  ParentId = req.ParentId,
+                  ParentService = req.ParentService,
+                  Ver = ids.Count == 1 ? req.Ver : null
+                });
+                await form.DeleteAsync(id, mutationCt);
+                deleted++;
+              }
+
+              return true;
+            }, ct: ct);
           }
           catch (FormRefusedException ex)
           {
@@ -716,8 +729,15 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       req.ParentService = psStr;
     }
 
+    if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
+    {
+      req.IdempotencyKey = idemVals.ToString().Trim();
+    }
+
     if (root.ValueKind == JsonValueKind.Object)
     {
+      req.RawPayload = root.GetRawText();
+
       if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId))
       {
         req.Id = bodyId;
@@ -747,20 +767,17 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     return req;
   }
 
-  private static async Task<List<long>> ExtractIdsAsync(HttpRequest request, CancellationToken ct)
+  private static async Task<(FormRequest Request, List<long> Ids)> ExtractDeleteRequestAsync(HttpRequest request, CancellationToken ct)
   {
     List<long> ids = [];
-    if (request.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
-    {
-      ids.Add(parsedId);
-      return ids;
-    }
+    FormRequest? req = null;
 
     if (request.ContentLength > 0)
     {
       try
       {
         using var doc = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+        req = BindFormRequest(request, doc.RootElement);
         if (doc.RootElement.TryGetProperty("selectedIds", out var sel) && sel.ValueKind == JsonValueKind.Array)
         {
           foreach (var item in sel.EnumerateArray())
@@ -790,7 +807,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       catch { }
     }
 
-    return ids;
+    req ??= BindFormRequest(request, default);
+    if (ids.Count == 0 && req.Id is > 0)
+    {
+      ids.Add(req.Id.Value);
+    }
+
+    return (req, ids);
   }
 
   private static async Task<ReportRequest> ReadReportRequestAsync(HttpRequest request, CancellationToken ct)

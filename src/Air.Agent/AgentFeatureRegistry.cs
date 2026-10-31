@@ -113,6 +113,7 @@ public static class AgentFeatureRegistry
       {
         if (typeof(IGridService).IsAssignableFrom(directType) &&
             ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IGridService grid &&
+            grid.Feature.AllowsAgent &&
             CanEditFeature(grid.Feature, app))
         {
           foreach (var create in grid.GetCreateForms())
@@ -129,6 +130,7 @@ public static class AgentFeatureRegistry
 
         if (typeof(IFormService).IsAssignableFrom(directType) &&
             ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IFormService form &&
+            form.Feature.AllowsAgent &&
             CanEditFeature(form.Feature, app))
         {
           if (form.Feature.ServiceType != null &&

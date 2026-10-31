@@ -11,6 +11,6 @@ public static class TenantFilterExtensions
   public static IQueryable<T> IgnoreTenantFilter<T>(this IQueryable<T> query) where T : class
   {
     ArgumentNullException.ThrowIfNull(query);
-    return query.IgnoreQueryFilters();
+    return query.IgnoreQueryFilters([Name, Inherited]);
   }
 }

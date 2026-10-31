@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\src\Air.Data\Air.Data.csproj" />
+    <ProjectReference Include="..\..\src\Air.Api\Air.Api.csproj" />
+    <ProjectReference Include="..\..\src\Air.App\Air.App.csproj" />
+    <ProjectReference Include="..\..\src\Air.Mcp\Air.Mcp.csproj" />
+    <ProjectReference Include="..\..\src\Air.Agent\Air.Agent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>

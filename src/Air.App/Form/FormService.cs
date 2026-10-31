@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db, PlatformAppService? app = null) : IFormService
@@ -212,12 +214,97 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     User != null && User.IsAuthenticated && !User.Can(Feature.Edit) && !User.Can(Feature.All);
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
+  private object? _preloadedParent;
+
+  public void SetRequest(FormRequest request) => Request = request;
+
+  public async Task<object?> LoadParentRecordAsync(long id, CancellationToken ct = default)
+  {
+    if (id <= 0)
+    {
+      return null;
+    }
+
+    var tracked = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id);
+    var query = Reachable(asTracking: true);
+    if (tracked != null)
+    {
+      var reachableExists = await query.AnyAsync(e => e.Id == id, ct);
+      return reachableExists ? tracked : null;
+    }
+
+    var efModel = db.Model.FindEntityType(typeof(TEntity));
+    if (efModel != null)
+    {
+      foreach (var nav in efModel.GetNavigations())
+      {
+        if (!nav.IsCollection)
+        {
+          query = query.Include(nav.Name);
+        }
+      }
+    }
+
+    return await query.FirstOrDefaultAsync(e => e.Id == id, ct);
+  }
+
+  protected async Task EnsureParentScopeAsync(Parent parent, bool lockParent, CancellationToken ct)
+  {
+    var (allowed, preloaded) = await ParentScopeValidator.ValidateAndLoadAsync(
+      db,
+      PlatformApp,
+      Request.ParentId,
+      Request.ParentService,
+      parent.BoundProperty != null && !parent.IsOptional,
+      parent.MatchesService,
+      parent.BoundParentService,
+      parent.BoundParentServiceType,
+      parent.BoundParentEntityType,
+      lockParent,
+      ct);
+    if (!allowed)
+    {
+      throw new FormRefusedException(
+        MutationOutcome.Refused,
+        L["MutationRefused"],
+        [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
+    }
+
+    _preloadedParent = preloaded;
+  }
+
+  protected async Task PreloadParentRecordAsync(Parent parent, CancellationToken ct)
+  {
+    if (Request.ParentId is not > 0)
+    {
+      return;
+    }
+
+    var (_, preloaded) = await ParentScopeValidator.ValidateAndLoadAsync(
+      db,
+      PlatformApp,
+      Request.ParentId,
+      Request.ParentService,
+      hasRequiredBoundParent: false,
+      parent.MatchesService,
+      parent.BoundParentService,
+      parent.BoundParentServiceType,
+      parent.BoundParentEntityType,
+      lockParent: false,
+      ct);
+    _preloadedParent = preloaded;
+  }
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
   {
     if (ParentId == null || ParentId.Value <= 0)
     {
       return null;
+    }
+
+    if (_preloadedParent is TParent preloaded && preloaded.Id == ParentId.Value)
+    {
+      return preloaded;
     }
 
     var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
@@ -245,6 +332,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   public sealed class Parent
   {
     public Type? BoundParentServiceType { get; private set; }
+    public Type? BoundParentEntityType => GetFormEntityType(BoundParentServiceType);
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
     public bool IsOptional { get; private set; }
@@ -619,109 +707,6 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null) =>
     ExecuteActionAsync(request, (ctx, _, ct) => handler(ctx, ct), cancellationToken, actionName);
 
-  protected async Task<FormActionDto> ExecuteActionAsync(
-    FormRequest request,
-    Func<FormActionContext<TEntity>, TEntity, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default,
-    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
-  {
-    Request = request;
-    IsNew = false;
-    if (request.Id is not > 0)
-    {
-      return new FormActionDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
-      };
-    }
-
-    var parent = GetParent();
-
-    var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == request.Id.Value, cancellationToken)
-      ?? throw new KeyNotFoundException(L["FormNotFound"]);
-
-    if (request.Ver.HasValue && request.Ver.Value > 0 && entity is IHasVersion versioned && versioned.Ver != request.Ver.Value)
-    {
-      return new FormActionDto
-      {
-        Outcome = MutationOutcome.Conflict,
-        Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
-      };
-    }
-
-    RestoreBoundParentId(entity, parent);
-
-    var nav = new Nav(Service, L);
-    await SetNavAsync(nav, cancellationToken);
-    var navEntry = !string.IsNullOrEmpty(actionName)
-      ? nav.Actions.FirstOrDefault(a => string.Equals(a.Method.Method.Name, actionName, StringComparison.OrdinalIgnoreCase))
-      : null;
-
-    if (IsReadOnly && navEntry?.IsAllowedInReadOnly != true)
-    {
-      return new FormActionDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
-      };
-    }
-
-    if (navEntry is { Offers.Count: > 0 })
-    {
-      foreach (var offer in navEntry.Offers)
-      {
-        if (offer.Condition is Expression<Func<TEntity, bool>> cond)
-        {
-          var passes = await db.Set<TEntity>().Where(e => e.Id == entity.Id).AnyAsync(cond, cancellationToken);
-          if (!passes)
-          {
-            return new FormActionDto
-            {
-              Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L[offer.Reason], RecordId = entity.Id, Type = MessageType.Error }]
-            };
-          }
-        }
-      }
-    }
-
-    return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-    {
-      await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
-      var ctx = new FormActionContext<TEntity>(entity, ct => db.SaveChangesAsync(ct), db);
-      await handler(ctx, entity, cancellationToken);
-      if (ctx.Errors.Count > 0)
-      {
-        await tx.RollbackAsync(cancellationToken);
-        return new FormActionDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
-        };
-      }
-
-      if (db.ChangeTracker.HasChanges())
-      {
-        await db.SaveChangesAsync(cancellationToken);
-      }
-
-      await tx.CommitAsync(cancellationToken);
-      if (PlatformApp != null)
-      {
-        await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, cancellationToken);
-      }
-
-      return new FormActionDto
-      {
-        Outcome = MutationOutcome.Committed,
-        OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId,
-        Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
-      };
-    });
-  }
-
   public sealed class Query
   {
     internal IQueryable<TEntity>? Source { get; private set; }
@@ -863,6 +848,12 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
   {
+    IsNew = Request.Id is null or <= 0;
+    if (!IsNew && CurrentEntity == null && Request.Id is > 0)
+    {
+      CurrentEntity = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == Request.Id.Value);
+    }
+
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     LocalizeAndResolveSelectElements(elements);

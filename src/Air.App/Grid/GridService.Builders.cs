@@ -18,8 +18,10 @@ public abstract partial class GridService<TEntity, TRow>
   {
     internal Func<IQueryable<TEntity>, long, IQueryable<TEntity>>? FilterFunc { get; private set; }
     public Type? BoundParentServiceType { get; private set; }
+    public Type? BoundParentEntityType => GetFormEntityType(BoundParentServiceType);
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
+    public bool IsOptional { get; private set; }
     public bool HasRead { get; private set; }
 
     public bool MatchesService(string? parentService)
@@ -70,6 +72,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      IsOptional = optional;
       if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
       {
         BoundProperty = pi;
@@ -92,6 +95,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
+      IsOptional = optional;
       if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
       {
         BoundProperty = pi;
