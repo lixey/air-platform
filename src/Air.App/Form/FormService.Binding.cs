@@ -192,7 +192,7 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      if ((isSensitive || isInputOnly) && !isNew && input != null)
+      if (isSensitive && !isNew && input != null)
       {
         var incoming = PropertyAccessorCache.GetValue(input, prop.Name);
         if (incoming is null || incoming is string s && string.IsNullOrEmpty(s))

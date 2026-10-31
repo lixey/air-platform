@@ -78,10 +78,19 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
   public Task<GridActionDto> Deactivate(GridRequest request, CancellationToken cancellationToken) =>
     ExecuteBatchAsync(request, async (context, token) =>
     {
-      if (context.Records.Any(u => u.Id == 1))
+      if (context.Records.Any(u => u.Id == 1 || u.IsRoot))
       {
         context.Refuse(L["The root user cannot be deactivated."]);
         return;
+      }
+
+      foreach (var u in context.Records)
+      {
+        if (User?.UserId != u.Id && !await CoversUserGrantsAsync(u.Id, token))
+        {
+          context.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
+          return;
+        }
       }
 
       var ids = context.Records.Select(u => u.Id).ToList();

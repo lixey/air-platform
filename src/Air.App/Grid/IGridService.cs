@@ -18,6 +18,7 @@ public interface IGridService : IPlatformService
   string? GetRecordLabel(object? entity) => null;
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
   bool AllowsMultiDelete => false;
+  bool HasRestoreHooks => false;
   Task<IReadOnlyList<MessageDto>> OnRestoredAsync(IReadOnlyList<object> restoredEntities, CancellationToken ct = default) =>
     Task.FromResult<IReadOnlyList<MessageDto>>([]);
   void RegisterMetadata() { }

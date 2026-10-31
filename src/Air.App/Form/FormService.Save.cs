@@ -191,11 +191,11 @@ public abstract partial class FormService<TEntity, TInput>
 
     var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
     var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-    var inputOnlyPaths = _lastElements != null ? BuildInputOnlyPaths(_lastElements) : null;
-    foreach (var prop in PropertyAccessorCache.GetProperties(typeof(TEntity)))
+    var props = PropertyAccessorCache.GetProperties(typeof(TEntity))
+      .Concat(entity != null && entity.GetType() != typeof(TEntity) ? PropertyAccessorCache.GetProperties(entity.GetType()) : []);
+    foreach (var prop in props)
     {
-      if (prop.GetCustomAttribute<SensitiveAttribute>() != null ||
-          inputOnlyPaths != null && inputOnlyPaths.Contains(prop.Name))
+      if (prop.GetCustomAttribute<SensitiveAttribute>() != null)
       {
         var camel = Elements.ToCamelPath(prop.Name);
         if (dict.ContainsKey(camel))

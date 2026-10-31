@@ -539,23 +539,28 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   private IGridService? ResolveGridServiceForEntity(Type entityType, PlatformDbContext targetDb)
   {
-    Type? gridType = null;
-    if (ModuleCatalog.Instance.FindFeatureForEntity(entityType) is { ServiceType: { } featSvcType } &&
-        typeof(IGridService).IsAssignableFrom(featSvcType))
+    var featSvcType = ModuleCatalog.Instance.FindFeatureForEntity(entityType)?.ServiceType;
+    if (featSvcType is { IsAbstract: false } &&
+        typeof(IGridService).IsAssignableFrom(featSvcType) &&
+        ModuleCatalog.Instance.CreateServiceInstance(featSvcType, targetDb, PlatformApp, services ?? PlatformApp?.Services) is IGridService featGrid &&
+        featGrid.HasRestoreHooks)
     {
-      gridType = featSvcType;
+      return featGrid;
     }
 
-    gridType ??= ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
-      typeof(IGridService).IsAssignableFrom(t) &&
-      ModuleCatalog.GetServiceEntityType(t) == entityType);
-
-    if (gridType == null)
+    foreach (var t in ModuleCatalog.Instance.AllServiceTypes)
     {
-      return null;
+      if (t != featSvcType &&
+          !t.IsAbstract &&
+          typeof(IGridService).IsAssignableFrom(t) &&
+          ModuleCatalog.GetServiceEntityType(t) == entityType &&
+          ModuleCatalog.Instance.CreateServiceInstance(t, targetDb, PlatformApp, services ?? PlatformApp?.Services) is IGridService { HasRestoreHooks: true } candidate)
+      {
+        return candidate;
+      }
     }
 
-    return ModuleCatalog.Instance.CreateServiceInstance(gridType, targetDb, PlatformApp, services ?? PlatformApp?.Services) as IGridService;
+    return null;
   }
 
   private string ResolveParentTableName(string parentService)
