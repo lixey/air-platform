@@ -997,9 +997,6 @@
   <data name="Code" xml:space="preserve">
     <value>Код</value>
   </data>
-  <data name="Restore" xml:space="preserve">
-    <value>Відновити</value>
-  </data>
   <data name="History" xml:space="preserve">
     <value>Історія</value>
   </data>
@@ -1018,47 +1015,8 @@
   <data name="All" xml:space="preserve">
     <value>Усі</value>
   </data>
-  <data name="ChangeRestoreUnavailable" xml:space="preserve">
-    <value>Вибрані зміни недоступні.</value>
-  </data>
-  <data name="ChangeRestoreNotRestorable" xml:space="preserve">
-    <value>Відновити можна лише змінені або видалені записи.</value>
-  </data>
-  <data name="ChangeRestoreMissingRow" xml:space="preserve">
-    <value>Запис більше не існує.</value>
-  </data>
-  <data name="ChangeRestoreExists" xml:space="preserve">
-    <value>Запис уже існує.</value>
-  </data>
   <data name="ChangeDiffEmpty" xml:space="preserve">
     <value>Зміни полів не зафіксовані.</value>
-  </data>
-  <data name="RestoreConfirm" xml:space="preserve">
-    <value>Відновити вибрані рядки журналу?</value>
-  </data>
-  <data name="ChangeRestoreOperation" xml:space="preserve">
-    <value>Рядок {1} таблиці {0} має операцію {2}: відновлюється лише видалений або змінений рядок.</value>
-  </data>
-  <data name="ChangeRestoreTable" xml:space="preserve">
-    <value>Таблиця {0} не відповідає жодній одній сутності застосунку, тож рядок {1} не відновлюється.</value>
-  </data>
-  <data name="ChangeRestoreFile" xml:space="preserve">
-    <value>Рядок {1} таблиці {0} належить файлу: його вміст міг зникнути, тож він не відновлюється.</value>
-  </data>
-  <data name="ChangeRestoreProvider" xml:space="preserve">
-    <value>Ключ таблиці {0} не приймає явного ідентифікатора, тож видалений рядок {1} не відновлюється.</value>
-  </data>
-  <data name="ChangeRestoreKeepsVersion" xml:space="preserve">
-    <value>У рядку {1} таблиці {0} змінено поле, яке записує лише сервер; таку зміну тут не скасовують.</value>
-  </data>
-  <data name="ChangeRestorePresent" xml:space="preserve">
-    <value>Рядок {1} таблиці {0} знову існує.</value>
-  </data>
-  <data name="ChangeRestoreParent" xml:space="preserve">
-    <value>Рядок {1} таблиці {0} посилається на батьківський рядок, якого вже немає.</value>
-  </data>
-  <data name="ChangeRestoreStale" xml:space="preserve">
-    <value>Рядок {1} таблиці {0} відтоді видалено або знову змінено.</value>
   </data>
   <data name="At" xml:space="preserve">
     <value>Час</value>

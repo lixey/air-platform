@@ -102,7 +102,6 @@ public abstract class PlatformDbContext : DbContext
   public void ResetMutationState()
   {
     _activeMutationRun = null;
-    _restoredEntities.Clear();
     ChangeTracker.Clear();
   }
 
@@ -165,18 +164,6 @@ public abstract class PlatformDbContext : DbContext
       {
         modelBuilder.Entity(clrType).Property(nameof(IHasVersion.Ver)).IsConcurrencyToken();
       }
-
-      var concurrencyProps = EntityAuditMetadata.For(clrType).ConcurrencyTokenProperties;
-      if (concurrencyProps.Count > 0)
-      {
-        foreach (var prop in entityType.GetProperties())
-        {
-          if (concurrencyProps.Contains(prop.Name))
-          {
-            prop.IsConcurrencyToken = true;
-          }
-        }
-      }
     }
   }
 
@@ -194,10 +181,7 @@ public abstract class PlatformDbContext : DbContext
   public override int SaveChanges(bool acceptAllChangesOnSuccess)
   {
     ChangeTracker.DetectChanges();
-    if (!_journalTableMissing)
-    {
-      CascadeLoader.LoadDependents(this);
-    }
+    CascadeLoader.LoadDependents(this);
 
     ApplyEntityConventions();
 
@@ -233,10 +217,7 @@ public abstract class PlatformDbContext : DbContext
   public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
   {
     ChangeTracker.DetectChanges();
-    if (!_journalTableMissing)
-    {
-      await CascadeLoader.LoadDependentsAsync(this, cancellationToken);
-    }
+    await CascadeLoader.LoadDependentsAsync(this, cancellationToken);
 
     ApplyEntityConventions();
 
@@ -291,9 +272,6 @@ public abstract class PlatformDbContext : DbContext
     await PersistJournalRowsAsync(true, rows, cancellationToken);
   }
 
-  private static readonly ConcurrentDictionary<Type, bool> JournalTableConfirmed = new();
-  private bool _journalTableMissing;
-
   private int SaveStandaloneWithJournal(
     bool acceptAllChangesOnSuccess,
     MutationRunScope run,
@@ -329,23 +307,10 @@ public abstract class PlatformDbContext : DbContext
 
   private void PersistJournalRows(bool acceptAllChangesOnSuccess, List<Entities.AppPlatformChange> journalRows)
   {
-    var ctxType = GetType();
-    var confirmed = JournalTableConfirmed.ContainsKey(ctxType);
-    var activeTx = confirmed ? null : Database.CurrentTransaction;
     try
     {
-      activeTx?.CreateSavepoint("air_journal");
       AppPlatformChange.AddRange(journalRows);
       base.SaveChanges(acceptAllChangesOnSuccess);
-      if (!confirmed)
-      {
-        JournalTableConfirmed[ctxType] = true;
-      }
-    }
-    catch (Exception ex) when (!confirmed && IsMissingJournalTable(ex))
-    {
-      _journalTableMissing = true;
-      activeTx?.RollbackToSavepoint("air_journal");
     }
     finally
     {
@@ -358,30 +323,10 @@ public abstract class PlatformDbContext : DbContext
     List<Entities.AppPlatformChange> journalRows,
     CancellationToken cancellationToken)
   {
-    var ctxType = GetType();
-    var confirmed = JournalTableConfirmed.ContainsKey(ctxType);
-    var activeTx = confirmed ? null : Database.CurrentTransaction;
     try
     {
-      if (activeTx != null)
-      {
-        await activeTx.CreateSavepointAsync("air_journal", cancellationToken);
-      }
-
       AppPlatformChange.AddRange(journalRows);
       await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-      if (!confirmed)
-      {
-        JournalTableConfirmed[ctxType] = true;
-      }
-    }
-    catch (Exception ex) when (!confirmed && IsMissingJournalTable(ex))
-    {
-      _journalTableMissing = true;
-      if (activeTx != null)
-      {
-        await activeTx.RollbackToSavepointAsync("air_journal", cancellationToken);
-      }
     }
     finally
     {
@@ -389,38 +334,14 @@ public abstract class PlatformDbContext : DbContext
     }
   }
 
-  private static bool IsMissingJournalTable(Exception ex)
-  {
-    var msg = ex.InnerException?.Message ?? ex.Message;
-    return msg.Contains(nameof(AppPlatformChange), StringComparison.OrdinalIgnoreCase) &&
-           (msg.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("Invalid object name", StringComparison.OrdinalIgnoreCase) ||
-            msg.Contains("no such table", StringComparison.OrdinalIgnoreCase));
-  }
-
-  private readonly HashSet<object> _restoredEntities = new(ReferenceEqualityComparer.Instance);
-
-  public void MarkRestored(object entity)
-  {
-    ArgumentNullException.ThrowIfNull(entity);
-    _restoredEntities.Add(entity);
-  }
-
   private List<MutationRunEntryState> CaptureRunFlushStates(MutationRunScope run)
   {
-    if (_journalTableMissing)
-    {
-      _restoredEntities.Clear();
-      return [];
-    }
-
     var pendingEntries = ChangeTracker.Entries()
       .Where(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
       .ToList();
 
     if (pendingEntries.Count == 0)
     {
-      _restoredEntities.Clear();
       return [];
     }
 
@@ -429,7 +350,6 @@ public abstract class PlatformDbContext : DbContext
 
     foreach (var entry in pendingEntries)
     {
-      var isRestored = _restoredEntities.Remove(entry.Entity);
       var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
       var rowTenantId = entry.Entity is IHasTenant t && t.TenantId != 0 ? t.TenantId : tenantId;
       var excluded = EntityAuditMetadata.For(entry.Metadata.ClrType).ExcludedProperties;
@@ -445,7 +365,7 @@ public abstract class PlatformDbContext : DbContext
           Table = table,
           TenantId = rowTenantId,
           IsAdded = true,
-          Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Added
+          Operation = Entities.ChangeOperations.Added
         };
         run.JournalEntries[entry.Entity] = state;
         toCompleteAfterFlush.Add(state);
@@ -467,13 +387,9 @@ public abstract class PlatformDbContext : DbContext
             Table = table,
             TenantId = rowTenantId,
             RowId = ((IEntity)entry.Entity).Id,
-            Operation = isRestored ? Entities.ChangeOperations.Restored : Entities.ChangeOperations.Modified
+            Operation = Entities.ChangeOperations.Modified
           };
           run.JournalEntries[entry.Entity] = state;
-        }
-        else if (isRestored)
-        {
-          state.Operation = Entities.ChangeOperations.Restored;
         }
 
         foreach (var p in entry.Properties)
@@ -541,7 +457,6 @@ public abstract class PlatformDbContext : DbContext
       }
     }
 
-    _restoredEntities.Clear();
     return toCompleteAfterFlush;
   }
 
@@ -572,7 +487,7 @@ public abstract class PlatformDbContext : DbContext
 
   private List<Entities.AppPlatformChange> BuildConsolidatedJournalRows(MutationRunScope run)
   {
-    if (_journalTableMissing || run.JournalEntries.Count == 0)
+    if (run.JournalEntries.Count == 0)
     {
       return [];
     }
@@ -656,15 +571,15 @@ public abstract class PlatformDbContext : DbContext
                                      !auditMeta.ExcludedProperties.Contains(p.Metadata.Name));
   }
 
-  private static bool ChangesKeepsVersionOnly(EntityEntry entry)
+  private static bool ChangesNoAuditOnly(EntityEntry entry)
   {
     if (entry.State != EntityState.Modified)
     {
       return false;
     }
 
-    var keepsProps = EntityAuditMetadata.For(entry.Metadata.ClrType).KeepsVersionProperties;
-    if (keepsProps.Count == 0)
+    var noAuditProps = EntityAuditMetadata.For(entry.Metadata.ClrType).NoAuditProperties;
+    if (noAuditProps.Count == 0)
     {
       return false;
     }
@@ -675,7 +590,7 @@ public abstract class PlatformDbContext : DbContext
       if (p.IsModified && !Equals(p.OriginalValue, p.CurrentValue))
       {
         hasModified = true;
-        if (!keepsProps.Contains(p.Metadata.Name))
+        if (!noAuditProps.Contains(p.Metadata.Name))
         {
           return false;
         }
@@ -731,14 +646,7 @@ public abstract class PlatformDbContext : DbContext
       {
         if (entry.Entity is IHasTimestamps timestamps)
         {
-          if (!_restoredEntities.Contains(entry.Entity) || timestamps.CreatedAt == default)
-          {
-            timestamps.CreatedAt = now;
-          }
-          else
-          {
-            timestamps.UpdatedAt = now;
-          }
+          timestamps.CreatedAt = now;
         }
 
         if (entry.Entity is IHasTenant tenantEntity)
@@ -774,12 +682,12 @@ public abstract class PlatformDbContext : DbContext
       }
       else if (entry.State == EntityState.Modified)
       {
-        var keepsVersion = ChangesKeepsVersionOnly(entry);
+        var noAuditOnly = ChangesNoAuditOnly(entry);
 
         if (entry.Entity is IHasTimestamps timestamps)
         {
           entry.Property(nameof(IHasTimestamps.CreatedAt)).IsModified = false;
-          if (!keepsVersion)
+          if (!noAuditOnly)
           {
             timestamps.UpdatedAt = now;
           }
@@ -799,7 +707,7 @@ public abstract class PlatformDbContext : DbContext
         if (entry.Entity is IHasVersion version)
         {
           var verProp = entry.Property(nameof(IHasVersion.Ver));
-          if (keepsVersion || _activeMutationRun != null && !_activeMutationRun.VersionIncrementedEntities.Add(entry.Entity))
+          if (noAuditOnly || _activeMutationRun != null && !_activeMutationRun.VersionIncrementedEntities.Add(entry.Entity))
           {
             if (verProp.OriginalValue is int origV)
             {

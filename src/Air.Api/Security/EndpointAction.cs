@@ -5,6 +5,5 @@ public enum EndpointAction
   View,
   Edit,
   Delete,
-  Export,
-  Restore
+  Export
 }

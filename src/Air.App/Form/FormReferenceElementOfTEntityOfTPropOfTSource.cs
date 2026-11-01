@@ -115,12 +115,6 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     return this;
   }
 
-  public new FormReferenceElement<TEntity, TProp, TSource> Title(string legacyUi, string legacyDb)
-  {
-    base.Title(legacyUi, legacyDb);
-    return this;
-  }
-
   public new FormReferenceElement<TEntity, TProp, TSource> Focus(bool focus = true)
   {
     base.Focus(focus);
@@ -167,18 +161,6 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   public new FormReferenceElement<TEntity, TProp, TSource> DisabledWhen(Expression<Func<TEntity, bool>> predicate)
   {
     base.DisabledWhen(predicate);
-    return this;
-  }
-
-  public new FormReferenceElement<TEntity, TProp, TSource> RequiredWhen(FilterNode condition)
-  {
-    base.RequiredWhen(condition);
-    return this;
-  }
-
-  public new FormReferenceElement<TEntity, TProp, TSource> RequiredWhen(Expression<Func<TEntity, bool>> predicate)
-  {
-    base.RequiredWhen(predicate);
     return this;
   }
 }

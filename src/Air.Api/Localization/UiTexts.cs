@@ -216,8 +216,6 @@ public static class UiTexts
     ["RemoveItem"] = "Remove {0}",
     ["RequestFailed"] = "The request failed.",
     ["ResizePanel"] = "Resize {0}",
-    ["Restore"] = "Restore",
-    ["RestoreConfirm"] = "Restore the selected journal rows?",
     ["Retry"] = "Try again",
     ["RowCount"] = "{0} rows",
     ["Save"] = "Save",

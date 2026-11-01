@@ -130,7 +130,7 @@ public sealed class FormAndGridMutationTests : IDisposable
   }
 
   [Fact]
-  public async Task StatusFlow_SaveCell_AndChangeRestore_EnforceReadOnlyVersionAndKeepsVersion()
+  public async Task StatusFlow_SaveCell_AndChangeDiff_EnforceReadOnlyAndVersion()
   {
     await using var db = CreateDbContext();
     var fullApp = new TestPlatformAppService(db, new FixedUser(10, "*"));
@@ -186,27 +186,8 @@ public sealed class FormAndGridMutationTests : IDisposable
       .OrderByDescending(c => c.Id)
       .FirstAsync(c => c.RowId == inv.Id && c.Operation == ChangeOperations.Modified);
     var changeGrid = new TestChangeGridService(db, fullApp);
-    var restoreOk = await changeGrid.Restore(new GridRequest { Id = changeRecord.Id }, CancellationToken.None);
-    Assert.Equal(MutationOutcome.Committed, restoreOk.Outcome);
-
-    var reloadedInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == inv.Id);
-    Assert.Equal("INV-500-EDITED", reloadedInv.Number);
-
-    using (db.BeginMutationRun())
-    {
-      var toEdit = await db.Invoices.FirstAsync(i => i.Id == inv.Id);
-      toEdit.Number = "INV-500-EDITED-2";
-      toEdit.PrintedCount = 5;
-      await db.SaveChangesAsync();
-      await db.FlushMutationJournalAsync();
-    }
-
-    var latestChangeRecord = await db.AppPlatformChange
-      .OrderByDescending(c => c.Id)
-      .FirstAsync(c => c.RowId == inv.Id && c.Operation == ChangeOperations.Modified);
-
-    var restoreRefused = await changeGrid.Restore(new GridRequest { Id = latestChangeRecord.Id }, CancellationToken.None);
-    Assert.Equal(MutationOutcome.Refused, restoreRefused.Outcome);
+    var diffScreen = await changeGrid.BuildDiffScreenAsync("test/changes", new GridRequest { Id = changeRecord.Id }, CancellationToken.None);
+    Assert.NotNull(diffScreen.Layout);
   }
 
   [Fact]
@@ -286,7 +267,7 @@ public sealed class FormAndGridMutationTests : IDisposable
   }
 
   [Fact]
-  public async Task SingleDeleteDefault_AllowMultiDelete_AfterRestore_SensitiveInputOnly_AndNoAuditVsKeepsVersion()
+  public async Task SingleDeleteDefault_AllowMultiDelete_SensitiveInputOnly_AndNoAuditPreservesVersion()
   {
     await using var db = CreateDbContext();
     var fullApp = new TestPlatformAppService(db, new FixedUser(10, "*"));
@@ -315,7 +296,7 @@ public sealed class FormAndGridMutationTests : IDisposable
     dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
     Assert.Equal("secret-v2", dbInv.ApiSecret);
 
-    // 2. [NoAudit] vs [KeepsVersion]: [NoAudit] bumps Ver without creating AppPlatformChange
+    // 2. [NoAudit] on property: does not create AppPlatformChange AND does not increment Ver when only [NoAudit] properties change
     var verBefore = dbInv.Ver;
     Guid noAuditRunId;
     using (db.BeginMutationRun())
@@ -328,10 +309,10 @@ public sealed class FormAndGridMutationTests : IDisposable
     }
 
     dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
-    Assert.Equal(verBefore + 1, dbInv.Ver);
+    Assert.Equal(verBefore, dbInv.Ver);
     Assert.Empty(await db.AppPlatformChange.Where(c => c.RunId == noAuditRunId).ToListAsync());
 
-    // 3. Single-delete default on TestInvoiceGridService vs AllowMultiDelete + AfterRestore on TestInvoiceLineGridService
+    // 3. Single-delete default on TestInvoiceGridService vs AllowMultiDelete + AfterDelete on TestInvoiceLineGridService
     var inv2 = new TestInvoice { Number = "INV-801", Status = 1 };
     db.Invoices.Add(inv2);
     await db.SaveChangesAsync();
@@ -364,12 +345,5 @@ public sealed class FormAndGridMutationTests : IDisposable
       .Select(c => c.Id)
       .ToListAsync();
     Assert.Equal(2, deletedLineChanges.Count);
-
-    var changeGrid = new TestChangeGridService(db, fullApp);
-    var restoreRes = await changeGrid.Restore(new GridRequest { SelectedIds = deletedLineChanges }, CancellationToken.None);
-    Assert.Equal(MutationOutcome.Committed, restoreRes.Outcome);
-
-    dbInv = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == created.Id);
-    Assert.Equal(100m, dbInv.CachedLineTotal);
   }
 }

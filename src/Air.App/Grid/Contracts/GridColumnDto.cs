@@ -96,12 +96,6 @@ public sealed class GridColumnDto
   internal bool IsSummed { get; set; }
 
   [JsonIgnore]
-  internal System.Linq.Expressions.LambdaExpression? SumPredicate { get; set; }
-
-  [JsonIgnore]
-  internal Func<decimal, bool, string?>? SumColorEvaluator { get; set; }
-
-  [JsonIgnore]
   internal bool IsComputed { get; set; }
 
   [JsonIgnore]
@@ -115,10 +109,4 @@ public sealed class GridColumnDto
 
   [JsonIgnore]
   internal System.Linq.Expressions.LambdaExpression? FilterExpression { get; set; }
-
-  [JsonIgnore]
-  internal Func<object, bool>? EditableEvaluator { get; set; }
-
-  [JsonIgnore]
-  internal List<string>? EditableNavPaths { get; set; }
 }

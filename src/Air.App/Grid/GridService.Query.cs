@@ -597,18 +597,6 @@ public abstract partial class GridService<TEntity, TRow>
           catch { }
         }
       }
-
-      if (col.EditableNavPaths is { Count: > 0 } editNavPaths)
-      {
-        foreach (var editNavPath in editNavPaths)
-        {
-          var actualEditNavPath = ResolvePropertyPath(entityType, editNavPath.Split('.'));
-          if (actualEditNavPath != null)
-          {
-            query = query.Include(actualEditNavPath);
-          }
-        }
-      }
     }
 
     return query;

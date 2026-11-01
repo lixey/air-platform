@@ -37,7 +37,6 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
     long userId,
     long? tenantId,
     IAuthStore store,
-    IServiceProvider services,
     CancellationToken ct = default)
   {
     if (userId <= 0)
@@ -57,19 +56,12 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
 
         var effectiveTenantId = tenantId ?? (user as IHasTenant)?.TenantId;
         SecurityInfo securityInfo;
-        Dictionary<string, JsonElement>? customData = null;
 
         using (effectiveTenantId != null
           ? AsyncLocalTenantContext.Use(effectiveTenantId, null, user.Id)
           : AsyncLocalTenantContext.UseSystemScope(user.Id))
         {
           securityInfo = await store.LoadSecurityInfoAsync(user.Id, token);
-
-          foreach (var provider in services.GetServices<ISessionClaimsProvider>())
-          {
-            customData ??= new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
-            await provider.PopulateAsync(user.Id, effectiveTenantId ?? securityInfo.HomeTenantId, customData, token);
-          }
         }
 
         return new UserAuthSnapshot(
@@ -85,8 +77,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
           (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
           securityInfo.Permissions,
           securityInfo.Global,
-          securityInfo.AllowedTenantIds?.ToList(),
-          customData is { Count: > 0 } ? customData : null);
+          securityInfo.AllowedTenantIds?.ToList());
       },
       ProfileTtl,
       [AuthTag, UserTag(userId)],

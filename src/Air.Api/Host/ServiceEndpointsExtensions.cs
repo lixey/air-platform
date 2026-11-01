@@ -300,16 +300,6 @@ public static class ServiceEndpointsExtensions
         return CanView(feat, userContext);
       }
 
-      if (string.Equals(reqAction.ActionName, nameof(EndpointAction.Restore), StringComparison.OrdinalIgnoreCase))
-      {
-        return feat != null && (userContext.Can(feat.Restore) || userContext.Can(feat.All)) ||
-               userContext.Can("*") ||
-               actionMethod.DeclaringType?.Name == "ChangeGridService" &&
-                userContext.Permissions.Any(p =>
-                  p.EndsWith(".Restore", StringComparison.OrdinalIgnoreCase) ||
-                  p.EndsWith(".*", StringComparison.Ordinal));
-      }
-
       if (reqAction.FallbackToView && (feat == null || !feat.HasAction(reqAction.ActionName)))
       {
         return CanView(feat, userContext);

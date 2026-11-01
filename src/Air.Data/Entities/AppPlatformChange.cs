@@ -1,10 +1,10 @@
 namespace Platform.Data.Entities;
 
 /// <summary>
-/// One row a managed mutation added, changed, deleted or restored: the change journal, a platform table of the
+/// One row a managed mutation added, changed or deleted: the change journal, a platform table of the
 /// application's own context and database.
 /// </summary>
-[NoAudit, NoRestore]
+[NoAudit]
 [Index(nameof(TenantId), nameof(Table), nameof(RowId)), Index(nameof(TenantId), nameof(RunId)), Index(nameof(At))]
 public sealed class AppPlatformChange : IEntity, IHasTenant
 {

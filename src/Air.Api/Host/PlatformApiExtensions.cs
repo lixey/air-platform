@@ -112,7 +112,7 @@ public static class PlatformApiExtensions
         var session = await authCache.GetSessionAsync(sessionId, authStore, context.RequestAborted);
         if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
         {
-          var user = await authCache.GetUserProfileAsync(userId, session.TenantId, authStore, context.RequestServices, context.RequestAborted);
+          var user = await authCache.GetUserProfileAsync(userId, session.TenantId, authStore, context.RequestAborted);
           if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
           {
             var claims = new List<Claim>(6)

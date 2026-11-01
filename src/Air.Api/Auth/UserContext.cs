@@ -8,8 +8,6 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
   private ClaimsPrincipal? User => httpContextAccessor.HttpContext?.User;
   private UserAuthSnapshot? Snapshot => httpContextAccessor.HttpContext?.Items[AuthClaims.SnapshotItem] as UserAuthSnapshot;
 
-  private Dictionary<string, object?>? _customData;
-
   public bool IsAuthenticated =>
     Snapshot != null ||
     User?.Identity?.IsAuthenticated == true ||
@@ -49,40 +47,6 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
         : Values(AuthClaims.Permission));
 
   public string? Claim(string type) => User?.FindFirst(type)?.Value;
-
-  public T? GetData<T>(string key)
-  {
-    if (string.IsNullOrWhiteSpace(key) || Snapshot?.CustomData is not { Count: > 0 } customData)
-    {
-      return default;
-    }
-
-    _customData ??= new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-    if (_customData.TryGetValue(key, out var cached))
-    {
-      return cached is T typed ? typed : default;
-    }
-
-    if (!customData.TryGetValue(key, out var rawElement))
-    {
-      var match = customData.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase));
-      if (match.Key is null)
-      {
-        return default;
-      }
-
-      rawElement = match.Value;
-    }
-
-    if (rawElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-    {
-      return default;
-    }
-
-    var deserialized = rawElement.Deserialize<T>(PlatformJsonOptions.DefaultOptions);
-    _customData[key] = deserialized;
-    return deserialized;
-  }
 
   public bool Can(string permission) =>
     IsAuthenticated && !string.IsNullOrWhiteSpace(permission) && HeldRights.Covers(Permissions, permission);

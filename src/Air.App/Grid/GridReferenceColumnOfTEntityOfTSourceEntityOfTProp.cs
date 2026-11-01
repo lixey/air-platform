@@ -36,11 +36,6 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
     base.Title(title);
     return this;
   }
-  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Title(string legacyUi, string legacyDb)
-  {
-    base.Title(legacyUi, legacyDb);
-    return this;
-  }
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
   {
     base.Color(colorSelector);

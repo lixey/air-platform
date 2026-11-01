@@ -339,12 +339,6 @@ public abstract partial class GridService<TEntity, TRow>
       item.Title = title;
       return this;
     }
-
-    public GridNamedFilterBuilder Title(string legacyUi, string legacyDb)
-    {
-      item.Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
-      return this;
-    }
   }
 
   public sealed class GridNamedFilterGroupBuilder(NamedFilterGroup group)
@@ -391,9 +385,6 @@ public abstract partial class GridService<TEntity, TRow>
       return this;
     }
 
-    public GridNamedFilterGroupBuilder Title(string legacyUi, string legacyDb) =>
-      Title($"Легасі UI: {legacyUi} | БД: {legacyDb}");
-
     public GridNamedFilterGroupBuilder Remember(bool remember = true)
     {
       group.IsRemembered = remember;
@@ -438,11 +429,6 @@ public abstract partial class GridService<TEntity, TRow>
     public ButtonBuilder Title(string title)
     {
       TitleText = title;
-      return this;
-    }
-    public ButtonBuilder Title(string legacyUi, string legacyDb)
-    {
-      TitleText = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
       return this;
     }
     public ButtonBuilder Icon(string icon)
@@ -722,7 +708,6 @@ public abstract partial class GridService<TEntity, TRow>
     internal bool IsMultiDeleteAllowed { get; private set; }
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
-    internal List<Func<GridBatchContext<TEntity>, CancellationToken, Task>> AfterRestoreActions { get; } = [];
 
     public void AllowMultiDelete(bool allow = true) => IsMultiDeleteAllowed = allow;
 
@@ -739,14 +724,6 @@ public abstract partial class GridService<TEntity, TRow>
     public void AfterDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
     public void AfterDelete(Action<GridDeleteContext<TEntity>> handler) =>
       AfterDeleteActions.Add((c, ct) =>
-      {
-        handler(c);
-        return Task.CompletedTask;
-      });
-
-    public void AfterRestore(Func<GridBatchContext<TEntity>, CancellationToken, Task> handler) => AfterRestoreActions.Add(handler);
-    public void AfterRestore(Action<GridBatchContext<TEntity>> handler) =>
-      AfterRestoreActions.Add((c, ct) =>
       {
         handler(c);
         return Task.CompletedTask;

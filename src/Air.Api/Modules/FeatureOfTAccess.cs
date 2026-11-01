@@ -32,10 +32,4 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
     base.WithTitle(title);
     return this;
   }
-
-  public new Feature<TAccess> WithTitle(string legacyUi, string legacyDb)
-  {
-    base.WithTitle(legacyUi, legacyDb);
-    return this;
-  }
 }

@@ -108,7 +108,7 @@ public abstract partial class FormService<TEntity, TInput>
 
       var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
       var isFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || (efProp?.IsForeignKey() ?? false);
-      var isRequiredNow = IsElementRequired(el, entity, input);
+      var isRequiredNow = IsElementRequired(el);
 
       if (isRequiredNow && !AnswersRequirement(val, isFk))
       {
@@ -329,20 +329,8 @@ public abstract partial class FormService<TEntity, TInput>
     return el.DisabledWhen != null && EvaluateFilterNode(el.DisabledWhen, input, entity);
   }
 
-  private static bool IsElementRequired(FormElementDto el, TEntity? entity, object? input)
-  {
-    if (el.IsRequired)
-    {
-      return true;
-    }
-
-    if (el.RequiredWhenPredicate != null)
-    {
-      return input != null && el.RequiredWhenPredicate(input) || entity != null && el.RequiredWhenPredicate(entity);
-    }
-
-    return el.RequiredWhen != null && EvaluateFilterNode(el.RequiredWhen, input, entity);
-  }
+  private static bool IsElementRequired(FormElementDto el) =>
+    el.IsRequired;
 
   private static bool EvaluateFilterNode(FilterNode node, object? primary, object? fallback)
   {

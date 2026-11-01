@@ -19,11 +19,6 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Title = title;
     return this;
   }
-  public FormElement<TEntity, TProp> Title(string legacyUi, string legacyDb)
-  {
-    dto.Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
-    return this;
-  }
   public FormElement<TEntity, TProp> Span(int cols)
   {
     _hasSpan = true;
@@ -66,18 +61,6 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.DisabledWhen = TranslateFilterNode(predicate.Body);
     var compiled = predicate.Compile();
     dto.DisabledWhenPredicate = obj => obj is TEntity typed && compiled(typed);
-    return this;
-  }
-  public FormElement<TEntity, TProp> RequiredWhen(FilterNode condition)
-  {
-    dto.RequiredWhen = condition;
-    return this;
-  }
-  public FormElement<TEntity, TProp> RequiredWhen(Expression<Func<TEntity, bool>> predicate)
-  {
-    dto.RequiredWhen = TranslateFilterNode(predicate.Body);
-    var compiled = predicate.Compile();
-    dto.RequiredWhenPredicate = obj => obj is TEntity typed && compiled(typed);
     return this;
   }
   public FormElement<TEntity, TProp> Focus(bool focus = true)

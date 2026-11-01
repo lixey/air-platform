@@ -79,23 +79,22 @@ internal static class AuthEndpointsExtensions
       if (string.IsNullOrEmpty(user.PasswordHash) ||
           hasher.VerifyPassword(req.Password, user.PasswordHash) == PasswordVerification.Failed)
       {
-        user.AccessFailedCount++;
-        if (user.AccessFailedCount >= 5)
+        var newFailedCount = user.AccessFailedCount + 1;
+        var newLockoutCount = user.LockoutCount;
+        var newLockoutEnd = user.LockoutEnd;
+        if (newFailedCount >= 5)
         {
-          user.LockoutCount++;
-          user.AccessFailedCount = 0;
-          user.LockoutEnd = now.AddMinutes(Math.Min(60, 5 * user.LockoutCount));
+          newLockoutCount++;
+          newFailedCount = 0;
+          newLockoutEnd = now.AddMinutes(Math.Min(60, 5 * newLockoutCount));
         }
 
-        await authStore.SaveChangesAsync(ct);
+        await authStore.UpdateLoginStateAsync(user, newFailedCount, newLockoutCount, newLockoutEnd, user.LastLoggedIn, ct);
 
         return Results.Unauthorized();
       }
 
-      user.AccessFailedCount = 0;
-      user.LockoutCount = 0;
-      user.LockoutEnd = null;
-      user.LastLoggedIn = now;
+      await authStore.UpdateLoginStateAsync(user, 0, 0, null, now, ct);
 
       var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
       var tenantId = (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId;

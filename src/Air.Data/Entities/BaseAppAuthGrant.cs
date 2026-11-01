@@ -1,6 +1,6 @@
 namespace Platform.Data.Entities;
 
-[NoRestore, Comment("Role grant: a right's key or a pattern")]
+[Comment("Role grant: a right's key or a pattern")]
 public abstract class BaseAppAuthGrant : BaseEntity
 {
   [Comment("Role identifier")]

@@ -61,6 +61,47 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     return session;
   }
 
+  public async Task UpdateLoginStateAsync(
+    BaseAppUser user,
+    int accessFailedCount,
+    int lockoutCount,
+    DateTimeOffset? lockoutEnd,
+    DateTimeOffset? lastLoggedIn,
+    CancellationToken ct = default)
+  {
+    ArgumentNullException.ThrowIfNull(user);
+    await db.Set<TUser>().IgnoreQueryFilters()
+      .Where(u => u.Id == user.Id)
+      .ExecuteUpdateAsync(s => s
+        .SetProperty(u => u.AccessFailedCount, accessFailedCount)
+        .SetProperty(u => u.LockoutCount, lockoutCount)
+        .SetProperty(u => u.LockoutEnd, lockoutEnd)
+        .SetProperty(u => u.LastLoggedIn, lastLoggedIn), ct);
+
+    var entry = db.Entry(user);
+    if (entry.State != EntityState.Detached)
+    {
+      SyncProperty(entry.Property(u => u.AccessFailedCount), accessFailedCount);
+      SyncProperty(entry.Property(u => u.LockoutCount), lockoutCount);
+      SyncProperty(entry.Property(u => u.LockoutEnd), lockoutEnd);
+      SyncProperty(entry.Property(u => u.LastLoggedIn), lastLoggedIn);
+    }
+    else
+    {
+      user.AccessFailedCount = accessFailedCount;
+      user.LockoutCount = lockoutCount;
+      user.LockoutEnd = lockoutEnd;
+      user.LastLoggedIn = lastLoggedIn;
+    }
+  }
+
+  private static void SyncProperty<TProp>(Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry<BaseAppUser, TProp> prop, TProp value)
+  {
+    prop.CurrentValue = value;
+    prop.OriginalValue = value;
+    prop.IsModified = false;
+  }
+
   public async Task RevokeUserSessionsAsync(long userId, long? exceptSessionId, string reason, CancellationToken ct = default)
   {
     var now = DateTimeOffset.UtcNow;

@@ -508,7 +508,9 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     RefusalAsync((Transition<TEntity>)transition, status, cancellationToken);
 
   protected virtual Task LockAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken cancellationToken) =>
-    Task.CompletedTask;
+    Db.Database.CurrentTransaction != null
+      ? context.LockAsync<TEntity>(records.Where(r => r.Id > 0).Select(r => new[] { r.Id }), cancellationToken)
+      : Task.CompletedTask;
 
   public TEntity Initialize(TEntity record)
   {

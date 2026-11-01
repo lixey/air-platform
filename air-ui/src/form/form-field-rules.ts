@@ -41,7 +41,7 @@ export function formFieldRules(source: FormFieldRulesSource): SchemaFn<Record<st
     readonly(root, { when: () => source.refusesInput() });
     applyEach(root, field => {
       disabled(field, { when: ctx => isFieldDisabled(source.elementOf(ctx.key()), source.isReadOnly, source.values) });
-      metadata(field, REQUIRED, ctx => isFieldRequired(source.elementOf(ctx.key()), source.values));
+      metadata(field, REQUIRED, ctx => Boolean(source.elementOf(ctx.key())?.isRequired));
       metadata(field, MIN_LENGTH, ctx => lengthLimitOf(source.elementOf(ctx.key()), 'minLength'));
       metadata(field, MAX_LENGTH, ctx => lengthLimitOf(source.elementOf(ctx.key()), 'maxLength'));
       metadata(field, MIN_NUMBER, ctx => numericBoundOf(source.elementOf(ctx.key()), 'min'));
@@ -64,17 +64,6 @@ export function isFieldDisabled(
     return true;
   }
   return Boolean(element.disabledWhen && values && evaluateFilterNode(element.disabledWhen, values()));
-}
-
-/** Whether a field is currently required: statically (`isRequired`) or dynamically (`requiredWhen`). */
-export function isFieldRequired(element: FormElementDto | undefined, values?: () => Readonly<Record<string, unknown>>): boolean {
-  if (!element) {
-    return false;
-  }
-  if (element.isRequired) {
-    return true;
-  }
-  return Boolean(element.requiredWhen && values && evaluateFilterNode(element.requiredWhen, values()));
 }
 
 /** Evaluates a declarative `FilterNode` predicate against the current form draft values. */

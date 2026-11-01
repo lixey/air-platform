@@ -8,7 +8,7 @@ internal sealed class TestInvoice : IEntity, IHasTenant, IHasVersion
   public string Number { get; set; } = string.Empty;
   public long Status { get; set; } = 1;
   public bool IsHidden { get; set; }
-  [KeepsVersion]
+  [NoAudit]
   public int PrintedCount { get; set; }
   [NoAudit]
   public string? InternalMemo { get; set; }

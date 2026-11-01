@@ -11,7 +11,6 @@ public interface IUserAuthCache
     long userId,
     long? tenantId,
     IAuthStore store,
-    IServiceProvider services,
     CancellationToken ct = default);
 
   Task RemoveSessionAsync(long sessionId, CancellationToken ct = default);

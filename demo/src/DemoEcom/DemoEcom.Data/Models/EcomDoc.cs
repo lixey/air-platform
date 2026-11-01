@@ -13,7 +13,7 @@ public sealed class EcomDoc : AppBaseModel
   public long DocTypeId { get; set; }
   public EcomDocType DocType { get; set; } = null!;
 
-  [KeepsVersion]
+  [NoAudit]
   public long DocStatusId { get; set; }
   public EcomDocStatus DocStatus { get; set; } = null!;
 

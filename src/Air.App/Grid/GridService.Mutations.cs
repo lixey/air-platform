@@ -562,30 +562,6 @@ public abstract partial class GridService<TEntity, TRow>
     return result;
   }
 
-  public virtual async Task<IReadOnlyList<MessageDto>> OnRestoredAsync(IReadOnlyList<object> restoredEntities, CancellationToken ct = default)
-  {
-    var hooks = GetHooks();
-    if (hooks.AfterRestoreActions.Count == 0 || restoredEntities.Count == 0)
-    {
-      return [];
-    }
-
-    var typed = restoredEntities.OfType<TEntity>().ToList();
-    if (typed.Count == 0)
-    {
-      return [];
-    }
-
-    var ids = typed.Select(e => e.Id).ToList();
-    var ctx = new GridBatchContext<TEntity>(ids, typed, token => db.SaveChangesAsync(token), db);
-    foreach (var h in hooks.AfterRestoreActions)
-    {
-      await h(ctx, ct);
-    }
-
-    return ctx.Errors.Count > 0 ? FormatErrors(ctx.Errors, typed, MessageType.Error) : [];
-  }
-
   private static bool HasVersionConflict(GridRequest request, IReadOnlyList<long> ids, IReadOnlyList<TEntity> records)
   {
     if (request.SelectedVersions is not { Count: > 0 } versions)
@@ -706,49 +682,13 @@ public abstract partial class GridService<TEntity, TRow>
     var cols = CreateColumns();
 
     var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase));
-    var blockedByReadOnly = col?.EditableEvaluator != null
-      ? Feature.IsReadOnly ||
-        ResolveParentChildBuilder()?.IsReadOnly == true ||
-        User != null && User.IsAuthenticated && !string.IsNullOrEmpty(Feature.Module) && !User.Can(Feature.Edit) && !User.Can(Feature.All) && !User.Can("*")
-      : IsReadOnly;
-    if (blockedByReadOnly || col == null || !col.IsEditable)
+    if (IsReadOnly || col == null || !col.IsEditable)
     {
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
         Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
       };
-    }
-
-    if (col.EditableEvaluator != null)
-    {
-      object? evalTarget;
-      if (typeof(TRow) == typeof(TEntity))
-      {
-        evalTarget = await IncludeColumnNavigations(RestrictedQuery(), [col]).FirstOrDefaultAsync(e => e.Id == request.Id.Value, ct)
-          ?? throw new KeyNotFoundException(L["FormNotFound"]);
-      }
-      else
-      {
-        var baseQuery = IncludeColumnNavigations(BuildBaseEntityQuery(null, out _, out var qDecl, preserveParent: true), [col])
-          .Where(e => e.Id == request.Id.Value);
-        evalTarget = qDecl.Selector != null
-          ? await baseQuery.AsNoTracking().Select(qDecl.Selector).FirstOrDefaultAsync(ct)
-          : await baseQuery.FirstOrDefaultAsync(ct);
-        if (evalTarget == null)
-        {
-          throw new KeyNotFoundException(L["FormNotFound"]);
-        }
-      }
-
-      if (!col.EditableEvaluator(evalTarget))
-      {
-        return new GridCellDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
-        };
-      }
     }
 
     var formType = ResolveFormServiceType(cols);

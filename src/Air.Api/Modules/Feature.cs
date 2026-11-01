@@ -102,7 +102,6 @@ public class Feature
   public Right Delete => Action("Delete");
   public Right Export => Action("Export");
   public Right History => Action("History");
-  public Right Restore => Action("Restore");
   public Right All => Action("*");
 
   public IReadOnlyDictionary<string, Right> Rights => _rights;
@@ -139,12 +138,6 @@ public class Feature
   public Feature WithTitle(string title)
   {
     Title = title;
-    return this;
-  }
-
-  public Feature WithTitle(string legacyUi, string legacyDb)
-  {
-    Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
     return this;
   }
 

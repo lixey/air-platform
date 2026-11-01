@@ -67,7 +67,6 @@ public abstract partial class ChangeGridService
       ChangeOperations.Added => UiColor.Green,
       ChangeOperations.Modified => UiColor.Amber,
       ChangeOperations.Deleted => UiColor.Red,
-      ChangeOperations.Restored => UiColor.Indigo,
       _ => UiColor.Slate
     };
 
@@ -109,7 +108,7 @@ public abstract partial class ChangeGridService
       }
 
       var label = ResolveFieldLabel(targetFeat, modL, entityType, key);
-      var isChanged = change.Operation is ChangeOperations.Modified or ChangeOperations.Restored &&
+      var isChanged = change.Operation == ChangeOperations.Modified &&
                       !string.Equals(formattedBefore, formattedAfter, StringComparison.Ordinal);
 
       fields.Add(new ChangeDiffFieldDto
@@ -121,12 +120,6 @@ public abstract partial class ChangeGridService
         IsChanged = isChanged
       });
     }
-
-    var canRestore = CanRestoreTable(change.Table) &&
-                     change.Operation is ChangeOperations.Modified or ChangeOperations.Deleted &&
-                     !string.IsNullOrEmpty(change.Before) &&
-                     entityType != null &&
-                     !typeof(BaseAppFile).IsAssignableFrom(entityType);
 
     var navModel = new NavModel
     {
@@ -172,13 +165,6 @@ public abstract partial class ChangeGridService
       Operation = L[change.Operation],
       OperationKey = change.Operation,
       OperationColor = opColor,
-      Service = servicePath,
-      ParentService = ParentService,
-      ParentId = ParentId,
-      CanRestore = canRestore,
-      RestoreLabel = L["Restore"],
-      RestoreConfirm = L["RestoreConfirm"],
-      RestoredLabel = L["Restored"],
       EmptyLabel = L["ChangeDiffEmpty"],
       Fields = fields
     };

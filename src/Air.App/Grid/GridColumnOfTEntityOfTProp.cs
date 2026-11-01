@@ -14,11 +14,6 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Title(title);
     return this;
   }
-  public new GridColumn<TEntity, TProp> Title(string legacyUi, string legacyDb)
-  {
-    base.Title(legacyUi, legacyDb);
-    return this;
-  }
   public new GridColumn<TEntity, TProp> Width(int px)
   {
     base.Width(px);
@@ -176,23 +171,6 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Sum();
     return this;
   }
-  public new GridColumn<TEntity, TProp> Sum(Func<decimal, string?> colorSelector)
-  {
-    base.Sum(colorSelector);
-    return this;
-  }
-  public GridColumn<TEntity, TProp> Sum(Expression<Func<TEntity, bool>> predicate, Func<decimal, bool, string?>? colorSelector = null)
-  {
-    Dto.IsSummed = true;
-    Dto.SumPredicate = predicate;
-    if (colorSelector != null)
-    {
-      Dto.SumColorEvaluator = colorSelector;
-      ApplyColorPath();
-    }
-
-    return this;
-  }
 
   public new GridColumn<TEntity, TProp> SelectionSum(string unit = "", string? excludeColor = null)
   {
@@ -228,11 +206,6 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
   public new GridColumn<TEntity, TProp> Editable(Func<bool> condition)
   {
     base.Editable(condition);
-    return this;
-  }
-  public GridColumn<TEntity, TProp> EditableWhen(Expression<Func<TEntity, bool>> predicate)
-  {
-    ApplyEditableWhen(predicate);
     return this;
   }
   public new GridColumn<TEntity, TProp> PickedBy<TSource>(Delegate method, int minLength = 2)

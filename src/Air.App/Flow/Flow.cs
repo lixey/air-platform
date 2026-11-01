@@ -12,14 +12,14 @@ public class Flow<TEntity>
     StateMember = member;
   }
 
-  public void Status(long id, string name, string color, string? legacyUi = null, string? legacyDb = null)
+  public void Status(long id, string name, string color, string? title = null)
   {
     DeclaredStatuses.Add(new OptionDto
     {
       Id = id,
       Name = name,
       Color = color,
-      Title = legacyUi != null && legacyDb != null ? $"Легасі UI: {legacyUi} | БД: {legacyDb}" : legacyUi
+      Title = title
     });
   }
 

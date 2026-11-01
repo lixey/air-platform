@@ -66,8 +66,6 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    List<string>? readonlyCells = null;
-
     for (var cIdx = 0; cIdx < columns.Count; cIdx++)
     {
       var column = columns[cIdx];
@@ -75,12 +73,6 @@ public abstract partial class GridService<TEntity, TRow>
           column.Cell is GridCellCoverModel { Service.Length: > 0 } && column.FormServiceResolver is null)
       {
         continue;
-      }
-
-      if (column.IsEditable && column.EditableEvaluator is not null && !column.EditableEvaluator(row))
-      {
-        readonlyCells ??= [];
-        readonlyCells.Add(column.Path);
       }
 
       var value = ReadPathValue(row, column.Path);
@@ -177,11 +169,6 @@ public abstract partial class GridService<TEntity, TRow>
       {
         PutValue(shaped, column.Path, value);
       }
-    }
-
-    if (readonlyCells is { Count: > 0 })
-    {
-      shaped["readonlyCells"] = readonlyCells;
     }
 
     return shaped;

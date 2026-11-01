@@ -19,11 +19,6 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Title = title;
     return this;
   }
-  public GridColumn<TProp> Title(string legacyUi, string legacyDb)
-  {
-    dto.Title = $"Легасі UI: {legacyUi} | БД: {legacyDb}";
-    return this;
-  }
   public GridColumn<TProp> Width(int px)
   {
     dto.Width = px;
@@ -233,14 +228,6 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     return this;
   }
 
-  public GridColumn<TProp> Sum(Func<decimal, string?> colorSelector)
-  {
-    dto.IsSummed = true;
-    dto.SumColorEvaluator = (val, _) => colorSelector(val);
-    ApplyColorPath();
-    return this;
-  }
-
   public GridColumn<TProp> SelectionSum(string unit = "", string? excludeColor = null)
   {
     dto.SelectionSumUnit = unit;
@@ -289,43 +276,6 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> Editable(Func<bool> condition) =>
     Editable(condition());
-
-  private static readonly ConcurrentDictionary<(Type RowType, string ExpressionKey), Delegate> CompiledEditablePredicates = new();
-
-  internal GridColumn<TProp> ApplyEditableWhen<TRow>(Expression<Func<TRow, bool>> predicate)
-  {
-    Editable(true);
-    var navPaths = Form.Elements.ExtractNavigationPaths(predicate);
-    if (navPaths.Count > 0)
-    {
-      dto.EditableNavPaths = navPaths;
-    }
-
-    var exprKey = predicate.ToString();
-    var compiled = ContainsClosure(predicate.Body)
-      ? predicate.Compile()
-      : (Func<TRow, bool>)CompiledEditablePredicates.GetOrAdd(
-          (typeof(TRow), exprKey),
-          _ => predicate.Compile());
-
-    dto.EditableEvaluator = obj =>
-    {
-      if (obj is TRow row)
-      {
-        try
-        {
-          return compiled(row);
-        }
-        catch (NullReferenceException)
-        {
-          return false;
-        }
-      }
-
-      return false;
-    };
-    return this;
-  }
 
   public GridColumn<TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
   {

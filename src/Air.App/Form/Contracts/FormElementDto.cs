@@ -68,14 +68,8 @@ public sealed class FormElementDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public FilterNode? DisabledWhen { get; set; }
 
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public FilterNode? RequiredWhen { get; set; }
-
   [JsonIgnore]
   internal Func<object, bool>? DisabledWhenPredicate { get; set; }
-
-  [JsonIgnore]
-  internal Func<object, bool>? RequiredWhenPredicate { get; set; }
 
   [JsonIgnore]
   internal Func<DbContext, long, CancellationToken, Task<List<long>>>? JoinLoader { get; set; }

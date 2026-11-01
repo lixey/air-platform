@@ -517,13 +517,6 @@ export interface ChangeDiffModel {
   operation: string;
   operationKey: string;
   operationColor: string;
-  service?: string | null;
-  parentService?: string | null;
-  parentId?: number | null;
-  canRestore: boolean;
-  restoreLabel?: string | null;
-  restoreConfirm?: string | null;
-  restoredLabel?: string | null;
   emptyLabel?: string | null;
   fields: ChangeDiffFieldDto[];
 }
@@ -753,7 +746,6 @@ export interface FormElementDto {
   selectPatches?: SelectPatchDto[] | null;
   visibleWhen?: FilterNode | null;
   disabledWhen?: FilterNode | null;
-  requiredWhen?: FilterNode | null;
 }
 
 export interface FormFilesModel {

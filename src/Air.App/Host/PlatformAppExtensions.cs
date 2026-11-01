@@ -12,7 +12,6 @@ public static class PlatformAppExtensions
   {
     builder.AddPlatformApiModule(module);
     builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IServiceEndpointDispatcher, AppServiceEndpointDispatcher>());
-    builder.Services.TryAddScoped<ScreenCatalog>();
     return builder;
   }
 

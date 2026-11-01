@@ -8,8 +8,7 @@ internal sealed class EntityAuditMetadata
 
   public bool IsEntityAudited { get; }
   public FrozenSet<string> ExcludedProperties { get; }
-  public FrozenSet<string> KeepsVersionProperties { get; }
-  public FrozenSet<string> ConcurrencyTokenProperties { get; }
+  public FrozenSet<string> NoAuditProperties { get; }
 
   private EntityAuditMetadata(Type clrType)
   {
@@ -20,33 +19,26 @@ internal sealed class EntityAuditMetadata
     {
       nameof(IHasTimestamps.UpdatedAt)
     };
-    var keepsVersion = new HashSet<string>(StringComparer.Ordinal);
-    var concurrencyTokens = new HashSet<string>(StringComparer.Ordinal);
+    var noAudit = new HashSet<string>(StringComparer.Ordinal);
 
     foreach (var prop in clrType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
     {
       var isSensitive = Attribute.IsDefined(prop, typeof(SensitiveAttribute), inherit: true);
       var isNoAudit = Attribute.IsDefined(prop, typeof(NoAuditAttribute), inherit: true);
-      var keepsVersionAttr = prop.GetCustomAttribute<KeepsVersionAttribute>(inherit: true);
 
       if (isSensitive || isNoAudit)
       {
         excluded.Add(prop.Name);
       }
 
-      if (keepsVersionAttr != null)
+      if (isNoAudit)
       {
-        keepsVersion.Add(prop.Name);
-        if (keepsVersionAttr.IsConcurrencyToken)
-        {
-          concurrencyTokens.Add(prop.Name);
-        }
+        noAudit.Add(prop.Name);
       }
     }
 
     ExcludedProperties = excluded.ToFrozenSet(StringComparer.Ordinal);
-    KeepsVersionProperties = keepsVersion.ToFrozenSet(StringComparer.Ordinal);
-    ConcurrencyTokenProperties = concurrencyTokens.ToFrozenSet(StringComparer.Ordinal);
+    NoAuditProperties = noAudit.ToFrozenSet(StringComparer.Ordinal);
   }
 
   public static EntityAuditMetadata For(Type clrType) =>
