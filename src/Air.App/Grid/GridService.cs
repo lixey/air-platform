@@ -1,4 +1,5 @@
 using Platform.App.Internals;
+using Platform.App.Screens.Internals;
 
 namespace Platform.App.Grid;
 
@@ -129,56 +130,20 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       : parent.BoundParentService;
     if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
     {
-      var myService = ServicePathResolver.Resolve(GetType());
-      var matchedChild = parentChildren.FirstOrDefault(c =>
-        c.ServiceType == GetType() ||
-        string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
-      _cachedParentChild = (effectiveParentService, ParentId, matchedChild);
+      _cachedParentChildren = (effectiveParentService, ParentId, parentChildren);
     }
 
     return allowed;
   }
 
-  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
-  {
-    if (ParentId == null || ParentId.Value <= 0)
-    {
-      return null;
-    }
-
-    if (_preloadedParent is TParent preloaded && preloaded.Id == ParentId.Value)
-    {
-      return preloaded;
-    }
-
-    var parent = GetParent();
-    if (_preloadedParentId == ParentId.Value &&
-        (parent.BoundParentServiceType != null || !string.IsNullOrEmpty(ParentService)))
-    {
-      return null;
-    }
-
-    var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
-    if (tracked != null)
-    {
-      return tracked;
-    }
-
-    var efModel = db.Model.FindEntityType(typeof(TParent));
-    IQueryable<TParent> query = db.Set<TParent>();
-    if (efModel != null)
-    {
-      foreach (var nav in efModel.GetNavigations())
-      {
-        if (!nav.IsCollection)
-        {
-          query = query.Include(nav.Name);
-        }
-      }
-    }
-
-    return query.FirstOrDefault(e => e.Id == ParentId.Value);
-  }
+  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity =>
+    ParentScopeValidator.GetParentRecord<TParent>(
+      db,
+      ParentId,
+      ParentService,
+      _preloadedParent,
+      _preloadedParentId,
+      GetParent().BoundParentServiceType);
 
   public virtual bool CanDelete()
   {
@@ -299,51 +264,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     var entry = nav.Actions.FirstOrDefault(a =>
       string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
       string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
-    if (entry?.DefaultProvider == null)
-    {
-      return new Dictionary<string, object?>();
-    }
-
-    var rawDefaults = await entry.DefaultProvider(ct);
-    if (rawDefaults == null)
-    {
-      return new Dictionary<string, object?>();
-    }
-
-    var jsonText = JsonSerializer.Serialize(rawDefaults, PlatformJsonOptions.DefaultOptions);
-    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-    if (entry.Ask != null)
-    {
-      foreach (var el in entry.Ask.BuildElements())
-      {
-        if (string.IsNullOrEmpty(el.ReferencePath) || el.Model is not FormSelectModel selectModel || string.IsNullOrEmpty(selectModel.ReferenceService))
-        {
-          continue;
-        }
-
-        if (dict.TryGetValue(el.Path, out var rawVal) && rawVal is JsonElement je && je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var refId) && refId > 0)
-        {
-          var refServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService);
-          if (ModuleCatalog.GetServiceEntityType(refServiceType) is { } refEntityType)
-          {
-            try
-            {
-              var targetDb = db.Model.FindEntityType(refEntityType) != null
-                ? db
-                : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType!, db, PlatformApp) as IGridService)?.DbContext ?? db;
-              var loaded = await targetDb.FindAsync(refEntityType, [refId], ct);
-              var name = loaded != null
-                ? (PropertyAccessorCache.GetValue(loaded, "Name") ?? PropertyAccessorCache.GetValue(loaded, "Title") ?? PropertyAccessorCache.GetValue(loaded, "Number"))?.ToString()
-                : null;
-              dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? name : $"#{refId}" };
-            }
-            catch { }
-          }
-        }
-      }
-    }
-
-    return dict;
+    return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(entry?.DefaultProvider, entry?.Ask, db, PlatformApp, ct);
   }
 
   protected virtual void SetHooks(Hooks hooks) { }

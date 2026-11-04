@@ -2,7 +2,7 @@ namespace Platform.App.Form.Contracts;
 
 [UiContract]
 [ClientOptional]
-public class FormRequest
+public class FormRequest : IScopedServiceRequest
 {
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public long? Id { get; set; }

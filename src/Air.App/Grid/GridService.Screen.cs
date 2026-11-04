@@ -1,4 +1,5 @@
 using Platform.App.Grid.Internals;
+using Platform.App.Screens.Internals;
 
 namespace Platform.App.Grid;
 
@@ -13,7 +14,7 @@ public abstract partial class GridService<TEntity, TRow>
   {
     ParentService = request?.ParentService;
     ParentId = request?.ParentId;
-    if (ParentId is > 0 && !await EnsureParentScopeAsync(lockParent: false, ct))
+    if (!await EnsureParentScopeAsync(lockParent: false, ct) && ParentId is > 0)
     {
       return new ScreenDto
       {
@@ -95,15 +96,7 @@ public abstract partial class GridService<TEntity, TRow>
             Message = entry.Model.Confirm?.Message,
             Color = entry.Model.Color,
             HasDefaults = entry.DefaultProvider != null,
-            Elements = entry.Ask.BuildElements().Select(e =>
-            {
-              if (!string.IsNullOrEmpty(e.Label))
-              {
-                e.Label = L[e.Label];
-              }
-
-              return e;
-            }).ToList()
+            Elements = StatusMoveNavBuilder.LocalizeElements(entry.Ask.BuildElements(), L)
           };
           entry.Model.Confirm = null;
         }
@@ -511,50 +504,25 @@ public abstract partial class GridService<TEntity, TRow>
       : "docStatusId";
 
     var statusMoves = statusFlow.Transitions
-      .Where(t => User == null || !User.IsAuthenticated || User.Can(Feature.Action(t.Name)) || User.Can(Feature.Edit) || User.Can(Feature.All))
+      .Where(t => StatusMoveNavBuilder.CanMove(Feature, User, t.Name))
       .Select(t =>
       {
-        var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == t.To);
-        var verbLabel = !string.IsNullOrEmpty(Feature.Module)
-          ? L.TextOr($"{Feature.Module}: {t.Name}", L[t.Name])
-          : L[t.Name];
-        var targetLabel = target != null ? L[target.Name] : verbLabel;
-        var confirmMessage = t.Confirm != null ? L[t.Confirm] : null;
+        var meta = StatusMoveNavBuilder.BuildTransitionMeta(Feature, L, statusFlow, t);
         return new GridNavStatusMoveDto
         {
           From = [.. t.From],
           Action = new GridNavActionModel
           {
-            Key = $"status.{t.Name.ToLowerInvariant()}",
-            Label = verbLabel != t.Name ? verbLabel : targetLabel,
-            Title = target?.Title != null ? L[target.Title] : null,
-            Color = target?.Color,
+            Key = meta.Key,
+            Label = meta.Label,
+            Title = meta.Title,
+            Color = meta.Color,
             Service = servicePath,
-            Method = $"move-status/{t.Name.ToLowerInvariant()}",
+            Method = meta.Method,
             NeedsSelection = true,
-            Confirm = t.Ask is not null || confirmMessage is null
-              ? null
-              : new OverlayConfirmModel { Message = confirmMessage, Color = target?.Color },
-            Ask = t.Ask is null
-              ? null
-              : new FormAskModel
-              {
-                Title = verbLabel != t.Name ? verbLabel : targetLabel,
-                Message = confirmMessage,
-                Color = target?.Color,
-                Elements = [.. t.Ask.BuildElements().Select(e =>
-                {
-                  if (!string.IsNullOrEmpty(e.Label))
-                  {
-                    e.Label = L[e.Label];
-                  }
-
-                  return e;
-                })]
-              },
-            UnavailableReasons = t.Offers.Count == 0
-              ? null
-              : [.. t.Offers.Select(o => L[o.Reason])]
+            Confirm = meta.Confirm,
+            Ask = meta.Ask,
+            UnavailableReasons = meta.UnavailableReasons
           }
         };
       }).ToList();

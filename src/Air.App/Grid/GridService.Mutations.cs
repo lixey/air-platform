@@ -1,5 +1,6 @@
 using Platform.App.Grid.Internals;
 using Platform.App.Internals;
+using Platform.App.Screens.Internals;
 
 namespace Platform.App.Grid;
 
@@ -274,11 +275,8 @@ public abstract partial class GridService<TEntity, TRow>
         await db.SaveChangesAsync(mutationCt);
       }
 
+      await RecalculateBoundParentsForEntitiesAsync(records, mutationCt);
       batchRecords = records;
-      if (PlatformApp != null)
-      {
-        await PlatformApp.ClearAuthCacheForEntitiesAsync(records, db, mutationCt);
-      }
 
       return new GridActionDto
       {
@@ -339,7 +337,7 @@ public abstract partial class GridService<TEntity, TRow>
         return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
       }
 
-      if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+      if (!StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
       {
         return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
       }
@@ -529,6 +527,8 @@ public abstract partial class GridService<TEntity, TRow>
             await db.SaveChangesAsync(mutationCt);
           }
         }
+
+        await RecalculateBoundParentsForEntitiesAsync(entities, mutationCt);
       }
       catch (DbUpdateException)
       {
@@ -541,10 +541,6 @@ public abstract partial class GridService<TEntity, TRow>
       }
 
       deletedRecords = entities;
-      if (PlatformApp != null)
-      {
-        await PlatformApp.ClearAuthCacheForEntitiesAsync(entities, db, mutationCt);
-      }
 
       return new GridDeleteDto
       {
@@ -560,6 +556,33 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     return result;
+  }
+
+  private Task RecalculateBoundParentsForEntitiesAsync(IReadOnlyList<TEntity> records, CancellationToken ct)
+  {
+    var parent = GetParent();
+    if (parent.BoundProperty == null && parent.BoundParentServiceType == null)
+    {
+      return Task.CompletedTask;
+    }
+
+    var parentIds = new List<long?> { ParentId };
+    if (parent.BoundProperty != null)
+    {
+      foreach (var rec in records)
+      {
+        parentIds.Add(parent.BoundProperty.GetValue(rec) as long?);
+      }
+    }
+
+    return ParentScopeValidator.RecalculateBoundParentsAsync(
+      db,
+      PlatformApp,
+      ParentService,
+      parent.BoundParentService,
+      parent.BoundParentServiceType,
+      parentIds,
+      ct);
   }
 
   private static bool HasVersionConflict(GridRequest request, IReadOnlyList<long> ids, IReadOnlyList<TEntity> records)

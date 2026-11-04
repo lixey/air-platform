@@ -9,7 +9,13 @@ public static class AgentFeatureRegistry
     ServiceEndpointsExtensions.CanEdit(feat, app.User);
 
   public static bool IsEditableElement(FormElementDto el) =>
-    !el.IsDisabled && !el.IsServerOwned && !el.IsHidden && el.Model is not FormInfoModel;
+    !string.IsNullOrEmpty(el.Path) &&
+    !el.IsDisabled &&
+    !el.IsServerOwned &&
+    !el.IsHidden &&
+    !el.IsSecret &&
+    !string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase) &&
+    el.Model is not FormInfoModel;
 
   public static IReadOnlyList<GridCreateDescriptor> DiscoverForms(PlatformDbContext db, PlatformAppService app)
   {

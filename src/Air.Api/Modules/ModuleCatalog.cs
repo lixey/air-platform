@@ -182,6 +182,27 @@ public sealed class ModuleCatalog
 
   public object? CreateServiceInstance(Type serviceType, params object?[] availableServices)
   {
+    if (serviceType.IsAbstract)
+    {
+      var candidates = AllServiceTypes
+        .Where(t => !t.IsAbstract && serviceType.IsAssignableFrom(t))
+        .ToList();
+      var canonicalName = serviceType.Name.EndsWith("Base", StringComparison.Ordinal)
+        ? serviceType.Name[..^4]
+        : null;
+      var resolved = candidates.Count == 1
+        ? candidates[0]
+        : canonicalName != null
+          ? candidates.FirstOrDefault(t => string.Equals(t.Name, canonicalName, StringComparison.Ordinal))
+          : null;
+      if (resolved is null)
+      {
+        return null;
+      }
+
+      serviceType = resolved;
+    }
+
     var ctor = serviceType.GetConstructors().FirstOrDefault();
     if (ctor is null)
     {

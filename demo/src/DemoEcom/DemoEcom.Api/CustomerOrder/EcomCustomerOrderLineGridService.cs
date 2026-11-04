@@ -26,60 +26,20 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
   }
 
   [RequireAction(EndpointAction.Edit)]
-  public async Task<GridActionDto> AddProduct(GridPickRequest request, CancellationToken cancellationToken = default)
-  {
-    if (request.ParentId is not { } parentId || parentId <= 0)
-    {
-      throw new InvalidOperationException("Parent customer order id is required.");
-    }
-
-    ParentId = parentId;
-    if (IsReadOnly)
-    {
-      return new GridActionDto
+  public Task<GridActionDto> AddProduct(GridPickRequest request, CancellationToken cancellationToken = default) =>
+    AttachPickedAsync<OrgProduct>(
+      request,
+      (_, picked, line, token) =>
       {
-        Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = EcomDocTexts.Of(L).NotEditable, Code = EcomDocActions.NotEditable, Type = MessageType.Error }]
-      };
-    }
+        if (ParentRecord<EcomDoc>() is not { } doc)
+        {
+          throw new KeyNotFoundException();
+        }
 
-    var order = await db.EcomDoc.FirstOrDefaultAsync(
-      d => d.Id == parentId && d.DocTypeId == DemoEcom.Data.EcomData.DocType.CustomerOrderId,
-      cancellationToken)
-      ?? throw new KeyNotFoundException($"Order {parentId} not found.");
-
-    var product = await db.OrgProduct.FirstOrDefaultAsync(p => p.Id == request.PickedId, cancellationToken)
-      ?? throw new KeyNotFoundException($"Product {request.PickedId} not found.");
-
-    var line = new EcomDocLine
-    {
-      DocId = parentId,
-      ProductId = product.Id,
-      Qty = 1m
-    };
-
-    var input = new EcomDocLineEdit();
-    await EcomDocLines.PriceAsync(
-      db,
-      order,
-      line,
-      input,
-      isNew: true,
-      p => p.Price,
-      cancellationToken
-    );
-
-    db.EcomDocLine.Add(line);
-    await db.SaveChangesAsync(cancellationToken);
-
-    await EcomDocTotals.ApplyAsync(db, order, cancellationToken);
-    await db.EcomDoc.Where(d => d.Id == order.Id)
-      .ExecuteUpdateAsync(s => s
-        .SetProperty(d => d.Qty, order.Qty)
-        .SetProperty(d => d.Amount, order.Amount), cancellationToken);
-    db.Entry(order).State = EntityState.Unchanged;
-
-    return new GridActionDto { Outcome = MutationOutcome.Committed };
-  }
+        line.ProductId = picked.Id;
+        line.Qty = 1m;
+        return EcomDocLines.PriceAsync(db, doc, line, new EcomDocLineEdit(), isNew: true, p => p.Price, token);
+      },
+      cancellationToken);
 }
 

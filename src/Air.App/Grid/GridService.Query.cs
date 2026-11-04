@@ -73,41 +73,19 @@ public abstract partial class GridService<TEntity, TRow>
     return query;
   }
 
-  private (string? Service, long? ParentId, Form.ChildGridBuilder? Builder)? _cachedParentChild;
+  private (string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)? _cachedParentChildren;
 
   private Form.ChildGridBuilder? ResolveParentChildBuilder()
   {
-    var effectiveParentService = !string.IsNullOrEmpty(ParentService)
-      ? ParentService
-      : GetParent().BoundParentService;
-    if (string.IsNullOrEmpty(effectiveParentService))
-    {
-      return null;
-    }
-
-    if (_cachedParentChild is { } cached &&
-        string.Equals(cached.Service, effectiveParentService, StringComparison.OrdinalIgnoreCase) &&
-        cached.ParentId == ParentId)
-    {
-      return cached.Builder;
-    }
-
-    Form.ChildGridBuilder? resolved = null;
-    var parentFormType = ModuleCatalog.Instance.FindServiceType(effectiveParentService);
-    if (parentFormType != null &&
-        typeof(Form.IFormService).IsAssignableFrom(parentFormType) &&
-        ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is Form.IFormService parentForm)
-    {
-      parentForm.SetRequest(new Form.Contracts.FormRequest { Id = ParentId });
-      var (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
-      var myService = ServicePathResolver.Resolve(GetType());
-      resolved = children.FirstOrDefault(c =>
-        c.ServiceType == GetType() ||
-        string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
-    }
-
-    _cachedParentChild = (effectiveParentService, ParentId, resolved);
-    return resolved;
+    var myService = ServicePathResolver.Resolve(GetType());
+    return ParentScopeValidator.ResolveChildBuilder(
+      db,
+      PlatformApp,
+      ParentService,
+      GetParent().BoundParentService,
+      ParentId,
+      ref _cachedParentChildren,
+      c => c.ServiceType == GetType() || string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
   }
 
   private static IQueryable<TEntity> ApplyActiveNamedFilters(

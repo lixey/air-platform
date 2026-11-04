@@ -22,6 +22,15 @@ public interface IFormService : IPlatformService
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default);
   Task<Dictionary<string, int>?> EvaluateUnavailableAsync(long? id, CancellationToken ct = default) => Task.FromResult<Dictionary<string, int>?>(null);
   Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default);
+  Task<FormDraftResultDto> PrepareDraftAsync(
+    long? recordId = null,
+    IReadOnlyDictionary<string, object?>? overrides = null,
+    ISet<string>? pendingReferencePaths = null,
+    long? parentId = null,
+    string? parentService = null,
+    CancellationToken ct = default);
+  bool HasCustomRecalculate => false;
+  Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default) => Task.CompletedTask;
   string GetTitle() => string.Empty;
   string GetRecordCaption(object? entity, long? id) => string.Empty;
   IReadOnlyList<MessageDto>? GetLastSaveWarnings() => null;

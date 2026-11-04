@@ -1,3 +1,4 @@
+using Platform.Api.Host.Internals;
 using Platform.App.Internals;
 
 namespace Platform.App.Host.Internals;
@@ -47,13 +48,15 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        var req = await ReadReportRequestAsync(httpRequest, ct);
-        if (req.IsDataOnly)
+        var (req, isMalformed) = await ReadJsonOrDefaultAsync<ReportRequest>(httpRequest, ct);
+        if (isMalformed)
         {
-          return Results.Ok(new ScreenDto { Data = await reportService.GetReportAsync(req, ct) });
+          return Results.BadRequest(new { detail = "Malformed JSON request body." });
         }
 
-        return Results.Ok(await reportService.BuildScreenAsync(serviceName, req, ct));
+        return req.IsDataOnly
+          ? Results.Ok(new ScreenDto { Data = await reportService.GetReportAsync(req, ct) })
+          : Results.Ok(await reportService.BuildScreenAsync(serviceName, req, ct));
       }
 
       return await DispatchCustomServiceMethodAsync(serviceType, reportService, method, feat, httpRequest, services, ct);
@@ -103,18 +106,23 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     }
 
     var userContext = services.GetService<IUserContext>();
+    var lowerMethod = method.ToLowerInvariant();
+    if (IsBuiltInGridMethod(lowerMethod) && userContext is null or { IsAuthenticated: false })
+    {
+      return Results.Unauthorized();
+    }
 
-    switch (method.ToLowerInvariant())
+    switch (lowerMethod)
     {
       case "get-data":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          if (isMalformed)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext, services))
+          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext!, services))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -135,13 +143,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-count":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          if (isMalformed)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext, services))
+          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext!, services))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -151,13 +159,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-one":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          if (isMalformed)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
-          if (!grid.CanView(req, userContext))
+          if (!grid.CanView(req, userContext!))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -173,99 +181,70 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "delete":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          if (isMalformed)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           return PlatformEndpointsExtensions.ToMutationResult(await grid.Delete(req, ct));
         }
 
       case "save-cell":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (req, isMalformed) = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
+          if (isMalformed)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          var req = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
           return PlatformEndpointsExtensions.ToMutationResult(await grid.SaveCellAsync(req, services, ct));
         }
 
       case "get-action-input":
         {
-          if (userContext is null or { IsAuthenticated: false })
-          {
-            return Results.Unauthorized();
-          }
-
           if (!CanView(feat, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
-          GridRequest? req = null;
-          var actionMethodKey = subMethod ?? "";
-          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
+          var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+          if (isMalformed || !TryDeserializeOptional(body, out GridRequest req))
           {
-            try
-            {
-              using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-              if (string.IsNullOrEmpty(actionMethodKey) && doc.RootElement.TryGetProperty("method", out var mProp) && mProp.ValueKind == JsonValueKind.String)
-              {
-                actionMethodKey = mProp.GetString() ?? "";
-              }
-
-              req = JsonSerializer.Deserialize<GridRequest>(doc.RootElement.GetRawText(), PlatformJsonOptions.DefaultOptions);
-            }
-            catch { }
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          req ??= new GridRequest();
-          ApplyGridQueryParams(httpRequest, req);
+          var actionMethodKey = ResolveActionMethodKey(subMethod, body);
+          ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
           var defaults = await grid.GetActionInputAsync(actionMethodKey, req, ct);
           return Results.Ok(ToActionInputDto(defaults));
         }
 
       case "move-status":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+          if (isMalformed || !TryDeserializeOptional(body, out GridRequest req))
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          GridRequest? req = null;
-          JsonElement? bodyElement = null;
-          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
-          {
-            try
-            {
-              using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-              bodyElement = doc.RootElement.Clone();
-              req = JsonSerializer.Deserialize<GridRequest>(bodyElement.Value.GetRawText(), PlatformJsonOptions.DefaultOptions);
-            }
-            catch { }
-          }
-
-          req ??= new GridRequest();
-          ApplyGridQueryParams(httpRequest, req);
-          return PlatformEndpointsExtensions.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", bodyElement, ct));
+          ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
+          return PlatformEndpointsExtensions.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", body, ct));
         }
 
       case "export":
         {
-          if (userContext is null or { IsAuthenticated: false })
-          {
-            return Results.Unauthorized();
-          }
-
           if (!CanExport(feat, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
-          var req = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
+          if (isMalformed)
+          {
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+          }
+
           return await grid.ExportAsync(req, ct);
         }
 
@@ -349,22 +328,27 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     }
 
     var userContext = services.GetService<IUserContext>();
+    var lowerMethod = method.ToLowerInvariant();
+    if (IsBuiltInFormMethod(lowerMethod, subMethod) && userContext is null or { IsAuthenticated: false })
+    {
+      return Results.Unauthorized();
+    }
 
-    switch (method.ToLowerInvariant())
+    switch (lowerMethod)
     {
       case "get-data":
         {
-          if (userContext is null or { IsAuthenticated: false })
-          {
-            return Results.Unauthorized();
-          }
-
           if (!CanView(feat, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
-          var req = await ReadFormRequestAsync(httpRequest, ct);
+          var (req, isMalformed) = await ReadFormRequestAsync(httpRequest, ct);
+          if (isMalformed)
+          {
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+          }
+
           var screen = await form.BuildScreenAsync(serviceName, req, ct);
           var entity = await form.GetModelAsync(req, ct);
           screen.Data = await form.BuildFormDataAsync(entity, screen, ct: ct);
@@ -374,18 +358,18 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "save":
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+          if (isMalformed || !body.HasValue)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed or empty JSON request body." });
           }
 
-          using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-          var req = BindFormRequest(httpRequest, doc.RootElement);
+          var req = BindFormRequest(httpRequest, body.Value);
 
           object entity;
           try
           {
-            entity = await form.SaveAsync(doc.RootElement, req, ct);
+            entity = await form.SaveAsync(body.Value, req, ct);
           }
           catch (IdempotencyConflictException ex)
           {
@@ -426,74 +410,69 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "get-action-input":
         {
-          if (userContext is null or { IsAuthenticated: false })
-          {
-            return Results.Unauthorized();
-          }
-
           if (!CanView(feat, userContext))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
 
-          FormRequest? req = null;
-          var actionMethodKey = subMethod ?? "";
-          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
+          var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+          if (isMalformed)
           {
-            try
-            {
-              using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-              if (string.IsNullOrEmpty(actionMethodKey) && doc.RootElement.TryGetProperty("method", out var mProp) && mProp.ValueKind == JsonValueKind.String)
-              {
-                actionMethodKey = mProp.GetString() ?? "";
-              }
-
-              req = BindFormRequest(httpRequest, doc.RootElement);
-            }
-            catch { }
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          req ??= BindFormRequest(httpRequest, default);
+          var actionMethodKey = ResolveActionMethodKey(subMethod, body);
+          var req = BindFormRequest(httpRequest, body ?? default);
           var defaults = await form.GetActionInputAsync(actionMethodKey, req, ct);
           return Results.Ok(ToActionInputDto(defaults));
         }
 
       case "move-status" when subMethod != null:
         {
-          if (userContext is null or { IsAuthenticated: false })
+          var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+          if (isMalformed)
           {
-            return Results.Unauthorized();
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          JsonDocument? jsonDoc = null;
-          JsonElement? bodyElement = null;
-          if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
+          var req = BindFormRequest(httpRequest, body ?? default);
+          if (req.Id == null)
           {
-            try
-            {
-              jsonDoc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-              bodyElement = jsonDoc.RootElement;
-            }
-            catch { }
+            return Results.BadRequest(new { detail = "Record id is required for move-status." });
           }
 
-          using (jsonDoc)
-          {
-            var req = BindFormRequest(httpRequest, bodyElement ?? default);
-            if (req.Id == null)
-            {
-              return Results.BadRequest(new { detail = "Record id is required for move-status." });
-            }
-
-            form.SetRequest(req);
-            var result = await form.MoveStatusAsync(req.Id.Value, subMethod, bodyElement, req.Ver, ct);
-            return PlatformEndpointsExtensions.ToMutationResult(result);
-          }
+          form.SetRequest(req);
+          var result = await form.MoveStatusAsync(req.Id.Value, subMethod, body, req.Ver, ct);
+          return PlatformEndpointsExtensions.ToMutationResult(result);
         }
 
       default:
         return await DispatchCustomServiceMethodAsync(serviceType, form, method, feat, httpRequest, services, ct);
     }
+  }
+
+  private static bool IsBuiltInGridMethod(string lowerMethod) =>
+    lowerMethod is "get-data" or "get-count" or "get-one" or "delete" or "save-cell" or "get-action-input" or "move-status" or "export";
+
+  private static bool IsBuiltInFormMethod(string lowerMethod, string? subMethod) =>
+    lowerMethod is "get-data" or "save" or "get-action-input" ||
+    lowerMethod == "move-status" && subMethod != null;
+
+  private static string ResolveActionMethodKey(string? subMethod, JsonElement? body)
+  {
+    if (!string.IsNullOrEmpty(subMethod))
+    {
+      return subMethod;
+    }
+
+    if (body is { ValueKind: JsonValueKind.Object } root &&
+        root.TryGetProperty("method", out var mProp) &&
+        mProp.ValueKind == JsonValueKind.String)
+    {
+      return mProp.GetString() ?? "";
+    }
+
+    return "";
   }
 
   private static ActionInputDto ToActionInputDto(object? defaults)
@@ -539,7 +518,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         ? (GridRequest?)JsonSerializer.Deserialize(rawBody.Value.GetRawText(), pType, PlatformJsonOptions.DefaultOptions)
         : null;
       gReq ??= (GridRequest)Activator.CreateInstance(pType)!;
-      ApplyGridQueryParams(httpRequest, gReq);
+      ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, gReq);
       return gReq;
     }
 
@@ -554,16 +533,46 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         ? (FormRequest?)JsonSerializer.Deserialize(rawBody.Value.GetRawText(), pType, PlatformJsonOptions.DefaultOptions)
         : null;
       fReq ??= (FormRequest)Activator.CreateInstance(pType)!;
-      var bound = BindFormRequest(httpRequest, rawBody ?? default);
-      fReq.Id ??= bound.Id;
-      fReq.Ver ??= bound.Ver;
-      fReq.ParentId ??= bound.ParentId;
-      fReq.ParentService ??= bound.ParentService;
-      fReq.Value ??= bound.Value;
-      return fReq;
+      return BindFormRequest(httpRequest, rawBody ?? default, existing: fReq);
     }
 
     return null;
+  }
+
+  private static FormRequest BindFormRequest(
+    HttpRequest httpRequest,
+    JsonElement root,
+    FormRequest? existing = null)
+  {
+    var (req, _) = FormRequest.Normalize(root, existing, allowNestedFallback: false);
+    ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
+    if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
+    {
+      req.IdempotencyKey = idemVals.ToString().Trim();
+    }
+
+    return req;
+  }
+
+  private static bool TryDeserializeOptional<T>(JsonElement? body, out T result)
+    where T : class, new()
+  {
+    if (!body.HasValue)
+    {
+      result = new T();
+      return true;
+    }
+
+    try
+    {
+      result = JsonSerializer.Deserialize<T>(body.Value.GetRawText(), PlatformJsonOptions.DefaultOptions) ?? new T();
+      return true;
+    }
+    catch (JsonException)
+    {
+      result = new T();
+      return false;
+    }
   }
 
   private static bool CanView(Feature? feat, IUserContext? userContext) =>
@@ -608,97 +617,42 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     return true;
   }
 
-  private static async Task<T> ReadGridRequestAsync<T>(HttpRequest httpRequest, CancellationToken ct)
+  private static async Task<(T Request, bool IsMalformed)> ReadGridRequestAsync<T>(HttpRequest httpRequest, CancellationToken ct)
     where T : GridRequest, new()
   {
-    T? req = null;
-    if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
-    {
-      try
-      {
-        req = await httpRequest.ReadFromJsonAsync<T>(cancellationToken: ct);
-      }
-      catch { }
-    }
-
-    req ??= new T();
-    ApplyGridQueryParams(httpRequest, req);
-    return req;
+    var (req, isMalformed) = await ReadJsonOrDefaultAsync<T>(httpRequest, ct);
+    ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
+    return (req, isMalformed);
   }
 
-  private static void ApplyGridQueryParams(HttpRequest httpRequest, GridRequest req)
+  private static async Task<(FormRequest Request, bool IsMalformed)> ReadFormRequestAsync(HttpRequest httpRequest, CancellationToken ct)
   {
-    if (httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var idVal))
-    {
-      req.Id = idVal;
-    }
-
-    if (httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var pidVal))
-    {
-      req.ParentId = pidVal;
-    }
-
-    if (httpRequest.Query.TryGetValue("parentService", out var psStr))
-    {
-      req.ParentService = psStr;
-    }
+    var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+    return (BindFormRequest(httpRequest, body ?? default), isMalformed);
   }
 
-  private static async Task<FormRequest> ReadFormRequestAsync(HttpRequest httpRequest, CancellationToken ct)
+  private static async Task<(T Request, bool IsMalformed)> ReadJsonOrDefaultAsync<T>(HttpRequest httpRequest, CancellationToken ct)
+    where T : class, new()
   {
-    if (ServiceEndpointsExtensions.HasJsonBody(httpRequest))
+    var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+    if (isMalformed)
     {
-      try
-      {
-        using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-        return BindFormRequest(httpRequest, doc.RootElement);
-      }
-      catch { }
+      return (new T(), true);
     }
 
-    return BindFormRequest(httpRequest, default);
-  }
-
-  private static FormRequest BindFormRequest(HttpRequest httpRequest, JsonElement root)
-  {
-    var (req, _) = FormRequest.Normalize(root, allowNestedFallback: false);
-    if (req.Id is null or <= 0 && httpRequest.Query.TryGetValue("id", out var idStr) && long.TryParse(idStr, out var parsedId))
+    if (!body.HasValue)
     {
-      req.Id = parsedId;
-    }
-
-    if (req.ParentId is null && httpRequest.Query.TryGetValue("parentId", out var pidStr) && long.TryParse(pidStr, out var parsedPid))
-    {
-      req.ParentId = parsedPid;
-    }
-
-    if (string.IsNullOrEmpty(req.ParentService) && httpRequest.Query.TryGetValue("parentService", out var psStr))
-    {
-      req.ParentService = psStr;
-    }
-
-    if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
-    {
-      req.IdempotencyKey = idemVals.ToString().Trim();
-    }
-
-    return req;
-  }
-
-  private static async Task<ReportRequest> ReadReportRequestAsync(HttpRequest request, CancellationToken ct)
-  {
-    if (!ServiceEndpointsExtensions.HasJsonBody(request))
-    {
-      return new ReportRequest();
+      return (new T(), false);
     }
 
     try
     {
-      return await request.ReadFromJsonAsync<ReportRequest>(PlatformJsonOptions.DefaultOptions, ct) ?? new ReportRequest();
+      var req = JsonSerializer.Deserialize<T>(body.Value.GetRawText(), PlatformJsonOptions.DefaultOptions) ?? new T();
+      return (req, false);
     }
-    catch
+    catch (JsonException)
     {
-      return new ReportRequest();
+      return (new T(), true);
     }
   }
 }

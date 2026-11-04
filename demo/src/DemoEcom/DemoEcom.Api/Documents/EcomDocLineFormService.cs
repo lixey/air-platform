@@ -13,18 +13,10 @@ public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomSer
   protected override void SetHooks(Hooks hooks)
   {
     hooks.AfterLoad(c => EcomDocLines.Load(c.Entity, c.Input, c.IsNew));
-    hooks.AfterSave(async (c, ct) =>
-    {
-      var parentDoc = ParentRecord<EcomDoc>();
-      if (parentDoc != null)
-      {
-        await EcomDocTotals.ApplyAsync(db, parentDoc, ct);
-        await db.EcomDoc.Where(d => d.Id == parentDoc.Id)
-          .ExecuteUpdateAsync(s => s
-            .SetProperty(d => d.Qty, parentDoc.Qty)
-            .SetProperty(d => d.Amount, parentDoc.Amount), ct);
-        db.Entry(parentDoc).State = EntityState.Unchanged;
-      }
-    });
+    hooks.Compute(c =>
+      c.Entity.Amount = EcomDocTotals.LineAmount(
+        c.Entity.Qty,
+        c.Input.Price ?? c.Entity.Price,
+        c.Input.DiscountPercent ?? c.Entity.DiscountPercent));
   }
 }

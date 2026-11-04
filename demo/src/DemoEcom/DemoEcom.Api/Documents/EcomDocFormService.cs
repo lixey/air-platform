@@ -36,6 +36,9 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
     await base.SetElementsAsync(elements, cancellationToken);
   }
 
+  protected override Task RecalculateAsync(EcomDoc entity, CancellationToken ct) =>
+    EcomDocTotals.ApplyAsync(db, entity, ct);
+
   protected override void SetHooks(Hooks hooks)
   {
     hooks.AfterLoad((c, cancellationToken) =>

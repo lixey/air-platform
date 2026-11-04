@@ -1,5 +1,6 @@
 using Platform.Api.Files.Internals;
 using Platform.App.Internals;
+using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
 
@@ -158,15 +159,7 @@ public abstract partial class FormService<TEntity, TInput>
               Message = entry.Model.Confirm?.Message,
               Color = entry.Model.Color,
               HasDefaults = entry.DefaultProvider != null,
-              Elements = [.. entry.Ask.BuildElements().Select(e =>
-              {
-                if (!string.IsNullOrEmpty(e.Label))
-                {
-                  e.Label = L[e.Label];
-                }
-
-                return e;
-              })]
+              Elements = StatusMoveNavBuilder.LocalizeElements(entry.Ask.BuildElements(), L)
             };
             entry.Model.Confirm = null;
           }
@@ -781,53 +774,24 @@ public abstract partial class FormService<TEntity, TInput>
       var currentStatus = statusFlow.StatusMember.Compile()(entity);
       foreach (var transition in statusFlow.Transitions)
       {
-        if (User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+        if (!StatusMoveNavBuilder.CanMove(Feature, User, transition.Name) || !transition.From.Contains(currentStatus))
         {
           continue;
         }
 
-        if (transition.From.Contains(currentStatus))
+        var meta = StatusMoveNavBuilder.BuildTransitionMeta(Feature, L, statusFlow, transition);
+        actionStart.Add(new FormNavActionModel
         {
-          var targetStatus = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
-          var verbLabel = !string.IsNullOrEmpty(Feature.Module)
-            ? L.TextOr($"{Feature.Module}: {transition.Name}", L[transition.Name])
-            : L[transition.Name];
-          var targetLabel = targetStatus != null ? L[targetStatus.Name] : verbLabel;
-          var confirmMessage = transition.Confirm != null ? L[transition.Confirm] : null;
-          var action = new FormNavActionModel
-          {
-            Key = $"status.{transition.Name.ToLowerInvariant()}",
-            Label = verbLabel != transition.Name ? verbLabel : targetLabel,
-            Title = targetStatus?.Title != null ? L[targetStatus.Title] : null,
-            Color = targetStatus?.Color,
-            Service = servicePath,
-            Method = $"move-status/{transition.Name.ToLowerInvariant()}",
-            Confirm = transition.Ask is not null || confirmMessage is null
-              ? null
-              : new OverlayConfirmModel { Message = confirmMessage, Color = targetStatus?.Color },
-            Ask = transition.Ask is null
-              ? null
-              : new FormAskModel
-              {
-                Title = verbLabel != transition.Name ? verbLabel : targetLabel,
-                Message = confirmMessage,
-                Color = targetStatus?.Color,
-                Elements = transition.Ask.BuildElements().Select(e =>
-                {
-                  if (!string.IsNullOrEmpty(e.Label))
-                  {
-                    e.Label = L[e.Label];
-                  }
-
-                  return e;
-                }).ToList()
-              },
-            UnavailableReasons = transition.Offers.Count == 0
-              ? null
-              : [.. transition.Offers.Select(o => L[o.Reason])]
-          };
-          actionStart.Add(action);
-        }
+          Key = meta.Key,
+          Label = meta.Label,
+          Title = meta.Title,
+          Color = meta.Color,
+          Service = servicePath,
+          Method = meta.Method,
+          Confirm = meta.Confirm,
+          Ask = meta.Ask,
+          UnavailableReasons = meta.UnavailableReasons
+        });
       }
     }
   }

@@ -53,23 +53,10 @@ public static partial class AgentProposalBuilder
     var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
     var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
 
-    Dictionary<string, object?> originalFormValues;
-    Dictionary<string, object?> formValues;
-    int? recordVer = null;
-    if (isEdit)
-    {
-      var existingEntity = await formInst.LoadParentRecordAsync(recordId!.Value, ct);
-      recordVer = (existingEntity as IHasVersion)?.Ver;
-      var existingValues = await AgentContextQueryService.GetExistingFormValuesAsync(formInst, recordId!.Value, editableElements, ct);
-      originalFormValues = CloneFormValues(existingValues);
-      formValues = CloneFormValues(existingValues);
-    }
-    else
-    {
-      var defaultValues = await AgentContextQueryService.GetDefaultFormValuesAsync(formInst, editableElements, ct);
-      originalFormValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-      formValues = new Dictionary<string, object?>(defaultValues, StringComparer.OrdinalIgnoreCase);
-    }
+    var initialDraft = await formInst.PrepareDraftAsync(isEdit ? recordId : null, ct: ct);
+    var originalFormValues = initialDraft.OriginalValues;
+    var formValues = initialDraft.Values;
+    var recordVer = initialDraft.Ver;
 
     var refServices = editableElements
       .Select(e => (e.Model as FormSelectModel)?.ReferenceService)
@@ -446,79 +433,31 @@ public static partial class AgentProposalBuilder
       }
     }
 
-    // Apply declarative SelectPatches (e.g. Counterparty.DefaultCategory -> CategoryId) when target field was not explicitly set
-    foreach (var el in editableElements)
+    // Delegate declarative SelectPatches, Options defaults, and hooks.Compute to FormService.PrepareDraftAsync
+    var draftOverrides = explicitlyProvided.ToDictionary(
+      k => k,
+      k => formValues.GetValueOrDefault(k),
+      StringComparer.OrdinalIgnoreCase);
+    var pendingRefPaths = newReferences
+      .Select(nr => nr.FieldPath)
+      .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var preparedDraft = await formInst.PrepareDraftAsync(
+      isEdit ? recordId : null,
+      draftOverrides,
+      pendingRefPaths,
+      ct: ct);
+
+    foreach (var (k, v) in preparedDraft.Values)
     {
-      if (isEdit && !explicitlyProvided.Contains(el.Path))
+      if (!explicitlyProvided.Contains(k) && !pendingRefPaths.Contains(k) && v != null)
       {
-        continue;
-      }
-
-      if (el.SelectPatches is not { Count: > 0 } patches ||
-          el.Model is not FormSelectModel { ReferenceService: { Length: > 0 } refSvc } ||
-          !formValues.TryGetValue(el.Path, out var curVal) ||
-          !TryConvertToLong(curVal, out var selectedId) ||
-          selectedId <= 0)
-      {
-        continue;
-      }
-
-      if (isEdit &&
-          originalFormValues.TryGetValue(el.Path, out var oldSrcVal) &&
-          TryConvertToLong(oldSrcVal, out var oldSrcId) &&
-          oldSrcId == selectedId)
-      {
-        continue;
-      }
-
-      var selectedRow = await AgentContextQueryService.EnsureReferenceIdLoadedAsync(refSvc, selectedId, dictionaries, db, app, ct);
-      if (selectedRow == null)
-      {
-        continue;
-      }
-
-      foreach (var patch in patches)
-      {
-        if (explicitlyProvided.Contains(patch.TargetField))
+        formValues[k] = v;
+        var patchedEl = editableElements.FirstOrDefault(e => string.Equals(e.Path, k, StringComparison.OrdinalIgnoreCase));
+        if (patchedEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } patchedRefSvc } &&
+            TryConvertToLong(v, out var patchedId) &&
+            patchedId > 0)
         {
-          continue;
-        }
-
-        if (newReferences.Any(nr => string.Equals(nr.FieldPath, patch.TargetField, StringComparison.OrdinalIgnoreCase)))
-        {
-          continue;
-        }
-
-        if ((!isEdit || patch.OnlyWhenEmpty) &&
-            formValues.TryGetValue(patch.TargetField, out var existingTarget) &&
-            existingTarget != null &&
-            existingTarget.ToString() is { Length: > 0 } existingStr &&
-            existingStr != "0")
-        {
-          continue;
-        }
-
-        if (selectedRow.TryGetValue(patch.SourceColumn, out var patchVal) && patchVal != null)
-        {
-          var unwrapped = UnwrapReferenceValue(patchVal);
-          if (TryConvertToLong(unwrapped, out var patchId) && patchId > 0)
-          {
-            var targetEl = editableElements.FirstOrDefault(e => string.Equals(e.Path, patch.TargetField, StringComparison.OrdinalIgnoreCase));
-            if (targetEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } targetRefSvc } targetSelect)
-            {
-              await AgentContextQueryService.EnsureReferenceIdLoadedAsync(targetRefSvc, patchId, dictionaries, db, app, ct);
-              if (dictionaries.TryGetValue(targetRefSvc, out var targetAllRows))
-              {
-                var targetFiltered = FilterRowsByReferenceFilter(targetAllRows, targetSelect.ReferenceFilter);
-                if (targetFiltered.Count > 0 && !targetFiltered.Any(r => TryGetRowId(r, out var trId) && trId == patchId))
-                {
-                  continue;
-                }
-              }
-            }
-
-            formValues[patch.TargetField] = patchId;
-          }
+          await AgentContextQueryService.EnsureReferenceIdLoadedAsync(patchedRefSvc, patchedId, dictionaries, db, app, ct);
         }
       }
     }
@@ -569,7 +508,7 @@ public static partial class AgentProposalBuilder
           TryGetPropertyIgnoreCase(valuesSource, "lines", out linesProp)) &&
         linesProp.ValueKind == JsonValueKind.Array)
     {
-      var childDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(childFormInst, childEditableElements, ct);
+      var childDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(childFormInst, ct);
 
       foreach (var item in linesProp.EnumerateArray())
       {
@@ -695,11 +634,27 @@ public static partial class AgentProposalBuilder
           continue;
         }
 
+        var lineDraft = await childFormInst.PrepareDraftAsync(
+          recordId: null,
+          overrides: lineDict,
+          parentId: isEdit ? recordId : null,
+          parentService: targetDesc.ServicePath,
+          ct: ct);
+        foreach (var (k, v) in lineDraft.Values)
+        {
+          if (v != null)
+          {
+            lineDict[k] = v;
+          }
+        }
+
         var qty = TryGetDecimal(item, "qty") is > 0 and var q
           ? q
           : (lineDict.TryGetValue("qty", out var defQ) && TryConvertToDecimal(defQ, out var dq) && dq > 0 ? dq : 1m);
-        var price = TryGetDecimal(item, "price");
-        var amount = TryGetDecimal(item, "amount");
+        var price = TryGetDecimal(item, "price")
+          ?? (lineDict.TryGetValue("price", out var defP) && TryConvertToDecimal(defP, out var dp) && dp != 0m ? dp : null);
+        var amount = TryGetDecimal(item, "amount")
+          ?? (lineDict.TryGetValue("amount", out var defA) && TryConvertToDecimal(defA, out var da) && da != 0m ? da : null);
 
         if (price is null or 0m && amount is not null and not 0m)
         {

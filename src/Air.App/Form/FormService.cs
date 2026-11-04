@@ -1,4 +1,5 @@
 using Platform.App.Internals;
+using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
 
@@ -312,114 +313,32 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     }
   }
 
-  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity
-  {
-    if (ParentId == null || ParentId.Value <= 0)
-    {
-      return null;
-    }
-
-    if (_preloadedParent is TParent preloaded && preloaded.Id == ParentId.Value)
-    {
-      return preloaded;
-    }
-
-    var parent = GetParent();
-    if (_preloadedParentId == ParentId.Value &&
-        (parent.BoundParentServiceType != null || !string.IsNullOrEmpty(Request.ParentService)))
-    {
-      return null;
-    }
-
-    var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == ParentId.Value);
-    if (tracked != null)
-    {
-      return tracked;
-    }
-
-    var efModel = db.Model.FindEntityType(typeof(TParent));
-    IQueryable<TParent> query = db.Set<TParent>();
-    if (efModel != null)
-    {
-      foreach (var nav in efModel.GetNavigations())
-      {
-        if (!nav.IsCollection)
-        {
-          query = query.Include(nav.Name);
-        }
-      }
-    }
-
-    return query.FirstOrDefault(e => e.Id == ParentId.Value);
-  }
+  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity =>
+    ParentScopeValidator.GetParentRecord<TParent>(
+      db,
+      ParentId,
+      Request.ParentService,
+      _preloadedParent,
+      _preloadedParentId,
+      GetParent().BoundParentServiceType);
 
   public sealed class Parent
   {
     public Type? BoundParentServiceType { get; private set; }
-    public Type? BoundParentEntityType => GetFormEntityType(BoundParentServiceType);
+    public Type? BoundParentEntityType => ParentScopeValidator.GetFormEntityType(BoundParentServiceType);
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
     public bool IsOptional { get; private set; }
 
-    public bool MatchesService(string? parentService)
-    {
-      if (string.IsNullOrEmpty(parentService) || string.IsNullOrEmpty(BoundParentService))
-      {
-        return true;
-      }
-
-      if (string.Equals(parentService, BoundParentService, StringComparison.OrdinalIgnoreCase))
-      {
-        return true;
-      }
-
-      if (BoundParentServiceType != null &&
-          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType)
-      {
-        if (BoundParentServiceType.IsAssignableFrom(actualType) ||
-            actualType.IsAssignableFrom(BoundParentServiceType))
-        {
-          return true;
-        }
-
-        if (GetFormEntityType(BoundParentServiceType) is { } expectedEntity &&
-            expectedEntity == GetFormEntityType(actualType))
-        {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    private static Type? GetFormEntityType(Type? type)
-    {
-      for (var t = type; t != null && t != typeof(object); t = t.BaseType)
-      {
-        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(FormService<,>))
-        {
-          return t.GetGenericArguments()[0];
-        }
-      }
-
-      return null;
-    }
+    public bool MatchesService(string? parentService) =>
+      ParentScopeValidator.MatchesService(parentService, BoundParentService, BoundParentServiceType);
 
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
       BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
-      var expr = member.Body;
-      if (expr is UnaryExpression ue)
-      {
-        expr = ue.Operand;
-      }
-
-      if (expr is MemberExpression me && me.Member is PropertyInfo pi)
-      {
-        BoundProperty = pi;
-      }
+      BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
     }
 
     public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
@@ -427,20 +346,48 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
-      var expr = member.Body;
-      if (expr is UnaryExpression ue)
-      {
-        expr = ue.Operand;
-      }
-
-      if (expr is MemberExpression me && me.Member is PropertyInfo pi)
-      {
-        BoundProperty = pi;
-      }
+      BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
     }
   }
 
   protected virtual void SetParent(Parent parent) { }
+
+  private static readonly ConcurrentDictionary<Type, bool> CustomRecalculateTypes = new();
+
+  public bool HasCustomRecalculate =>
+    CustomRecalculateTypes.GetOrAdd(GetType(), static t =>
+    {
+      var m = t.GetMethod(
+        nameof(RecalculateAsync),
+        BindingFlags.Instance | BindingFlags.NonPublic,
+        [typeof(TEntity), typeof(CancellationToken)]);
+      return m != null && m.DeclaringType != typeof(FormService<TEntity, TInput>);
+    });
+
+  protected virtual Task RecalculateAsync(TEntity entity, CancellationToken ct) => Task.CompletedTask;
+
+  public async Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default)
+  {
+    if (!HasCustomRecalculate || parentIds.Count == 0)
+    {
+      return;
+    }
+
+    if (db.Database.CurrentTransaction != null)
+    {
+      await MutationContext.AcquireLocksAsync(db, typeof(TEntity), parentIds.Select(id => new[] { id }).ToList(), ct);
+    }
+
+    foreach (var id in parentIds)
+    {
+      var entity = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id)
+        ?? await db.Set<TEntity>().AsTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
+      if (entity != null)
+      {
+        await RecalculateAsync(entity, ct);
+      }
+    }
+  }
 
   public sealed class Hooks
   {
@@ -458,6 +405,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       });
 
     public void BeforeValidate(Action<FormSaveContext<TEntity, TInput>> handler) => BeforeValidateActions.Add(handler);
+    public void Compute(Action<FormSaveContext<TEntity, TInput>> handler) => BeforeValidateActions.Add(handler);
 
     public void BeforeSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => BeforeSaveActions.Add(handler);
     public void BeforeSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
@@ -688,20 +636,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     var entry = nav.Actions.FirstOrDefault(a =>
       string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
       string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
-    if (entry?.DefaultProvider == null)
-    {
-      return new Dictionary<string, object?>();
-    }
-
-    var rawDefaults = await entry.DefaultProvider(ct);
-    if (rawDefaults == null)
-    {
-      return new Dictionary<string, object?>();
-    }
-
-    var jsonText = JsonSerializer.Serialize(rawDefaults, PlatformJsonOptions.DefaultOptions);
-    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
-    return dict;
+    return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(entry?.DefaultProvider, entry?.Ask, db, PlatformApp, ct);
   }
 
   protected Task<FormActionDto> ExecuteActionAsync(

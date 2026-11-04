@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.Agent.Internals;
 
 internal static class AgentValueHelpers
@@ -89,29 +91,8 @@ internal static class AgentValueHelpers
     return list;
   }
 
-  public static Dictionary<string, object?> ExtractEqualityFilterMap(FilterNode? filter)
-  {
-    var map = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-    CollectEqualityFilters(filter, map);
-    return map;
-  }
-
-  private static void CollectEqualityFilters(FilterNode? node, Dictionary<string, object?> target)
-  {
-    switch (node)
-    {
-      case FilterRule { Operator: FilterOperator.Equals, Field: { Length: > 0 } field, Value: { } val }:
-        target[field] = val;
-        break;
-      case FilterGroup { Logic: FilterLogic.And, Items: { } items }:
-        foreach (var item in items)
-        {
-          CollectEqualityFilters(item, target);
-        }
-
-        break;
-    }
-  }
+  public static Dictionary<string, object?> ExtractEqualityFilterMap(FilterNode? filter) =>
+    FilterNodeEvaluator.ExtractEqualityValues(filter);
 
   public static IReadOnlyList<Dictionary<string, object?>> FilterRowsByReferenceFilter(
     IReadOnlyList<Dictionary<string, object?>> rows,
@@ -122,52 +103,28 @@ internal static class AgentValueHelpers
       return rows;
     }
 
-    var map = ExtractEqualityFilterMap(filter);
-    if (map.Count == 0)
-    {
-      return rows;
-    }
-
-    var filtered = rows.Where(r => MatchesEqualityMap(r, map)).ToList();
+    var filtered = rows.Where(r => MatchesReferenceFilter(r, filter)).ToList();
     return filtered.Count > 0 ? filtered : rows;
   }
 
-  public static bool MatchesEqualityMap(Dictionary<string, object?> row, Dictionary<string, object?> filterMap)
-  {
-    foreach (var (field, expectedVal) in filterMap)
+  public static bool MatchesReferenceFilter(Dictionary<string, object?> row, FilterNode filter) =>
+    FilterNodeEvaluator.Evaluate(filter, field =>
     {
-      if (expectedVal == null)
+      if (row.TryGetValue(field, out var cellVal) && cellVal != null)
       {
-        continue;
+        return UnwrapReferenceValue(cellVal);
       }
 
-      if (!row.TryGetValue(field, out var cellVal) || cellVal == null)
+      if (field.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
+          field.Length > 2 &&
+          row.TryGetValue(field[..^2], out cellVal) &&
+          cellVal != null)
       {
-        var altKey = field.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && field.Length > 2
-          ? field[..^2]
-          : null;
-        if (altKey == null || !row.TryGetValue(altKey, out cellVal) || cellVal == null)
-        {
-          continue;
-        }
+        return UnwrapReferenceValue(cellVal);
       }
 
-      var unwrapped = UnwrapReferenceValue(cellVal);
-      if (TryConvertToLong(expectedVal, out var expLong) && TryConvertToLong(unwrapped, out var actLong))
-      {
-        if (expLong != actLong)
-        {
-          return false;
-        }
-      }
-      else if (!string.Equals(unwrapped?.ToString(), expectedVal.ToString(), StringComparison.OrdinalIgnoreCase))
-      {
-        return false;
-      }
-    }
-
-    return true;
-  }
+      return null;
+    });
 
   public static Dictionary<string, object?>? FindDictionaryRowByName(
     IReadOnlyList<Dictionary<string, object?>> rows,
@@ -471,34 +428,7 @@ internal static class AgentValueHelpers
     }
   }
 
-  public static bool TryConvertToDecimal(object? val, out decimal result)
-  {
-    switch (val)
-    {
-      case decimal d:
-        result = d;
-        return true;
-      case double dbl:
-        result = (decimal)dbl;
-        return true;
-      case float flt:
-        result = (decimal)flt;
-        return true;
-      case long l:
-        result = l;
-        return true;
-      case int i:
-        result = i;
-        return true;
-      case JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetDecimal(out var jd):
-        result = jd;
-        return true;
-      case string s when TryParseFlexibleDecimal(s, out var sd):
-        result = sd;
-        return true;
-      default:
-        result = 0m;
-        return false;
-    }
-  }
+  public static bool TryConvertToDecimal(object? val, out decimal result) =>
+    FilterNodeEvaluator.TryConvertToDecimal(val, out result) ||
+    val is string s && TryParseFlexibleDecimal(s, out result);
 }

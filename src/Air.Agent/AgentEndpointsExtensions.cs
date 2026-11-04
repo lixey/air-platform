@@ -17,6 +17,46 @@ public static class AgentEndpointsExtensions
     return Interlocked.CompareExchange(ref _lastAutoSyncTicks, nowTicks, prev) == prev;
   }
 
+  private static async Task<(List<IAgentProvider> EnabledProviders, List<AppAgentModel> DbModels)> LoadActiveProvidersAndModelsAsync(
+    PlatformDbContext db,
+    IAgentModelSynchronizer synchronizer,
+    AgentOptions options,
+    List<IAgentProvider> enabledProviders,
+    CancellationToken ct)
+  {
+    await AgentModelCatalog.EnsureSeededAsync(db, ct);
+    await AgentMemoryCatalog.EnsureSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
+
+    var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
+    var filteredProviders = enabledProviders
+      .Where(p => activeProviderHandles.Contains(p.Handle))
+      .ToList();
+
+    var dbModels = await QueryActiveProviderModelsAsync(db, ct);
+    if (dbModels.Count == 0 && filteredProviders.Any(p => p.IsAvailable) && ShouldAttemptAutoSync())
+    {
+      try
+      {
+        await synchronizer.SyncFromProvidersAsync(db, ct);
+        dbModels = await QueryActiveProviderModelsAsync(db, ct);
+      }
+      catch
+      {
+        // Ignore transient sync errors
+      }
+    }
+
+    return (filteredProviders, dbModels);
+  }
+
+  private static Task<List<AppAgentModel>> QueryActiveProviderModelsAsync(PlatformDbContext db, CancellationToken ct) =>
+    db.AppAgentModel
+      .AsNoTracking()
+      .Where(m => m.IsActive && db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
+      .OrderBy(m => m.SortOrder)
+      .ThenBy(m => m.Id)
+      .ToListAsync(ct);
+
   public static IServiceCollection AddAirAgent(this IServiceCollection services, Action<AgentOptions>? configure = null)
   {
     var options = new AgentOptions();
@@ -106,42 +146,13 @@ public static class AgentEndpointsExtensions
 
       if (db is not null)
       {
-        await AgentModelCatalog.EnsureSeededAsync(db, ct);
-        await AgentMemoryCatalog.EnsureSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
+        List<AppAgentModel> dbModels;
+        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, synchronizer, options, enabledProviders, ct);
 
-        var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
-        enabledProviders = enabledProviders
-          .Where(p => activeProviderHandles.Contains(p.Handle))
-          .ToList();
         var availableHandles = enabledProviders
           .Where(p => p.IsAvailable)
           .Select(p => p.Handle)
           .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var dbModels = await db.AppAgentModel
-          .AsNoTracking()
-          .Where(m => m.IsActive && db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
-          .OrderBy(m => m.SortOrder)
-          .ThenBy(m => m.Id)
-          .ToListAsync(ct);
-
-        if (dbModels.Count == 0 && availableHandles.Count > 0 && ShouldAttemptAutoSync())
-        {
-          try
-          {
-            await synchronizer.SyncFromProvidersAsync(db, ct);
-            dbModels = await db.AppAgentModel
-              .AsNoTracking()
-              .Where(m => m.IsActive && db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
-              .OrderBy(m => m.SortOrder)
-              .ThenBy(m => m.Id)
-              .ToListAsync(ct);
-          }
-          catch
-          {
-            // Ignore transient sync errors
-          }
-        }
 
         if (availableHandles.Count > 0)
         {
@@ -327,48 +338,17 @@ public static class AgentEndpointsExtensions
       var db = ctx.RequestServices.GetService<PlatformDbContext>();
       if (db is not null)
       {
-        await AgentModelCatalog.EnsureSeededAsync(db, ct);
-        await AgentMemoryCatalog.EnsureSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
-
-        var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
-        enabledProviders = enabledProviders
-          .Where(p => activeProviderHandles.Contains(p.Handle))
-          .ToList();
-
-        var dbModels = await db.AppAgentModel
-          .AsNoTracking()
-          .Where(m => db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
-          .OrderBy(m => m.SortOrder)
-          .ThenBy(m => m.Id)
-          .ToListAsync(ct);
-
-        if (dbModels.Count == 0 && activeProviderHandles.Count > 0 && ShouldAttemptAutoSync())
-        {
-          try
-          {
-            await synchronizer.SyncFromProvidersAsync(db, ct);
-            dbModels = await db.AppAgentModel
-              .AsNoTracking()
-              .Where(m => db.AppAgentProvider.Any(p => p.Handle == m.ProviderHandle && p.IsActive))
-              .OrderBy(m => m.SortOrder)
-              .ThenBy(m => m.Id)
-              .ToListAsync(ct);
-          }
-          catch
-          {
-            // Ignore transient sync errors
-          }
-        }
+        List<AppAgentModel> dbModels;
+        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, synchronizer, options, enabledProviders, ct);
 
         if (!string.IsNullOrWhiteSpace(selectedModel))
         {
           var matchedRow = (!string.IsNullOrWhiteSpace(body.Provider)
               ? dbModels.FirstOrDefault(m =>
-                m.IsActive &&
                 string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
               : null)
-            ?? dbModels.FirstOrDefault(m => m.IsActive && string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
+            ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
           if (matchedRow is not null)
           {
             selectedModelName = matchedRow.Name;
@@ -376,7 +356,7 @@ public static class AgentEndpointsExtensions
           }
           else
           {
-            var fallbackDef = dbModels.FirstOrDefault(m => m.IsDefault && m.IsActive) ?? dbModels.FirstOrDefault(m => m.IsActive);
+            var fallbackDef = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
             if (fallbackDef is not null)
             {
               selectedModel = fallbackDef.ModelId;
@@ -387,9 +367,9 @@ public static class AgentEndpointsExtensions
         }
         else if (attachments.Count > 0)
         {
-          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos && m.IsActive)
-            ?? dbModels.FirstOrDefault(m => m.IsDefault && m.IsActive)
-            ?? dbModels.FirstOrDefault(m => m.IsActive);
+          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos)
+            ?? dbModels.FirstOrDefault(m => m.IsDefault)
+            ?? dbModels.FirstOrDefault();
           if (photoRow is not null)
           {
             selectedModel = photoRow.ModelId;
@@ -399,7 +379,7 @@ public static class AgentEndpointsExtensions
         }
         else
         {
-          var defRow = dbModels.FirstOrDefault(m => m.IsDefault && m.IsActive) ?? dbModels.FirstOrDefault(m => m.IsActive);
+          var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
           if (defRow is not null)
           {
             selectedModel = defRow.ModelId;

@@ -2,7 +2,7 @@ namespace Platform.App.Grid.Contracts;
 
 [ClientOptional]
 [UiContract]
-public class GridRequest : ListRequest
+public class GridRequest : ListRequest, IScopedServiceRequest
 {
   public bool IsDataOnly { get; set; }
   public long? Id { get; set; }

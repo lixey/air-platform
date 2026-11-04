@@ -110,7 +110,6 @@ public static class AgentProposalExecutor
               var (refEls, _) = await refFormInst.GetElementsMetadataAsync(mutationCt);
               var refDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(
                 refFormInst,
-                refEls.Where(AgentFeatureRegistry.IsEditableElement).ToList(),
                 mutationCt);
               foreach (var (k, v) in pendingRef.ExtraValues)
               {

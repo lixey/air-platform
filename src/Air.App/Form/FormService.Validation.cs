@@ -332,103 +332,11 @@ public abstract partial class FormService<TEntity, TInput>
   private static bool IsElementRequired(FormElementDto el) =>
     el.IsRequired;
 
-  private static bool EvaluateFilterNode(FilterNode node, object? primary, object? fallback)
-  {
-    if (node is FilterGroup group)
-    {
-      if (group.Items.Count == 0)
-      {
-        return false;
-      }
+  private static bool EvaluateFilterNode(FilterNode node, object? primary, object? fallback) =>
+    FilterNodeEvaluator.Evaluate(node, primary, fallback);
 
-      return FilterLogic.IsOr(group.Logic)
-        ? group.Items.Any(i => EvaluateFilterNode(i, primary, fallback))
-        : group.Items.All(i => EvaluateFilterNode(i, primary, fallback));
-    }
-
-    if (node is not FilterRule rule || string.IsNullOrEmpty(rule.Field))
-    {
-      return false;
-    }
-
-    var val = primary != null && PropertyAccessorCache.GetProperty(primary.GetType(), rule.Field) != null
-      ? PropertyAccessorCache.GetValue(primary, rule.Field)
-      : fallback != null
-        ? PropertyAccessorCache.GetValue(fallback, rule.Field)
-        : null;
-
-    var op = rule.Operator;
-    if (string.Equals(op, FilterOperator.IsNull, StringComparison.OrdinalIgnoreCase))
-    {
-      return val is null || val is string s && string.IsNullOrEmpty(s);
-    }
-
-    if (string.Equals(op, FilterOperator.IsNotNull, StringComparison.OrdinalIgnoreCase))
-    {
-      return val is not null && (val is not string s || !string.IsNullOrEmpty(s));
-    }
-
-    if (string.Equals(op, FilterOperator.In, StringComparison.OrdinalIgnoreCase))
-    {
-      return rule.Value is IEnumerable seq && seq is not string && seq.Cast<object?>().Any(x => CompareFilterValues(val, x) == 0);
-    }
-
-    if (string.Equals(op, FilterOperator.NotIn, StringComparison.OrdinalIgnoreCase))
-    {
-      return rule.Value is not IEnumerable seq || seq is string || !seq.Cast<object?>().Any(x => CompareFilterValues(val, x) == 0);
-    }
-
-    var cmp = CompareFilterValues(val, rule.Value);
-    return op switch
-    {
-      FilterOperator.Equals => cmp == 0,
-      FilterOperator.NotEquals => cmp != 0,
-      FilterOperator.GreaterThan => cmp is > 0,
-      FilterOperator.GreaterThanOrEqual => cmp is >= 0,
-      FilterOperator.LessThan => cmp is < 0,
-      FilterOperator.LessThanOrEqual => cmp is <= 0,
-      _ => false
-    };
-  }
-
-  private static int? CompareFilterValues(object? left, object? right)
-  {
-    if (right is JsonElement je)
-    {
-      right = je.ValueKind switch
-      {
-        JsonValueKind.Null or JsonValueKind.Undefined => null,
-        JsonValueKind.True => true,
-        JsonValueKind.False => false,
-        JsonValueKind.Number when je.TryGetInt64(out var l) => l,
-        JsonValueKind.Number when je.TryGetDecimal(out var d) => d,
-        JsonValueKind.String => je.GetString(),
-        _ => je.ToString()
-      };
-    }
-
-    if (left is null && right is null)
-    {
-      return 0;
-    }
-
-    if (left is null || right is null)
-    {
-      return null;
-    }
-
-    if (TryConvertToDecimal(left, out var leftDec) && TryConvertToDecimal(right, out var rightDec))
-    {
-      return leftDec.CompareTo(rightDec);
-    }
-
-    if (left is bool lb && right is bool rb)
-    {
-      return lb.CompareTo(rb);
-    }
-
-    return string.Compare(left.ToString(), right.ToString(), StringComparison.OrdinalIgnoreCase);
-  }
+  private static bool TryConvertToDecimal(object value, out decimal result) =>
+    FilterNodeEvaluator.TryConvertToDecimal(value, out result);
 
   private static bool AnswersRequirement(object? value, bool foreignKey) => value switch
   {
@@ -440,24 +348,6 @@ public abstract partial class FormService<TEntity, TInput>
     long key when foreignKey => key > 0,
     _ => true
   };
-
-  private static bool TryConvertToDecimal(object value, out decimal result)
-  {
-    switch (value)
-    {
-      case decimal d: result = d; return true;
-      case int i: result = i; return true;
-      case long l: result = l; return true;
-      case short s: result = s; return true;
-      case byte b: result = b; return true;
-      case double dbVal and not double.NaN and not double.PositiveInfinity and not double.NegativeInfinity:
-        result = (decimal)dbVal; return true;
-      case float flVal and not float.NaN and not float.PositiveInfinity and not float.NegativeInfinity:
-        result = (decimal)flVal; return true;
-      default:
-        result = 0; return false;
-    }
-  }
 
   private static bool FitsDecimal(decimal value, int? precision, int? scale)
   {

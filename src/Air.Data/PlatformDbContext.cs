@@ -556,8 +556,33 @@ public abstract class PlatformDbContext : DbContext
     }
   }
 
-  private static bool IsJournaled(EntityEntry entry)
+  private bool _suppressDerivedAudit;
+
+  public async Task RunDerivedRecalculationAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
   {
+    var prev = _suppressDerivedAudit;
+    _suppressDerivedAudit = true;
+    try
+    {
+      await action(cancellationToken);
+      if (ChangeTracker.HasChanges())
+      {
+        await SaveChangesAsync(cancellationToken);
+      }
+    }
+    finally
+    {
+      _suppressDerivedAudit = prev;
+    }
+  }
+
+  private bool IsJournaled(EntityEntry entry)
+  {
+    if (_suppressDerivedAudit && entry.State == EntityState.Modified)
+    {
+      return false;
+    }
+
     var auditMeta = EntityAuditMetadata.For(entry.Metadata.ClrType);
     if (!auditMeta.IsEntityAudited)
     {
@@ -571,11 +596,16 @@ public abstract class PlatformDbContext : DbContext
                                      !auditMeta.ExcludedProperties.Contains(p.Metadata.Name));
   }
 
-  private static bool ChangesNoAuditOnly(EntityEntry entry)
+  private bool ChangesNoAuditOnly(EntityEntry entry)
   {
     if (entry.State != EntityState.Modified)
     {
       return false;
+    }
+
+    if (_suppressDerivedAudit)
+    {
+      return true;
     }
 
     var noAuditProps = EntityAuditMetadata.For(entry.Metadata.ClrType).NoAuditProperties;

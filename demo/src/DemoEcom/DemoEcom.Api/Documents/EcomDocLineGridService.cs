@@ -29,19 +29,6 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
         ctx.Refuse(EcomDocTexts.Of(L).NotEditable);
       }
     });
-    hooks.AfterDelete(async (ctx, ct) =>
-    {
-      var parentDoc = ParentRecord<EcomDoc>();
-      if (parentDoc != null)
-      {
-        await EcomDocTotals.ApplyAsync(db, parentDoc, ct);
-        await db.EcomDoc.Where(d => d.Id == parentDoc.Id)
-          .ExecuteUpdateAsync(s => s
-            .SetProperty(d => d.Qty, parentDoc.Qty)
-            .SetProperty(d => d.Amount, parentDoc.Amount), ct);
-        db.Entry(parentDoc).State = EntityState.Unchanged;
-      }
-    });
   }
 }
 

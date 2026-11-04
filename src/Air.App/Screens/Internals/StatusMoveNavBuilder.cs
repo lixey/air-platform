@@ -1,0 +1,135 @@
+using Platform.App.Internals;
+
+namespace Platform.App.Screens.Internals;
+
+internal static class StatusMoveNavBuilder
+{
+  public static bool CanMove(Feature feature, IUserContext? user, string transitionName) =>
+    user == null ||
+    !user.IsAuthenticated ||
+    user.Can(feature.Action(transitionName)) ||
+    user.Can(feature.Edit) ||
+    user.Can(feature.All);
+
+  public static List<FormElementDto> LocalizeElements(IReadOnlyList<FormElementDto> elements, Localizer l) =>
+    [.. elements.Select(e =>
+    {
+      if (!string.IsNullOrEmpty(e.Label))
+      {
+        e.Label = l[e.Label];
+      }
+
+      return e;
+    })];
+
+  public static (
+    string Key,
+    string Method,
+    string Label,
+    string? Title,
+    string? Color,
+    OverlayConfirmModel? Confirm,
+    FormAskModel? Ask,
+    List<string>? UnavailableReasons) BuildTransitionMeta<TEntity>(
+      Feature feature,
+      Localizer l,
+      IRecordStatuses<TEntity> statusFlow,
+      RecordTransition transition)
+    where TEntity : class, IEntity
+  {
+    var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
+    var verbLabel = !string.IsNullOrEmpty(feature.Module)
+      ? l.TextOr($"{feature.Module}: {transition.Name}", l[transition.Name])
+      : l[transition.Name];
+    var targetLabel = target != null ? l[target.Name] : verbLabel;
+    var label = verbLabel != transition.Name ? verbLabel : targetLabel;
+    var title = target?.Title != null ? l[target.Title] : null;
+    var confirmMessage = transition.Confirm != null ? l[transition.Confirm] : null;
+    var confirm = transition.Ask is not null || confirmMessage is null
+      ? null
+      : new OverlayConfirmModel { Message = confirmMessage, Color = target?.Color };
+    var ask = transition.Ask is null
+      ? null
+      : new FormAskModel
+      {
+        Title = label,
+        Message = confirmMessage,
+        Color = target?.Color,
+        Elements = LocalizeElements(transition.Ask.BuildElements(), l)
+      };
+    var unavailableReasons = transition.Offers.Count == 0
+      ? null
+      : transition.Offers.Select(o => l[o.Reason]).ToList();
+
+    return (
+      $"status.{transition.Name.ToLowerInvariant()}",
+      $"move-status/{transition.Name.ToLowerInvariant()}",
+      label,
+      title,
+      target?.Color,
+      confirm,
+      ask,
+      unavailableReasons);
+  }
+
+  public static async Task<Dictionary<string, object?>> ResolveActionDefaultsAsync(
+    Func<CancellationToken, Task<object?>>? defaultProvider,
+    RecordAsk? ask,
+    PlatformDbContext db,
+    PlatformAppService? app,
+    CancellationToken ct)
+  {
+    if (defaultProvider == null)
+    {
+      return [];
+    }
+
+    var rawDefaults = await defaultProvider(ct);
+    if (rawDefaults == null)
+    {
+      return [];
+    }
+
+    var jsonText = JsonSerializer.Serialize(rawDefaults, PlatformJsonOptions.DefaultOptions);
+    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    if (ask != null)
+    {
+      foreach (var el in ask.BuildElements())
+      {
+        if (string.IsNullOrEmpty(el.ReferencePath) ||
+            el.Model is not FormSelectModel selectModel ||
+            string.IsNullOrEmpty(selectModel.ReferenceService))
+        {
+          continue;
+        }
+
+        if (dict.TryGetValue(el.Path, out var rawVal) &&
+            rawVal is JsonElement { ValueKind: JsonValueKind.Number } je &&
+            je.TryGetInt64(out var refId) &&
+            refId > 0)
+        {
+          var refServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService);
+          if (ModuleCatalog.GetServiceEntityType(refServiceType) is { } refEntityType)
+          {
+            try
+            {
+              var targetDb = db.Model.FindEntityType(refEntityType) != null
+                ? db
+                : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType!, db, app) as Grid.IGridService)?.DbContext ?? db;
+              var loaded = await targetDb.FindAsync(refEntityType, [refId], ct);
+              var name = loaded != null
+                ? (PropertyAccessorCache.GetValue(loaded, "Name") ??
+                   PropertyAccessorCache.GetValue(loaded, "Title") ??
+                   PropertyAccessorCache.GetValue(loaded, "Number"))?.ToString()
+                : null;
+              dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? name : $"#{refId}" };
+            }
+            catch { }
+          }
+        }
+      }
+    }
+
+    return dict;
+  }
+}

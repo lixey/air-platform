@@ -1,3 +1,5 @@
+using Platform.App.Screens.Internals;
+
 namespace Platform.App.Form;
 
 public abstract partial class FormService<TEntity, TInput>
@@ -108,11 +110,6 @@ public abstract partial class FormService<TEntity, TInput>
       }
 
       actionEntity = entity;
-      if (PlatformApp != null)
-      {
-        await PlatformApp.ClearAuthCacheForEntityAsync(entity, db, mutationCt);
-      }
-
       return new FormActionDto
       {
         Outcome = MutationOutcome.Committed,
@@ -187,8 +184,7 @@ public abstract partial class FormService<TEntity, TInput>
       var transition = statusFlow.Transitions.FirstOrDefault(t =>
         string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
 
-      if (transition == null ||
-          User != null && User.IsAuthenticated && !User.Can(Feature.Action(transition.Name)) && !User.Can(Feature.Edit) && !User.Can(Feature.All))
+      if (transition == null || !StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
       {
         return new FormActionDto
         {

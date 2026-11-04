@@ -221,6 +221,11 @@ public abstract partial class FormService<TEntity, TInput>
 
   private static void CopyMatchingProperties(object source, object target, HashSet<string>? protectedPaths = null)
   {
+    if (ReferenceEquals(source, target))
+    {
+      return;
+    }
+
     var srcType = source.GetType();
     var tgtType = target.GetType();
 
@@ -382,54 +387,15 @@ public abstract partial class FormService<TEntity, TInput>
 
   private (string? Service, long? ParentId, IReadOnlyList<ChildGridBuilder> Children)? _cachedParentChildren;
 
-  private ChildGridBuilder? ResolveParentChildBuilder(bool requirePreset = false)
-  {
-    var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
-      ? Request.ParentService
-      : GetParent().BoundParentService;
-    if (string.IsNullOrEmpty(effectiveParentService))
-    {
-      return null;
-    }
-
-    IReadOnlyList<ChildGridBuilder> children;
-    if (_cachedParentChildren is { } cached &&
-        string.Equals(cached.Service, effectiveParentService, StringComparison.OrdinalIgnoreCase) &&
-        cached.ParentId == Request.ParentId)
-    {
-      children = cached.Children;
-    }
-    else
-    {
-      children = [];
-      var parentFormType = ModuleCatalog.Instance.FindServiceType(effectiveParentService);
-      if (parentFormType != null &&
-          typeof(IFormService).IsAssignableFrom(parentFormType) &&
-          ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, PlatformApp) is IFormService parentForm)
-      {
-        parentForm.SetRequest(new FormRequest { Id = Request.ParentId });
-        (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
-      }
-
-      _cachedParentChildren = (effectiveParentService, Request.ParentId, children);
-    }
-
-    return children.FirstOrDefault(c =>
-      !c.IsFiles &&
-      (!requirePreset || c.PresetProvider != null) &&
-      ((c.ChildEntityType ?? GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false));
-  }
-
-  private static Type? GetGridEntityType(Type? type)
-  {
-    for (var t = type; t != null && t != typeof(object); t = t.BaseType)
-    {
-      if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Grid.GridService<,>))
-      {
-        return t.GetGenericArguments()[0];
-      }
-    }
-
-    return null;
-  }
+  private ChildGridBuilder? ResolveParentChildBuilder(bool requirePreset = false) =>
+    ParentScopeValidator.ResolveChildBuilder(
+      db,
+      PlatformApp,
+      Request.ParentService,
+      GetParent().BoundParentService,
+      Request.ParentId,
+      ref _cachedParentChildren,
+      c => !c.IsFiles &&
+           (!requirePreset || c.PresetProvider != null) &&
+           ((c.ChildEntityType ?? ParentScopeValidator.GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false));
 }

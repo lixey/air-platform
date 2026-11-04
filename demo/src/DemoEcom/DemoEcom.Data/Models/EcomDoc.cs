@@ -58,13 +58,13 @@ public sealed class EcomDoc : AppBaseModel
   [Precision(18, 6)]
   public decimal Rate { get; set; } = 1m;
 
-  [Precision(18, 3)]
+  [Precision(18, 3), NoAudit]
   public decimal Qty { get; set; }
 
   [Precision(18, 2)]
   public decimal Amount { get; set; }
 
-  [Precision(18, 2)]
+  [Precision(18, 2), NoAudit]
   public decimal PaidAmount { get; set; }
 
   public DateOnly? DueDate { get; set; }

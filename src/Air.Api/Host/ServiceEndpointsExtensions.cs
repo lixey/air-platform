@@ -1,3 +1,5 @@
+using Platform.Api.Host.Internals;
+
 namespace Platform.Api.Host;
 
 public static class ServiceEndpointsExtensions
@@ -111,10 +113,7 @@ public static class ServiceEndpointsExtensions
       ps.AttachPlatformApp(appInstance);
     }
 
-    var actionMethod = serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-      .Where(IsCallableServiceAction)
-      .FirstOrDefault(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
-                           string.Equals(m.Name, method.Replace("-", ""), StringComparison.OrdinalIgnoreCase));
+    var actionMethod = ServiceRequestBinder.ResolveCallableActionMethod(serviceType, method);
     if (actionMethod == null)
     {
       return Results.NotFound();
@@ -144,14 +143,15 @@ public static class ServiceEndpointsExtensions
     var usesRawHttpRequest = parameters.Any(p => p.ParameterType == typeof(HttpRequest) || p.ParameterType == typeof(HttpContext));
 
     JsonElement? rawBody = null;
-    if (!usesRawHttpRequest && HasJsonBody(httpRequest) && !httpRequest.HasFormContentType)
+    if (!usesRawHttpRequest)
     {
-      try
+      var (parsedBody, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+      if (isMalformed)
       {
-        using var doc = await JsonDocument.ParseAsync(httpRequest.Body, cancellationToken: ct);
-        rawBody = doc.RootElement.Clone();
+        return Results.BadRequest(new { detail = "Malformed JSON request body." });
       }
-      catch { }
+
+      rawBody = parsedBody;
     }
 
     long? parsedId = null;

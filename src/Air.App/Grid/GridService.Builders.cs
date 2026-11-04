@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
@@ -18,69 +20,21 @@ public abstract partial class GridService<TEntity, TRow>
   {
     internal Func<IQueryable<TEntity>, long, IQueryable<TEntity>>? FilterFunc { get; private set; }
     public Type? BoundParentServiceType { get; private set; }
-    public Type? BoundParentEntityType => GetFormEntityType(BoundParentServiceType);
+    public Type? BoundParentEntityType => ParentScopeValidator.GetFormEntityType(BoundParentServiceType);
     public string? BoundParentService { get; private set; }
     public PropertyInfo? BoundProperty { get; private set; }
     public bool IsOptional { get; private set; }
     public bool HasRead { get; private set; }
 
-    public bool MatchesService(string? parentService)
-    {
-      if (string.IsNullOrEmpty(parentService) || string.IsNullOrEmpty(BoundParentService))
-      {
-        return true;
-      }
-
-      if (string.Equals(parentService, BoundParentService, StringComparison.OrdinalIgnoreCase))
-      {
-        return true;
-      }
-
-      if (BoundParentServiceType != null &&
-          ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType)
-      {
-        if (BoundParentServiceType.IsAssignableFrom(actualType) ||
-            actualType.IsAssignableFrom(BoundParentServiceType))
-        {
-          return true;
-        }
-
-        if (GetFormEntityType(BoundParentServiceType) is { } expectedEntity &&
-            expectedEntity == GetFormEntityType(actualType))
-        {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    private static Type? GetFormEntityType(Type? type)
-    {
-      for (var t = type; t != null && t != typeof(object); t = t.BaseType)
-      {
-        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Form.FormService<,>))
-        {
-          return t.GetGenericArguments()[0];
-        }
-      }
-
-      return null;
-    }
+    public bool MatchesService(string? parentService) =>
+      ParentScopeValidator.MatchesService(parentService, BoundParentService, BoundParentServiceType);
 
     public void Bind<TParentService>(Expression<Func<TEntity, long>> member, bool optional = false)
     {
       BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
-      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
-      {
-        BoundProperty = pi;
-      }
-      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi)
-      {
-        BoundProperty = upi;
-      }
+      BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
 
       var param = member.Parameters[0];
       FilterFunc = (q, parentId) =>
@@ -96,14 +50,7 @@ public abstract partial class GridService<TEntity, TRow>
       BoundParentServiceType = typeof(TParentService);
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       IsOptional = optional;
-      if (member.Body is MemberExpression me && me.Member is PropertyInfo pi)
-      {
-        BoundProperty = pi;
-      }
-      else if (member.Body is UnaryExpression ue && ue.Operand is MemberExpression ueme && ueme.Member is PropertyInfo upi)
-      {
-        BoundProperty = upi;
-      }
+      BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
 
       var param = member.Parameters[0];
       FilterFunc = (q, parentId) =>

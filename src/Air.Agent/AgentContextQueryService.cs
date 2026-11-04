@@ -40,7 +40,7 @@ public static class AgentContextQueryService
 
       var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
       var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-      var defaultValues = await GetDefaultFormValuesAsync(formInst, editableElements, ct);
+      var defaultValues = await GetDefaultFormValuesAsync(formInst, ct);
 
       var editableFields = new List<object>();
       foreach (var el in editableElements)
@@ -79,7 +79,7 @@ public static class AgentContextQueryService
         {
           var (childElements, _) = await childForm.GetElementsMetadataAsync(ct);
           var childEditable = childElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-          var childDefaults = await GetDefaultFormValuesAsync(childForm, childEditable, ct);
+          var childDefaults = await GetDefaultFormValuesAsync(childForm, ct);
           var childFields = new List<object>();
           foreach (var cel in childEditable)
           {
@@ -528,8 +528,7 @@ public static class AgentContextQueryService
       }
 
       var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
-      var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-      var values = await GetExistingFormValuesAsync(formInst, recordId.Value, editableElements, ct);
+      var values = await GetExistingFormValuesAsync(formInst, recordId.Value, ct);
 
       var existingLines = new List<Dictionary<string, object?>>();
       var lineChild = children.FirstOrDefault(c => !c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType));
@@ -616,138 +615,13 @@ public static class AgentContextQueryService
   public static async Task<Dictionary<string, object?>> GetExistingFormValuesAsync(
     IFormService formInst,
     long recordId,
-    IReadOnlyList<FormElementDto> editableElements,
-    CancellationToken ct)
-  {
-    var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-    var modelObj = await formInst.GetModelAsync(new FormRequest { Id = recordId }, ct);
-    if (modelObj == null)
-    {
-      return values;
-    }
-
-    var jsonEl = JsonSerializer.SerializeToElement(modelObj, WebJson);
-    if (jsonEl.ValueKind == JsonValueKind.Object)
-    {
-      PopulateValuesFromJsonElement(jsonEl, editableElements, values, ignoreZeroNumbers: false);
-    }
-
-    return values;
-  }
+    CancellationToken ct) =>
+    (await formInst.PrepareDraftAsync(recordId, ct: ct)).Values;
 
   public static async Task<Dictionary<string, object?>> GetDefaultFormValuesAsync(
     IFormService formInst,
-    IReadOnlyList<FormElementDto> editableElements,
-    CancellationToken ct)
-  {
-    var defaults = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-    try
-    {
-      var modelObj = await formInst.GetModelAsync(new FormRequest(), ct);
-      if (modelObj == null)
-      {
-        return defaults;
-      }
-
-      var jsonEl = JsonSerializer.SerializeToElement(modelObj, WebJson);
-      if (jsonEl.ValueKind == JsonValueKind.Object)
-      {
-        PopulateValuesFromJsonElement(jsonEl, editableElements, defaults, ignoreZeroNumbers: true);
-      }
-    }
-    catch
-    {
-      // Ignore default model resolution errors
-    }
-
-    return defaults;
-  }
-
-  private static void PopulateValuesFromJsonElement(
-    JsonElement jsonEl,
-    IReadOnlyList<FormElementDto> editableElements,
-    Dictionary<string, object?> target,
-    bool ignoreZeroNumbers)
-  {
-    foreach (var el in editableElements)
-    {
-      if (!TryGetPropertyIgnoreCase(jsonEl, el.Path, out var prop) ||
-          prop.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-      {
-        continue;
-      }
-
-      if (el.Model is FormSelectModel select)
-      {
-        if (select.IsMultiple || el.ValueKind == FormValueKind.List)
-        {
-          if (prop.ValueKind == JsonValueKind.Array)
-          {
-            var ids = new List<long>();
-            foreach (var item in prop.EnumerateArray())
-            {
-              if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var id) && id > 0)
-              {
-                ids.Add(id);
-              }
-            }
-
-            if (!ignoreZeroNumbers || ids.Count > 0)
-            {
-              target[el.Path] = ids;
-            }
-          }
-        }
-        else if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt64(out var refId) && refId > 0)
-        {
-          target[el.Path] = refId;
-        }
-        else if (prop.ValueKind == JsonValueKind.Object && TryGetLong(prop, "id") is > 0 and var objRefId)
-        {
-          target[el.Path] = objRefId;
-        }
-
-        continue;
-      }
-
-      if (el.Type is UiFieldType.Date or UiFieldType.Datetime)
-      {
-        if (prop.ValueKind == JsonValueKind.String &&
-            prop.GetString() is { Length: > 0 } dateStr &&
-            !dateStr.StartsWith("0001-01-01", StringComparison.Ordinal))
-        {
-          target[el.Path] = dateStr;
-        }
-
-        continue;
-      }
-
-      if (el.Type == UiFieldType.Checkbox && prop.ValueKind is JsonValueKind.True or JsonValueKind.False)
-      {
-        target[el.Path] = prop.GetBoolean();
-        continue;
-      }
-
-      if (el.Type == UiFieldType.Number && prop.ValueKind == JsonValueKind.Number)
-      {
-        if (!ignoreZeroNumbers && el.Model is not FormMoneyModel && prop.TryGetInt64(out var lngVal))
-        {
-          target[el.Path] = lngVal;
-        }
-        else if (prop.TryGetDecimal(out var decVal) && (!ignoreZeroNumbers || decVal != 0m))
-        {
-          target[el.Path] = decVal;
-        }
-
-        continue;
-      }
-
-      if (prop.ValueKind == JsonValueKind.String && prop.GetString() is { Length: > 0 } str)
-      {
-        target[el.Path] = str;
-      }
-    }
-  }
+    CancellationToken ct) =>
+    (await formInst.PrepareDraftAsync(recordId: null, ct: ct)).Values;
 
   private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
   {

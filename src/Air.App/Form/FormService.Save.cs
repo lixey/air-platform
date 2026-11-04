@@ -409,7 +409,7 @@ public abstract partial class FormService<TEntity, TInput>
         statusFlow.Initialize(entity);
       }
 
-      var newLoadInput = new TInput();
+      var newLoadInput = entity is TInput sameNew ? sameNew : new TInput();
       CopyMatchingProperties(entity, newLoadInput);
       ApplyParentChildPreset(entity, newLoadInput, parent);
 
@@ -561,6 +561,22 @@ public abstract partial class FormService<TEntity, TInput>
       {
         await db.SaveChangesAsync(ct);
       }
+    }
+
+    if (parent.BoundProperty != null)
+    {
+      var oldParentId = !IsNew && originalValues != null && originalValues.TryGetValue(parent.BoundProperty.Name, out var oldVal) && oldVal is long oldPid
+        ? oldPid
+        : (long?)null;
+      var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
+      await ParentScopeValidator.RecalculateBoundParentsAsync(
+        db,
+        PlatformApp,
+        Request.ParentService,
+        parent.BoundParentService,
+        parent.BoundParentServiceType,
+        [oldParentId, newParentId],
+        ct);
     }
 
     _lastSavedEntity = entity;
