@@ -22,7 +22,7 @@ public static partial class AgentProposalBuilder
     var argSessionId = TryGetString(args, "sessionId");
     var sessionId = AgentStore.NormalizeSessionId(
       argSessionId
-      ?? bridge?.GetContext(argSessionId)?.SessionId
+      ?? bridge?.GetContext(argSessionId, owner.TenantId, owner.UserId)?.SessionId
       ?? "default");
 
     var descriptors = AgentFeatureRegistry.DiscoverForms(db, app);
@@ -42,6 +42,61 @@ public static partial class AgentProposalBuilder
     if (isEdit)
     {
       targetDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(descriptors, targetDesc, requestedService, recordId!.Value, db, app, ct);
+    }
+    else if (valuesSource.ValueKind == JsonValueKind.Object &&
+             ModuleCatalog.Instance.CreateServiceInstance(targetDesc.FormServiceType, db, app) is IFormService initialForm &&
+             initialForm.Feature.ServiceType != null &&
+             typeof(IGridService).IsAssignableFrom(initialForm.Feature.ServiceType) &&
+             ModuleCatalog.Instance.CreateServiceInstance(initialForm.Feature.ServiceType, db, app) is IGridService ownerGrid)
+    {
+      var siblingCreates = ownerGrid.GetCreateForms();
+      var explicitlyMatchedSibling = !string.IsNullOrWhiteSpace(requestedService) &&
+        siblingCreates.Any(c =>
+          string.Equals(c.ServicePath, requestedService, StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(AgentFeatureRegistry.NormalizeServiceKey(c.ServicePath), AgentFeatureRegistry.NormalizeServiceKey(requestedService), StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(c.Label, requestedService, StringComparison.OrdinalIgnoreCase));
+      if (siblingCreates.Count > 1 && !explicitlyMatchedSibling)
+      {
+        var providedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in valuesSource.EnumerateObject())
+        {
+          if (prop.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+          {
+            providedKeys.Add(prop.Name);
+          }
+        }
+
+        if (providedKeys.Count > 0)
+        {
+          var bestScore = -1;
+          GridCreateDescriptor? bestSibling = null;
+          foreach (var candidate in siblingCreates)
+          {
+            if (ModuleCatalog.Instance.CreateServiceInstance(candidate.FormServiceType, db, app) is not IFormService candForm)
+            {
+              continue;
+            }
+
+            var (candEls, _) = await candForm.GetElementsMetadataAsync(ct);
+            var candPaths = candEls
+              .Where(AgentFeatureRegistry.IsEditableElement)
+              .Select(e => e.Path)
+              .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var score = providedKeys.Count(candPaths.Contains);
+            if (score > bestScore)
+            {
+              bestScore = score;
+              bestSibling = candidate;
+            }
+          }
+
+          if (bestSibling != null && bestScore > 0)
+          {
+            targetDesc = descriptors.FirstOrDefault(d => string.Equals(d.ServicePath, bestSibling.ServicePath, StringComparison.OrdinalIgnoreCase))
+              ?? bestSibling;
+          }
+        }
+      }
     }
 
     if (ModuleCatalog.Instance.CreateServiceInstance(targetDesc.FormServiceType, db, app) is not IFormService formInst ||
@@ -68,10 +123,9 @@ public static partial class AgentProposalBuilder
     GridCreateDescriptor? childFormDesc = null;
     IFormService? childFormInst = null;
     List<FormElementDto> childEditableElements = [];
-    if (lineChild?.ServiceType != null &&
-        ModuleCatalog.Instance.CreateServiceInstance(lineChild.ServiceType, db, app) is IGridService childGrid)
+    if (lineChild?.ServiceType != null)
     {
-      childFormDesc = childGrid.GetCreateForms().FirstOrDefault();
+      childFormDesc = AgentFeatureRegistry.ResolveChildCreateForm(lineChild.ServiceType, db, app);
       if (childFormDesc != null &&
           ModuleCatalog.Instance.CreateServiceInstance(childFormDesc.FormServiceType, db, app) is IFormService childForm)
       {
@@ -421,7 +475,13 @@ public static partial class AgentProposalBuilder
             if (resolvedCellId == null && cel.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
             {
               var baseName = cel.Path[..^2];
-              foreach (var alias in new[] { $"{baseName}Name", baseName })
+              var isPrimaryRefWithoutNameField =
+                !childEditableElements.Any(e => string.Equals(e.Path, "name", StringComparison.OrdinalIgnoreCase)) &&
+                ReferenceEquals(cel, childEditableElements.FirstOrDefault(e => e.Model is FormSelectModel));
+              var aliases = isPrimaryRefWithoutNameField
+                ? new[] { $"{baseName}Name", baseName, "name" }
+                : new[] { $"{baseName}Name", baseName };
+              foreach (var alias in aliases)
               {
                 if (TryGetPropertyIgnoreCase(item, alias, out var aliasProp))
                 {
@@ -521,23 +581,31 @@ public static partial class AgentProposalBuilder
           usedLinePaths.Add(secondaryRefEl.Path);
         }
 
+        var lineOverrides = explicitlySetLineFields.ToDictionary(
+          k => k,
+          k => lineDict.GetValueOrDefault(k),
+          StringComparer.OrdinalIgnoreCase);
         var lineDraft = await childFormInst.PrepareDraftAsync(
           recordId: null,
-          overrides: lineDict,
+          overrides: lineOverrides,
           parentId: isEdit ? recordId : null,
           parentService: targetDesc.ServicePath,
           ct: ct);
         foreach (var (k, v) in lineDraft.Values)
         {
-          if (v != null)
+          if (!explicitlySetLineFields.Contains(k) && v != null)
           {
             lineDict[k] = v;
           }
         }
 
-        var qty = TryGetDecimal(item, "qty") is > 0 and var q
+        var qty = (TryGetDecimal(item, "qty") ?? TryGetDecimal(item, "quantity")) is > 0 and var q
           ? q
-          : (lineDict.TryGetValue("qty", out var defQ) && TryConvertToDecimal(defQ, out var dq) && dq > 0 ? dq : 1m);
+          : (lineDict.TryGetValue("qty", out var defQ) && TryConvertToDecimal(defQ, out var dq) && dq > 0
+            ? dq
+            : lineDict.TryGetValue("quantity", out var defQuantity) && TryConvertToDecimal(defQuantity, out var dqn) && dqn > 0
+              ? dqn
+              : 1m);
         var price = TryGetDecimal(item, "price")
           ?? (lineDict.TryGetValue("price", out var defP) && TryConvertToDecimal(defP, out var dp) && dp != 0m ? dp : null);
         var amount = TryGetDecimal(item, "amount")
@@ -559,6 +627,11 @@ public static partial class AgentProposalBuilder
         if (childEditableElements.Any(e => e.Path.Equals("qty", StringComparison.OrdinalIgnoreCase)))
         {
           lineDict["qty"] = qty;
+        }
+
+        if (childEditableElements.Any(e => e.Path.Equals("quantity", StringComparison.OrdinalIgnoreCase)))
+        {
+          lineDict["quantity"] = qty;
         }
 
         if (childEditableElements.Any(e => e.Path.Equals("price", StringComparison.OrdinalIgnoreCase)))

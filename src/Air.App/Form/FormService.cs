@@ -798,6 +798,11 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   private async Task EnsureEntityAndParentLoadedAsync(CancellationToken ct = default)
   {
     IsNew = Request.Id is null or <= 0;
+    if (IsNew && CurrentEntity?.Id is > 0)
+    {
+      CurrentEntity = null;
+    }
+
     var parent = GetParent();
     if (!IsNew && Request.Id is > 0 && CurrentEntity?.Id != Request.Id.Value)
     {
@@ -825,6 +830,20 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     await EnsureEntityAndParentLoadedAsync(ct);
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
+    var parent = GetParent();
+    if (parent.BoundProperty != null && Request.ParentId is > 0)
+    {
+      var boundPath = Elements.ToCamelPath(parent.BoundProperty.Name);
+      foreach (var el in elements.List)
+      {
+        if (string.Equals(el.Path, boundPath, StringComparison.OrdinalIgnoreCase))
+        {
+          el.IsDisabled = true;
+          el.IsServerOwned = true;
+        }
+      }
+    }
+
     LocalizeAndResolveSelectElements(elements);
     _lastElements = elements;
     return elements;

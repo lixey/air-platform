@@ -135,6 +135,7 @@ export class SelectComponent implements FormValueControl<unknown> {
   private readonly overlay = inject(OverlayService);
   private readonly mutations = inject(ScreenMutations, { optional: true });
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly description = inject(FIELD_DESCRIPTION, { optional: true });
   /** How the box is drawn: its own, or the whole of a cell whose editor it is. */
   protected readonly look = inject(FIELD_LOOK, { optional: true }) ?? 'box';
@@ -184,7 +185,7 @@ export class SelectComponent implements FormValueControl<unknown> {
         this.write(options);
       }
     });
-    inject(DestroyRef).onDestroy(() => subscription.unsubscribe());
+    this.destroyRef.onDestroy(() => subscription.unsubscribe());
   }
 
   protected open(event: Event): void {
@@ -234,11 +235,17 @@ export class SelectComponent implements FormValueControl<unknown> {
     this.acceptsResult.set(true);
     const targetService = overlayModel.screen?.service;
     const ref = this.overlay.open(overlayModel, this.combobox().nativeElement, this.injector);
+    let lastAppliedKey: string | null = null;
     const applySaved = (data: FormDataDto | null | undefined) => {
       if (!data || typeof data.id !== 'number' || data.id <= 0 || !this.acceptsResult()) {
         return;
       }
       const option = optionOfRow({ ...data.value, id: data.id }, this.model().labelPaths);
+      const appliedKey = `${option.id}:${data.ver ?? ''}:${option.label}`;
+      if (appliedKey === lastAppliedKey) {
+        return;
+      }
+      lastAppliedKey = appliedKey;
       const current = this.picked();
       const next = this.multiple()
         ? current.some(o => o.id === option.id)
@@ -255,9 +262,14 @@ export class SelectComponent implements FormValueControl<unknown> {
     const closedSub = ref.closed.subscribe(result => {
       unsubscribeMutation?.();
       closedSub.unsubscribe();
+      unregisterDestroy();
       if (isFormData(result)) {
         applySaved(result);
       }
+    });
+    const unregisterDestroy = this.destroyRef.onDestroy(() => {
+      unsubscribeMutation?.();
+      closedSub.unsubscribe();
     });
   }
 
@@ -266,8 +278,8 @@ export class SelectComponent implements FormValueControl<unknown> {
     if (this.refusesInput()) {
       return;
     }
-    this.picked.set([...options]);
     this.value.set(this.multiple() ? options.map(option => option.id) : (options[0]?.id ?? null));
+    this.picked.set([...options]);
     this.select.setPicked(options);
   }
 }

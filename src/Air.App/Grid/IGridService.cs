@@ -12,6 +12,7 @@ public interface IGridService : IPlatformService
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
+  Task<bool> BindParentAsync(string? parentService, long? parentId, CancellationToken ct = default) => Task.FromResult(true);
   Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   IReadOnlyList<string>? GetLabelNavigationPaths() => null;

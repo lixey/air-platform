@@ -71,7 +71,7 @@ internal sealed class CacheProvider(HybridCache cache) : ICacheProvider
 
     if (createdNull && result is null)
     {
-      await cache.RemoveAsync(key, ct);
+      await cache.RemoveAsync(key, CancellationToken.None);
     }
 
     return result;

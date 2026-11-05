@@ -106,6 +106,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   public GridColumn<TProp> Cell(CellModel cell)
   {
     dto.Cell = cell;
+    ReapplyColorPathIfConfigured();
     return this;
   }
 
@@ -168,6 +169,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
       Color = o.Color,
       Title = o.Title != null ? Localizer.Instance[o.Title] : null
     }).ToList();
+    ReapplyColorPathIfConfigured();
     return this;
   }
 
@@ -322,6 +324,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
       dto.FilterPath = dto.Path + "Id";
     }
 
+    ReapplyColorPathIfConfigured();
     return this;
   }
 
@@ -350,6 +353,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
       ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     }
 
+    ReapplyColorPathIfConfigured();
     return this;
   }
 
@@ -470,9 +474,20 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     ApplyColorPath();
   }
 
+  private void ReapplyColorPathIfConfigured()
+  {
+    if (dto.ColorEvaluator != null || dto.ColorExpression != null || !string.IsNullOrEmpty(dto.ColorNavPath))
+    {
+      ApplyColorPath();
+    }
+  }
+
   protected void ApplyColorPath()
   {
-    var isRef = dto.Cell is GridCellReferenceModel || dto.ReferenceService != null || typeof(Reference).IsAssignableFrom(dto.MemberType);
+    var isRef = dto.Cell is GridCellReferenceModel or GridCellSelectModel ||
+                dto.ReferenceService != null ||
+                dto.Options is { Count: > 0 } ||
+                typeof(Reference).IsAssignableFrom(dto.MemberType);
     dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : $"{dto.Path}Color";
   }
 
@@ -505,11 +520,19 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     {
       null or ParameterExpression => false,
       ConstantExpression c => c.Value != null && !c.Type.IsPrimitive && !c.Type.IsEnum && c.Type != typeof(string) && c.Type != typeof(decimal),
-      MemberExpression m => ContainsClosure(m.Expression),
+      MemberExpression m => IsCollectionNavigationType(m.Type) || ContainsClosure(m.Expression),
       UnaryExpression u => ContainsClosure(u.Operand),
       BinaryExpression b => ContainsClosure(b.Left) || ContainsClosure(b.Right),
       ConditionalExpression cond => ContainsClosure(cond.Test) || ContainsClosure(cond.IfTrue) || ContainsClosure(cond.IfFalse),
-      MethodCallExpression call => ContainsClosure(call.Object) || call.Arguments.Any(ContainsClosure),
+      MethodCallExpression call => call.Method.DeclaringType == typeof(Queryable) ||
+                                   call.Method.DeclaringType == typeof(Enumerable) ||
+                                   ContainsClosure(call.Object) ||
+                                   call.Arguments.Any(ContainsClosure),
       _ => true
     };
+
+  private static bool IsCollectionNavigationType(Type type) =>
+    type != typeof(string) &&
+    type != typeof(byte[]) &&
+    typeof(IEnumerable).IsAssignableFrom(type);
 }

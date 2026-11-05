@@ -4,7 +4,7 @@ public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomSer
   : EcomFormService<EcomDocLine>(db, ecom)
   where TDocForm : class
 {
-  protected override bool IsReadOnly => base.IsReadOnly || ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true };
+  protected override bool IsReadOnly => base.IsReadOnly || (ParentRecord<EcomDoc>() is { } doc ? doc.DocStatus is not { IsEditable: true } : !IsNew);
 
   protected override string Title => "Line";
 

@@ -9,6 +9,11 @@ public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) 
   {
     get
     {
+      if (AsyncLocalTenantContext.Instance.HasExplicitSystemScope)
+      {
+        return null;
+      }
+
       if (AsyncLocalTenantContext.Instance.TenantId is { } ambient)
       {
         return ambient;

@@ -536,7 +536,13 @@ export class LayoutAgentComponent {
         }
       }
     });
-    inject(DestroyRef).onDestroy(() => subscription.unsubscribe());
+    inject(DestroyRef).onDestroy(() => {
+      subscription.unsubscribe();
+      if (this.copyTimer !== null) {
+        clearTimeout(this.copyTimer);
+        this.copyTimer = null;
+      }
+    });
 
     let lastMessageCount = 0;
     effect(() => {

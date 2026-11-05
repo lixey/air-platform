@@ -27,7 +27,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       FileName = agyPath,
       WorkingDirectory = store.WorkspaceDirectory,
       RedirectStandardOutput = true,
-      RedirectStandardError = true,
+      RedirectStandardError = false,
       UseShellExecute = false,
       CreateNoWindow = true,
       StandardOutputEncoding = Encoding.UTF8
@@ -49,13 +49,18 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       stdout = await proc.StandardOutput.ReadToEndAsync(timeoutCts.Token);
       await proc.WaitForExitAsync(timeoutCts.Token);
     }
-    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    catch (OperationCanceledException)
     {
       try
       {
         proc.Kill(entireProcessTree: true);
       }
       catch { }
+
+      if (ct.IsCancellationRequested)
+      {
+        throw;
+      }
 
       return [];
     }

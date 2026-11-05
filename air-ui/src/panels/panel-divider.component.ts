@@ -1,4 +1,4 @@
-import { afterNextRender, Component, computed, ElementRef, inject, input, output, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, output, signal } from '@angular/core';
 import type { PanelDirection } from '../core/generated/contracts';
 import { FOCUS_RING_OUTSIDE } from '../theme/css-classes';
 
@@ -56,6 +56,7 @@ export class PanelDividerComponent {
   private static readonly LargeStep = 50;
 
   private readonly host = inject(ElementRef<HTMLElement>);
+  private stopDrag: (() => void) | null = null;
 
   /** Direction of the container this divider sits in. */
   readonly direction = input.required<PanelDirection>();
@@ -116,6 +117,7 @@ export class PanelDividerComponent {
 
   constructor() {
     afterNextRender(() => this.measureNeighbours());
+    inject(DestroyRef).onDestroy(() => this.stopDrag?.());
   }
 
   /**
@@ -148,6 +150,7 @@ export class PanelDividerComponent {
     }
 
     event.preventDefault();
+    this.stopDrag?.();
 
     const isRow = this.direction() === 'row';
     const origin = isRow ? event.clientX : event.clientY;
@@ -166,7 +169,8 @@ export class PanelDividerComponent {
       this.dragMove.emit((isRow ? moveEvent.clientX : moveEvent.clientY) - origin);
     };
 
-    const onEnd = (): void => {
+    const cleanup = (): void => {
+      this.stopDrag = null;
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onEnd);
       document.removeEventListener('pointercancel', onEnd);
@@ -176,6 +180,10 @@ export class PanelDividerComponent {
       if (element.hasPointerCapture?.(event.pointerId)) {
         element.releasePointerCapture(event.pointerId);
       }
+    };
+
+    const onEnd = (): void => {
+      cleanup();
       this.dragEnd.emit();
       this.measureNeighbours();
     };
@@ -188,6 +196,8 @@ export class PanelDividerComponent {
         onEnd();
       }
     };
+
+    this.stopDrag = cleanup;
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onEnd);

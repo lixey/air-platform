@@ -1,3 +1,4 @@
+using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
@@ -92,30 +93,55 @@ public abstract partial class FormService<TEntity>
         }
       }
 
-      var ctx = new FormActionContext<TEntity>(entity, ct => db.SaveChangesAsync(ct), db);
-      await handler(ctx, entity, mutationCt);
-      if (ctx.Errors.Count > 0)
+      try
+      {
+        var oldParentId = parent.BoundProperty != null ? parent.BoundProperty.GetValue(entity) as long? : null;
+        var ctx = new FormActionContext<TEntity>(entity, ct => db.SaveChangesAsync(ct), db);
+        await handler(ctx, entity, mutationCt);
+        if (ctx.Errors.Count > 0)
+        {
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+          };
+        }
+
+        if (db.ChangeTracker.HasChanges())
+        {
+          await db.SaveChangesAsync(mutationCt);
+        }
+
+        if (parent.BoundProperty != null)
+        {
+          var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
+          await ParentScopeValidator.RecalculateBoundParentsAsync(
+            db,
+            PlatformApp,
+            Request.ParentService,
+            parent.BoundParentService,
+            parent.BoundParentServiceType,
+            [oldParentId, newParentId],
+            mutationCt);
+        }
+
+        actionEntity = entity;
+        return new FormActionDto
+        {
+          Outcome = MutationOutcome.Committed,
+          OpenScreen = ctx.OpenScreen,
+          OpenId = ctx.OpenId,
+          Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
+        };
+      }
+      catch (DbUpdateConcurrencyException)
       {
         return new FormActionDto
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+          Outcome = MutationOutcome.Conflict,
+          Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
         };
       }
-
-      if (db.ChangeTracker.HasChanges())
-      {
-        await db.SaveChangesAsync(mutationCt);
-      }
-
-      actionEntity = entity;
-      return new FormActionDto
-      {
-        Outcome = MutationOutcome.Committed,
-        OpenScreen = ctx.OpenScreen,
-        OpenId = ctx.OpenId,
-        Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
-      };
     }, ct: cancellationToken);
 
     if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && actionEntity != null)
@@ -143,8 +169,9 @@ public abstract partial class FormService<TEntity>
     IsNew = false;
 
     var parent = GetParent();
+    TEntity? movedEntity = null;
 
-    return await db.RunMutationAsync(async mutationCt =>
+    var result = await db.RunMutationAsync(async mutationCt =>
     {
       var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
 
@@ -208,6 +235,7 @@ public abstract partial class FormService<TEntity>
 
       try
       {
+        var oldParentId = parent.BoundProperty != null ? parent.BoundProperty.GetValue(entity) as long? : null;
         var context = new MutationContext(db);
         await statusFlow.MoveAsync(context, [entity], transition.Name, input, mutationCt);
 
@@ -220,6 +248,20 @@ public abstract partial class FormService<TEntity>
           };
         }
 
+        if (parent.BoundProperty != null)
+        {
+          var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
+          await ParentScopeValidator.RecalculateBoundParentsAsync(
+            db,
+            PlatformApp,
+            Request.ParentService,
+            parent.BoundParentService,
+            parent.BoundParentServiceType,
+            [oldParentId, newParentId],
+            mutationCt);
+        }
+
+        movedEntity = entity;
         return new FormActionDto
         {
           Outcome = MutationOutcome.Committed,
@@ -235,5 +277,12 @@ public abstract partial class FormService<TEntity>
         };
       }
     }, ct: ct);
+
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && movedEntity != null)
+    {
+      await PlatformApp.ClearAuthCacheForEntityAsync(movedEntity, db, ct);
+    }
+
+    return result;
   }
 }

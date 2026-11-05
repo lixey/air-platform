@@ -73,7 +73,7 @@ internal static class CliTurnRunner
     }
 
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, providerHandle);
-    var contextFilePath = Path.Combine(store.WorkspaceDirectory, $"context-{AgentStore.NormalizeSessionId(request.SessionId)}.json");
+    var contextFilePath = AgentStore.GetContextFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
     try
     {
       if (File.Exists(contextFilePath))
@@ -121,25 +121,26 @@ internal static class CliTurnRunner
     configureStartInfo(psi, prompt, existingConvId);
 
     using var process = new Process { StartInfo = psi };
-    process.Start();
-    process.StandardInput.Close();
-    var stderrTask = process.StandardError.ReadToEndAsync(ct);
-
-    yield return new AgentStreamEventDto
-    {
-      Type = "status",
-      Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
-      ModelId = selectedModel,
-      ModelName = modelDisplayName
-    };
-
     var fullAssistantText = new StringBuilder();
     var emittedProposals = 0;
     var emittedError = false;
     var pendingEvents = new List<AgentStreamEventDto>();
+    Task<string>? stderrTask = null;
 
     try
     {
+      process.Start();
+      process.StandardInput.Close();
+      stderrTask = process.StandardError.ReadToEndAsync(ct);
+
+      yield return new AgentStreamEventDto
+      {
+        Type = "status",
+        Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
+        ModelId = selectedModel,
+        ModelName = modelDisplayName
+      };
+
       while (!ct.IsCancellationRequested)
       {
         var line = await process.StandardOutput.ReadLineAsync(ct);
@@ -199,23 +200,23 @@ internal static class CliTurnRunner
     }
     finally
     {
-      if (!process.HasExited && !ct.IsCancellationRequested)
+      try
       {
-        try
+        if (!process.HasExited && !ct.IsCancellationRequested)
         {
           await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
         }
-        catch { }
       }
+      catch { }
 
-      if (!process.HasExited)
+      try
       {
-        try
+        if (!process.HasExited)
         {
           process.Kill(entireProcessTree: true);
         }
-        catch { }
       }
+      catch { }
 
       if (File.Exists(contextFilePath))
       {
@@ -250,7 +251,9 @@ internal static class CliTurnRunner
       string? stderr = null;
       try
       {
-        stderr = (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim();
+        stderr = stderrTask is not null
+          ? (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim()
+          : null;
       }
       catch { }
 

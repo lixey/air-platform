@@ -262,4 +262,23 @@ public static class AgentFeatureRegistry
 
     return null;
   }
+
+  public static GridCreateDescriptor? ResolveChildCreateForm(
+    Type childGridServiceType,
+    PlatformDbContext db,
+    PlatformAppService app)
+  {
+    try
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(childGridServiceType, db, app) is IGridService childGrid &&
+          !childGrid.Feature.IsReadOnly &&
+          CanEditFeature(childGrid.Feature, app))
+      {
+        return childGrid.GetCreateForms().FirstOrDefault();
+      }
+    }
+    catch { }
+
+    return null;
+  }
 }

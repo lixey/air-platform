@@ -7,6 +7,16 @@ internal static class GridProjectionBuilder
   private static readonly ConcurrentDictionary<(Type EntityType, string Signature), LambdaExpression> Cache = new();
   private static readonly ConcurrentDictionary<(Type EntityType, string ColSig), LambdaExpression?> FastCache = new();
 
+  public static bool HasIncludeExpressions(Expression? expression) =>
+    expression switch
+    {
+      null => false,
+      MethodCallExpression call => call.Method.Name is "Include" or "ThenInclude" ||
+                                   HasIncludeExpressions(call.Object) ||
+                                   call.Arguments.Any(HasIncludeExpressions),
+      _ => false
+    };
+
   public static Expression<Func<TEntity, TEntity>>? TryBuildSelector<TEntity>(
     IReadOnlyList<GridColumnDto> columns,
     bool hasCustomShapeRow)
@@ -22,7 +32,8 @@ internal static class GridProjectionBuilder
     for (var i = 0; i < columns.Count; i++)
     {
       var col = columns[i];
-      if (col.ColorEvaluator != null && col.ColorExpression == null && string.IsNullOrEmpty(col.ColorNavPath))
+      if (col.FormServiceResolver != null ||
+          col.ColorEvaluator != null && col.ColorExpression == null && string.IsNullOrEmpty(col.ColorNavPath))
       {
         return null;
       }

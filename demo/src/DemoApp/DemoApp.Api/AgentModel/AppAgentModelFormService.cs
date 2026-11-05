@@ -23,21 +23,28 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
   {
     hooks.AfterLoad(async (c, ct) =>
     {
-      if (c.IsNew && string.IsNullOrEmpty(c.Entity.ProviderHandle))
+      if (c.IsNew)
       {
-        var defProvider = await db.AppAgentProvider
-          .AsNoTracking()
-          .Where(p => p.IsActive)
-          .OrderBy(p => p.SortOrder)
-          .FirstOrDefaultAsync(ct);
-        c.Entity.ProviderHandle = defProvider?.Handle ?? "Agy";
-        c.Entity.ProviderName = defProvider?.Name ?? "Antigravity CLI (agy)";
-        c.Entity.SortOrder = 50;
-        c.Entity.IsActive = true;
-      }
-      else if (c.IsNew && c.Entity.SortOrder == 0)
-      {
-        c.Entity.SortOrder = 50;
+        var hasActiveProvider = !string.IsNullOrEmpty(c.Entity.ProviderHandle) &&
+          await db.AppAgentProvider
+            .AsNoTracking()
+            .AnyAsync(p => p.Handle == c.Entity.ProviderHandle && p.IsActive, ct);
+        if (!hasActiveProvider)
+        {
+          var defProvider = await db.AppAgentProvider
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.SortOrder)
+            .FirstOrDefaultAsync(ct);
+          c.Entity.ProviderHandle = defProvider?.Handle ?? "Agy";
+          c.Entity.ProviderName = defProvider?.Name ?? "Antigravity CLI (agy)";
+          c.Entity.IsActive = true;
+        }
+
+        if (c.Entity.SortOrder == 0)
+        {
+          c.Entity.SortOrder = 50;
+        }
       }
     });
 

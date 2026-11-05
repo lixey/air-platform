@@ -249,12 +249,15 @@ public abstract partial class ChangeGridService
       var efProp = efEntity?.FindProperty(propName);
       var fk = efProp?.GetContainingForeignKeys().FirstOrDefault();
       var principalType = fk?.PrincipalEntityType.ClrType;
-      if (principalType != null)
+      if (principalType != null && fk?.PrincipalKey.Properties is [{ ClrType: var pkType }])
       {
         try
         {
           var principalDb = targetDb.Model.FindEntityType(principalType) != null ? targetDb : GetDbContextForTable(principalType.Name);
-          var refEntity = await principalDb.FindAsync(principalType, [fkId], ct);
+          var pkVal = pkType == typeof(long)
+            ? (object)fkId
+            : Convert.ChangeType(fkId, Nullable.GetUnderlyingType(pkType) ?? pkType, CultureInfo.InvariantCulture);
+          var refEntity = await principalDb.FindAsync(principalType, [pkVal], ct);
           if (refEntity != null)
           {
             var rawName = PropertyAccessorCache.GetReferenceLabel(refEntity);

@@ -1,4 +1,4 @@
-import { Component, computed, DestroyRef, inject, input, linkedSignal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, linkedSignal, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
@@ -153,13 +153,22 @@ export class ReportComponent {
   constructor() {
     ReportComponent.liveReports.add(this);
     this.subscribeMutations();
+    effect(() => {
+      this.data();
+      this.cancelActiveRequest();
+    });
     this.destroyRef.onDestroy(() => {
       ReportComponent.liveReports.delete(this);
       this.unsubscribeMutations?.();
       this.unsubscribeMutations = null;
-      this.activeSub?.unsubscribe();
-      this.activeSub = null;
+      this.cancelActiveRequest();
     });
+  }
+
+  private cancelActiveRequest(): void {
+    this.activeSub?.unsubscribe();
+    this.activeSub = null;
+    this.isLoading.set(false);
   }
 
   private subscribeMutations(): void {
@@ -175,7 +184,10 @@ export class ReportComponent {
           this.applyFilters(current.activeFilters);
         }
       },
-      invalidate: () => this.subscribeMutations(),
+      invalidate: () => {
+        this.cancelActiveRequest();
+        this.subscribeMutations();
+      },
     });
   }
 

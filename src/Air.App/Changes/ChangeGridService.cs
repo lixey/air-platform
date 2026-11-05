@@ -80,11 +80,23 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   protected override void SetQuery(Query query)
   {
+    var hasGlobalView = base.CanView(new GridRequest(), User);
     if (!string.IsNullOrEmpty(ParentService) && ParentId is > 0)
     {
       var tableName = ResolveParentTableName(ParentService);
-      var rowId = ParentId.Value;
-      query.Where(r => r.Table == tableName && r.RowId == rowId);
+      if (string.IsNullOrEmpty(tableName))
+      {
+        query.Where(_ => false);
+      }
+      else
+      {
+        var rowId = ParentId.Value;
+        query.Where(r => r.Table == tableName && r.RowId == rowId);
+      }
+    }
+    else if (!hasGlobalView)
+    {
+      query.Where(_ => false);
     }
 
     query.NamedFilter("operation")

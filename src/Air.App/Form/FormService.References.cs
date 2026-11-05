@@ -129,12 +129,35 @@ public abstract partial class FormService<TEntity>
       {
         foreach (var navPath in allNavPaths)
         {
-          var rootNav = navPath.Split('.')[0];
-          var navVal = PropertyAccessorCache.GetValue(targetEntity, rootNav);
-          var fkVal = PropertyAccessorCache.GetValue(targetEntity, rootNav + "Id") as long?;
-          if (fkVal is > 0 && (navVal == null || navVal is IEntity navEntity && navEntity.Id != fkVal.Value))
+          var segments = navPath.Split('.');
+          object? currentObj = targetEntity;
+          for (var i = 0; i < segments.Length; i++)
           {
-            needsNavReload = true;
+            var segment = segments[i];
+            var navVal = PropertyAccessorCache.GetValue(currentObj, segment);
+            var fkVal = PropertyAccessorCache.GetValue(currentObj, segment + "Id") as long?;
+            if (fkVal is > 0 && (navVal == null || navVal is IEntity navEntity && navEntity.Id != fkVal.Value))
+            {
+              needsNavReload = true;
+              break;
+            }
+
+            if (fkVal is null or <= 0 && navVal != null && PropertyAccessorCache.GetProperty(currentObj.GetType(), segment + "Id") != null)
+            {
+              PropertyAccessorCache.GetSetter(currentObj.GetType(), segment)?.Invoke(currentObj, null);
+              navVal = null;
+            }
+
+            if (navVal == null)
+            {
+              break;
+            }
+
+            currentObj = navVal;
+          }
+
+          if (needsNavReload)
+          {
             break;
           }
         }
@@ -231,7 +254,7 @@ public abstract partial class FormService<TEntity>
 
       if (selectModel?.IsMultiple == true)
       {
-        var keys = dict.TryGetValue(el.Path, out var multiRaw) ? ExtractLongKeys(multiRaw) : [];
+        var keys = TryGetValueIgnoreCase(dict, el.Path, out var multiRaw) ? ExtractLongKeys(multiRaw) : [];
 
         var refs = new List<Reference>(keys.Count);
         if (keys.Count > 0 && !string.IsNullOrEmpty(selectModel.ReferenceService))
@@ -260,7 +283,7 @@ public abstract partial class FormService<TEntity>
         continue;
       }
 
-      var key = dict.TryGetValue(el.Path, out var rawVal) ? ExtractLongKey(rawVal) : null;
+      var key = TryGetValueIgnoreCase(dict, el.Path, out var rawVal) ? ExtractLongKey(rawVal) : null;
       if (key is null or <= 0)
       {
         dict[el.ReferencePath] = null;
@@ -276,6 +299,11 @@ public abstract partial class FormService<TEntity>
       var navSourceType = navSource.GetType();
       var navObj = PropertyAccessorCache.GetValue(navSource, el.ReferencePath)
         ?? (!ReferenceEquals(navSource, entity) ? PropertyAccessorCache.GetValue(entity, el.ReferencePath) : null);
+      if (navObj is IEntity navEnt && navEnt.Id != key.Value)
+      {
+        navObj = null;
+      }
+
       if (navObj == null)
       {
         var candidateName = el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
@@ -284,11 +312,19 @@ public abstract partial class FormService<TEntity>
         if (PropertyAccessorCache.GetProperty(navSourceType, candidateName) is not null)
         {
           navObj = PropertyAccessorCache.GetValue(navSource, candidateName);
+          if (navObj is IEntity candNavEnt && candNavEnt.Id != key.Value)
+          {
+            navObj = null;
+          }
         }
 
         if (navObj == null && !ReferenceEquals(navSource, entity) && PropertyAccessorCache.GetProperty(entityType, candidateName) is not null)
         {
           navObj = PropertyAccessorCache.GetValue(entity, candidateName);
+          if (navObj is IEntity entityNavEnt && entityNavEnt.Id != key.Value)
+          {
+            navObj = null;
+          }
         }
       }
 
@@ -341,6 +377,19 @@ public abstract partial class FormService<TEntity>
       {
         allowedKeys.Add(el.ReferencePath);
       }
+
+      CollectFilterFields(el.VisibleWhen, allowedKeys);
+      CollectFilterFields(el.DisabledWhen, allowedKeys);
+      if (el.Model is FormSelectModel { ReferenceDraftRules: { Count: > 0 } draftRules })
+      {
+        foreach (var dr in draftRules)
+        {
+          if (!string.IsNullOrEmpty(dr.DraftField))
+          {
+            allowedKeys.Add(dr.DraftField);
+          }
+        }
+      }
     }
 
     foreach (var prop in entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -348,6 +397,8 @@ public abstract partial class FormService<TEntity>
       if (Attribute.IsDefined(prop, typeof(SensitiveAttribute)))
       {
         allowedKeys.Remove(JsonNamingPolicy.CamelCase.ConvertName(prop.Name));
+        allowedKeys.Remove(Elements.ToCamelPath(prop.Name));
+        allowedKeys.Remove(prop.Name);
       }
     }
 
@@ -360,6 +411,43 @@ public abstract partial class FormService<TEntity>
           dict.Remove(key);
         }
       }
+    }
+  }
+
+  private static bool TryGetValueIgnoreCase(Dictionary<string, object?> dict, string key, out object? value)
+  {
+    if (dict.TryGetValue(key, out value))
+    {
+      return true;
+    }
+
+    foreach (var kvp in dict)
+    {
+      if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+      {
+        value = kvp.Value;
+        return true;
+      }
+    }
+
+    value = null;
+    return false;
+  }
+
+  private static void CollectFilterFields(FilterNode? node, HashSet<string> target)
+  {
+    switch (node)
+    {
+      case FilterRule rule when !string.IsNullOrEmpty(rule.Field):
+        target.Add(rule.Field);
+        break;
+      case FilterGroup { Items: { Count: > 0 } items }:
+        foreach (var child in items)
+        {
+          CollectFilterFields(child, target);
+        }
+
+        break;
     }
   }
 

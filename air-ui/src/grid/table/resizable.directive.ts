@@ -49,6 +49,7 @@ export class ResizableDirective {
     this.host.addEventListener('pointermove', this.onPointerMove);
     this.host.addEventListener('pointerup', this.onPointerUp);
     this.host.addEventListener('pointercancel', this.onPointerUp);
+    this.host.addEventListener('lostpointercapture', this.onPointerUp);
   }
 
   private isHandle(target: EventTarget | null): boolean {

@@ -97,7 +97,7 @@ internal static class ReferenceLookupAllowlist
   {
     if (requested is not { Count: > 0 })
     {
-      return null;
+      return gridDefaultLabels is { Count: > 0 } ? [.. gridDefaultLabels] : ["name"];
     }
 
     AllowedLabels.TryGetValue(serviceType, out var registered);

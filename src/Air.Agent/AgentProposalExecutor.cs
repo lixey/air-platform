@@ -262,7 +262,8 @@ public static class AgentProposalExecutor
                 }, mutationCt);
                 if (delRes.Outcome != MutationOutcome.Committed)
                 {
-                  throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
+                  var delErr = delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
+                  throw new InvalidOperationException(delErr);
                 }
               }
               else
@@ -276,7 +277,8 @@ public static class AgentProposalExecutor
                   }, mutationCt);
                   if (delRes.Outcome != MutationOutcome.Committed)
                   {
-                    throw new InvalidOperationException(delRes.Title ?? L["MutationRefused"]);
+                    var delErr = delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
+                    throw new InvalidOperationException(delErr);
                   }
                 }
               }
@@ -321,7 +323,8 @@ public static class AgentProposalExecutor
                   if (!TryExtractSavedId(savedLine, out _))
                   {
                     var lineName = lineDict.TryGetValue("name", out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
-                    throw new InvalidOperationException($"{lineName}: {L["MutationRefused"]}");
+                    var lineErr = (savedLine as FormDataDto)?.Warnings?.FirstOrDefault()?.Detail ?? L["MutationRefused"];
+                    throw new InvalidOperationException($"{lineName}: {lineErr}");
                   }
                 }
                 catch (FormRefusedException refusedEx)

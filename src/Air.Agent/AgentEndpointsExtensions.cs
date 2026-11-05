@@ -306,8 +306,12 @@ public static class AgentEndpointsExtensions
       IAgentModelSynchronizer synchronizer,
       CancellationToken ct) =>
     {
-      var culture = !string.IsNullOrWhiteSpace(body.Locale) && body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
-        ? CultureInfo.GetCultureInfo("en-US")
+      var culture = !string.IsNullOrWhiteSpace(body.Locale)
+        ? (body.Locale.StartsWith("uk", StringComparison.OrdinalIgnoreCase) || body.Locale.StartsWith("ua", StringComparison.OrdinalIgnoreCase)
+          ? CultureInfo.GetCultureInfo("uk-UA")
+          : body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+            ? CultureInfo.GetCultureInfo("en-US")
+            : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request))
         : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
       CultureInfo.CurrentCulture = culture;
       CultureInfo.CurrentUICulture = culture;
@@ -433,22 +437,11 @@ public static class AgentEndpointsExtensions
 
       using var scope = bridge.BeginTurn(tenantContext.TenantId, tenantContext.UserId, tenantContext.Rights, sessionId);
 
-      var fullText = new StringBuilder();
       await foreach (var evt in provider.StreamTurnAsync(turnReq, ct))
       {
-        if (evt.Type == "text" && !string.IsNullOrEmpty(evt.Text))
-        {
-          fullText.Append(evt.Text);
-        }
-
         var json = JsonSerializer.Serialize(evt, JsonOptions);
         await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
         await ctx.Response.Body.FlushAsync(ct);
-      }
-
-      if (fullText.Length > 0)
-      {
-        await AgentPromptBuilder.SaveInlineMemoriesAsync(fullText.ToString(), turnReq, ct);
       }
     });
   }

@@ -19,6 +19,7 @@ import { classifyMutationFailure, type MutationFailure, refusalDetailOf, refusal
 import { TextsService } from '../core/texts.service';
 import { ConfirmationService } from '../overlay/confirmation.service';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
+import { referenceOf } from './cell/grid-cell-format';
 import { cellQuestionOf } from './grid-cell-question';
 import { type GridRow, type GridRowKey, keyOf } from './grid-row';
 
@@ -177,7 +178,7 @@ export class GridCellEdits {
     this.edit.set({
       key,
       path: column.path,
-      value: valueAt(row, column.path),
+      value: cellEditValueOf(row, column),
       isSaving: false,
       messages: [],
       ...(takesTyped ? { typed } : {}),
@@ -211,7 +212,7 @@ export class GridCellEdits {
       this.cancel();
       return;
     }
-    if (sameValue(edit.value, valueAt(row, edit.path))) {
+    if (sameValue(edit.value, cellEditValueOf(row, column))) {
       this.end(edit);
       this.move(move, row, edit.path);
       return;
@@ -369,6 +370,12 @@ export class GridCellEdits {
   private rowOf(key: GridRowKey): GridRow | undefined {
     return untracked(this.options.rows).find(row => keyOf(row) === key);
   }
+}
+
+/** The value an editor starts with and compares against: the option's key for a select column, the cell's value otherwise. */
+function cellEditValueOf(row: GridRow, column: GridColumnDto): unknown {
+  const raw = valueAt(row, column.path);
+  return column.cell.kind === 'GridCellSelect' ? (referenceOf(raw)?.id ?? raw ?? null) : raw;
 }
 
 /** Whether two values of a cell are the same, by structure. */

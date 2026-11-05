@@ -265,6 +265,6 @@ public static class UiTexts
     }
     catch { }
 
-    return seed.ToFrozenDictionary(StringComparer.Ordinal);
+    return seed.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
   }
 }

@@ -344,6 +344,7 @@ export function splitMarkdownAndGfmTables(
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const result: ({ kind: 'markdown'; content: string } | { kind: 'table'; table: ReportTableDto })[] = [];
   let mdBuffer: string[] = [];
+  let activeFence: string | null = null;
   let i = 0;
 
   const flushMd = (): void => {
@@ -356,6 +357,25 @@ export function splitMarkdownAndGfmTables(
 
   while (i < lines.length) {
     const line = lines[i];
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (!activeFence) {
+        activeFence = marker;
+      } else if (marker[0] === activeFence[0] && marker.length >= activeFence.length && /^ {0,3}(`{3,}|~{3,})\s*$/.test(line)) {
+        activeFence = null;
+      }
+      mdBuffer.push(line);
+      i++;
+      continue;
+    }
+
+    if (activeFence) {
+      mdBuffer.push(line);
+      i++;
+      continue;
+    }
+
     const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
 
     if (line.trim().includes('|') && isSeparatorRow(nextLine)) {
@@ -364,7 +384,7 @@ export function splitMarkdownAndGfmTables(
       const rawDataRows: string[][] = [];
       i += 2;
 
-      while (i < lines.length && lines[i].trim().includes('|')) {
+      while (i < lines.length && lines[i].trim().includes('|') && !/^ {0,3}(`{3,}|~{3,})/.test(lines[i])) {
         if (!isSeparatorRow(lines[i])) {
           rawDataRows.push(splitMarkdownTableRow(lines[i]));
         }

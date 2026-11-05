@@ -9,12 +9,22 @@ internal sealed class ResilientIntConverter : JsonConverter<int>
       return 0;
     }
 
-    if (reader.TokenType == JsonTokenType.String && int.TryParse(reader.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
+    if (reader.TokenType == JsonTokenType.String)
     {
-      return val;
+      var str = reader.GetString();
+      if (string.IsNullOrWhiteSpace(str))
+      {
+        return 0;
+      }
+
+      return int.TryParse(str, NumberStyles.Any, CultureInfo.InvariantCulture, out var val)
+        ? val
+        : throw new JsonException($"Unable to convert \"{str}\" to {nameof(Int32)}.");
     }
 
-    return reader.GetInt32();
+    return reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var num)
+      ? num
+      : throw new JsonException($"Unable to convert {reader.TokenType} to {nameof(Int32)}.");
   }
   public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) => writer.WriteNumberValue(value);
 }

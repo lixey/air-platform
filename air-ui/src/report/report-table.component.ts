@@ -181,7 +181,7 @@ export class ReportTableComponent {
     const sKey = this.sortKey();
     if (sKey) {
       const dir = this.sortDir() === 'asc' ? 1 : -1;
-      rows = [...rows].sort((a, b) => compareValues(a[sKey], b[sKey]) * dir);
+      rows = [...rows].sort((a, b) => compareValues(a[sKey], b[sKey], dir));
     }
 
     return rows;
@@ -377,25 +377,46 @@ export class ReportTableComponent {
   }
 }
 
-function compareValues(a: unknown, b: unknown): number {
+function isEmptyCellValue(val: unknown): boolean {
+  return val === null || val === undefined || val === '';
+}
+
+function asComparableNumber(val: unknown): number | null {
+  if (typeof val === 'number') {
+    return Number.isNaN(val) ? null : val;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const num = Number(trimmed);
+    return Number.isNaN(num) ? null : num;
+  }
+  return null;
+}
+
+function compareValues(a: unknown, b: unknown, dir = 1): number {
+  const aEmpty = isEmptyCellValue(a);
+  const bEmpty = isEmptyCellValue(b);
+  if (aEmpty && bEmpty) {
+    return 0;
+  }
+  if (aEmpty) {
+    return 1;
+  }
+  if (bEmpty) {
+    return -1;
+  }
   if (a === b) {
     return 0;
   }
-  if (a === null || a === undefined || a === '') {
-    return 1;
+  const numA = asComparableNumber(a);
+  const numB = asComparableNumber(b);
+  if (numA !== null && numB !== null) {
+    return (numA - numB) * dir;
   }
-  if (b === null || b === undefined || b === '') {
-    return -1;
-  }
-  if (typeof a === 'number' && typeof b === 'number') {
-    return a - b;
-  }
-  const numA = Number(a);
-  const numB = Number(b);
-  if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
-    return numA - numB;
-  }
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' }) * dir;
 }
 
 export function asUiColor(color: string | null | undefined): UiColor | null {

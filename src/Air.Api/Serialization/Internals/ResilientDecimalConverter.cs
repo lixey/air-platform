@@ -9,12 +9,22 @@ internal sealed class ResilientDecimalConverter : JsonConverter<decimal>
       return 0m;
     }
 
-    if (reader.TokenType == JsonTokenType.String && decimal.TryParse(reader.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
+    if (reader.TokenType == JsonTokenType.String)
     {
-      return val;
+      var str = reader.GetString();
+      if (string.IsNullOrWhiteSpace(str))
+      {
+        return 0m;
+      }
+
+      return decimal.TryParse(str, NumberStyles.Any, CultureInfo.InvariantCulture, out var val)
+        ? val
+        : throw new JsonException($"Unable to convert \"{str}\" to {nameof(Decimal)}.");
     }
 
-    return reader.GetDecimal();
+    return reader.TokenType == JsonTokenType.Number && reader.TryGetDecimal(out var num)
+      ? num
+      : throw new JsonException($"Unable to convert {reader.TokenType} to {nameof(Decimal)}.");
   }
   public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options) => writer.WriteNumberValue(value);
 }

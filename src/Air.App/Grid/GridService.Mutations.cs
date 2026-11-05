@@ -265,6 +265,8 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Committed,
+        Id = records.Count == 1 ? records[0].Id : null,
+        Count = records.Count,
         OpenScreen = ctx.OpenScreen,
         OpenId = ctx.OpenId,
         Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, records, MessageType.Warning) : null
@@ -378,6 +380,8 @@ public abstract partial class GridService<TEntity, TRow>
             Warnings = FormatErrors(context.Errors, entities)
           };
         }
+
+        await RecalculateBoundParentsForEntitiesAsync(entities, mutationCt);
 
         return new GridActionDto
         {
@@ -650,7 +654,7 @@ public abstract partial class GridService<TEntity, TRow>
       return shaped;
     }
 
-    var defaultSelector = typeof(TRow) == typeof(TEntity)
+    var defaultSelector = CanUseDefaultProjection(query, queryDeclaration)
       ? GridProjectionBuilder.TryBuildSelector<TEntity>(cols.List, HasCustomShapeRow)
       : null;
     var entity = defaultSelector != null
@@ -675,6 +679,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     await PopulateComputedColumnsAsync(singleShapedList, cols.List, ct);
     await PopulateCoversAsync(singleShapedList, cols.List, ct);
+    await PopulateProjectedColorsAsync(singleShapedList, cols.List, ct);
     await PopulateRowAvailabilityAsync(singleShapedList, cols, ct);
     return shapedEntity;
   }
@@ -761,7 +766,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
     else
     {
-      var exportSelector = typeof(TRow) == typeof(TEntity)
+      var exportSelector = CanUseDefaultProjection(query, queryDeclaration)
         ? GridProjectionBuilder.TryBuildSelector<TEntity>(exportColumns, HasCustomShapeRow)
         : null;
       var defaultDataProvider = exportSelector != null

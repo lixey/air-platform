@@ -18,7 +18,16 @@ public sealed class TransitionAsk<TInput>(Action<ActionInput<TInput>> elements) 
       return new TInput();
     }
 
-    return input.Value.Deserialize<TInput>(PlatformJsonOptions.DefaultOptions) ?? new TInput();
+    var el = input.Value;
+    if (el.TryGetProperty("value", out var nestedValue) &&
+        nestedValue.ValueKind == JsonValueKind.Object &&
+        (typeof(FormRequest).IsAssignableFrom(typeof(TInput)) ||
+         PropertyAccessorCache.GetProperty(typeof(TInput), "Value") == null))
+    {
+      return nestedValue.Deserialize<TInput>(PlatformJsonOptions.DefaultOptions) ?? new TInput();
+    }
+
+    return el.Deserialize<TInput>(PlatformJsonOptions.DefaultOptions) ?? new TInput();
   }
 
   public override IReadOnlyList<MessageDto> Validate(object? input, ILocalizer localizer)

@@ -96,8 +96,14 @@ internal static class AuthEndpointsExtensions
 
       await authStore.UpdateLoginStateAsync(user, 0, 0, null, now, ct);
 
-      var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
-      var tenantId = (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId;
+      var userHomeTenantId = (user as IHasTenant)?.TenantId;
+      SecurityInfo securityInfo;
+      using (AsyncLocalTenantContext.Use(userHomeTenantId, null, user.Id))
+      {
+        securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
+      }
+
+      var tenantId = userHomeTenantId ?? securityInfo.HomeTenantId;
       var refreshToken = SessionTokenService.CreateRefreshToken();
       var session = authStore.CreateSession(
         user.Id,
@@ -268,8 +274,23 @@ internal static class AuthEndpointsExtensions
           return Results.Unauthorized();
         }
 
-        session.LastUsedAt = now;
-        await authStore.SaveChangesAsync(ct);
+        try
+        {
+          session.LastUsedAt = now;
+          await authStore.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+          foreach (var entry in ex.Entries)
+          {
+            await entry.ReloadAsync(ct);
+          }
+
+          if (session.RevokedAt != null || session.ExpiresAt <= now)
+          {
+            return Results.Unauthorized();
+          }
+        }
       }
       else
       {
@@ -278,8 +299,27 @@ internal static class AuthEndpointsExtensions
         session.RefreshTokenHash = SessionTokenService.HashRefreshToken(nextRefresh);
         session.RotatedAt = now;
         session.LastUsedAt = now;
-        await authStore.SaveChangesAsync(ct);
-        IssueRefreshCookie(ctx.Response, nextRefresh, session.ExpiresAt, ctx.Request.IsHttps);
+        try
+        {
+          await authStore.SaveChangesAsync(ct);
+          IssueRefreshCookie(ctx.Response, nextRefresh, session.ExpiresAt, ctx.Request.IsHttps);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+          foreach (var entry in ex.Entries)
+          {
+            await entry.ReloadAsync(ct);
+          }
+
+          if (session.RevokedAt != null ||
+              session.ExpiresAt <= now ||
+              session.PreviousRefreshTokenHash != providedHash ||
+              session.RotatedAt is not { } rotatedAt ||
+              now - rotatedAt > TimeSpan.FromSeconds(30))
+          {
+            return Results.Unauthorized();
+          }
+        }
       }
 
       if (authCache != null)
@@ -429,7 +469,7 @@ internal static class AuthEndpointsExtensions
         await authCache.RemoveUserAsync(user.Id, ct);
       }
 
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion);
+      IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
       return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
     };
 

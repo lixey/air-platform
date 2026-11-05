@@ -130,11 +130,12 @@ public static class PlatformSqlServerExtensions
 
       if (item is IHasTenant tenantEntity)
       {
-        if (tenantEntity.TenantId == 0 && tenantId.HasValue)
+        if (tenantEntity.TenantId == 0)
         {
-          tenantEntity.TenantId = tenantId.Value;
+          tenantEntity.TenantId = tenantId ?? throw new InvalidOperationException(
+            $"Cannot bulk import '{typeof(TEntity).Name}' without an active tenant.");
         }
-        else if (tenantId.HasValue && tenantEntity.TenantId != 0 && tenantEntity.TenantId != tenantId.Value)
+        else if (tenantId.HasValue && tenantEntity.TenantId != tenantId.Value)
         {
           throw new InvalidOperationException($"Cannot bulk import '{typeof(TEntity).Name}' belonging to another tenant.");
         }

@@ -98,14 +98,27 @@ internal static class AgentValueHelpers
     IReadOnlyList<Dictionary<string, object?>> rows,
     FilterNode? filter)
   {
-    if (filter == null || rows.Count == 0)
+    if (filter == null || rows.Count == 0 || !RowsExposeFilterFields(rows, filter))
     {
       return rows;
     }
 
-    var filtered = rows.Where(r => MatchesReferenceFilter(r, filter)).ToList();
-    return filtered.Count > 0 ? filtered : rows;
+    return rows.Where(r => MatchesReferenceFilter(r, filter)).ToList();
   }
+
+  private static bool RowsExposeFilterFields(IReadOnlyList<Dictionary<string, object?>> rows, FilterNode node) =>
+    node switch
+    {
+      FilterGroup group => group.Items.Count == 0 || group.Items.All(item => RowsExposeFilterFields(rows, item)),
+      FilterRule rule when !string.IsNullOrEmpty(rule.Field) =>
+        string.Equals(rule.Operator, FilterOperator.IsNull, StringComparison.OrdinalIgnoreCase) ||
+        rows.Any(r =>
+          r.ContainsKey(rule.Field) ||
+          rule.Field.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
+          rule.Field.Length > 2 &&
+          r.ContainsKey(rule.Field[..^2])),
+      _ => false
+    };
 
   public static bool MatchesReferenceFilter(Dictionary<string, object?> row, FilterNode filter) =>
     FilterNodeEvaluator.Evaluate(filter, field =>

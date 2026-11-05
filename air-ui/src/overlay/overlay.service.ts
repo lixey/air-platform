@@ -1,4 +1,4 @@
-import { computed, inject, Injector, Service, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injector, Service, signal } from '@angular/core';
 import type { OverlayDto } from '../core/generated/contracts';
 import { resolveModel } from '../core/resolve-model';
 import { toBound } from '../panels/panel-size';
@@ -123,7 +123,13 @@ export class OverlayService {
    * aria reads.
    */
   menu(): OverlayMenu {
-    return new OverlayMenu(this);
+    const menu = new OverlayMenu(this);
+    try {
+      inject(DestroyRef, { optional: true })?.onDestroy(() => menu.close());
+    } catch {
+      // Called outside an injection context; caller manages lifecycle explicitly.
+    }
+    return menu;
   }
 
   /** The frame's measure of the work area, or `null` when the frame goes away. */

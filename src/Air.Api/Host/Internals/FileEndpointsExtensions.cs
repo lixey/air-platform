@@ -24,33 +24,41 @@ internal static class FileEndpointsExtensions
         return Results.NotFound();
       }
 
-      var type = link.ContentType;
-      var name = link.Name;
-
-      if (link.IsThumbnail)
+      try
       {
-        var head = new byte[Files.Internals.FileTypeTable.ThumbnailHeadBytes];
-        var read = await stream.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, httpContext.RequestAborted);
-        if (Files.Internals.FileTypeTable.ThumbnailTypeOf(head.AsSpan(0, read)) is not { } thumbnail)
+        var type = link.ContentType;
+        var name = link.Name;
+
+        if (link.IsThumbnail)
         {
-          await stream.DisposeAsync();
-          return Results.NotFound();
+          var head = new byte[Files.Internals.FileTypeTable.ThumbnailHeadBytes];
+          var read = await stream.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, httpContext.RequestAborted);
+          if (Files.Internals.FileTypeTable.ThumbnailTypeOf(head.AsSpan(0, read)) is not { } thumbnail)
+          {
+            await stream.DisposeAsync();
+            return Results.NotFound();
+          }
+
+          stream.Seek(0, SeekOrigin.Begin);
+          type = thumbnail;
+          name = Path.GetFileNameWithoutExtension(link.Name) + (thumbnail == FileType.WebP ? ".webp" : ".jpg");
         }
 
-        stream.Seek(0, SeekOrigin.Begin);
-        type = thumbnail;
-        name = Path.GetFileNameWithoutExtension(link.Name) + (thumbnail == FileType.WebP ? ".webp" : ".jpg");
+        var isInline = !httpContext.Request.Query.ContainsKey("download") &&
+                       (link.IsThumbnail || Files.Internals.FileTypeTable.IsServedInline(type));
+
+        var disposition = new ContentDispositionHeaderValue(isInline ? "inline" : "attachment");
+        disposition.SetHttpFileName(name);
+        httpContext.Response.Headers.ContentDisposition = disposition.ToString();
+        httpContext.Response.Headers[HeaderNames.XContentTypeOptions] = "nosniff";
+
+        return Results.Stream(stream, type, enableRangeProcessing: true);
       }
-
-      var isInline = !httpContext.Request.Query.ContainsKey("download") &&
-                     (link.IsThumbnail || Files.Internals.FileTypeTable.IsServedInline(type));
-
-      var disposition = new ContentDispositionHeaderValue(isInline ? "inline" : "attachment");
-      disposition.SetHttpFileName(name);
-      httpContext.Response.Headers.ContentDisposition = disposition.ToString();
-      httpContext.Response.Headers[HeaderNames.XContentTypeOptions] = "nosniff";
-
-      return Results.Stream(stream, type, enableRangeProcessing: true);
+      catch
+      {
+        await stream.DisposeAsync();
+        throw;
+      }
     });
   }
 }

@@ -343,8 +343,7 @@ public abstract partial class FileGridService<TFile>
 
     var rules = FileRulesAttribute.Of(typeof(TFile));
     var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
-    var storage = Stores.Of(storeKey);
-    var keysToDelete = new List<string>();
+    var keysToDelete = new List<(string? Store, string Key)>();
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
@@ -377,14 +376,15 @@ public abstract partial class FileGridService<TFile>
           parentsLosingCover.Add(parentVal);
         }
 
+        var itemStore = item.Store ?? storeKey;
         if (!string.IsNullOrEmpty(item.StorageKey))
         {
-          keysToDelete.Add(item.StorageKey);
+          keysToDelete.Add((itemStore, item.StorageKey));
         }
 
         if (!string.IsNullOrEmpty(item.ThumbnailKey))
         {
-          keysToDelete.Add(item.ThumbnailKey);
+          keysToDelete.Add((itemStore, item.ThumbnailKey));
         }
 
         db.Set<TFile>().Remove(item);
@@ -422,7 +422,7 @@ public abstract partial class FileGridService<TFile>
 
     if (result.Outcome == MutationOutcome.Committed && keysToDelete.Count > 0)
     {
-      var distinctKeys = keysToDelete.Distinct(StringComparer.Ordinal).ToList();
+      var distinctKeys = keysToDelete.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToList();
       var referencedKeys = (await db.Set<TFile>()
         .AsNoTracking()
         .Where(f => distinctKeys.Contains(f.StorageKey) || f.ThumbnailKey != null && distinctKeys.Contains(f.ThumbnailKey))
@@ -432,7 +432,7 @@ public abstract partial class FileGridService<TFile>
         .Where(k => !string.IsNullOrEmpty(k))
         .ToHashSet(StringComparer.Ordinal);
 
-      foreach (var key in distinctKeys)
+      foreach (var (itemStore, key) in keysToDelete.DistinctBy(x => x.Key))
       {
         if (referencedKeys.Contains(key))
         {
@@ -441,7 +441,7 @@ public abstract partial class FileGridService<TFile>
 
         try
         {
-          await storage.DeleteAsync(key, cancellationToken);
+          await Stores.Of(itemStore).DeleteAsync(key, cancellationToken);
         }
         catch { }
       }
@@ -608,8 +608,10 @@ public abstract partial class FileGridService<TFile>
         ?? throw new KeyNotFoundException("File not found.");
 
       var ext = Path.GetExtension(file.Name);
-      var newName = stem.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? stem : stem + ext;
-      if (newName.Length > BaseAppFile.NameMaxLength)
+      var candidateName = stem.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? stem : stem + ext;
+      if (FileTypeTable.NameOf(candidateName) is not { } newName ||
+          !string.Equals(Path.GetExtension(newName), ext, StringComparison.OrdinalIgnoreCase) ||
+          newName.Length > BaseAppFile.NameMaxLength)
       {
         return new GridActionDto
         {

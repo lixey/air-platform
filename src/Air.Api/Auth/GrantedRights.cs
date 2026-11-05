@@ -18,7 +18,7 @@ public static class GrantedRights
     ArgumentNullException.ThrowIfNull(db);
 
     var activeRoles = await (
-      from a in db.Set<TAssignment>().AsNoTracking()
+      from a in db.Set<TAssignment>().IgnoreQueryFilters().AsNoTracking()
       join r in db.Set<TRole>().IgnoreQueryFilters().AsNoTracking() on a.AuthRoleId equals r.Id
       where a.UserId == userId && a.IsActive && r.IsActive
       select new { r.Id, r.TenantId }
@@ -51,6 +51,7 @@ public static class GrantedRights
     }
 
     var permissions = await db.Set<TGrant>()
+      .IgnoreQueryFilters()
       .AsNoTracking()
       .Where(g => roleIds.Contains(g.AuthRoleId))
       .Select(g => g.Permission)

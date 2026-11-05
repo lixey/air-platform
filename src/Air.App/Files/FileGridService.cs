@@ -46,12 +46,11 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     if (!IsReadOnly)
     {
       var rules = FileRulesAttribute.Of(typeof(TFile));
-      var canReadMeta = User is { IsAuthenticated: true } && (User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All));
       var upload = new GridNavUploadModel
       {
         Key = "upload",
         Limits = LimitsOf(rules),
-        CanReadMetadata = canReadMeta,
+        CanReadMetadata = CanReadFileMetadata(),
         Label = L["Upload"],
         Icon = UiIcon.Import,
         Color = UiColor.Orange,
@@ -224,7 +223,6 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     var files = await query.OrderBy(f => f.SortOrder).ThenByDescending(f => f.Id).ToListAsync(cancellationToken);
     var rules = FileRulesAttribute.Of(typeof(TFile));
     var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
-    var storage = Stores.Of(storeKey);
 
     var memoryStream = new MemoryStream();
     using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
@@ -237,6 +235,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
           continue;
         }
 
+        var storage = Stores.Of(file.Store ?? storeKey);
         await using var fileStream = await storage.OpenReadAsync(file.StorageKey, cancellationToken);
         if (fileStream == null)
         {
@@ -287,8 +286,6 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     ParentId = parentId;
     var rules = FileRulesAttribute.Of(typeof(TFile));
     var canEdit = !IsReadOnly;
-    var canReadMeta = Feature.Rights.Any(r => r.Key.EndsWith(".FileMetadata", StringComparison.OrdinalIgnoreCase))
-      && (User is not { IsAuthenticated: true } || User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All) || User.Can("*"));
     return Task.FromResult(new FormFilesModel
     {
       Key = key,
@@ -302,9 +299,16 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       CanUpload = canEdit,
       CanDelete = canEdit,
       CanSetCover = HasCovers && canEdit,
-      CanReadMetadata = canReadMeta
+      CanReadMetadata = CanReadFileMetadata()
     });
   }
+
+  private bool CanReadFileMetadata() =>
+    Feature.Rights.Any(r => r.Key.EndsWith(".FileMetadata", StringComparison.OrdinalIgnoreCase)) &&
+    (User is not { IsAuthenticated: true } ||
+     User.Can(Feature.Action("FileMetadata")) ||
+     User.Can(Feature.All) ||
+     User.Can("*"));
 
   async Task<long?> IFormFilesSource.FindExistingParentIdByHashAsync(
     string sha256,

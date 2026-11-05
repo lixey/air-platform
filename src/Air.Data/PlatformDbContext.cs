@@ -57,19 +57,28 @@ public abstract class PlatformDbContext : DbContext
   {
     if (_activeMutationRun != null)
     {
-      _activeMutationRun.Depth++;
+      var parentRun = _activeMutationRun;
+      parentRun.Depth++;
+      var nestedDisposed = 0;
       return new NestedMutationScope(() =>
       {
-        if (_activeMutationRun != null && --_activeMutationRun.Depth <= 0)
+        if (Interlocked.Exchange(ref nestedDisposed, 1) == 0 &&
+            ReferenceEquals(_activeMutationRun, parentRun) &&
+            --parentRun.Depth <= 0)
         {
           _activeMutationRun = null;
         }
       });
     }
 
-    var scope = new MutationRunScope(() =>
+    MutationRunScope? scope = null;
+    var rootDisposed = 0;
+    scope = new MutationRunScope(() =>
     {
-      if (_activeMutationRun != null && --_activeMutationRun.Depth <= 0)
+      if (Interlocked.Exchange(ref rootDisposed, 1) == 0 &&
+          scope is not null &&
+          ReferenceEquals(_activeMutationRun, scope) &&
+          --scope.Depth <= 0)
       {
         _activeMutationRun = null;
       }
@@ -381,7 +390,11 @@ public abstract class PlatformDbContext : DbContext
     foreach (var entry in pendingEntries)
     {
       var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
-      var rowTenantId = entry.Entity is IHasTenant t && t.TenantId != 0 ? t.TenantId : tenantId;
+      var rowTenantId = entry.Entity is IHasTenant t && t.TenantId != 0
+        ? t.TenantId
+        : entry.Entity is IInheritedByChildTenants it && it.TenantId is > 0
+          ? it.TenantId.Value
+          : tenantId;
       var excluded = EntityAuditMetadata.For(entry.Metadata.ClrType).ExcludedProperties;
 
       run.JournalEntries.TryGetValue(entry.Entity, out var state);
@@ -690,10 +703,11 @@ public abstract class PlatformDbContext : DbContext
           }
         }
 
-        if (entry.Entity is IInheritedByChildTenants existingInherited && tenantId.HasValue)
+        if (entry.Entity is IInheritedByChildTenants existingInherited && tenantId.HasValue && !TenantContext.IsSystemScope)
         {
-          var origInheritedTid = entry.Property(nameof(IInheritedByChildTenants.TenantId)).OriginalValue as long? ?? existingInherited.TenantId;
-          if (origInheritedTid is { } ownerTid && ownerTid != tenantId.Value)
+          var origInheritedTid = entry.Property(nameof(IInheritedByChildTenants.TenantId)).OriginalValue as long?;
+          if (origInheritedTid is { } ownerTid && ownerTid != tenantId.Value ||
+              entry.State == EntityState.Modified && existingInherited.TenantId is { } newTid && newTid != 0 && newTid != tenantId.Value)
           {
             throw new InvalidOperationException(
               $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant."
@@ -725,9 +739,25 @@ public abstract class PlatformDbContext : DbContext
           }
         }
 
-        if (entry.Entity is IInheritedByChildTenants inherited && inherited.TenantId == 0)
+        if (entry.Entity is IInheritedByChildTenants inherited)
         {
-          inherited.TenantId = tenantId;
+          if (tenantId.HasValue && !TenantContext.IsSystemScope)
+          {
+            if (inherited.TenantId is null or 0)
+            {
+              inherited.TenantId = tenantId.Value;
+            }
+            else if (inherited.TenantId != tenantId.Value)
+            {
+              throw new InvalidOperationException(
+                $"Cannot insert inherited {entry.Metadata.ClrType.Name} belonging to another tenant."
+              );
+            }
+          }
+          else if (inherited.TenantId == 0)
+          {
+            inherited.TenantId = tenantId;
+          }
         }
 
         if (entry.Entity is IHasVersion version)
@@ -761,6 +791,13 @@ public abstract class PlatformDbContext : DbContext
             tenantProp.CurrentValue = origTid;
           }
 
+          tenantProp.IsModified = false;
+        }
+
+        if (entry.Entity is IInheritedByChildTenants && !TenantContext.IsSystemScope)
+        {
+          var tenantProp = entry.Property(nameof(IInheritedByChildTenants.TenantId));
+          tenantProp.CurrentValue = tenantProp.OriginalValue;
           tenantProp.IsModified = false;
         }
 

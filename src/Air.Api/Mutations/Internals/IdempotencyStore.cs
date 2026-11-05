@@ -5,7 +5,7 @@ namespace Platform.Api.Mutations.Internals;
 internal static class IdempotencyStore
 {
   private static readonly TimeSpan Retention = TimeSpan.FromHours(24);
-  private static readonly ConcurrentDictionary<string, SemaphoreSlim> KeyLocks = new(StringComparer.Ordinal);
+  private static readonly ConcurrentDictionary<string, KeyLock> KeyLocks = new(StringComparer.Ordinal);
   private static readonly ConcurrentDictionary<string, KeptEntry> Entries = new(StringComparer.Ordinal);
   private static long _lastPrunedTicks;
 
@@ -18,9 +18,27 @@ internal static class IdempotencyStore
   public static async Task<IDisposable> AcquireLockAsync(long? tenantId, long? userId, string key, CancellationToken ct)
   {
     var lockId = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
-    var sem = KeyLocks.GetOrAdd(lockId, static _ => new SemaphoreSlim(1, 1));
-    await sem.WaitAsync(ct);
-    return new ReleaseHandle(sem);
+    KeyLock entry;
+    while (true)
+    {
+      entry = KeyLocks.GetOrAdd(lockId, static _ => new KeyLock());
+      if (entry.TryAddRef())
+      {
+        break;
+      }
+    }
+
+    try
+    {
+      await entry.Semaphore.WaitAsync(ct);
+    }
+    catch
+    {
+      ReleaseRef(lockId, entry);
+      throw;
+    }
+
+    return new ReleaseHandle(lockId, entry);
   }
 
   public static bool TryGetCommitted(
@@ -91,19 +109,66 @@ internal static class IdempotencyStore
 
     foreach (var kv in Entries)
     {
-      if (now - kv.Value.CreatedAt > Retention && Entries.TryRemove(kv.Key, out _))
+      if (now - kv.Value.CreatedAt > Retention)
       {
-        if (KeyLocks.TryGetValue(kv.Key, out var sem) && sem.CurrentCount == 1)
-        {
-          KeyLocks.TryRemove(KeyValuePair.Create(kv.Key, sem));
-        }
+        Entries.TryRemove(kv.Key, out _);
       }
+    }
+  }
+
+  private static void ReleaseRef(string lockId, KeyLock entry)
+  {
+    if (entry.ReleaseRef())
+    {
+      KeyLocks.TryRemove(KeyValuePair.Create(lockId, entry));
     }
   }
 
   private sealed record KeptEntry(string ServiceKey, string PayloadHash, long RecordId, DateTimeOffset CreatedAt);
 
-  private sealed class ReleaseHandle(SemaphoreSlim sem) : IDisposable
+  private sealed class KeyLock
+  {
+    private int _refCount;
+    public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+    public bool TryAddRef()
+    {
+      while (true)
+      {
+        var current = Volatile.Read(ref _refCount);
+        if (current < 0)
+        {
+          return false;
+        }
+
+        if (Interlocked.CompareExchange(ref _refCount, current + 1, current) == current)
+        {
+          return true;
+        }
+      }
+    }
+
+    public bool ReleaseRef()
+    {
+      while (true)
+      {
+        var current = Volatile.Read(ref _refCount);
+        if (current <= 1)
+        {
+          if (Interlocked.CompareExchange(ref _refCount, -1, current) == current)
+          {
+            return true;
+          }
+        }
+        else if (Interlocked.CompareExchange(ref _refCount, current - 1, current) == current)
+        {
+          return false;
+        }
+      }
+    }
+  }
+
+  private sealed class ReleaseHandle(string lockId, KeyLock entry) : IDisposable
   {
     private int _disposed;
 
@@ -111,7 +176,14 @@ internal static class IdempotencyStore
     {
       if (Interlocked.Exchange(ref _disposed, 1) == 0)
       {
-        sem.Release();
+        try
+        {
+          entry.Semaphore.Release();
+        }
+        finally
+        {
+          ReleaseRef(lockId, entry);
+        }
       }
     }
   }

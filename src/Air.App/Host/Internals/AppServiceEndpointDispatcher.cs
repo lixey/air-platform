@@ -175,6 +175,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.NotFound();
           }
 
+          if (!await grid.BindParentAsync(req.ParentService, req.ParentId, ct))
+          {
+            return Results.NotFound();
+          }
+
           var row = await grid.ReadRowAsync(req.Id.Value, ct);
           return row is null ? Results.NotFound() : Results.Ok(row);
         }
@@ -370,6 +375,10 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           try
           {
             entity = await form.SaveAsync(body.Value, req, ct);
+          }
+          catch (JsonException)
+          {
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
           catch (IdempotencyConflictException ex)
           {

@@ -688,6 +688,11 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       }
 
       await OnMovedAsync(move, cancellationToken);
+      if (context.Errors.Count > errorsBefore)
+      {
+        _statusSetter?.Invoke(record, currentStatus);
+        return;
+      }
     }
 
     await context.FlushAsync(cancellationToken);
@@ -709,19 +714,27 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
           followerBase = followerBase.BaseType;
         }
 
+        if (PlatformApp != null && follower is IPlatformService ps)
+        {
+          ps.AttachPlatformApp(PlatformApp);
+        }
+
         var parentEntityType = followerBase?.GetGenericArguments().FirstOrDefault();
         if (parentEntityType != null)
         {
           var fkProp = follower.FindParentKeyProperty(typeof(TEntity))
             ?? typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-              .FirstOrDefault(p => p.PropertyType == typeof(long) &&
+              .FirstOrDefault(p => (p.PropertyType == typeof(long) || p.PropertyType == typeof(long?)) &&
                 p.Name.Length > 2 &&
                 p.Name.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
                 (string.Equals(p.Name, parentEntityType.Name + "Id", StringComparison.OrdinalIgnoreCase) ||
                  parentEntityType.Name.EndsWith(p.Name[..^2], StringComparison.OrdinalIgnoreCase)));
           if (fkProp != null)
           {
-            var parentIds = records.Select(r => (long)fkProp.GetValue(r)!).Where(id => id > 0).ToHashSet();
+            var parentIds = records
+              .Select(r => fkProp.GetValue(r) is long id ? id : 0L)
+              .Where(id => id > 0)
+              .ToHashSet();
             if (parentIds.Count > 0)
             {
               await follower.FollowMovesAsync(context, parentIds, cancellationToken);

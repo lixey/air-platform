@@ -293,8 +293,32 @@ public sealed class AgentStore
     }
   }
 
+  public static string GetContextFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
+    Path.Combine(workspaceDirectory, $"context-{owner.TenantId}-{owner.UserId ?? 0}-{NormalizeSessionId(sessionId)}.json");
+
   private void CleanupStaleDiskFiles()
   {
+    var cutoff = (DateTimeOffset.UtcNow - _options.SessionTtl).UtcDateTime;
+
+    try
+    {
+      if (Directory.Exists(WorkspaceDirectory))
+      {
+        foreach (var file in Directory.GetFiles(WorkspaceDirectory, "context-*.json"))
+        {
+          try
+          {
+            if (File.GetLastWriteTimeUtc(file) < cutoff)
+            {
+              File.Delete(file);
+            }
+          }
+          catch { }
+        }
+      }
+    }
+    catch { }
+
     try
     {
       var dir = Path.Combine(WorkspaceDirectory, "uploads");
@@ -303,12 +327,11 @@ public sealed class AgentStore
         return;
       }
 
-      var cutoff = DateTimeOffset.UtcNow - _options.SessionTtl;
       foreach (var file in Directory.GetFiles(dir))
       {
         try
         {
-          if (File.GetLastWriteTimeUtc(file) < cutoff.UtcDateTime)
+          if (File.GetLastWriteTimeUtc(file) < cutoff)
           {
             File.Delete(file);
           }

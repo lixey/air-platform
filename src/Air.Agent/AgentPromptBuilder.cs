@@ -84,9 +84,8 @@ public static class AgentPromptBuilder
     {
       var currentBytes = Encoding.UTF8.GetByteCount(sb.ToString());
       var contextBytes = Encoding.UTF8.GetByteCount(contextJson);
-      var normalizedSessionId = AgentStore.NormalizeSessionId(request.SessionId);
       var fullContextFile = !string.IsNullOrWhiteSpace(workspaceDir)
-        ? Path.Combine(workspaceDir, $"context-{normalizedSessionId}.json")
+        ? AgentStore.GetContextFilePath(workspaceDir, request.Owner, request.SessionId)
         : null;
 
       if (currentBytes + contextBytes + 128 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
@@ -105,7 +104,7 @@ public static class AgentPromptBuilder
       }
       else
       {
-        var contextPath = Path.Combine(workspaceDir, $"context-{normalizedSessionId}.json");
+        var contextPath = fullContextFile!;
         if (!File.Exists(contextPath))
         {
           File.WriteAllText(contextPath, contextJson, Encoding.UTF8);
@@ -326,7 +325,16 @@ public static class AgentPromptBuilder
     }
 
     var db = request.Services?.GetService<PlatformDbContext>();
-    if (db is null)
+    var app = request.Services?.GetService<PlatformAppService>();
+    if (db is null || app is null)
+    {
+      return;
+    }
+
+    var memoryFeature = ModuleCatalog.Instance.AllFeatures.FirstOrDefault(f =>
+      f.ServiceType != null &&
+      IsEntityServiceFor(f.ServiceType, typeof(AppAgentMemory)));
+    if (memoryFeature is null || !AgentFeatureRegistry.CanEditFeature(memoryFeature, app))
     {
       return;
     }
@@ -385,6 +393,16 @@ public static class AgentPromptBuilder
           continue;
         }
 
+        if (title.Length > 200)
+        {
+          title = title[..200];
+        }
+
+        if (content.Length > 4000)
+        {
+          content = content[..4000];
+        }
+
         var kind = string.Equals(rawKind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase)
           ? AgentMemoryKinds.Rule
           : string.Equals(rawKind, AgentMemoryKinds.Preference, StringComparison.OrdinalIgnoreCase)
@@ -411,7 +429,7 @@ public static class AgentPromptBuilder
           {
             TenantId = tenantId,
             Kind = kind,
-            Title = title.Length > 200 ? title[..200] : title,
+            Title = title,
             Content = content,
             Priority = kind == AgentMemoryKinds.Rule ? 200 : 100,
             IsPinned = false,
@@ -438,5 +456,18 @@ public static class AgentPromptBuilder
         // Ignore persistence errors if table is unavailable
       }
     }
+  }
+
+  private static bool IsEntityServiceFor(Type serviceType, Type entityType)
+  {
+    for (var cur = serviceType; cur != null && cur != typeof(object); cur = cur.BaseType)
+    {
+      if (cur.IsGenericType && cur.GetGenericArguments() is [var firstArg, ..] && firstArg == entityType)
+      {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

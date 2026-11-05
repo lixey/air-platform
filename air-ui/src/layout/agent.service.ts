@@ -1,12 +1,12 @@
 import { Location } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { inject, Service, signal } from '@angular/core';
+import { effect, inject, Service, signal, untracked } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from '../agent/agent-block-models';
 import { parseAgentBlocks } from '../agent/agent-block-parser';
 import { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
-import { AuthService } from '../app/auth/auth.service';
+import { AuthService, identityOf } from '../app/auth/auth.service';
 import { PLATFORM_CLIENT_HEADER, PLATFORM_TIME_ZONE_HEADER } from '../app/auth/credentials.interceptor';
 import { LocaleService } from '../app/locale.service';
 import type {
@@ -69,6 +69,7 @@ export class AgentService {
   private abortController: AbortController | null = null;
   private nextId = 0;
   private statusLoaded = false;
+  private lastIdentity = identityOf(this.auth.currentUser());
 
   readonly sessionId = signal<string>(Math.random().toString(36).slice(2, 12));
   readonly models = signal<readonly AgentModelDto[]>([]);
@@ -79,6 +80,27 @@ export class AgentService {
   readonly pendingAttachments = signal<readonly AgentAttachment[]>([]);
   readonly isUploading = signal(false);
   readonly isStreaming = signal(false);
+
+  constructor() {
+    effect(() => {
+      const nextIdentity = identityOf(this.auth.currentUser());
+      if (nextIdentity === this.lastIdentity) {
+        return;
+      }
+      this.lastIdentity = nextIdentity;
+      untracked(() => {
+        this.stop();
+        this.statusLoaded = false;
+        this.userPickedModel.set(false);
+        this.models.set([]);
+        this.model.set('');
+        this.activeProvider.set('Agy');
+        this.messages.set([]);
+        this.pendingAttachments.set([]);
+        this.sessionId.set(Math.random().toString(36).slice(2, 12));
+      });
+    });
+  }
 
   async ensureStatusLoaded(force = false): Promise<void> {
     if (this.statusLoaded && !force) {
@@ -247,9 +269,83 @@ export class AgentService {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      const processPart = (part: string): void => {
+        for (const line of part.split('\n')) {
+          if (!line.startsWith('data:')) {
+            continue;
+          }
+          const jsonStr = line.slice(5).trim();
+          if (!jsonStr) {
+            continue;
+          }
+
+          try {
+            const evt = JSON.parse(jsonStr) as AgentStreamEventDto;
+            if (evt.type === 'status') {
+              this.patchAssistant(assistantMsgId, m => ({
+                ...m,
+                statusText: evt.text ?? null,
+                modelId: evt.modelId ?? m.modelId,
+                modelName: evt.modelName ?? m.modelName,
+              }));
+            } else if (evt.type === 'delta' && evt.text) {
+              rawAccumulated += evt.text;
+              const cleanText = stripProposalBlocks(rawAccumulated);
+              const blocks = parseAgentBlocks(cleanText, this.blockPlugins, assistantMsgId);
+              this.patchAssistant(assistantMsgId, m => ({
+                ...m,
+                text: cleanText,
+                blocks,
+                statusText: null,
+              }));
+            } else if (evt.type === 'proposal' && evt.proposal) {
+              const incoming: AgentProposal = { ...evt.proposal, status: 'pending' };
+              this.patchAssistant(assistantMsgId, m => {
+                const exists = m.proposals.some(p => p.id === incoming.id);
+                return {
+                  ...m,
+                  statusText: null,
+                  proposals: exists ? m.proposals : [...m.proposals, incoming],
+                };
+              });
+            } else if (evt.type === 'error') {
+              this.patchAssistant(assistantMsgId, m => {
+                const nextText = m.text || (evt.text ?? this.texts.of('RequestFailed'));
+                return {
+                  ...m,
+                  text: nextText,
+                  blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
+                  statusText: null,
+                };
+              });
+            } else if (evt.type === 'done') {
+              this.patchAssistant(assistantMsgId, m => {
+                const nextText = stripProposalBlocks(rawAccumulated) || m.text;
+                return {
+                  ...m,
+                  text: nextText,
+                  blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
+                  statusText: null,
+                  modelId: evt.modelId ?? m.modelId,
+                  modelName: evt.modelName ?? m.modelName,
+                };
+              });
+            }
+          } catch {
+            // Ignore malformed SSE frame
+          }
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
+          buffer += decoder.decode();
+          for (const part of buffer.split('\n\n')) {
+            if (part.trim()) {
+              processPart(part);
+            }
+          }
           break;
         }
 
@@ -258,71 +354,7 @@ export class AgentService {
         buffer = parts.pop() ?? '';
 
         for (const part of parts) {
-          for (const line of part.split('\n')) {
-            if (!line.startsWith('data:')) {
-              continue;
-            }
-            const jsonStr = line.slice(5).trim();
-            if (!jsonStr) {
-              continue;
-            }
-
-            try {
-              const evt = JSON.parse(jsonStr) as AgentStreamEventDto;
-              if (evt.type === 'status') {
-                this.patchAssistant(assistantMsgId, m => ({
-                  ...m,
-                  statusText: evt.text ?? null,
-                  modelId: evt.modelId ?? m.modelId,
-                  modelName: evt.modelName ?? m.modelName,
-                }));
-              } else if (evt.type === 'delta' && evt.text) {
-                rawAccumulated += evt.text;
-                const cleanText = stripProposalBlocks(rawAccumulated);
-                const blocks = parseAgentBlocks(cleanText, this.blockPlugins, assistantMsgId);
-                this.patchAssistant(assistantMsgId, m => ({
-                  ...m,
-                  text: cleanText,
-                  blocks,
-                  statusText: null,
-                }));
-              } else if (evt.type === 'proposal' && evt.proposal) {
-                const incoming: AgentProposal = { ...evt.proposal, status: 'pending' };
-                this.patchAssistant(assistantMsgId, m => {
-                  const exists = m.proposals.some(p => p.id === incoming.id);
-                  return {
-                    ...m,
-                    statusText: null,
-                    proposals: exists ? m.proposals : [...m.proposals, incoming],
-                  };
-                });
-              } else if (evt.type === 'error') {
-                this.patchAssistant(assistantMsgId, m => {
-                  const nextText = m.text || (evt.text ?? this.texts.of('RequestFailed'));
-                  return {
-                    ...m,
-                    text: nextText,
-                    blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
-                    statusText: null,
-                  };
-                });
-              } else if (evt.type === 'done') {
-                this.patchAssistant(assistantMsgId, m => {
-                  const nextText = stripProposalBlocks(rawAccumulated) || m.text;
-                  return {
-                    ...m,
-                    text: nextText,
-                    blocks: parseAgentBlocks(nextText, this.blockPlugins, assistantMsgId),
-                    statusText: null,
-                    modelId: evt.modelId ?? m.modelId,
-                    modelName: evt.modelName ?? m.modelName,
-                  };
-                });
-              }
-            } catch {
-              // Ignore malformed SSE frame
-            }
-          }
+          processPart(part);
         }
       }
     } catch (err) {
@@ -346,9 +378,9 @@ export class AgentService {
         durationMs: finalDuration,
         createdAt: new Date(),
       }));
-      this.isStreaming.set(false);
       if (this.abortController === controller) {
         this.abortController = null;
+        this.isStreaming.set(false);
       }
     }
   }

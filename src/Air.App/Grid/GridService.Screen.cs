@@ -31,8 +31,9 @@ public abstract partial class GridService<TEntity, TRow>
 
     var columns = CreateColumns();
 
-    var isSelect = request?.ReferenceLabelPaths is { Count: > 0 } || (request?.IsReferencePicker ?? false);
-    if (isSelect)
+    var isReferenceSelect = request?.ReferenceLabelPaths is { Count: > 0 };
+    var isPickerOrSelect = isReferenceSelect || (request?.IsReferencePicker ?? false);
+    if (isReferenceSelect)
     {
       return BuildSelectScreen(servicePath, columns, request);
     }
@@ -116,44 +117,47 @@ public abstract partial class GridService<TEntity, TRow>
     });
 
     var queryDeclaration = GetQueryDeclaration();
-    foreach (var group in queryDeclaration.NamedFilterGroups)
+    if (!isPickerOrSelect)
     {
-      var chosenKey = request?.NamedFilters?.FirstOrDefault(k =>
-          group.Items.Any(i => string.Equals(i.Key, k, StringComparison.OrdinalIgnoreCase)))
-        ?? group.Items.FirstOrDefault(i => i.IsDefault)?.Key;
-      var groupItems = new List<GridNavNamedFilterModel>(group.Items.Count);
-      foreach (var item in group.Items)
+      foreach (var group in queryDeclaration.NamedFilterGroups)
       {
-        groupItems.Add(new GridNavNamedFilterModel
+        var chosenKey = request?.NamedFilters?.FirstOrDefault(k =>
+            group.Items.Any(i => string.Equals(i.Key, k, StringComparison.OrdinalIgnoreCase)))
+          ?? group.Items.FirstOrDefault(i => i.IsDefault)?.Key;
+        var groupItems = new List<GridNavNamedFilterModel>(group.Items.Count);
+        foreach (var item in group.Items)
+        {
+          groupItems.Add(new GridNavNamedFilterModel
+          {
+            Key = item.Key,
+            Label = L[item.Label],
+            Title = item.Title != null ? L[item.Title] : null,
+            Color = item.Color,
+            IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
+          });
+        }
+
+        navElements.Add(new GridNavNamedFilterGroupModel
+        {
+          Key = group.Key,
+          Label = group.Label != null ? L[group.Label] : null,
+          IsRemembered = group.IsRemembered,
+          Items = groupItems
+        });
+      }
+
+      foreach (var item in queryDeclaration.NamedFilters)
+      {
+        navElements.Add(new GridNavNamedFilterModel
         {
           Key = item.Key,
           Label = L[item.Label],
           Title = item.Title != null ? L[item.Title] : null,
           Color = item.Color,
-          IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
+          IsRemembered = item.IsRemembered,
+          IsSelected = request?.NamedFilters?.Any(k => string.Equals(k, item.Key, StringComparison.OrdinalIgnoreCase)) == true
         });
       }
-
-      navElements.Add(new GridNavNamedFilterGroupModel
-      {
-        Key = group.Key,
-        Label = group.Label != null ? L[group.Label] : null,
-        IsRemembered = group.IsRemembered,
-        Items = groupItems
-      });
-    }
-
-    foreach (var item in queryDeclaration.NamedFilters)
-    {
-      navElements.Add(new GridNavNamedFilterModel
-      {
-        Key = item.Key,
-        Label = L[item.Label],
-        Title = item.Title != null ? L[item.Title] : null,
-        Color = item.Color,
-        IsRemembered = item.IsRemembered,
-        IsSelected = request?.NamedFilters?.Any(k => string.Equals(k, item.Key, StringComparison.OrdinalIgnoreCase)) == true
-      });
     }
 
     var actionElements = new List<NavElementModel>();
@@ -206,42 +210,46 @@ public abstract partial class GridService<TEntity, TRow>
       });
     }
 
-    foreach (var rule in queryDeclaration.InitialFilters)
+    FilterNode? initialFilter = null;
+    if (!isPickerOrSelect)
     {
-      if (rule.Picked is null)
+      foreach (var rule in queryDeclaration.InitialFilters)
       {
-        var col = columns.List.FirstOrDefault(c =>
-          string.Equals(c.Path, rule.Field, StringComparison.OrdinalIgnoreCase) ||
-          string.Equals(c.FilterPath, rule.Field, StringComparison.OrdinalIgnoreCase));
-        if (col?.Options is { Count: > 0 } opts)
+        if (rule.Picked is null)
         {
-          if (rule.Value is IEnumerable enumerable and not string)
+          var col = columns.List.FirstOrDefault(c =>
+            string.Equals(c.Path, rule.Field, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(c.FilterPath, rule.Field, StringComparison.OrdinalIgnoreCase));
+          if (col?.Options is { Count: > 0 } opts)
           {
-            rule.Picked = enumerable.Cast<object?>()
-              .Where(v => v != null)
-              .Select(v =>
-              {
-                var id = Convert.ToInt32(v, CultureInfo.InvariantCulture);
-                var opt = opts.FirstOrDefault(o => o.Id == id);
-                return new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) };
-              })
-              .ToList();
-          }
-          else if (rule.Value is not null)
-          {
-            var id = Convert.ToInt32(rule.Value, CultureInfo.InvariantCulture);
-            var opt = opts.FirstOrDefault(o => o.Id == id);
-            rule.Picked = [new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) }];
+            if (rule.Value is IEnumerable enumerable and not string)
+            {
+              rule.Picked = enumerable.Cast<object?>()
+                .Where(v => v != null)
+                .Select(v =>
+                {
+                  var id = Convert.ToInt64(v, CultureInfo.InvariantCulture);
+                  var opt = opts.FirstOrDefault(o => o.Id == id);
+                  return new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) };
+                })
+                .ToList();
+            }
+            else if (rule.Value is not null)
+            {
+              var id = Convert.ToInt64(rule.Value, CultureInfo.InvariantCulture);
+              var opt = opts.FirstOrDefault(o => o.Id == id);
+              rule.Picked = [new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) }];
+            }
           }
         }
       }
-    }
 
-    var initialFilter = queryDeclaration.InitialFilters.Count == 1
-      ? (FilterNode)queryDeclaration.InitialFilters[0]
-      : queryDeclaration.InitialFilters.Count > 1
-        ? FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()])
-        : null;
+      initialFilter = queryDeclaration.InitialFilters.Count == 1
+        ? queryDeclaration.InitialFilters[0]
+        : queryDeclaration.InitialFilters.Count > 1
+          ? FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()])
+          : null;
+    }
 
     var gridModel = new GridModel
     {

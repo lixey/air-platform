@@ -49,44 +49,47 @@ public static class AgentMemoryCatalog
     string? seedDomainKnowledge = null,
     CancellationToken ct = default)
   {
-    var existing = await db.AppAgentMemory.IgnoreQueryFilters().ToListAsync(ct);
-
-    var changed = false;
-    foreach (var seed in DefaultRows())
+    using (AsyncLocalTenantContext.UseSystemScope())
     {
-      if (!existing.Any(e => string.Equals(e.Title, seed.Title, StringComparison.OrdinalIgnoreCase)))
+      var existing = await db.AppAgentMemory.IgnoreQueryFilters().ToListAsync(ct);
+
+      var changed = false;
+      foreach (var seed in DefaultRows())
       {
-        db.AppAgentMemory.Add(seed);
-        existing.Add(seed);
+        if (!existing.Any(e => string.Equals(e.Title, seed.Title, StringComparison.OrdinalIgnoreCase)))
+        {
+          db.AppAgentMemory.Add(seed);
+          existing.Add(seed);
+          changed = true;
+        }
+      }
+
+      seedDomainKnowledge ??= DefaultDomainKnowledge;
+      if (!string.IsNullOrWhiteSpace(seedDomainKnowledge) &&
+          !existing.Any(e => e.Kind == AgentMemoryKinds.Seed))
+      {
+        var trimmed = seedDomainKnowledge.Trim();
+        if (trimmed.Length > 3800)
+        {
+          trimmed = trimmed[..3800];
+        }
+
+        db.AppAgentMemory.Add(new AppAgentMemory
+        {
+          Kind = AgentMemoryKinds.Seed,
+          Title = "Application Domain Knowledge & Workflows",
+          Content = trimmed,
+          Priority = 150,
+          IsPinned = true,
+          IsActive = true
+        });
         changed = true;
       }
-    }
 
-    seedDomainKnowledge ??= DefaultDomainKnowledge;
-    if (!string.IsNullOrWhiteSpace(seedDomainKnowledge) &&
-        !existing.Any(e => e.Kind == AgentMemoryKinds.Seed))
-    {
-      var trimmed = seedDomainKnowledge.Trim();
-      if (trimmed.Length > 3800)
+      if (changed)
       {
-        trimmed = trimmed[..3800];
+        await db.SaveChangesAsync(ct);
       }
-
-      db.AppAgentMemory.Add(new AppAgentMemory
-      {
-        Kind = AgentMemoryKinds.Seed,
-        Title = "Application Domain Knowledge & Workflows",
-        Content = trimmed,
-        Priority = 150,
-        IsPinned = true,
-        IsActive = true
-      });
-      changed = true;
-    }
-
-    if (changed)
-    {
-      await db.SaveChangesAsync(ct);
     }
   }
 }

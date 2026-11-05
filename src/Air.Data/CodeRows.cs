@@ -76,11 +76,15 @@ public static partial class CodeRows
       {
         var tableName = entityType.GetTableName()!;
         var schema = entityType.GetSchema();
-        var qualifiedTable = string.IsNullOrWhiteSpace(schema) ? $"[{tableName}]" : $"[{schema}].[{tableName}]";
+        var qualifiedTable = string.IsNullOrWhiteSpace(schema)
+          ? $"[{tableName.Replace("]", "]]")}]"
+          : $"[{schema.Replace("]", "]]")}].[{tableName.Replace("]", "]]")}]";
         var strategy = db.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
-          await db.Database.OpenConnectionAsync(cancellationToken);
+          var ownTx = db.Database.CurrentTransaction == null
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
           try
           {
 #pragma warning disable EF1002
@@ -91,13 +95,21 @@ public static partial class CodeRows
             }
             finally
             {
-              await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} OFF", cancellationToken);
+              await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} OFF", CancellationToken.None);
             }
 #pragma warning restore EF1002
+
+            if (ownTx != null)
+            {
+              await ownTx.CommitAsync(cancellationToken);
+            }
           }
           finally
           {
-            await db.Database.CloseConnectionAsync();
+            if (ownTx != null)
+            {
+              await ownTx.DisposeAsync();
+            }
           }
         });
       }

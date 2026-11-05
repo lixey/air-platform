@@ -21,12 +21,26 @@ export class AlertService {
 
   /** Shows one message or several beside those already showing. An error stays until closed. */
   open(messages: AlertInput[] | AlertInput): void {
-    const items = (Array.isArray(messages) ? messages : [messages]).map(msg => ({
+    const rawItems = (Array.isArray(messages) ? messages : [messages]).map(msg => ({
       ...msg,
       id: msg.id || `alert-${++this.nextId}`,
     }));
+    const byId = new Map<string, AlertMessage>();
+    for (const item of rawItems) {
+      byId.set(item.id, item);
+    }
+    const items = [...byId.values()];
+    const incomingIds = new Set(byId.keys());
 
-    this._messages.update(current => [...current, ...items]);
+    for (const id of incomingIds) {
+      const existingTimer = this.timers.get(id);
+      if (existingTimer !== undefined) {
+        clearTimeout(existingTimer);
+        this.timers.delete(id);
+      }
+    }
+
+    this._messages.update(current => [...current.filter(m => !incomingIds.has(m.id)), ...items]);
 
     for (const item of items) {
       if (item.type !== 'error') {

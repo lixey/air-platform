@@ -9,12 +9,22 @@ internal sealed class ResilientLongConverter : JsonConverter<long>
       return 0L;
     }
 
-    if (reader.TokenType == JsonTokenType.String && long.TryParse(reader.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
+    if (reader.TokenType == JsonTokenType.String)
     {
-      return val;
+      var str = reader.GetString();
+      if (string.IsNullOrWhiteSpace(str))
+      {
+        return 0L;
+      }
+
+      return long.TryParse(str, NumberStyles.Any, CultureInfo.InvariantCulture, out var val)
+        ? val
+        : throw new JsonException($"Unable to convert \"{str}\" to {nameof(Int64)}.");
     }
 
-    return reader.GetInt64();
+    return reader.TokenType == JsonTokenType.Number && reader.TryGetInt64(out var num)
+      ? num
+      : throw new JsonException($"Unable to convert {reader.TokenType} to {nameof(Int64)}.");
   }
   public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options) => writer.WriteNumberValue(value);
 }

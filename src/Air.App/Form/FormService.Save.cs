@@ -158,14 +158,15 @@ public abstract partial class FormService<TEntity>
       ?? (outcome == null && entityId > 0 ? 1 : null);
 
     var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
-    var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    var rawDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(jsonText) ?? [];
+    var dict = new Dictionary<string, object?>(rawDict, StringComparer.OrdinalIgnoreCase);
     var props = PropertyAccessorCache.GetProperties(typeof(TEntity))
       .Concat(entity != null && entity.GetType() != typeof(TEntity) ? PropertyAccessorCache.GetProperties(entity.GetType()) : []);
     foreach (var prop in props)
     {
       if (prop.GetCustomAttribute<SensitiveAttribute>() != null)
       {
-        var camel = Elements.ToCamelPath(prop.Name);
+        var camel = JsonNamingPolicy.CamelCase.ConvertName(prop.Name);
         if (dict.ContainsKey(camel))
         {
           dict[camel] = null;
@@ -296,7 +297,7 @@ public abstract partial class FormService<TEntity>
 
   private static TEntity DeserializeInput(JsonElement entityJson)
   {
-    if (entityJson.ValueKind == JsonValueKind.Object && NeedsPropertyDeserialization(entityJson))
+    if (entityJson.ValueKind == JsonValueKind.Object)
     {
       var result = new TEntity();
       foreach (var jProp in entityJson.EnumerateObject())
@@ -309,7 +310,8 @@ public abstract partial class FormService<TEntity>
         }
 
         var val = jProp.Value;
-        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+        var underlying = Nullable.GetUnderlyingType(prop.PropertyType);
+        var targetType = underlying ?? prop.PropertyType;
         if (val.ValueKind == JsonValueKind.Object &&
             (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)) &&
             val.TryGetProperty("id", out var idElem))
@@ -317,10 +319,25 @@ public abstract partial class FormService<TEntity>
           val = idElem;
         }
 
-        if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined &&
-            prop.PropertyType.IsValueType &&
-            Nullable.GetUnderlyingType(prop.PropertyType) == null)
+        if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
+          if (!prop.PropertyType.IsValueType || underlying != null)
+          {
+            setter(result, null);
+          }
+
+          continue;
+        }
+
+        if (val.ValueKind == JsonValueKind.String &&
+            targetType != typeof(string) &&
+            string.IsNullOrWhiteSpace(val.GetString()))
+        {
+          if (!prop.PropertyType.IsValueType || underlying != null)
+          {
+            setter(result, null);
+          }
+
           continue;
         }
 
@@ -333,34 +350,6 @@ public abstract partial class FormService<TEntity>
 
     return JsonSerializer.Deserialize<TEntity>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
       ?? new TEntity();
-  }
-
-  private static bool NeedsPropertyDeserialization(JsonElement entityJson)
-  {
-    foreach (var jProp in entityJson.EnumerateObject())
-    {
-      var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), jProp.Name);
-      if (prop == null)
-      {
-        continue;
-      }
-
-      if (jProp.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined &&
-          prop.PropertyType.IsValueType &&
-          Nullable.GetUnderlyingType(prop.PropertyType) == null)
-      {
-        return true;
-      }
-
-      var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-      if (jProp.Value.ValueKind == JsonValueKind.Object &&
-          (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)))
-      {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   private async Task<object> SaveCoreAsync(
@@ -378,6 +367,13 @@ public abstract partial class FormService<TEntity>
     Dictionary<string, object?>? originalValues = null;
     if (IsNew)
     {
+      if (Request.ParentId is null or <= 0 &&
+          parent.BoundProperty != null &&
+          PropertyAccessorCache.GetValue(input, parent.BoundProperty.Name) is long inputPid and > 0)
+      {
+        Request.ParentId = inputPid;
+      }
+
       await EnsureParentScopeAsync(parent, lockParent: true, ct);
       entity = CreateBlankEntity(parent, Request.ParentId);
       if (parent.BoundProperty != null && !parent.IsOptional)
@@ -416,23 +412,12 @@ public abstract partial class FormService<TEntity>
     CurrentEntity = entity;
     var elements = await EnsureElementsAsync(ct, reload: true);
 
-    if (cellPatch is { } cp)
-    {
-      var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
-      if (IsReadOnly || targetElement == null || IsElementDisabled(targetElement, entity) || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
-      {
-        throw new FormRefusedException(
-          MutationOutcome.Refused,
-          L["FormReadOnly"],
-          [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
-      }
-    }
-    else if (IsReadOnly)
+    if (IsReadOnly)
     {
       throw new FormRefusedException(
         MutationOutcome.Refused,
         L["FormReadOnly"],
-        [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]);
+        [new MessageDto { Detail = L["FormReadOnly"], Path = cellPatch?.Path, Type = MessageType.Error }]);
     }
 
     if (IsNew)
@@ -443,18 +428,32 @@ public abstract partial class FormService<TEntity>
     {
       await PopulateExistingRecordAsync(entity, elements, hooks, ct);
       originalValues = SnapshotValues(entity);
-
-      if (cellPatch is { } patch)
-      {
-        SetPropertyValue(entity, patch.Path, patch.Value);
-        NormalizeNullableStrings(elements, entity);
-      }
     }
 
     HashSet<string>? presentPaths = null;
-    if (cellPatch is { } cellPatchInfo)
+    if (cellPatch is { } cp)
     {
-      presentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cellPatchInfo.Path };
+      var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
+      presentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cp.Path };
+      CopyMatchingProperties(entity, input);
+      SetPropertyValue(input, cp.Path, cp.Value);
+      NormalizeNullableStrings(elements, input);
+      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input);
+      var propName = PropertyAccessorCache.GetProperty(typeof(TEntity), cp.Path)?.Name ?? cp.Path;
+      if (targetElement == null ||
+          IsElementDisabled(targetElement, entity, input) ||
+          targetElement.IsServerOwned ||
+          targetElement.Model is FormInfoModel ||
+          protectedPaths.Contains(propName))
+      {
+        throw new FormRefusedException(
+          MutationOutcome.Refused,
+          L["FormReadOnly"],
+          [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
+      }
+
+      SetPropertyValue(entity, cp.Path, cp.Value);
+      NormalizeNullableStrings(elements, entity);
     }
     else
     {

@@ -56,7 +56,7 @@ internal static class FieldKinds
 
     var elementType = enumIface.GetGenericArguments()[0];
     return Of(elementType) is { } kind
-      ? (kind, Nullable.GetUnderlyingType(elementType) ?? elementType)
+      ? (kind, elementType)
       : null;
   }
 

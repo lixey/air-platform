@@ -63,12 +63,15 @@ public static class ServiceEndpointsExtensions
           method = parts[^1];
         }
 
-        var feat = catalog.FindFeature(serviceName)
-          ?? (parts.Length >= 2 ? catalog.FindFeature(parts[0] + "/" + parts[1]) : null);
-
-        var serviceType = feat?.ServiceType
+        var exactFeat = catalog.FindFeature(serviceName);
+        var serviceType = exactFeat?.ServiceType
           ?? catalog.FindServiceType(serviceName)
+          ?? (parts.Length >= 2 ? catalog.FindFeature(parts[0] + "/" + parts[1])?.ServiceType : null)
           ?? (parts.Length >= 2 ? catalog.FindServiceType(parts[0] + "/" + parts[1]) : null);
+
+        var feat = exactFeat
+          ?? (serviceType != null && Feature.FeaturesByServiceType.TryGetValue(serviceType, out var sf) ? sf : null)
+          ?? (parts.Length >= 2 ? catalog.FindFeature(parts[0] + "/" + parts[1]) : null);
 
         if (serviceType is null)
         {
@@ -321,7 +324,17 @@ public static class ServiceEndpointsExtensions
 
   public static async Task<IResult> InvokeServiceMethodAsync(MethodInfo method, object target, object?[] args)
   {
-    var resultTask = method.Invoke(target, args);
+    object? resultTask;
+    try
+    {
+      resultTask = method.Invoke(target, args);
+    }
+    catch (TargetInvocationException ex) when (ex.InnerException is not null)
+    {
+      System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+      return Results.Empty;
+    }
+
     if (resultTask is Task<IResult> taskResult)
     {
       return await taskResult;
@@ -330,7 +343,8 @@ public static class ServiceEndpointsExtensions
     if (resultTask is Task task)
     {
       await task.ConfigureAwait(false);
-      var result = task.GetType().GetProperty("Result")?.GetValue(task);
+      var taskType = task.GetType();
+      var result = taskType.IsGenericType ? taskType.GetProperty("Result")?.GetValue(task) : null;
       if (result is IResult r)
       {
         return r;

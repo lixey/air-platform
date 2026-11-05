@@ -33,7 +33,8 @@ public abstract partial class FormService<TEntity>
       return;
     }
 
-    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+    var underlying = Nullable.GetUnderlyingType(prop.PropertyType);
+    var targetType = underlying ?? prop.PropertyType;
     object? converted;
 
     if (val.ValueKind == JsonValueKind.Object && (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)))
@@ -44,9 +45,10 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+    if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ||
+        val.ValueKind == JsonValueKind.String && targetType != typeof(string) && string.IsNullOrWhiteSpace(val.GetString()))
     {
-      converted = prop.PropertyType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) == null
+      converted = prop.PropertyType.IsValueType && underlying == null
         ? Activator.CreateInstance(prop.PropertyType)
         : null;
     }
@@ -79,16 +81,28 @@ public abstract partial class FormService<TEntity>
           _ => false
         }
         : targetType == typeof(DateTime)
-        ? val.GetDateTime()
+        ? val.TryGetDateTime(out var dt)
+          ? DateTime.SpecifyKind(dt, DateTimeKind.Unspecified)
+          : DateTime.TryParse(val.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedDt)
+            ? DateTime.SpecifyKind(parsedDt, DateTimeKind.Unspecified)
+            : throw new JsonException($"Invalid DateTime value '{val.GetRawText()}'.")
         : targetType == typeof(DateOnly)
-        ? DateOnly.Parse(val.GetString()!)
+        ? DateOnly.TryParse(val.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate)
+          ? parsedDate
+          : DateTime.TryParse(val.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dtForDate)
+            ? DateOnly.FromDateTime(dtForDate)
+            : throw new JsonException($"Invalid DateOnly value '{val.GetRawText()}'.")
         : targetType == typeof(TimeOnly)
-        ? TimeOnly.Parse(val.GetString()!)
+        ? TimeOnly.TryParse(val.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedTime)
+          ? parsedTime
+          : throw new JsonException($"Invalid TimeOnly value '{val.GetRawText()}'.")
         : targetType.IsEnum
         ? val.ValueKind == JsonValueKind.Number
-        ? Enum.ToObject(targetType, val.GetInt64())
-        : Enum.Parse(targetType, val.GetString()!, true)
-        : JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType);
+          ? Enum.ToObject(targetType, val.GetInt64())
+          : Enum.TryParse(targetType, val.GetString(), true, out var parsedEnum)
+            ? parsedEnum
+            : throw new JsonException($"Invalid {targetType.Name} value '{val.GetRawText()}'.")
+        : JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType, PlatformJsonOptions.DefaultOptions);
     }
 
     setter(current, converted);

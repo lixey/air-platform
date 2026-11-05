@@ -1,4 +1,5 @@
 import { DestroyRef, inject, Service, signal } from '@angular/core';
+import { AuthService, identityOf } from '../app/auth/auth.service';
 import { type PanelPref, type PanelPrefs, PANELS_STORAGE } from './panels-storage';
 import type { PanelActive } from './panels-view';
 
@@ -20,12 +21,14 @@ export class PanelsState {
   private static next = 0;
 
   private readonly storage = inject(PANELS_STORAGE);
+  private readonly auth = inject(AuthService, { optional: true });
 
   /** This layout's instance id, unique on the page: what the element ids of its panels begin with. */
   readonly id = `ui-panels-${++PanelsState.next}`;
 
   private readonly _key = signal('');
   readonly key = this._key.asReadonly();
+  private userIdentity = '';
   private saveHandle: ReturnType<typeof setTimeout> | null = null;
 
   /** The user's arrangement, by panel path. */
@@ -54,11 +57,13 @@ export class PanelsState {
 
   /** Switches to a layout and loads what the user arranged last time. */
   open(layoutKey: string): void {
-    if (this._key() === layoutKey) {
+    const nextIdentity = identityOf(this.auth?.currentUser());
+    if (this._key() === layoutKey && this.userIdentity === nextIdentity) {
       return;
     }
 
     this.flush();
+    this.userIdentity = nextIdentity;
     this._key.set(layoutKey);
     this._prefs.set(this.storage.read(layoutKey));
     this._active.set({});

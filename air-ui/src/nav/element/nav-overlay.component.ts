@@ -30,11 +30,16 @@ export class NavOverlayComponent {
 
     if (model?.overlay) {
       const form = this.context?.of(FORM)?.() ?? null;
+      const isCurrent = form?.capture();
       const ref = this.overlay
         .open(model.overlay, this.host.nativeElement, this.injector)
         .name({ label: model.label ?? model.title ?? undefined });
-      if (form && model.key === 'history') {
-        ref.closed.subscribe(() => form.refresh());
+      if (form && isCurrent && model.key === 'history') {
+        ref.closed.subscribe(() => {
+          if (isCurrent()) {
+            form.refresh();
+          }
+        });
       }
     }
   }

@@ -104,6 +104,18 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   private object? _preloadedParent;
   private long? _preloadedParentId;
 
+  public async Task<bool> BindParentAsync(string? parentService, long? parentId, CancellationToken ct = default)
+  {
+    ParentService = parentService;
+    ParentId = parentId;
+    if (!string.IsNullOrEmpty(parentService) || parentId is > 0)
+    {
+      return await EnsureParentScopeAsync(lockParent: false, ct);
+    }
+
+    return true;
+  }
+
   protected async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
   {
     var parent = GetParent();
@@ -363,7 +375,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual IReadOnlyList<GridCreateDescriptor> GetCreateForms()
   {
-    if (IsReadOnly)
+    if (Feature.IsReadOnly || IsReadOnly && (_preloadedParentId.HasValue || GetParent().BoundProperty == null))
     {
       return [];
     }

@@ -11,12 +11,12 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
   public bool IsAuthenticated =>
     Snapshot != null ||
     User?.Identity?.IsAuthenticated == true ||
-    httpContextAccessor.HttpContext == null && AsyncLocalTenantContext.Instance.UserId != null;
+    AsyncLocalTenantContext.Instance.UserId != null;
 
   public long? UserId =>
+    AsyncLocalTenantContext.Instance.UserId ??
     Snapshot?.Id ??
-    Long(AuthClaims.Sub) ?? Long(ClaimTypes.NameIdentifier) ??
-    (httpContextAccessor.HttpContext == null ? AsyncLocalTenantContext.Instance.UserId : null);
+    Long(AuthClaims.Sub) ?? Long(ClaimTypes.NameIdentifier);
 
   public long? SessionId => Long(AuthClaims.SessionId);
 
@@ -41,10 +41,9 @@ public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContex
       : (httpContextAccessor.HttpContext?.Request.Headers[AuthClaims.TimeZoneHeader].FirstOrDefault() ?? "UTC");
 
   public IReadOnlySet<string> Permissions =>
-    field ??= Snapshot?.PermissionSet
-      ?? (httpContextAccessor.HttpContext == null && AsyncLocalTenantContext.Instance.Rights is { } ambient
-        ? ambient as IReadOnlySet<string> ?? ambient.ToHashSet(StringComparer.OrdinalIgnoreCase)
-        : Values(AuthClaims.Permission));
+    AsyncLocalTenantContext.Instance.Rights is { } ambient
+      ? ambient
+      : Snapshot?.PermissionSet ?? (field ??= Values(AuthClaims.Permission));
 
   public string? Claim(string type) => User?.FindFirst(type)?.Value;
 

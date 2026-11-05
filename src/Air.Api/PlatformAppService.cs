@@ -67,16 +67,19 @@ public class PlatformAppService(
     }
 
     if (db.SetOfBase<BaseAppAuthGrant>() is not { } grantsSet ||
-        db.SetOfBase<BaseAppAuthAssignment>() is not { } assignmentsSet)
+        db.SetOfBase<BaseAppAuthAssignment>() is not { } assignmentsSet ||
+        db.SetOfBase<BaseAppAuthRole>() is not { } rolesSet)
     {
       return false;
     }
 
-    var grants = await grantsSet
-      .Where(g => assignmentsSet.Any(a => a.UserId == targetUserId && a.IsActive && a.AuthRoleId == g.AuthRoleId))
-      .Select(g => g.Permission)
-      .Distinct()
-      .ToListAsync(ct);
+    var grants = await (
+      from g in grantsSet.IgnoreQueryFilters().AsNoTracking()
+      join r in rolesSet.IgnoreQueryFilters().AsNoTracking() on g.AuthRoleId equals r.Id
+      join a in assignmentsSet.IgnoreQueryFilters().AsNoTracking() on r.Id equals a.AuthRoleId
+      where a.UserId == targetUserId && a.IsActive && r.IsActive
+      select g.Permission
+    ).Distinct().ToListAsync(ct);
 
     if (app != null)
     {
@@ -103,6 +106,7 @@ public class PlatformAppService(
 
     var now = DateTimeOffset.UtcNow;
     var sessions = await sessionsSet
+      .IgnoreQueryFilters()
       .Where(s => userIds.Contains(s.UserId) && s.RevokedAt == null)
       .ToListAsync(ct);
     foreach (var session in sessions)

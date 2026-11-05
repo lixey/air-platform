@@ -191,6 +191,12 @@ export class LayoutComponent {
   }
 
   constructor() {
+    this.destroyRef.onDestroy(() => {
+      for (const ref of [...this.overlay.stack()]) {
+        ref.forceClose();
+      }
+    });
+
     afterNextRender(() => {
       this.isEngineReady.set(true);
       this.watchWorkArea();

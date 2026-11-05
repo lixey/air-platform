@@ -19,6 +19,20 @@ public abstract partial class FormService<TEntity>
     CancellationToken ct = default)
   {
     var isEdit = recordId is > 0;
+    var parent = GetParent();
+    if (parentId is null or <= 0 && parent.BoundProperty != null && overrides != null)
+    {
+      foreach (var (k, v) in overrides)
+      {
+        if (string.Equals(k, parent.BoundProperty.Name, StringComparison.OrdinalIgnoreCase) &&
+            ExtractReferenceId(v) is > 0 and var overridePid)
+        {
+          parentId = overridePid;
+          break;
+        }
+      }
+    }
+
     var req = new FormRequest
     {
       Id = isEdit ? recordId : null,
@@ -47,6 +61,19 @@ public abstract partial class FormService<TEntity>
     catch when (!isEdit)
     {
       // Ignore default model resolution errors when parent context is not yet created
+    }
+
+    if (Request.ParentId is null or <= 0 &&
+        parent.BoundProperty != null &&
+        CurrentEntity != null &&
+        parent.BoundProperty.GetValue(CurrentEntity) is long entityPid and > 0)
+    {
+      Request.ParentId = entityPid;
+    }
+
+    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+    {
+      await PreloadParentRecordAsync(parent, ct);
     }
 
     var recordVer = (CurrentEntity as IHasVersion)?.Ver;
@@ -134,6 +161,18 @@ public abstract partial class FormService<TEntity>
       {
         SetPropertyValue(draftEntity, prop.Name, prop.Value);
       }
+    }
+
+    if (Request.ParentId is null or <= 0 &&
+        parent.BoundProperty != null &&
+        parent.BoundProperty.GetValue(draftEntity) is long draftPid and > 0)
+    {
+      Request.ParentId = draftPid;
+    }
+
+    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+    {
+      await PreloadParentRecordAsync(parent, ct);
     }
 
     List<MessageDto> messages = [];
@@ -249,6 +288,7 @@ public abstract partial class FormService<TEntity>
         if ((!isEdit || patch.OnlyWhenEmpty) &&
             values.TryGetValue(patch.TargetField, out var existingTarget) &&
             existingTarget != null &&
+            !(FilterNodeEvaluator.TryConvertToDecimal(existingTarget, out var existingDec) && existingDec == 0m) &&
             existingTarget.ToString() is { Length: > 0 } existingStr &&
             existingStr != "0")
         {
@@ -260,33 +300,65 @@ public abstract partial class FormService<TEntity>
           continue;
         }
 
-        var patchId = ExtractReferenceId(patchVal);
-        if (patchId is not > 0)
+        var targetEl = editableElements.FirstOrDefault(e => string.Equals(e.Path, patch.TargetField, StringComparison.OrdinalIgnoreCase));
+        var isReferenceTarget = targetEl?.ValueKind == FormValueKind.Reference || targetEl?.Model is FormSelectModel;
+        if (isReferenceTarget)
         {
+          var patchId = ExtractReferenceId(patchVal);
+          if (patchId is not > 0)
+          {
+            continue;
+          }
+
+          if (targetEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } targetRefSvc, ReferenceFilter: { } targetFilter })
+          {
+            var targetSvcType = ModuleCatalog.Instance.FindServiceType(targetRefSvc);
+            if (targetSvcType != null &&
+                typeof(IGridService).IsAssignableFrom(targetSvcType) &&
+                ModuleCatalog.Instance.CreateServiceInstance(targetSvcType, db, PlatformApp) is IGridService targetGrid)
+            {
+              try
+              {
+                if (await targetGrid.ReadRowAsync(patchId.Value, ct) is IDictionary<string, object?> targetRow &&
+                    !MatchesRowFilter(targetRow, targetFilter))
+                {
+                  continue;
+                }
+              }
+              catch { }
+            }
+          }
+
+          values[patch.TargetField] = patchId.Value;
           continue;
         }
 
-        var targetEl = editableElements.FirstOrDefault(e => string.Equals(e.Path, patch.TargetField, StringComparison.OrdinalIgnoreCase));
-        if (targetEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } targetRefSvc, ReferenceFilter: { } targetFilter })
+        if (FilterNodeEvaluator.TryConvertToDecimal(patchVal, out var decVal))
         {
-          var targetSvcType = ModuleCatalog.Instance.FindServiceType(targetRefSvc);
-          if (targetSvcType != null &&
-              typeof(IGridService).IsAssignableFrom(targetSvcType) &&
-              ModuleCatalog.Instance.CreateServiceInstance(targetSvcType, db, PlatformApp) is IGridService targetGrid)
+          if (decVal != 0m)
           {
-            try
-            {
-              if (await targetGrid.ReadRowAsync(patchId.Value, ct) is IDictionary<string, object?> targetRow &&
-                  !MatchesRowFilter(targetRow, targetFilter))
-              {
-                continue;
-              }
-            }
-            catch { }
+            values[patch.TargetField] = patchVal is int or long ? patchVal : decVal;
           }
         }
-
-        values[patch.TargetField] = patchId.Value;
+        else if (patchVal is bool bVal)
+        {
+          values[patch.TargetField] = bVal;
+        }
+        else if (patchVal is string sVal && !string.IsNullOrWhiteSpace(sVal))
+        {
+          values[patch.TargetField] = sVal;
+        }
+        else if (patchVal is JsonElement je)
+        {
+          if (je.ValueKind is JsonValueKind.True or JsonValueKind.False)
+          {
+            values[patch.TargetField] = je.GetBoolean();
+          }
+          else if (je.ValueKind == JsonValueKind.String && je.GetString() is { Length: > 0 } jeStr && !string.IsNullOrWhiteSpace(jeStr))
+          {
+            values[patch.TargetField] = jeStr;
+          }
+        }
       }
     }
   }

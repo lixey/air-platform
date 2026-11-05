@@ -161,17 +161,12 @@ public abstract partial class GridService<TEntity, TRow>
     var cols = CreateColumns();
     var allColumns = cols.List.ToList();
 
-    var isSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 } || (gridReq?.IsReferencePicker ?? false);
-    if (isSelect)
+    var isReferenceSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
+    var isSelect = isReferenceSelect || (gridReq?.IsReferencePicker ?? false);
+    if (isReferenceSelect)
     {
-      var defaultLabel = cols.List
-        .FirstOrDefault(c => !string.Equals(c.Path, "id", StringComparison.OrdinalIgnoreCase))?.Path ?? "name";
-      var labelPaths = gridReq?.ReferenceLabelPaths is { Count: > 0 }
-        ? gridReq.ReferenceLabelPaths
-        : GetReferenceLabelPaths() is { Count: > 0 } declLabels
-          ? declLabels
-          : [defaultLabel, "name"];
-      var patchColumns = gridReq?.PatchSourceColumns ?? [];
+      var labelPaths = gridReq!.ReferenceLabelPaths!;
+      var patchColumns = gridReq.PatchSourceColumns ?? [];
       var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
       foreach (var p in patchColumns)
       {
@@ -223,7 +218,7 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var defaultSelector = typeof(TRow) == typeof(TEntity)
+    var defaultSelector = CanUseDefaultProjection(filteredQuery, queryDeclaration)
       ? GridProjectionBuilder.TryBuildSelector<TEntity>(cols.List, HasCustomShapeRow)
       : null;
 
@@ -440,7 +435,7 @@ public abstract partial class GridService<TEntity, TRow>
       return;
     }
 
-    var baseQuery = db.Set<TEntity>().AsNoTracking();
+    var baseQuery = BaseQuery(db).AsNoTracking();
     foreach (var col in subqueryCols)
     {
       var evaluator = GetComputedColumnEvaluator(col.ValueExpression!.ReturnType);
@@ -541,7 +536,7 @@ public abstract partial class GridService<TEntity, TRow>
       return;
     }
 
-    var entityQuery = IncludeColumnNavigations(db.Set<TEntity>().AsNoTracking(), colorCols)
+    var entityQuery = IncludeColumnNavigations(BaseQuery(db).AsNoTracking(), colorCols)
       .Where(e => rowIds.Contains(e.Id));
     var entitiesById = await entityQuery.ToDictionaryAsync(e => e.Id, ct);
 
@@ -565,25 +560,28 @@ public abstract partial class GridService<TEntity, TRow>
           continue;
         }
 
-        var key = PropertyAccessorCache.GetCamelPathSegments(col.Path)[0];
-        if (dict.TryGetValue(key, out var val))
+        var val = PropertyAccessorCache.GetPathValue(dict, PropertyAccessorCache.ToCamel(col.Path));
+        if (val is Reference r)
         {
-          if (val is Reference r)
-          {
-            r.Color = hue;
-          }
-          else if (val is Dictionary<string, object?> dictVal)
-          {
-            dictVal["color"] = hue;
-          }
-          else
-          {
-            PutValue(dict, $"{col.Path}Color", hue);
-          }
+          r.Color = hue;
+        }
+        else if (val is Dictionary<string, object?> dictVal)
+        {
+          dictVal["color"] = hue;
+        }
+        else
+        {
+          PutValue(dict, $"{col.Path}Color", hue);
         }
       }
     }
   }
+
+  private bool CanUseDefaultProjection(IQueryable<TEntity> query, Query queryDeclaration) =>
+    typeof(TRow) == typeof(TEntity) &&
+    !HasCustomShapeRow &&
+    !((queryDeclaration.ComputeAction != null || queryDeclaration.RowComputeAction != null || queryDeclaration.RowFlags.Count > 0) &&
+      GridProjectionBuilder.HasIncludeExpressions(query.Expression));
 
   private static List<long> ExtractRowIds(List<object> shapedRows)
   {
