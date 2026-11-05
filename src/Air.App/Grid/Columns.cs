@@ -118,11 +118,12 @@ public class Columns
 
   public GridColumn<TProp> Add<TProp>(string path)
   {
+    var camelPath = ToCamelPath(path);
     var col = new GridColumnDto
     {
-      Path = path,
-      FilterPath = path,
-      Label = PathToLabel(path, null),
+      Path = camelPath,
+      FilterPath = camelPath,
+      Label = PathToLabel(camelPath, null),
       Type = ResolveFieldType(typeof(TProp)),
       TemporalType = Form.Elements.ResolveTemporalType(typeof(TProp)),
       Cell = ResolveDefaultCell(typeof(TProp)),

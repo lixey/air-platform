@@ -240,15 +240,18 @@ public abstract partial class FormService<TEntity, TInput>
           var refServiceType = el.ReferenceServiceType
             ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
             ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
+          var refGrid = refServiceType != null
+            ? ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService
+            : null;
           var refEntityType = ModuleCatalog.GetServiceEntityType(refServiceType);
           var loadedById = refEntityType != null
-            ? await LoadEntitiesByIdsAsync(db, refEntityType, keys, ct)
+            ? await ReferenceCaptionResolver.LoadEntitiesByIdsAsync(db, refEntityType, keys, labelPaths, refGrid, ct)
             : [];
 
           foreach (var k in keys)
           {
             var itemCaption = loadedById.TryGetValue(k, out var loaded)
-              ? ReadDisplayCaption(loaded, labelPaths)
+              ? ReferenceCaptionResolver.ReadDisplayCaption(loaded, labelPaths, refGrid)
               : null;
             refs.Add(new Reference { Id = k, Name = !string.IsNullOrEmpty(itemCaption) ? itemCaption : $"#{k}" });
           }
@@ -290,21 +293,33 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
-      var refName = ReadDisplayCaption(navObj, labelPaths);
+      var singleRefServiceType = selectModel != null && !string.IsNullOrEmpty(selectModel.ReferenceService)
+        ? el.ReferenceServiceType
+          ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
+          ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType
+        : el.ReferenceServiceType;
+      var singleRefGrid = singleRefServiceType != null
+        ? ModuleCatalog.Instance.CreateServiceInstance(singleRefServiceType, db, PlatformApp) as IGridService
+        : null;
 
-      if (string.IsNullOrEmpty(refName) && selectModel != null && !string.IsNullOrEmpty(selectModel.ReferenceService))
+      var refName = ReferenceCaptionResolver.ReadDisplayCaption(navObj, labelPaths, singleRefGrid);
+
+      if (string.IsNullOrEmpty(refName) && singleRefServiceType != null)
       {
-        var refServiceType = ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
-          ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
-        var refEntityType = ModuleCatalog.GetServiceEntityType(refServiceType);
+        var refEntityType = ModuleCatalog.GetServiceEntityType(singleRefServiceType);
         if (refEntityType != null)
         {
-          try
+          var loadedById = await ReferenceCaptionResolver.LoadEntitiesByIdsAsync(
+            db,
+            refEntityType,
+            [key.Value],
+            labelPaths,
+            singleRefGrid,
+            ct);
+          if (loadedById.TryGetValue(key.Value, out var loaded))
           {
-            var loaded = await db.FindAsync(refEntityType, [key.Value], ct);
-            refName = ReadDisplayCaption(loaded, labelPaths);
+            refName = ReferenceCaptionResolver.ReadDisplayCaption(loaded, labelPaths, singleRefGrid);
           }
-          catch { }
         }
       }
 
@@ -347,84 +362,6 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
     }
-  }
-
-  private static readonly MethodInfo LoadEntitiesByIdsGenericMethod =
-    typeof(FormService<TEntity, TInput>).GetMethod(nameof(LoadEntitiesByIdsCoreAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
-
-  private static async Task<Dictionary<long, object>> LoadEntitiesByIdsAsync(
-    DbContext targetDb,
-    Type entityType,
-    IReadOnlyList<long> ids,
-    CancellationToken ct)
-  {
-    if (ids.Count == 0 || !typeof(IEntity).IsAssignableFrom(entityType))
-    {
-      return [];
-    }
-
-    try
-    {
-      var task = (Task<Dictionary<long, object>>)LoadEntitiesByIdsGenericMethod
-        .MakeGenericMethod(entityType)
-        .Invoke(null, [targetDb, ids, ct])!;
-      return await task;
-    }
-    catch
-    {
-      return [];
-    }
-  }
-
-  private static async Task<Dictionary<long, object>> LoadEntitiesByIdsCoreAsync<TRefEntity>(
-    DbContext targetDb,
-    IReadOnlyList<long> ids,
-    CancellationToken ct)
-    where TRefEntity : class, IEntity
-  {
-    var rows = await targetDb.Set<TRefEntity>()
-      .AsNoTracking()
-      .Where(e => ids.Contains(e.Id))
-      .ToListAsync(ct);
-    return rows.ToDictionary(r => r.Id, r => (object)r);
-  }
-
-  private static string? ReadDisplayCaption(object? target, IReadOnlyList<string>? labelPaths = null)
-  {
-    if (target == null)
-    {
-      return null;
-    }
-
-    if (labelPaths is { Count: > 0 })
-    {
-      var parts = new List<string>(labelPaths.Count);
-      foreach (var path in labelPaths)
-      {
-        var rawPart = PropertyAccessorCache.GetValue(target, path);
-        if (rawPart is null or Reference or IEntity)
-        {
-          continue;
-        }
-
-        var partVal = rawPart.ToString();
-        if (!string.IsNullOrWhiteSpace(partVal))
-        {
-          parts.Add(partVal);
-        }
-      }
-
-      if (parts.Count > 0)
-      {
-        return string.Join(" ", parts);
-      }
-    }
-
-    var val = PropertyAccessorCache.GetValue(target, "Name")
-      ?? PropertyAccessorCache.GetValue(target, "Title")
-      ?? PropertyAccessorCache.GetValue(target, "Number")
-      ?? PropertyAccessorCache.GetValue(target, "Login");
-    return val?.ToString();
   }
 
   private static List<long> ExtractLongKeys(object? multiRaw)

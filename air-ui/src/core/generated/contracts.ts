@@ -463,6 +463,7 @@ export interface AgentProposalLineDto {
   price: number;
   amount: number;
   category?: string | null;
+  fields?: AgentProposalFieldDto[] | null;
 }
 
 export interface AgentProviderDto {

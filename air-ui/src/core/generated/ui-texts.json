@@ -148,6 +148,7 @@
   "AgentErrorSave": "Could not save the record.",
   "FileLoadFailed": "The file could not be shown.",
   "Add": "Add",
+  "LegacyTitleFormat": "Legacy UI: {0} | DB: {1}",
   "FileNameInvalid": "The file\u0027s name is empty or holds a folder or a control character.",
   "AgentEmptyDescription": "Describe what you want to create or edit, or drop a photo/receipt (drag \u0026 drop or press \u2318V).",
   "AgentCopied": "Copied",

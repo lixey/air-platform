@@ -158,7 +158,7 @@ public abstract partial class GridService<TEntity, TRow>
           }
           else
           {
-            shaped[$"{column.Path}Color"] = hue;
+            PutValue(shaped, $"{column.Path}Color", hue);
           }
         }
       }
@@ -260,10 +260,11 @@ public abstract partial class GridService<TEntity, TRow>
   private async IAsyncEnumerable<object> ShapeEntityStreamAsync(
     IAsyncEnumerable<TEntity> source,
     IReadOnlyList<GridColumnDto> columns,
+    Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? rowComputeAction,
     [EnumeratorCancellation] CancellationToken ct)
   {
     var hasSubqueryCols = columns.Any(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null);
-    if (!hasSubqueryCols)
+    if (!hasSubqueryCols && rowComputeAction == null)
     {
       await foreach (var item in source.WithCancellation(ct))
       {
@@ -273,28 +274,95 @@ public abstract partial class GridService<TEntity, TRow>
       yield break;
     }
 
+    var entities = new List<TEntity>(500);
     var batch = new List<object>(500);
     await foreach (var item in source.WithCancellation(ct))
     {
+      entities.Add(item);
       batch.Add(ShapeRow((item as TRow)!, columns));
       if (batch.Count >= 500)
       {
-        await PopulateComputedColumnsAsync(batch, columns, ct);
+        if (rowComputeAction != null)
+        {
+          await InvokeRowComputeActionAsync(entities, batch, columns, rowComputeAction, ct);
+        }
+
+        if (hasSubqueryCols)
+        {
+          await PopulateComputedColumnsAsync(batch, columns, ct);
+        }
+
         foreach (var shaped in batch)
         {
           yield return shaped;
         }
 
+        entities.Clear();
         batch.Clear();
       }
     }
 
     if (batch.Count > 0)
     {
-      await PopulateComputedColumnsAsync(batch, columns, ct);
+      if (rowComputeAction != null)
+      {
+        await InvokeRowComputeActionAsync(entities, batch, columns, rowComputeAction, ct);
+      }
+
+      if (hasSubqueryCols)
+      {
+        await PopulateComputedColumnsAsync(batch, columns, ct);
+      }
+
       foreach (var shaped in batch)
       {
         yield return shaped;
+      }
+    }
+  }
+
+  private static async Task InvokeRowComputeActionAsync(
+    IReadOnlyList<TEntity> entities,
+    List<object> shapedRows,
+    IReadOnlyList<GridColumnDto> columns,
+    Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task> rowComputeAction,
+    CancellationToken ct)
+  {
+    var count = Math.Min(entities.Count, shapedRows.Count);
+    if (count == 0)
+    {
+      return;
+    }
+
+    var computedRows = new List<GridComputedRow<TEntity>>(count);
+    for (var i = 0; i < count; i++)
+    {
+      if (shapedRows[i] is Dictionary<string, object?> dict)
+      {
+        computedRows.Add(new GridComputedRow<TEntity>(entities[i], dict));
+      }
+    }
+
+    if (computedRows.Count == 0)
+    {
+      return;
+    }
+
+    await rowComputeAction(computedRows, ct);
+
+    foreach (var col in columns)
+    {
+      if (!col.IsComputed || col.ValueFormatter == null || string.IsNullOrEmpty(col.Path))
+      {
+        continue;
+      }
+
+      foreach (var row in computedRows)
+      {
+        if (row[col.Path] is { } val)
+        {
+          row[col.Path] = col.ValueFormatter(val);
+        }
       }
     }
   }

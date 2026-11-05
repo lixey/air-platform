@@ -89,6 +89,10 @@ internal static class GridProjectionBuilder
             return null;
           }
         }
+        else if (col.IsComputed)
+        {
+          continue;
+        }
         else
         {
           var members = GridProjectionNode.ResolveMembers(entityType, col.Path);

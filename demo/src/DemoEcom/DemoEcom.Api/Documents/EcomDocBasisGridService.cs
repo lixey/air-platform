@@ -4,7 +4,7 @@ namespace DemoEcom.Documents;
 /// Abstract domain base for document basis ("Entered on") grids across Demo Ecom.
 /// </summary>
 public abstract class EcomDocBasisGridService<TForm>(EcomDbContext db, EcomService? ecom = null)
-  : EcomGridService<EcomDocLink, EcomDocLinkRow>(db, ecom)
+  : EcomGridService<EcomDocLink>(db, ecom)
   where TForm : class
 {
   protected override bool IsReadOnly => true;
@@ -13,17 +13,16 @@ public abstract class EcomDocBasisGridService<TForm>(EcomDbContext db, EcomServi
   protected override void SetQuery(Query query)
   {
     query.Where(EcomDocLinks.Documents);
-    query.Select(EcomDocLinks.Basis);
   }
 
   protected override void SetParent(Parent parent) => parent.Bind<TForm>(l => l.TargetDocId);
 
-  protected override void SetColumns(Columns<EcomDocLinkRow> columns)
+  protected override void SetColumns(Columns columns)
   {
-    columns.Add(r => r.Number);
-    columns.Add(r => r.Type);
-    columns.Add(r => r.Date);
-    columns.Add(r => r.Status).Color(EcomDocLinks.BasisHue);
+    columns.Add(r => r.SourceDoc.Number);
+    columns.Add(r => r.SourceDoc.DocType.Name).Label("Type");
+    columns.Add(r => r.SourceDoc.Date);
+    columns.Add(r => r.SourceDoc.DocStatus.Name).Label("Status").Color(EcomDocLinks.BasisHue);
     columns.Add(r => r.Qty).Label("Quantity");
     columns.Add(r => r.Amount).AsMoney();
   }

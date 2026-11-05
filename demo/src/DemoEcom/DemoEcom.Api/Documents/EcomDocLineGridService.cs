@@ -1,7 +1,7 @@
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomService? ecom = null)
-  : EcomGridService<EcomDocLine, EcomDocLineRow>(db, ecom)
+  : EcomGridService<EcomDocLine>(db, ecom)
   where TDocForm : class
 {
   protected override bool IsReadOnly => base.IsReadOnly || ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true };
@@ -10,7 +10,6 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
 
   protected override void SetQuery(Query query)
   {
-    query.Select(EcomDocLines.Row);
     query.SortBy(r => r.SortOrder);
   }
 

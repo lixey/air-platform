@@ -5,12 +5,12 @@ public sealed class EcomSupplierReturnLineGridService(EcomDbContext db, EcomServ
 {
   public override Feature Feature => Ecom.SupplierReturn;
 
-  protected override void SetColumns(Columns<EcomDocLineRow> columns)
+  protected override void SetColumns(Columns columns)
   {
     columns.Add(r => r.Id).AsOpenForm<EcomSupplierReturnLineFormService>();
     columns.Add(r => r.SortOrder);
     columns.Add(r => r.Product).AsReference<OrgProductGridService>();
-    columns.Add(r => r.Article);
+    columns.Add(r => r.Product.Article);
     columns.Add(r => r.Qty).Label("Quantity").Sum();
     columns.Add(r => r.Price).AsMoney();
     columns.Add(r => r.Amount).AsMoney().Sum();

@@ -180,6 +180,9 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public virtual IReadOnlyList<string>? GetReferenceLabelPaths() =>
     GetQueryDeclaration().ReferenceLabelPaths;
 
+  public virtual IReadOnlyList<string>? GetLabelNavigationPaths() =>
+    GetQueryDeclaration().LabelNavigationPaths;
+
   public virtual string? GetRecordLabel(object? entity)
   {
     if (entity is not TEntity typed)
@@ -188,20 +191,22 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     var q = GetQueryDeclaration();
-    if (q.LabelSelector != null)
+    if (q.CompiledLabelSelector != null)
     {
       try
       {
-        if (typed.Id > 0)
+        if (typed.Id > 0 && q.LabelNavigationPaths is { Count: > 0 } navs && navs.Any(nav => IsNavigationPathUnloaded(typed, nav)))
         {
-          var navs = Form.Elements.ExtractNavigationPaths(q.LabelSelector);
-          if (navs.Any(nav => IsNavigationPathUnloaded(typed, nav)))
+          var reloadQuery = RestrictedQuery().AsNoTracking();
+          foreach (var nav in navs)
           {
-            typed = RestrictedQuery().AsNoTracking().FirstOrDefault(e => e.Id == typed.Id) ?? typed;
+            reloadQuery = reloadQuery.Include(nav);
           }
+
+          typed = reloadQuery.FirstOrDefault(e => e.Id == typed.Id) ?? typed;
         }
 
-        return q.LabelSelector.Compile().DynamicInvoke(typed)?.ToString();
+        return q.CompiledLabelSelector(typed);
       }
       catch
       {

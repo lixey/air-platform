@@ -240,7 +240,17 @@ public abstract partial class GridService<TEntity, TRow>
       defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     }
 
+    if (queryDeclaration.ComputeAction != null && defaultPage.Rows.Count > 0 && defaultPage.Rows is IReadOnlyList<TRow> typedPageRows)
+    {
+      await queryDeclaration.ComputeAction(typedPageRows, ct);
+    }
+
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
+    if (queryDeclaration.RowComputeAction != null && defaultPage.Rows.Count > 0)
+    {
+      await InvokeRowComputeActionAsync(defaultPage.Rows, defaultShapedRows, cols.List, queryDeclaration.RowComputeAction, ct);
+    }
+
     await PopulateComputedColumnsAsync(defaultShapedRows, cols.List, ct);
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
@@ -568,7 +578,7 @@ public abstract partial class GridService<TEntity, TRow>
           }
           else
           {
-            dict[$"{col.Path}Color"] = hue;
+            PutValue(dict, $"{col.Path}Color", hue);
           }
         }
       }

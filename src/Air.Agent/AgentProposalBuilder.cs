@@ -391,7 +391,8 @@ public static partial class AgentProposalBuilder
         }
 
         var lineDict = new Dictionary<string, object?>(childDefaults, StringComparer.OrdinalIgnoreCase);
-        string? lineCategoryLabel = null;
+        var lineRefLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var explicitlySetLineFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var cel in childEditableElements)
         {
@@ -400,10 +401,12 @@ public static partial class AgentProposalBuilder
           if (cel.Model is FormSelectModel cSelect && !string.IsNullOrEmpty(cSelect.ReferenceService))
           {
             long? resolvedCellId = null;
+            string? resolvedCellName = null;
 
             if (hasCellProp)
             {
-              (resolvedCellId, _, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
+              explicitlySetLineFields.Add(cel.Path);
+              (resolvedCellId, resolvedCellName, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
                 rawCellProp,
                 cSelect.ReferenceService,
                 cSelect.ReferenceFilter,
@@ -422,7 +425,8 @@ public static partial class AgentProposalBuilder
               {
                 if (TryGetPropertyIgnoreCase(item, alias, out var aliasProp))
                 {
-                  (resolvedCellId, _, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
+                  explicitlySetLineFields.Add(cel.Path);
+                  (resolvedCellId, resolvedCellName, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
                     aliasProp,
                     cSelect.ReferenceService,
                     cSelect.ReferenceFilter,
@@ -450,16 +454,19 @@ public static partial class AgentProposalBuilder
 
             lineDict[cel.Path] = resolvedCellId;
 
-            if (lineCategoryLabel == null)
+            if (resolvedCellId is > 0)
             {
-              if (resolvedCellId is > 0)
+              var refLabel = !string.IsNullOrWhiteSpace(resolvedCellName)
+                ? resolvedCellName
+                : ResolveSingleName(resolvedCellId.Value, cSelect, dictionaries);
+              if (!string.IsNullOrWhiteSpace(refLabel))
               {
-                lineCategoryLabel = ResolveSingleName(resolvedCellId.Value, cSelect, dictionaries);
+                lineRefLabels[cel.Path] = refLabel;
               }
-              else if (newReferences.FirstOrDefault(nr => string.Equals(nr.FieldPath, cel.Path, StringComparison.OrdinalIgnoreCase)) is { } pendingParentRef)
-              {
-                lineCategoryLabel = pendingParentRef.Name;
-              }
+            }
+            else if (newReferences.FirstOrDefault(nr => string.Equals(nr.FieldPath, cel.Path, StringComparison.OrdinalIgnoreCase)) is { } pendingParentRef)
+            {
+              lineRefLabels[cel.Path] = pendingParentRef.Name;
             }
 
             continue;
@@ -467,23 +474,51 @@ public static partial class AgentProposalBuilder
 
           if (hasCellProp && rawCellProp.ValueKind != JsonValueKind.Undefined)
           {
+            explicitlySetLineFields.Add(cel.Path);
             lineDict[cel.Path] = ConvertJsonValue(rawCellProp, cel.Type);
           }
         }
 
-        var name = lineDict.TryGetValue("name", out var nameObj) ? nameObj?.ToString()?.Trim() : null;
+        var usedLinePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "qty", "price", "amount", "sortOrder" };
+        string? name = null;
+        if (lineDict.TryGetValue("name", out var nameObj) && !string.IsNullOrWhiteSpace(nameObj?.ToString()))
+        {
+          name = nameObj.ToString()!.Trim();
+          usedLinePaths.Add("name");
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
           var firstTextEl = childEditableElements.FirstOrDefault(e => e.Type == UiFieldType.Text && e.Model is not FormSelectModel);
-          if (firstTextEl != null && lineDict.TryGetValue(firstTextEl.Path, out var altObj))
+          if (firstTextEl != null && lineDict.TryGetValue(firstTextEl.Path, out var altObj) && !string.IsNullOrWhiteSpace(altObj?.ToString()))
           {
-            name = altObj?.ToString()?.Trim();
+            name = altObj.ToString()!.Trim();
+            usedLinePaths.Add(firstTextEl.Path);
+          }
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+          var firstRefEl = childEditableElements.FirstOrDefault(e => e.Model is FormSelectModel && lineRefLabels.ContainsKey(e.Path));
+          if (firstRefEl != null && lineRefLabels.TryGetValue(firstRefEl.Path, out var refLabel))
+          {
+            name = refLabel;
+            usedLinePaths.Add(firstRefEl.Path);
           }
         }
 
         if (string.IsNullOrWhiteSpace(name))
         {
           continue;
+        }
+
+        string? lineCategoryLabel = null;
+        var secondaryRefEl = childEditableElements.FirstOrDefault(e =>
+          e.Model is FormSelectModel && !usedLinePaths.Contains(e.Path) && lineRefLabels.ContainsKey(e.Path));
+        if (secondaryRefEl != null && lineRefLabels.TryGetValue(secondaryRefEl.Path, out var secLabel))
+        {
+          lineCategoryLabel = secLabel;
+          usedLinePaths.Add(secondaryRefEl.Path);
         }
 
         var lineDraft = await childFormInst.PrepareDraftAsync(
@@ -536,13 +571,66 @@ public static partial class AgentProposalBuilder
           lineDict["amount"] = finalAmount;
         }
 
+        List<AgentProposalFieldDto>? extraLineFields = null;
+        foreach (var cel in childEditableElements)
+        {
+          if (usedLinePaths.Contains(cel.Path) || !explicitlySetLineFields.Contains(cel.Path))
+          {
+            continue;
+          }
+
+          string? formattedVal = null;
+          if (lineRefLabels.TryGetValue(cel.Path, out var extraRefLabel))
+          {
+            formattedVal = extraRefLabel;
+          }
+          else if (lineDict.TryGetValue(cel.Path, out var rawExtra) && rawExtra != null)
+          {
+            if (TryConvertToDecimal(rawExtra, out var extraDec))
+            {
+              if (extraDec != 0m)
+              {
+                formattedVal = cel.Model is FormPercentModel
+                  ? $"{extraDec.ToString("0.##", CultureInfo.InvariantCulture)}%"
+                  : extraDec.ToString("0.##", CultureInfo.InvariantCulture);
+              }
+            }
+            else if (rawExtra is bool extraBool)
+            {
+              if (extraBool)
+              {
+                formattedVal = L["Yes"];
+              }
+            }
+            else
+            {
+              var s = rawExtra.ToString()?.Trim();
+              if (!string.IsNullOrWhiteSpace(s))
+              {
+                formattedVal = s;
+              }
+            }
+          }
+
+          if (!string.IsNullOrWhiteSpace(formattedVal))
+          {
+            extraLineFields ??= [];
+            extraLineFields.Add(new AgentProposalFieldDto
+            {
+              Label = cel.Label ?? cel.Path,
+              Value = formattedVal
+            });
+          }
+        }
+
         proposalLines.Add(new AgentProposalLineDto
         {
           Name = name,
           Qty = qty,
           Price = finalPrice,
           Amount = finalAmount,
-          Category = lineCategoryLabel
+          Category = lineCategoryLabel,
+          Fields = extraLineFields
         });
 
         rawLineDicts.Add(lineDict);

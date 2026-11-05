@@ -14,6 +14,7 @@ public interface IGridService : IPlatformService
   Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
+  IReadOnlyList<string>? GetLabelNavigationPaths() => null;
   string? GetRecordLabel(object? entity) => null;
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
   bool AllowsMultiDelete => false;

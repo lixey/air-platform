@@ -1,9 +1,8 @@
 namespace DemoApp;
 
-public abstract class AppGridService<TEntity, TRow>(AppDbContext db, AppService? app = null)
-  : GridService<TEntity, TRow>(db, app)
+public abstract class AppGridService<TEntity>(AppDbContext db, AppService? app = null)
+  : GridService<TEntity>(db, app)
   where TEntity : class, IEntity, new()
-  where TRow : class
 {
   protected AppService? AppService => app;
 }

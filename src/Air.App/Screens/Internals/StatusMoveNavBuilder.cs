@@ -128,17 +128,20 @@ internal static class StatusMoveNavBuilder
           var refServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService);
           if (ModuleCatalog.GetServiceEntityType(refServiceType) is { } refEntityType)
           {
-            try
-            {
-              var loaded = await db.FindAsync(refEntityType, [refId], ct);
-              var name = loaded != null
-                ? (PropertyAccessorCache.GetValue(loaded, "Name") ??
-                   PropertyAccessorCache.GetValue(loaded, "Title") ??
-                   PropertyAccessorCache.GetValue(loaded, "Number"))?.ToString()
-                : null;
-              dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? name : $"#{refId}" };
-            }
-            catch { }
+            var refGrid = refServiceType != null
+              ? ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, app) as IGridService
+              : null;
+            var loadedById = await ReferenceCaptionResolver.LoadEntitiesByIdsAsync(
+              db,
+              refEntityType,
+              [refId],
+              selectModel.ReferenceLabelPaths,
+              refGrid,
+              ct);
+            var name = loadedById.TryGetValue(refId, out var loaded)
+              ? ReferenceCaptionResolver.ReadDisplayCaption(loaded, selectModel.ReferenceLabelPaths, refGrid)
+              : null;
+            dict[el.ReferencePath] = new Reference { Id = refId, Name = !string.IsNullOrEmpty(name) ? name : $"#{refId}" };
           }
         }
       }

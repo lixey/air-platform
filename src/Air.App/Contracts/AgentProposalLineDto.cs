@@ -10,4 +10,7 @@ public sealed class AgentProposalLineDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Category { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<AgentProposalFieldDto>? Fields { get; set; }
 }

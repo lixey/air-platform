@@ -107,7 +107,7 @@ public abstract partial class GridService<TEntity, TRow>
               : await filteredEntities.SumAsync(Expression.Lambda<Func<TEntity, decimal?>>(body, rowParam), ct) ?? 0m;
           }
 
-          PutValue(sumRow, col.Path!, total);
+          PutSumValue(sumRow, col, total);
         }
         else if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short))
         {
@@ -115,7 +115,7 @@ public abstract partial class GridService<TEntity, TRow>
           var total = selector != null
             ? await filteredEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, long?>>(body, rowParam), ct) ?? 0L
             : await filteredEntities.SumAsync(Expression.Lambda<Func<TEntity, long?>>(body, rowParam), ct) ?? 0L;
-          PutValue(sumRow, col.Path!, total);
+          PutSumValue(sumRow, col, total);
         }
         else if (underlying == typeof(double) || underlying == typeof(float))
         {
@@ -123,7 +123,7 @@ public abstract partial class GridService<TEntity, TRow>
           var total = selector != null
             ? await filteredEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, double?>>(body, rowParam), ct) ?? 0d
             : await filteredEntities.SumAsync(Expression.Lambda<Func<TEntity, double?>>(body, rowParam), ct) ?? 0d;
-          PutValue(sumRow, col.Path!, total);
+          PutSumValue(sumRow, col, total);
         }
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -176,7 +176,7 @@ public abstract partial class GridService<TEntity, TRow>
     var fCount = 0;
     var groupParam = Expression.Parameter(typeof(IGrouping<int, TSource>), "g");
     var bindings = new List<MemberBinding>(resolved.Count);
-    var readers = new List<(string Path, Func<GridSumBucket?, object>)>(resolved.Count);
+    var readers = new List<(GridColumnDto Col, Func<GridSumBucket?, object> Reader)>(resolved.Count);
 
     var decSumMethod = typeof(Enumerable)
       .GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -205,7 +205,7 @@ public abstract partial class GridService<TEntity, TRow>
         var body = valueType == typeof(decimal?) ? expr : Expression.Convert(expr, typeof(decimal?));
         var sumCall = Expression.Call(decSumMethod, groupParam, Expression.Lambda<Func<TSource, decimal?>>(body, rowParam));
         bindings.Add(Expression.Bind(prop, sumCall));
-        readers.Add((col.Path!, b => b != null ? (decimal?)prop.GetValue(b) ?? 0m : 0m));
+        readers.Add((col, b => b != null ? (decimal?)prop.GetValue(b) ?? 0m : 0m));
       }
       else if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short))
       {
@@ -219,7 +219,7 @@ public abstract partial class GridService<TEntity, TRow>
         var body = valueType == typeof(long?) ? expr : Expression.Convert(expr, typeof(long?));
         var sumCall = Expression.Call(longSumMethod, groupParam, Expression.Lambda<Func<TSource, long?>>(body, rowParam));
         bindings.Add(Expression.Bind(prop, sumCall));
-        readers.Add((col.Path!, b => b != null ? (long?)prop.GetValue(b) ?? 0L : 0L));
+        readers.Add((col, b => b != null ? (long?)prop.GetValue(b) ?? 0L : 0L));
       }
       else if (underlying == typeof(double) || underlying == typeof(float))
       {
@@ -233,7 +233,7 @@ public abstract partial class GridService<TEntity, TRow>
         var body = valueType == typeof(double?) ? expr : Expression.Convert(expr, typeof(double?));
         var sumCall = Expression.Call(dblSumMethod, groupParam, Expression.Lambda<Func<TSource, double?>>(body, rowParam));
         bindings.Add(Expression.Bind(prop, sumCall));
-        readers.Add((col.Path!, b => b != null ? (double?)prop.GetValue(b) ?? 0d : 0d));
+        readers.Add((col, b => b != null ? (double?)prop.GetValue(b) ?? 0d : 0d));
       }
     }
 
@@ -246,11 +246,100 @@ public abstract partial class GridService<TEntity, TRow>
       .Select(bucketSelector)
       .FirstOrDefaultAsync(ct);
 
-    foreach (var (path, reader) in readers)
+    foreach (var (col, reader) in readers)
     {
-      PutValue(sumRow, path, reader(bucket));
+      PutSumValue(sumRow, col, reader(bucket));
     }
 
     return true;
+  }
+
+  private static void PutSumValue(Dictionary<string, object?> sumRow, GridColumnDto col, object total)
+  {
+    if (string.IsNullOrEmpty(col.Path))
+    {
+      return;
+    }
+
+    PutValue(sumRow, col.Path, total);
+
+    if (col.ColorEvaluator == null)
+    {
+      return;
+    }
+
+    string? hue = null;
+    try
+    {
+      if (col.ColorExpression == null)
+      {
+        hue = col.ColorEvaluator(total);
+      }
+      else if (ReferencesOnlyColumnProperty(col.ColorExpression, col.Path))
+      {
+        var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), col.Path);
+        if (prop is { CanWrite: true })
+        {
+          var dummy = new TEntity();
+          var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+          prop.SetValue(dummy, Convert.ChangeType(total, targetType, CultureInfo.InvariantCulture));
+          hue = col.ColorEvaluator(dummy);
+        }
+      }
+    }
+    catch { }
+
+    if (!string.IsNullOrEmpty(hue))
+    {
+      PutValue(sumRow, $"{col.Path}Color", hue.ToLowerInvariant());
+    }
+  }
+
+  private static bool ReferencesOnlyColumnProperty(LambdaExpression colorExpr, string colPath)
+  {
+    if (colorExpr.Parameters.Count != 1 || colPath.Contains('.'))
+    {
+      return false;
+    }
+
+    var param = colorExpr.Parameters[0];
+    var foundProp = false;
+    return CheckExpressionMembers(colorExpr.Body, param, colPath, ref foundProp) && foundProp;
+  }
+
+  private static bool CheckExpressionMembers(Expression? expr, ParameterExpression param, string colPath, ref bool foundProp)
+  {
+    switch (expr)
+    {
+      case null or ConstantExpression or ParameterExpression:
+        return true;
+
+      case MemberExpression me when me.Expression == param:
+        if (!string.Equals(me.Member.Name, colPath, StringComparison.OrdinalIgnoreCase))
+        {
+          return false;
+        }
+
+        foundProp = true;
+        return true;
+
+      case MemberExpression me:
+        return CheckExpressionMembers(me.Expression, param, colPath, ref foundProp);
+
+      case UnaryExpression ue:
+        return CheckExpressionMembers(ue.Operand, param, colPath, ref foundProp);
+
+      case BinaryExpression be:
+        return CheckExpressionMembers(be.Left, param, colPath, ref foundProp) &&
+               CheckExpressionMembers(be.Right, param, colPath, ref foundProp);
+
+      case ConditionalExpression ce:
+        return CheckExpressionMembers(ce.Test, param, colPath, ref foundProp) &&
+               CheckExpressionMembers(ce.IfTrue, param, colPath, ref foundProp) &&
+               CheckExpressionMembers(ce.IfFalse, param, colPath, ref foundProp);
+
+      default:
+        return false;
+    }
   }
 }

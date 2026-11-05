@@ -74,10 +74,15 @@ public abstract partial class GridService<TEntity, TRow>
   {
     internal List<Expression<Func<TEntity, bool>>> Filters { get; } = [];
     internal LambdaExpression? LabelSelector { get; private set; }
+    internal Func<TEntity, string?>? CompiledLabelSelector { get; private set; }
+    internal IReadOnlyList<string>? LabelNavigationPaths { get; private set; }
 
     public Query RecordLabel<TProp>(Expression<Func<TEntity, TProp>> expr)
     {
       LabelSelector = expr;
+      var compiled = expr.Compile();
+      CompiledLabelSelector = e => compiled(e)?.ToString();
+      LabelNavigationPaths = Form.Elements.ExtractNavigationPaths(expr);
       return this;
     }
 
@@ -91,6 +96,12 @@ public abstract partial class GridService<TEntity, TRow>
 
     public Query Select(Expression<Func<TEntity, TRow>> selector)
     {
+      if (RowComputeAction != null)
+      {
+        throw new InvalidOperationException(
+          "Query.Select cannot be combined with Query.Compute(GridComputedRow<TEntity>); use Query.Compute(IReadOnlyList<TRow>) or remove Query.Select.");
+      }
+
       Selector = selector;
       return this;
     }
@@ -114,6 +125,7 @@ public abstract partial class GridService<TEntity, TRow>
     internal string? PickByField { get; private set; }
     internal Func<string, string>? PickKeySelector { get; private set; }
     public Func<IReadOnlyList<TRow>, CancellationToken, Task>? ComputeAction { get; private set; }
+    public Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? RowComputeAction { get; private set; }
 
     private static string? GetMemberName(Expression expr)
     {
@@ -154,6 +166,18 @@ public abstract partial class GridService<TEntity, TRow>
       return this;
     }
 
+    public Query SortBy(string path)
+    {
+      DefaultSort.Clear();
+      var camel = Columns.ToCamelPath(path);
+      if (!string.IsNullOrEmpty(camel))
+      {
+        DefaultSort.Add(SortRule.Asc(camel));
+      }
+
+      return this;
+    }
+
     public Query SortByDescending<TProp>(Expression<Func<TRow, TProp>> expr)
     {
       DefaultSort.Clear();
@@ -161,6 +185,18 @@ public abstract partial class GridService<TEntity, TRow>
       if (!string.IsNullOrEmpty(path))
       {
         DefaultSort.Add(SortRule.Desc(path));
+      }
+
+      return this;
+    }
+
+    public Query SortByDescending(string path)
+    {
+      DefaultSort.Clear();
+      var camel = Columns.ToCamelPath(path);
+      if (!string.IsNullOrEmpty(camel))
+      {
+        DefaultSort.Add(SortRule.Desc(camel));
       }
 
       return this;
@@ -177,12 +213,34 @@ public abstract partial class GridService<TEntity, TRow>
       return this;
     }
 
+    public Query ThenBy(string path)
+    {
+      var camel = Columns.ToCamelPath(path);
+      if (!string.IsNullOrEmpty(camel))
+      {
+        DefaultSort.Add(SortRule.Asc(camel));
+      }
+
+      return this;
+    }
+
     public Query ThenByDescending<TProp>(Expression<Func<TRow, TProp>> expr)
     {
       var path = GetMemberPath(expr.Body);
       if (!string.IsNullOrEmpty(path))
       {
         DefaultSort.Add(SortRule.Desc(path));
+      }
+
+      return this;
+    }
+
+    public Query ThenByDescending(string path)
+    {
+      var camel = Columns.ToCamelPath(path);
+      if (!string.IsNullOrEmpty(camel))
+      {
+        DefaultSort.Add(SortRule.Desc(camel));
       }
 
       return this;
@@ -212,6 +270,18 @@ public abstract partial class GridService<TEntity, TRow>
     public Query Compute(Func<IReadOnlyList<TRow>, CancellationToken, Task> compute)
     {
       ComputeAction = compute;
+      return this;
+    }
+
+    public Query Compute(Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task> compute)
+    {
+      if (Selector != null)
+      {
+        throw new InvalidOperationException(
+          "Query.Compute(GridComputedRow<TEntity>) cannot be combined with Query.Select; use Query.Compute(IReadOnlyList<TRow>) or remove Query.Select.");
+      }
+
+      RowComputeAction = compute;
       return this;
     }
 

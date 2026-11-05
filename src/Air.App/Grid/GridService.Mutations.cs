@@ -661,10 +661,21 @@ public abstract partial class GridService<TEntity, TRow>
       return null;
     }
 
+    if (queryDeclaration.ComputeAction != null && entity is TRow typedRow)
+    {
+      await queryDeclaration.ComputeAction([typedRow], ct);
+    }
+
     var shapedEntity = ShapeRow((entity as TRow)!, cols.List, queryDeclaration.RowFlags);
-    await PopulateComputedColumnsAsync([shapedEntity], cols.List, ct);
-    await PopulateCoversAsync([shapedEntity], cols.List, ct);
-    await PopulateRowAvailabilityAsync([shapedEntity], cols, ct);
+    List<object> singleShapedList = [shapedEntity];
+    if (queryDeclaration.RowComputeAction != null)
+    {
+      await InvokeRowComputeActionAsync([entity], singleShapedList, cols.List, queryDeclaration.RowComputeAction, ct);
+    }
+
+    await PopulateComputedColumnsAsync(singleShapedList, cols.List, ct);
+    await PopulateCoversAsync(singleShapedList, cols.List, ct);
+    await PopulateRowAvailabilityAsync(singleShapedList, cols, ct);
     return shapedEntity;
   }
 
@@ -723,7 +734,7 @@ public abstract partial class GridService<TEntity, TRow>
     var query = BuildFilteredEntityQuery(request, out _, out var queryDeclaration);
     var cols = CreateColumns();
     LocalizeAndConfigureColumns(cols.List);
-    var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && !c.IsComputed && c.Cell is not AddOns.Covers.Contracts.GridCellCoverModel).ToList();
+    var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.Cell is not AddOns.Covers.Contracts.GridCellCoverModel).ToList();
 
     if (request.SelectedIds is { Count: > 0 } selectedIds)
     {
@@ -756,7 +767,7 @@ public abstract partial class GridService<TEntity, TRow>
       var defaultDataProvider = exportSelector != null
         ? DataProvider.Create(query.AsNoTracking(), queryMap, exportSelector)
         : DataProvider.Create(IncludeColumnNavigations(query.AsNoTracking(), exportColumns), queryMap);
-      rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
+      rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), cols.List, queryDeclaration.RowComputeAction, ct);
     }
 
     var tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());

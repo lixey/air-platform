@@ -289,6 +289,9 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                               @if (line.category) {
                                 <span>· {{ line.category }}</span>
                               }
+                              @for (f of line.fields ?? []; track $index) {
+                                <span>· {{ f.label }}: {{ f.value }}</span>
+                              }
                             </div>
                           </div>
                           <div class="shrink-0 font-medium tabular-nums text-ink">
