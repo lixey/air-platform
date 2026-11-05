@@ -11,62 +11,23 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     @"^[a-z]+-(?<major>\d+)(?:\.\d+)?(?:-|$)",
     RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-  private IReadOnlyList<AgentModelDto>? _cachedModels;
-  private DateTime _cachedCacheWriteUtc;
-  private string? _cachedCachePath;
-  private readonly SemaphoreSlim _modelsLock = new(1, 1);
+  private readonly CliModelCache _modelCache = new();
 
   public string Handle => "Codex";
   public string Name => "Codex CLI (codex)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
 
-  public async Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
   {
     var cachePath = ResolveModelsCachePath();
-    if (cachePath is null || !File.Exists(cachePath))
-    {
-      return [];
-    }
-
-    var writeUtc = File.GetLastWriteTimeUtc(cachePath);
-    if (!forceRefresh &&
-        _cachedModels is { Count: > 0 } &&
-        string.Equals(_cachedCachePath, cachePath, StringComparison.Ordinal) &&
-        _cachedCacheWriteUtc == writeUtc)
-    {
-      return _cachedModels;
-    }
-
-    await _modelsLock.WaitAsync(ct);
-    try
-    {
-      if (!forceRefresh &&
-          _cachedModels is { Count: > 0 } &&
-          string.Equals(_cachedCachePath, cachePath, StringComparison.Ordinal) &&
-          _cachedCacheWriteUtc == writeUtc)
-      {
-        return _cachedModels;
-      }
-
-      var discovered = await DiscoverModelsFromCacheFileAsync(cachePath, ct);
-      if (discovered.Count > 0)
-      {
-        _cachedModels = discovered;
-        _cachedCachePath = cachePath;
-        _cachedCacheWriteUtc = writeUtc;
-        return _cachedModels;
-      }
-    }
-    catch (Exception ex) when (ex is not OperationCanceledException)
-    {
-      // Ignore cache file read errors
-    }
-    finally
-    {
-      _modelsLock.Release();
-    }
-
-    return _cachedModels ?? [];
+    var cacheKey = cachePath is not null && File.Exists(cachePath)
+      ? $"{cachePath}|{File.GetLastWriteTimeUtc(cachePath).Ticks}"
+      : null;
+    return _modelCache.GetOrLoadAsync(
+      cacheKey,
+      forceRefresh,
+      token => DiscoverModelsFromCacheFileAsync(cachePath!, token),
+      ct);
   }
 
   private static string? ResolveModelsCachePath()
@@ -212,7 +173,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (_modelCache.CachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
     var (cliModel, effort) = CliTurnRunner.ResolveCliModelArgs(selectedModel, "-xhigh", "-high", "-medium", "-low");
 
     await foreach (var evt in CliTurnRunner.StreamTurnAsync(

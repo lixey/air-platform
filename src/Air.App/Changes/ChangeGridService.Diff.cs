@@ -1,4 +1,5 @@
 using Platform.App.Internals;
+using Platform.App.Screens.Internals;
 
 namespace Platform.App.Changes;
 
@@ -53,7 +54,7 @@ public abstract partial class ChangeGridService
     string? userName = null;
     if (change.UserId is > 0)
     {
-      var users = await LoadUserNamesAsync([change.UserId.Value], ct);
+      var users = await db.LoadUserNamesAsync([change.UserId.Value], ct);
       userName = users.TryGetValue(change.UserId.Value, out var uName) && !string.IsNullOrWhiteSpace(uName)
         ? uName
         : $"#{change.UserId.Value}";
@@ -214,15 +215,10 @@ public abstract partial class ChangeGridService
       spaced = spaced[..^3];
     }
 
-    if (feat != null)
-    {
-      return modL.TextOr($"{feat.CleanName}.{camel}",
-        modL.TextOr($"{feat.Label}.{camel}",
-          modL.TextOr($"{feat.Name}.{camel}",
-            modL.TextOr(propName, modL[spaced]))));
-    }
-
-    return modL.TextOr(propName, modL[spaced]);
+    var fallback = modL.TextOr(propName, modL[spaced]);
+    return feat != null
+      ? ScreenBuilderHelpers.ResolveFieldLabel(modL, feat, camel, fallback)
+      : fallback;
   }
 
   private async Task<string?> FormatAuditPropertyValueAsync(

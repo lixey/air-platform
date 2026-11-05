@@ -154,73 +154,33 @@ public static partial class AgentProposalBuilder
 
           foreach (var item in rawProp.EnumerateArray())
           {
-            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var id) && id > 0)
+            var (itemId, unresolvedItemName, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
+              item,
+              select.ReferenceService ?? string.Empty,
+              select.ReferenceFilter,
+              allowFuzzy: refFormDesc == null,
+              allowWrongKindFallback: false,
+              dictionaries,
+              db,
+              app,
+              ct);
+            if (itemId is > 0 and var id)
             {
-              if (!string.IsNullOrEmpty(select.ReferenceService))
-              {
-                await AgentContextQueryService.EnsureReferenceIdLoadedAsync(select.ReferenceService, id, dictionaries, db, app, ct);
-              }
-
               if (!ids.Contains(id))
               {
                 ids.Add(id);
               }
             }
-            else if (item.ValueKind == JsonValueKind.Object && TryGetLong(item, "id") is > 0 and var objItemId)
+            else if (!string.IsNullOrWhiteSpace(unresolvedItemName) && refFormDesc != null)
             {
-              if (!string.IsNullOrEmpty(select.ReferenceService))
+              newReferences.Add(new PendingNewReference
               {
-                await AgentContextQueryService.EnsureReferenceIdLoadedAsync(select.ReferenceService, objItemId, dictionaries, db, app, ct);
-              }
-
-              if (!ids.Contains(objItemId))
-              {
-                ids.Add(objItemId);
-              }
-            }
-            else if (item.ValueKind == JsonValueKind.String && item.GetString()?.Trim() is { Length: > 0 } strName &&
-                     !string.IsNullOrEmpty(select.ReferenceService))
-            {
-              if (long.TryParse(strName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) &&
-                  await AgentContextQueryService.EnsureReferenceIdLoadedAsync(select.ReferenceService, parsedId, dictionaries, db, app, ct) != null)
-              {
-                if (!ids.Contains(parsedId))
-                {
-                  ids.Add(parsedId);
-                }
-              }
-              else
-              {
-                var matched = await AgentContextQueryService.FindOrSearchReferenceRowAsync(
-                  select.ReferenceService,
-                  select.ReferenceFilter,
-                  strName,
-                  allowFuzzy: refFormDesc == null,
-                  dictionaries,
-                  db,
-                  app,
-                  ct);
-
-                if (matched != null && TryGetRowId(matched, out var mId))
-                {
-                  if (!ids.Contains(mId))
-                  {
-                    ids.Add(mId);
-                  }
-                }
-                else if (refFormDesc != null)
-                {
-                  var extra = ExtractEqualityFilterMap(select.ReferenceFilter);
-                  newReferences.Add(new PendingNewReference
-                  {
-                    FieldPath = el.Path,
-                    Name = strName,
-                    FormService = refFormDesc.ServicePath,
-                    IsMultiple = true,
-                    ExtraValues = extra
-                  });
-                }
-              }
+                FieldPath = el.Path,
+                Name = unresolvedItemName,
+                FormService = refFormDesc.ServicePath,
+                IsMultiple = true,
+                ExtraValues = ExtractEqualityFilterMap(select.ReferenceFilter)
+              });
             }
           }
 
@@ -260,103 +220,16 @@ public static partial class AgentProposalBuilder
 
         if (hasProp)
         {
-          if (rawProp.ValueKind == JsonValueKind.Number && rawProp.TryGetInt64(out var numId) && numId > 0)
-          {
-            await AgentContextQueryService.EnsureReferenceIdLoadedAsync(select.ReferenceService, numId, dictionaries, db, app, ct);
-            var allDictRows = dictionaries.TryGetValue(select.ReferenceService, out var rows) ? rows : [];
-            var filteredRows = FilterRowsByReferenceFilter(allDictRows, select.ReferenceFilter);
-
-            if (filteredRows.Any(r => TryGetRowId(r, out var rid) && rid == numId))
-            {
-              resolvedId = numId;
-            }
-            else if (allDictRows.FirstOrDefault(r => TryGetRowId(r, out var rid) && rid == numId) is { } wrongKindRow)
-            {
-              var wrongName = GetRowDisplayName(wrongKindRow);
-              var sameNameMatch = !string.IsNullOrEmpty(wrongName)
-                ? await AgentContextQueryService.FindOrSearchReferenceRowAsync(
-                    select.ReferenceService,
-                    select.ReferenceFilter,
-                    wrongName,
-                    allowFuzzy: true,
-                    dictionaries,
-                    db,
-                    app,
-                    ct)
-                : null;
-              if (sameNameMatch != null && TryGetRowId(sameNameMatch, out var correctedId))
-              {
-                resolvedId = correctedId;
-              }
-            }
-          }
-          else if (rawProp.ValueKind == JsonValueKind.String && rawProp.GetString()?.Trim() is { Length: > 0 } strVal)
-          {
-            if (long.TryParse(strVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) &&
-                await AgentContextQueryService.EnsureReferenceIdLoadedAsync(select.ReferenceService, parsedId, dictionaries, db, app, ct) != null &&
-                FilterRowsByReferenceFilter(dictionaries[select.ReferenceService], select.ReferenceFilter).Any(r => TryGetRowId(r, out var rid) && rid == parsedId))
-            {
-              resolvedId = parsedId;
-            }
-            else
-            {
-              var matched = await AgentContextQueryService.FindOrSearchReferenceRowAsync(
-                select.ReferenceService,
-                select.ReferenceFilter,
-                strVal,
-                allowFuzzy: refFormDesc == null,
-                dictionaries,
-                db,
-                app,
-                ct);
-              if (matched != null && TryGetRowId(matched, out var mId))
-              {
-                resolvedId = mId;
-              }
-              else
-              {
-                unresolvedName = strVal;
-              }
-            }
-          }
-          else if (rawProp.ValueKind == JsonValueKind.Object)
-          {
-            if (TryGetLong(rawProp, "id") is > 0 and var objId &&
-                await AgentContextQueryService.EnsureReferenceIdLoadedAsync(select.ReferenceService, objId, dictionaries, db, app, ct) != null &&
-                FilterRowsByReferenceFilter(dictionaries[select.ReferenceService], select.ReferenceFilter).Any(r => TryGetRowId(r, out var rid) && rid == objId))
-            {
-              resolvedId = objId;
-            }
-            else if (TryGetString(rawProp, "name")?.Trim() is { Length: > 0 } objName)
-            {
-              var matched = await AgentContextQueryService.FindOrSearchReferenceRowAsync(
-                select.ReferenceService,
-                select.ReferenceFilter,
-                objName,
-                allowFuzzy: refFormDesc == null,
-                dictionaries,
-                db,
-                app,
-                ct);
-              if (matched != null && TryGetRowId(matched, out var mId))
-              {
-                resolvedId = mId;
-              }
-              else
-              {
-                unresolvedName = objName;
-                objectExtraValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                foreach (var prop in rawProp.EnumerateObject())
-                {
-                  if (!prop.Name.Equals("id", StringComparison.OrdinalIgnoreCase) &&
-                      !prop.Name.Equals("name", StringComparison.OrdinalIgnoreCase))
-                  {
-                    objectExtraValues[prop.Name] = ConvertJsonValue(prop.Value, UiFieldType.Text);
-                  }
-                }
-              }
-            }
-          }
+          (resolvedId, unresolvedName, objectExtraValues) = await AgentReferenceResolver.ResolveReferenceValueAsync(
+            rawProp,
+            select.ReferenceService,
+            select.ReferenceFilter,
+            allowFuzzy: refFormDesc == null,
+            allowWrongKindFallback: true,
+            dictionaries,
+            db,
+            app,
+            ct);
         }
 
         // Also check explicit new-reference alias like "newCounterpartyName"
@@ -530,37 +403,16 @@ public static partial class AgentProposalBuilder
 
             if (hasCellProp)
             {
-              if (rawCellProp.ValueKind == JsonValueKind.Number && rawCellProp.TryGetInt64(out var numId) && numId > 0)
-              {
-                await AgentContextQueryService.EnsureReferenceIdLoadedAsync(cSelect.ReferenceService, numId, dictionaries, db, app, ct);
-                var cRows = FilterRowsByReferenceFilter(dictionaries.GetValueOrDefault(cSelect.ReferenceService) ?? [], cSelect.ReferenceFilter);
-                if (cRows.Any(r => TryGetRowId(r, out var rid) && rid == numId))
-                {
-                  resolvedCellId = numId;
-                }
-              }
-              else if (rawCellProp.ValueKind == JsonValueKind.String && rawCellProp.GetString()?.Trim() is { Length: > 0 } cStr)
-              {
-                if (long.TryParse(cStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId) &&
-                    await AgentContextQueryService.EnsureReferenceIdLoadedAsync(cSelect.ReferenceService, parsedId, dictionaries, db, app, ct) != null &&
-                    FilterRowsByReferenceFilter(dictionaries[cSelect.ReferenceService], cSelect.ReferenceFilter).Any(r => TryGetRowId(r, out var rid) && rid == parsedId))
-                {
-                  resolvedCellId = parsedId;
-                }
-                else if (await AgentContextQueryService.FindOrSearchReferenceRowAsync(
-                           cSelect.ReferenceService,
-                           cSelect.ReferenceFilter,
-                           cStr,
-                           allowFuzzy: true,
-                           dictionaries,
-                           db,
-                           app,
-                           ct) is { } matchedRow &&
-                         TryGetRowId(matchedRow, out var mId))
-                {
-                  resolvedCellId = mId;
-                }
-              }
+              (resolvedCellId, _, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
+                rawCellProp,
+                cSelect.ReferenceService,
+                cSelect.ReferenceFilter,
+                allowFuzzy: true,
+                allowWrongKindFallback: false,
+                dictionaries,
+                db,
+                app,
+                ct);
             }
 
             if (resolvedCellId == null && cel.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
@@ -568,22 +420,22 @@ public static partial class AgentProposalBuilder
               var baseName = cel.Path[..^2];
               foreach (var alias in new[] { $"{baseName}Name", baseName })
               {
-                if (TryGetPropertyIgnoreCase(item, alias, out var aliasProp) &&
-                    aliasProp.ValueKind == JsonValueKind.String &&
-                    aliasProp.GetString()?.Trim() is { Length: > 0 } aliasStr &&
-                    await AgentContextQueryService.FindOrSearchReferenceRowAsync(
-                      cSelect.ReferenceService,
-                      cSelect.ReferenceFilter,
-                      aliasStr,
-                      allowFuzzy: true,
-                      dictionaries,
-                      db,
-                      app,
-                      ct) is { } matchedRow &&
-                    TryGetRowId(matchedRow, out var mId))
+                if (TryGetPropertyIgnoreCase(item, alias, out var aliasProp))
                 {
-                  resolvedCellId = mId;
-                  break;
+                  (resolvedCellId, _, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
+                    aliasProp,
+                    cSelect.ReferenceService,
+                    cSelect.ReferenceFilter,
+                    allowFuzzy: true,
+                    allowWrongKindFallback: false,
+                    dictionaries,
+                    db,
+                    app,
+                    ct);
+                  if (resolvedCellId != null)
+                  {
+                    break;
+                  }
                 }
               }
             }

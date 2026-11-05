@@ -24,6 +24,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
     var parent = new Parent();
     SetParent(parent);
+    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), parent.BoundParentServiceType, "Parent.Bind/Read");
     return _cachedParent = parent;
   }
 

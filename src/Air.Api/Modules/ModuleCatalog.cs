@@ -7,6 +7,7 @@ public sealed class ModuleCatalog
   private readonly Dictionary<string, Feature> _featuresByPath = new(StringComparer.OrdinalIgnoreCase);
   private readonly Dictionary<string, Type> _servicesByPath = new(StringComparer.OrdinalIgnoreCase);
   private readonly List<IPlatformModule> _modules = [];
+  private readonly List<Type> _dbContextTypes = [];
 
   public ModuleCatalog()
   {
@@ -14,6 +15,7 @@ public sealed class ModuleCatalog
   }
 
   public IReadOnlyList<IPlatformModule> Modules => _modules;
+  public IReadOnlyList<Type> DbContextTypes => _dbContextTypes;
   public IEnumerable<Feature> AllFeatures => _featuresByPath.Values.Distinct();
   public IEnumerable<Type> AllServiceTypes => _servicesByPath.Values.Distinct();
 
@@ -39,6 +41,11 @@ public sealed class ModuleCatalog
                   (typeof(IPlatformService).IsAssignableFrom(t) || t.Name.EndsWith("GridService") || t.Name.EndsWith("FormService") || t.Name.EndsWith("Service")));
     foreach (var st in serviceTypes)
     {
+      if (GetServiceDbContextType(st) is { IsAbstract: false } ctxType && !_dbContextTypes.Contains(ctxType))
+      {
+        _dbContextTypes.Add(ctxType);
+      }
+
       var path = ServicePathResolver.Resolve(st);
       _servicesByPath[path] = st;
       _servicesByPath[path.Replace('/', '-')] = st;
@@ -165,6 +172,38 @@ public sealed class ModuleCatalog
     }
 
     return null;
+  }
+
+  private static readonly ConcurrentDictionary<Type, Type?> ServiceDbContextCache = new();
+
+  public static Type? GetServiceDbContextType(Type? serviceType) =>
+    serviceType is null
+      ? null
+      : ServiceDbContextCache.GetOrAdd(serviceType, static t =>
+        t.GetConstructors()
+          .FirstOrDefault()
+          ?.GetParameters()
+          .Select(p => p.ParameterType)
+          .FirstOrDefault(pt => typeof(PlatformDbContext).IsAssignableFrom(pt)));
+
+  public static void EnsureModuleServiceAccessAllowed(Type sourceServiceType, Type? targetServiceType, string context)
+  {
+    if (targetServiceType is null)
+    {
+      return;
+    }
+
+    var sourceDbType = GetServiceDbContextType(sourceServiceType);
+    var targetDbType = GetServiceDbContextType(targetServiceType);
+    if (sourceDbType is not null &&
+        targetDbType is not null &&
+        sourceDbType != typeof(PlatformDbContext) &&
+        targetDbType != typeof(PlatformDbContext) &&
+        !targetDbType.IsAssignableFrom(sourceDbType))
+    {
+      throw new InvalidOperationException(
+        $"Module isolation violation in '{sourceServiceType.Name}' ({context}): cannot reference service '{targetServiceType.Name}' from non-base module '{targetDbType.Name}' (source context is '{sourceDbType.Name}'). Services may only reference services from their own module or base modules they inherit from.");
+    }
   }
 
   public Type? FindServiceType(string path)

@@ -4,6 +4,19 @@ namespace Platform.App.Screens.Internals;
 
 internal static class StatusMoveNavBuilder
 {
+  public static string? ExtractStatusMemberName(LambdaExpression statusMember) =>
+    statusMember.Body switch
+    {
+      MemberExpression memberExpr => memberExpr.Member.Name,
+      UnaryExpression { Operand: MemberExpression ueMember } => ueMember.Member.Name,
+      _ => null
+    };
+
+  public static string ResolveStatusPath(LambdaExpression statusMember) =>
+    ExtractStatusMemberName(statusMember) is { Length: > 0 } name
+      ? char.ToLowerInvariant(name[0]) + name[1..]
+      : "docStatusId";
+
   public static bool CanMove(Feature feature, IUserContext? user, string transitionName) =>
     user == null ||
     !user.IsAuthenticated ||
@@ -113,10 +126,7 @@ internal static class StatusMoveNavBuilder
           {
             try
             {
-              var targetDb = db.Model.FindEntityType(refEntityType) != null
-                ? db
-                : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType!, db, app) as Grid.IGridService)?.DbContext ?? db;
-              var loaded = await targetDb.FindAsync(refEntityType, [refId], ct);
+              var loaded = await db.FindAsync(refEntityType, [refId], ct);
               var name = loaded != null
                 ? (PropertyAccessorCache.GetValue(loaded, "Name") ??
                    PropertyAccessorCache.GetValue(loaded, "Title") ??

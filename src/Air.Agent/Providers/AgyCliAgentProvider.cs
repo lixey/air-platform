@@ -4,100 +4,87 @@ namespace Platform.Agent.Providers;
 
 public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) : IAgentProvider
 {
-  private IReadOnlyList<AgentModelDto>? _cachedModels;
-  private readonly SemaphoreSlim _modelsLock = new(1, 1);
+  private readonly CliModelCache _modelCache = new();
 
   public string Handle => "Agy";
   public string Name => "Antigravity CLI (agy)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
 
-  public async Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
   {
-    if (!forceRefresh && _cachedModels is { Count: > 0 })
-    {
-      return _cachedModels;
-    }
-
     var agyPath = ResolveExecutablePath();
-    if (agyPath is null)
+    return _modelCache.GetOrLoadAsync(
+      agyPath,
+      forceRefresh,
+      token => DiscoverModelsFromCliAsync(agyPath!, token),
+      ct);
+  }
+
+  private async Task<List<AgentModelDto>> DiscoverModelsFromCliAsync(string agyPath, CancellationToken ct)
+  {
+    var psi = new ProcessStartInfo
+    {
+      FileName = agyPath,
+      WorkingDirectory = store.WorkspaceDirectory,
+      RedirectStandardOutput = true,
+      RedirectStandardError = true,
+      UseShellExecute = false,
+      CreateNoWindow = true,
+      StandardOutputEncoding = Encoding.UTF8
+    };
+    psi.ArgumentList.Add("models");
+
+    using var proc = Process.Start(psi);
+    if (proc is null)
     {
       return [];
     }
 
-    await _modelsLock.WaitAsync(ct);
+    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    timeoutCts.CancelAfter(TimeSpan.FromSeconds(8));
+
+    string stdout;
     try
     {
-      if (!forceRefresh && _cachedModels is { Count: > 0 })
-      {
-        return _cachedModels;
-      }
-
-      var psi = new ProcessStartInfo
-      {
-        FileName = agyPath,
-        WorkingDirectory = store.WorkspaceDirectory,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-        StandardOutputEncoding = Encoding.UTF8
-      };
-      psi.ArgumentList.Add("models");
-
-      using var proc = Process.Start(psi);
-      if (proc is null)
-      {
-        return [];
-      }
-
-      using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-      timeoutCts.CancelAfter(TimeSpan.FromSeconds(8));
-
-      var stdout = await proc.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+      stdout = await proc.StandardOutput.ReadToEndAsync(timeoutCts.Token);
       await proc.WaitForExitAsync(timeoutCts.Token);
-
-      var parsed = new List<AgentModelDto>();
-      foreach (var rawLine in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+    }
+    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+    {
+      try
       {
-        // Strip spinner frames separated by '\r'
-        var line = rawLine.Contains('\r') ? rawLine[(rawLine.LastIndexOf('\r') + 1)..] : rawLine;
-        line = line.Trim();
-        if (string.IsNullOrEmpty(line) || line.StartsWith("Fetching", StringComparison.OrdinalIgnoreCase))
-        {
-          continue;
-        }
+        proc.Kill(entireProcessTree: true);
+      }
+      catch { }
 
-        // agy models separates <id> and <name> with tabs (\t) or spaces
-        var firstWs = line.IndexOfAny([' ', '\t']);
-        if (firstWs <= 0)
-        {
-          continue;
-        }
+      return [];
+    }
 
-        var id = line[..firstWs].Trim();
-        var name = line[(firstWs + 1)..].Trim();
-        if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(name) && !id.Contains(':'))
-        {
-          parsed.Add(new AgentModelDto { Id = id, Name = name, Provider = Handle });
-        }
+    var parsed = new List<AgentModelDto>();
+    foreach (var rawLine in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+    {
+      var line = rawLine.Contains('\r') ? rawLine[(rawLine.LastIndexOf('\r') + 1)..] : rawLine;
+      line = line.Trim();
+      if (string.IsNullOrEmpty(line) || line.StartsWith("Fetching", StringComparison.OrdinalIgnoreCase))
+      {
+        continue;
       }
 
-      if (parsed.Count > 0)
+      var firstWs = line.IndexOfAny([' ', '\t']);
+      if (firstWs <= 0)
       {
-        _cachedModels = parsed;
-        return _cachedModels;
+        continue;
+      }
+
+      var id = line[..firstWs].Trim();
+      var name = line[(firstWs + 1)..].Trim();
+      if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(name) && !id.Contains(':'))
+      {
+        parsed.Add(new AgentModelDto { Id = id, Name = name, Provider = Handle });
       }
     }
-    catch
-    {
-      // Ignore CLI errors and return empty list
-    }
-    finally
-    {
-      _modelsLock.Release();
-    }
 
-    return _cachedModels ?? [];
+    return parsed;
   }
 
   public static string? ResolveExecutablePath()
@@ -120,7 +107,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       ?? options.DefaultModel;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (_modelCache.CachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
 
     await foreach (var evt in CliTurnRunner.StreamTurnAsync(
       store,

@@ -232,38 +232,7 @@ public abstract partial class FormService<TEntity, TInput>
 
       if (selectModel?.IsMultiple == true)
       {
-        var keys = new List<long>();
-        if (dict.TryGetValue(el.Path, out var multiRaw) && multiRaw != null)
-        {
-          if (multiRaw is JsonElement jeArr && jeArr.ValueKind == JsonValueKind.Array)
-          {
-            foreach (var item in jeArr.EnumerateArray())
-            {
-              if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var jeId) && jeId > 0)
-              {
-                keys.Add(jeId);
-              }
-            }
-          }
-          else if (multiRaw is IEnumerable enumerable and not string)
-          {
-            foreach (var item in enumerable)
-            {
-              if (item is long l && l > 0)
-              {
-                keys.Add(l);
-              }
-              else if (item is int i && i > 0)
-              {
-                keys.Add(i);
-              }
-              else if (item != null && long.TryParse(item.ToString(), out var parsed) && parsed > 0)
-              {
-                keys.Add(parsed);
-              }
-            }
-          }
-        }
+        var keys = dict.TryGetValue(el.Path, out var multiRaw) ? ExtractLongKeys(multiRaw) : [];
 
         var refs = new List<Reference>(keys.Count);
         if (keys.Count > 0 && !string.IsNullOrEmpty(selectModel.ReferenceService))
@@ -272,12 +241,8 @@ public abstract partial class FormService<TEntity, TInput>
             ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
             ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
           var refEntityType = ModuleCatalog.GetServiceEntityType(refServiceType);
-          var targetDb = refEntityType != null && db.Model.FindEntityType(refEntityType) != null
-            ? db
-            : (refServiceType != null ? (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService)?.DbContext : null) ?? db;
-
           var loadedById = refEntityType != null
-            ? await LoadEntitiesByIdsAsync(targetDb, refEntityType, keys, ct)
+            ? await LoadEntitiesByIdsAsync(db, refEntityType, keys, ct)
             : [];
 
           foreach (var k in keys)
@@ -293,35 +258,8 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      long? key = null;
-      if (dict.TryGetValue(el.Path, out var rawVal) && rawVal != null)
-      {
-        if (rawVal is JsonElement je)
-        {
-          if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var jeId))
-          {
-            key = jeId;
-          }
-          else if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out var jeParsed))
-          {
-            key = jeParsed;
-          }
-        }
-        else if (rawVal is long l)
-        {
-          key = l;
-        }
-        else if (rawVal is int i)
-        {
-          key = i;
-        }
-        else if (long.TryParse(rawVal.ToString(), out var parsedId))
-        {
-          key = parsedId;
-        }
-      }
-
-      if (key == null || key <= 0)
+      var key = dict.TryGetValue(el.Path, out var rawVal) ? ExtractLongKey(rawVal) : null;
+      if (key is null or <= 0)
       {
         dict[el.ReferencePath] = null;
         continue;
@@ -359,14 +297,11 @@ public abstract partial class FormService<TEntity, TInput>
         var refServiceType = ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
           ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
         var refEntityType = ModuleCatalog.GetServiceEntityType(refServiceType);
-        if (refServiceType != null && refEntityType != null)
+        if (refEntityType != null)
         {
           try
           {
-            var targetDb = db.Model.FindEntityType(refEntityType) != null
-              ? db
-              : (ModuleCatalog.Instance.CreateServiceInstance(refServiceType, db, PlatformApp) as IGridService)?.DbContext ?? db;
-            var loaded = await targetDb.FindAsync(refEntityType, [key.Value], ct);
+            var loaded = await db.FindAsync(refEntityType, [key.Value], ct);
             refName = ReadDisplayCaption(loaded, labelPaths);
           }
           catch { }
@@ -491,6 +426,45 @@ public abstract partial class FormService<TEntity, TInput>
       ?? PropertyAccessorCache.GetValue(target, "Login");
     return val?.ToString();
   }
+
+  private static List<long> ExtractLongKeys(object? multiRaw)
+  {
+    var keys = new List<long>();
+    if (multiRaw is JsonElement { ValueKind: JsonValueKind.Array } jeArr)
+    {
+      foreach (var item in jeArr.EnumerateArray())
+      {
+        if (ExtractLongKey(item) is > 0 and var id)
+        {
+          keys.Add(id);
+        }
+      }
+    }
+    else if (multiRaw is IEnumerable enumerable and not string)
+    {
+      foreach (var item in enumerable)
+      {
+        if (ExtractLongKey(item) is > 0 and var id)
+        {
+          keys.Add(id);
+        }
+      }
+    }
+
+    return keys;
+  }
+
+  private static long? ExtractLongKey(object? rawVal) =>
+    rawVal switch
+    {
+      null => null,
+      long l => l,
+      int i => i,
+      JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetInt64(out var jeId) => jeId,
+      JsonElement { ValueKind: JsonValueKind.String } je when long.TryParse(je.GetString(), out var jeParsed) => jeParsed,
+      _ when long.TryParse(rawVal.ToString(), out var parsedId) => parsedId,
+      _ => null
+    };
 
   private static FormModel? FindFormModel(PanelNodeDto node)
   {

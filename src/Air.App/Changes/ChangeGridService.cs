@@ -118,7 +118,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       }
     }
 
-    var userNames = userIds.Count > 0 ? await LoadUserNamesAsync(userIds, ct) : [];
+    var userNames = userIds.Count > 0 ? await db.LoadUserNamesAsync(userIds, ct) : [];
 
     foreach (var rowObj in page.Rows)
     {
@@ -201,32 +201,6 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     return null;
   }
 
-  private async Task<Dictionary<long, string>> LoadUserNamesAsync(IReadOnlyCollection<long> userIds, CancellationToken ct)
-  {
-    var result = new Dictionary<long, string>();
-    if (userIds.Count == 0 || db.SetOfBase<BaseAppUser>() is not { } userQuery)
-    {
-      return result;
-    }
-
-    try
-    {
-      var rows = await userQuery
-        .AsNoTracking()
-        .Where(u => userIds.Contains(u.Id))
-        .Select(u => new { u.Id, u.Name, u.Login })
-        .ToListAsync(ct);
-
-      foreach (var r in rows)
-      {
-        result[r.Id] = !string.IsNullOrWhiteSpace(r.Name) ? r.Name : r.Login;
-      }
-    }
-    catch { }
-
-    return result;
-  }
-
   private PlatformDbContext GetDbContextForTable(string table)
   {
     if (db.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
@@ -234,31 +208,15 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       return db;
     }
 
-    var sp = services ?? PlatformApp?.Services;
-    if (sp != null)
+    if ((services ?? PlatformApp?.Services) is { } sp)
     {
-      var dbTypes = AppDomain.CurrentDomain.GetAssemblies()
-        .SelectMany(a =>
-        {
-          try
-          {
-            return a.GetTypes();
-          }
-          catch
-          {
-            return Type.EmptyTypes;
-          }
-        })
-        .Where(t => typeof(PlatformDbContext).IsAssignableFrom(t) && !t.IsAbstract && t != db.GetType());
-
-      foreach (var dbType in dbTypes)
+      foreach (var dbType in ModuleCatalog.Instance.DbContextTypes)
       {
-        if (sp.GetService(dbType) is PlatformDbContext otherDb)
+        if (dbType != db.GetType() &&
+            sp.GetService(dbType) is PlatformDbContext otherDb &&
+            otherDb.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
         {
-          if (otherDb.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
-          {
-            return otherDb;
-          }
+          return otherDb;
         }
       }
     }

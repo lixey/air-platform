@@ -99,6 +99,36 @@ public abstract class PlatformDbContext : DbContext
     return (IQueryable<TBase>?)accessor?.Invoke(this);
   }
 
+  public async Task<Dictionary<long, string>> LoadUserNamesAsync(
+    IReadOnlyCollection<long> userIds,
+    CancellationToken cancellationToken = default)
+  {
+    var result = new Dictionary<long, string>();
+    if (userIds.Count == 0 || SetOfBase<BaseAppUser>() is not { } userQuery)
+    {
+      return result;
+    }
+
+    try
+    {
+      var rows = await userQuery
+        .AsNoTracking()
+        .Where(u => userIds.Contains(u.Id))
+        .Select(u => new { u.Id, u.Name, u.Login })
+        .ToListAsync(cancellationToken);
+
+      foreach (var r in rows)
+      {
+        result[r.Id] = !string.IsNullOrWhiteSpace(r.Name) ? r.Name : r.Login;
+      }
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+    }
+
+    return result;
+  }
+
   public void ResetMutationState()
   {
     _activeMutationRun = null;

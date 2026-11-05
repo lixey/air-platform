@@ -1,4 +1,4 @@
-using Platform.Api.Files.Internals;
+using Platform.App.Files.Internals;
 using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
@@ -103,16 +103,7 @@ public abstract partial class FormService<TEntity, TInput>
         DiscardLabel = L["FormDirtyDiscard"],
         ContinueLabel = L["FormDirtyContinue"]
       },
-      MutationTexts = new MutationTextsDto
-      {
-        ConflictTitle = L["MutationConflict"],
-        ReloadLabel = L["MutationReload"],
-        UnknownTitle = L["MutationUnknown"],
-        UnknownDescription = L["MutationUnknownDescription"],
-        VerifyLabel = L["MutationVerify"],
-        CommittedWarningTitle = L["MutationCommittedWarning"],
-        SelectionCorrectionLabel = L["MutationSelectionCorrection"]
-      }
+      MutationTexts = ScreenBuilderHelpers.BuildMutationTexts(L)
     };
 
     var caption = RecordCaption(entity, id);
@@ -122,7 +113,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (filesChildren.Count > 0 && id.HasValue && id.Value > 0)
     {
-      formModel.Files = BuildFilesModels(servicePath, id, filesChildren);
+      formModel.Files = await BuildFilesModelsAsync(servicePath, id, filesChildren, ct);
     }
 
     var nav = BuildFormNavigation(servicePath, caption, elements, hasPages, pageChildren);
@@ -138,52 +129,22 @@ public abstract partial class FormService<TEntity, TInput>
     {
       var customNav = new Nav(servicePath, L);
       await SetNavAsync(customNav, ct);
-      var isUserReadOnly = User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
-      var permittedActions = new List<FormNavActionEntry>();
+      var permittedActions = new List<(NavElementModel Model, bool IsInMenu)>();
       foreach (var entry in customNav.Actions)
       {
-        var methodInfo = entry.Method.Method;
-        var hasExplicitAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
-                              methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null;
-        var hasRight = hasExplicitAttr && User is { IsAuthenticated: true }
-          ? ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, Feature, User)
-          : entry.IsAllowedInReadOnly || !IsReadOnly && !isUserReadOnly;
-
-        if (hasRight)
+        if (ScreenBuilderHelpers.IsActionPermitted(entry.Method.Method, Feature, User, IsReadOnly, entry.IsAllowedInReadOnly))
         {
           if (entry.Ask != null)
           {
-            entry.Model.Ask = new FormAskModel
-            {
-              Title = entry.Model.Label,
-              Message = entry.Model.Confirm?.Message,
-              Color = entry.Model.Color,
-              HasDefaults = entry.DefaultProvider != null,
-              Elements = StatusMoveNavBuilder.LocalizeElements(entry.Ask.BuildElements(), L)
-            };
+            entry.Model.Ask = ScreenBuilderHelpers.BuildActionAsk(entry.Model, entry.Ask, entry.DefaultProvider != null, L);
             entry.Model.Confirm = null;
           }
 
-          permittedActions.Add(entry);
+          permittedActions.Add((entry.Model, entry.IsInMenu));
         }
       }
 
-      var inMenuActions = permittedActions.Where(a => a.IsInMenu).Select(a => (NavElementModel)a.Model).ToList();
-      if (inMenuActions.Count > 0)
-      {
-        actionElements.Add(new NavMenuModel
-        {
-          Key = "actions",
-          Label = L["Actions"],
-          Variant = ButtonVariant.Soft,
-          Elements = inMenuActions
-        });
-      }
-
-      foreach (var entry in permittedActions.Where(a => !a.IsInMenu))
-      {
-        actionElements.Add(entry.Model);
-      }
+      ScreenBuilderHelpers.AppendMenuAndInlineActions(actionElements, permittedActions, L);
     }
 
     var hasActions = actionStart.Count > 0 || actionElements.Count > 0;
@@ -235,17 +196,14 @@ public abstract partial class FormService<TEntity, TInput>
 
   private void LocalizeAndResolveSelectElements(Elements elements)
   {
+    foreach (var child in elements.Children)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), child.ServiceType, $"AddChild '{child.DeclaredKey}'");
+    }
+
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
-      string? statusMemberName = null;
-      if (statusFlow.StatusMember.Body is MemberExpression memberExpr)
-      {
-        statusMemberName = memberExpr.Member.Name;
-      }
-      else if (statusFlow.StatusMember.Body is UnaryExpression { Operand: MemberExpression ueMember })
-      {
-        statusMemberName = ueMember.Member.Name;
-      }
+      var statusMemberName = StatusMoveNavBuilder.ExtractStatusMemberName(statusFlow.StatusMember);
 
       var statusOptions = statusFlow.Statuses.Select(s => new OptionDto
       {
@@ -286,11 +244,7 @@ public abstract partial class FormService<TEntity, TInput>
 
       if (!string.IsNullOrEmpty(el.Label))
       {
-        el.Label = !string.IsNullOrEmpty(el.Path)
-          ? L.TextOr($"{Feature.CleanName}.{el.Path}",
-              L.TextOr($"{Feature.Label}.{el.Path}",
-                L.TextOr($"{Feature.Name}.{el.Path}", L[el.Label])))
-          : L[el.Label];
+        el.Label = ScreenBuilderHelpers.ResolveFieldLabel(L, Feature, el.Path, el.Label);
       }
 
       if (!string.IsNullOrEmpty(el.Title))
@@ -310,24 +264,12 @@ public abstract partial class FormService<TEntity, TInput>
 
       if (el.Model is FormSelectModel select)
       {
-        if (select.Options is { Count: > 0 })
-        {
-          select.Options = select.Options
-            .Select(opt => string.IsNullOrEmpty(opt.Name)
-              ? opt
-              : new OptionDto
-              {
-                Id = opt.Id,
-                Name = L[opt.Name],
-                Color = opt.Color,
-                Title = opt.Title != null ? L[opt.Title] : null
-              })
-            .ToList();
-        }
+        select.Options = ScreenBuilderHelpers.LocalizeOptions(L, select.Options);
 
         if (!string.IsNullOrEmpty(select.ReferenceService))
         {
           var targetServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
+          ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), targetServiceType, $"AsReference on '{el.Path}'");
           if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name")
           {
             if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
@@ -507,69 +449,31 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private List<Contracts.FormFilesModel> BuildFilesModels(string servicePath, long? id, List<ChildGridBuilder> filesChildren)
+  private async Task<List<Contracts.FormFilesModel>> BuildFilesModelsAsync(
+    string servicePath,
+    long? id,
+    List<ChildGridBuilder> filesChildren,
+    CancellationToken ct)
   {
     var filesModels = new List<Contracts.FormFilesModel>(filesChildren.Count);
+    var parentId = id is > 0 ? id.Value : (long?)null;
     foreach (var child in filesChildren)
     {
-      FileRulesAttribute? rules = null;
-      var hasCoverFile = false;
-      if (child.ServiceType != null)
+      var key = !string.IsNullOrEmpty(child.DeclaredKey) ? child.DeclaredKey : "files";
+      var label = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : null;
+      if (child.ServiceType != null &&
+          ModuleCatalog.Instance.CreateServiceInstance(child.ServiceType, db, PlatformApp) is IFormFilesSource fileSource)
       {
-        var cur = child.ServiceType;
-        while (cur != null && cur != typeof(object))
+        var model = await fileSource.BuildFormFilesAsync(key, label, child.Tab, servicePath, parentId, child.Look, ct);
+        if (IsReadOnly)
         {
-          if (cur.IsGenericType && cur.Name.StartsWith("FileGridService"))
-          {
-            var fileEntity = cur.GetGenericArguments()[0];
-            rules = FileRulesAttribute.TryGet(fileEntity);
-            hasCoverFile = typeof(IHasCoverFile).IsAssignableFrom(fileEntity);
-            break;
-          }
-
-          cur = cur.BaseType;
+          model.CanUpload = false;
+          model.CanDelete = false;
+          model.CanSetCover = false;
         }
+
+        filesModels.Add(model);
       }
-
-      var limits = rules != null
-        ? new FileUploadLimitsDto
-        {
-          Accept = [.. FileTypeTable.TypesOf(rules.ContentTypes)],
-          Extensions = [.. FileTypeTable.ExtensionsOf(rules.ContentTypes)],
-          MaxBytes = rules.MaxBytes,
-          SourceMaxBytes = rules.SourceMaxBytes > 0 ? rules.SourceMaxBytes : rules.MaxBytes,
-          MaxFiles = rules.MaxFiles,
-          MaxTotalBytes = rules.MaxTotalBytes,
-          Images = rules.Images,
-          ImageMaxSide = rules.ImageMaxSide,
-          ImageQuality = rules.ImageQuality,
-          MaxPixels = FileTypeTable.MaxPixels,
-          ThumbnailMaxBytes = FileTypeTable.ThumbnailMaxBytes
-        }
-        : new FileUploadLimitsDto();
-
-      var childFeat = child.ServiceType != null
-        ? ModuleCatalog.Instance.FindFeature(child.ServicePath)
-        : null;
-      var canEditFiles = !IsReadOnly && (User == null || !User.IsAuthenticated || User.Can(Feature.Edit) || User.Can(Feature.All));
-      var canReadMeta = childFeat != null && childFeat.Rights.Any(r => r.Key.EndsWith(".FileMetadata", StringComparison.OrdinalIgnoreCase))
-        && (User == null || !User.IsAuthenticated || User.Can(childFeat.Action("FileMetadata")) || User.Can(childFeat.All));
-
-      filesModels.Add(new Contracts.FormFilesModel
-      {
-        Key = !string.IsNullOrEmpty(child.DeclaredKey) ? child.DeclaredKey : "files",
-        Label = !string.IsNullOrEmpty(child.DeclaredLabel) ? L[child.DeclaredLabel] : null,
-        Tab = child.Tab,
-        Service = child.ServicePath,
-        ParentService = servicePath,
-        ParentId = id.HasValue && id.Value > 0 ? id.Value : null,
-        Look = child.Look,
-        Limits = limits,
-        CanUpload = canEditFiles,
-        CanDelete = canEditFiles,
-        CanSetCover = hasCoverFile && canEditFiles,
-        CanReadMetadata = canReadMeta
-      });
     }
 
     return filesModels;

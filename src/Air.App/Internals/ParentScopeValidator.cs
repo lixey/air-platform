@@ -34,6 +34,44 @@ internal static class ParentScopeValidator
     return expr is MemberExpression { Member: PropertyInfo pi } ? pi : null;
   }
 
+  public static Expression<Func<TEntity, bool>> BuildParentKeyFilter<TEntity>(PropertyInfo prop, object parentVal)
+  {
+    var param = Expression.Parameter(typeof(TEntity), "e");
+    var propExpr = Expression.Property(param, prop);
+    var constExpr = Expression.Constant(parentVal, prop.PropertyType);
+    return Expression.Lambda<Func<TEntity, bool>>(Expression.Equal(propExpr, constExpr), param);
+  }
+
+  public static Expression<Func<TEntity, bool>> BuildKeyInFilter<TEntity>(PropertyInfo prop, IReadOnlyCollection<long> ids)
+  {
+    var param = Expression.Parameter(typeof(TEntity), "e");
+    Expression propExpr = Expression.Property(param, prop);
+    if (prop.PropertyType == typeof(long?))
+    {
+      propExpr = Expression.Coalesce(propExpr, Expression.Constant(0L));
+    }
+
+    return BuildKeyInLambda<TEntity>(param, propExpr, ids);
+  }
+
+  public static Expression<Func<TEntity, bool>> BuildKeyInFilter<TEntity>(
+    Expression<Func<TEntity, long>> keySelector,
+    IReadOnlyCollection<long> ids) =>
+    BuildKeyInLambda<TEntity>(keySelector.Parameters[0], keySelector.Body, ids);
+
+  private static Expression<Func<TEntity, bool>> BuildKeyInLambda<TEntity>(
+    ParameterExpression param,
+    Expression keyLongExpr,
+    IReadOnlyCollection<long> ids)
+  {
+    var idList = ids as List<long> ?? [.. ids];
+    var containsMethod = typeof(Enumerable).GetMethods()
+      .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
+      .MakeGenericMethod(typeof(long));
+    var inListExpr = Expression.Call(containsMethod, Expression.Constant(idList), keyLongExpr);
+    return Expression.Lambda<Func<TEntity, bool>>(inListExpr, param);
+  }
+
   public static bool MatchesService(string? parentService, string? boundParentService, Type? boundParentServiceType)
   {
     if (string.IsNullOrEmpty(parentService) || string.IsNullOrEmpty(boundParentService))

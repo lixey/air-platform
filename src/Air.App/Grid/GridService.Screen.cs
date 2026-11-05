@@ -52,6 +52,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       foreach (var (createFormType, createModel) in nav.Creates)
       {
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), createFormType, "Nav.AddCreate");
         createModel.Overlay = ResolveFormOverlayForType(createFormType, createModel.Service!);
         formOverlay ??= createModel.Overlay;
         navStart.Add(createModel);
@@ -79,25 +80,11 @@ public abstract partial class GridService<TEntity, TRow>
     var permittedActions = new List<NavActionEntry>();
     foreach (var entry in nav.Actions)
     {
-      var methodInfo = entry.Method.Method;
-      var hasExplicitAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
-                            methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null;
-      var hasRight = hasExplicitAttr && User is { IsAuthenticated: true }
-        ? ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, Feature, User)
-        : entry.IsAllowedInReadOnly || !isUserReadOnly && parentChild?.IsReadOnly != true;
-
-      if (hasRight)
+      if (ScreenBuilderHelpers.IsActionPermitted(entry.Method.Method, Feature, User, parentChild?.IsReadOnly == true, entry.IsAllowedInReadOnly))
       {
         if (entry.Ask != null)
         {
-          entry.Model.Ask = new FormAskModel
-          {
-            Title = entry.Model.Label,
-            Message = entry.Model.Confirm?.Message,
-            Color = entry.Model.Color,
-            HasDefaults = entry.DefaultProvider != null,
-            Elements = StatusMoveNavBuilder.LocalizeElements(entry.Ask.BuildElements(), L)
-          };
+          entry.Model.Ask = ScreenBuilderHelpers.BuildActionAsk(entry.Model, entry.Ask, entry.DefaultProvider != null, L);
           entry.Model.Confirm = null;
         }
 
@@ -179,22 +166,10 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    var inMenuActions = permittedActions.Where(a => a.IsInMenu).Select(a => (NavElementModel)a.Model).ToList();
-    if (inMenuActions.Count > 0)
-    {
-      actionElements.Add(new NavMenuModel
-      {
-        Key = "actions",
-        Label = L["Actions"],
-        Variant = ButtonVariant.Soft,
-        Elements = inMenuActions
-      });
-    }
-
-    foreach (var entry in permittedActions.Where(a => !a.IsInMenu))
-    {
-      actionElements.Add(entry.Model);
-    }
+    ScreenBuilderHelpers.AppendMenuAndInlineActions(
+      actionElements,
+      permittedActions.Select(a => ((NavElementModel)a.Model, a.IsInMenu)),
+      L);
 
     var canExport = User == null || !User.IsAuthenticated || User.Can(Feature.Export) || User.Can(Feature.All);
     if (canExport)
@@ -276,16 +251,7 @@ public abstract partial class GridService<TEntity, TRow>
       IsReadOnly = isGridReadOnly,
       Form = formOverlay,
       InitialFilter = initialFilter,
-      MutationTexts = new MutationTextsDto
-      {
-        ConflictTitle = L["MutationConflict"],
-        ReloadLabel = L["MutationReload"],
-        UnknownTitle = L["MutationUnknown"],
-        UnknownDescription = L["MutationUnknownDescription"],
-        VerifyLabel = L["MutationVerify"],
-        CommittedWarningTitle = L["MutationCommittedWarning"],
-        SelectionCorrectionLabel = L["MutationSelectionCorrection"]
-      },
+      MutationTexts = ScreenBuilderHelpers.BuildMutationTexts(L),
       Nav = new NavModel
       {
         Key = $"{servicePath}.nav",
@@ -387,11 +353,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       if (!string.IsNullOrEmpty(col.Label))
       {
-        col.Label = !string.IsNullOrEmpty(col.Path)
-          ? L.TextOr($"{Feature.CleanName}.{col.Path}",
-              L.TextOr($"{Feature.Label}.{col.Path}",
-                L.TextOr($"{Feature.Name}.{col.Path}", L[col.Label])))
-          : L[col.Label];
+        col.Label = ScreenBuilderHelpers.ResolveFieldLabel(L, Feature, col.Path, col.Label);
       }
 
       if (!string.IsNullOrEmpty(col.Title))
@@ -399,15 +361,11 @@ public abstract partial class GridService<TEntity, TRow>
         col.Title = L[col.Title];
       }
 
-      if (col.Options is { Count: > 0 })
+      col.Options = ScreenBuilderHelpers.LocalizeOptions(L, col.Options);
+      if (!string.IsNullOrEmpty(col.ReferenceService))
       {
-        col.Options = col.Options.Select(opt => new OptionDto
-        {
-          Id = opt.Id,
-          Name = L[opt.Name],
-          Color = opt.Color,
-          Title = opt.Title != null ? L[opt.Title] : null
-        }).ToList();
+        var refServiceType = ModuleCatalog.Instance.FindServiceType(col.ReferenceService);
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), refServiceType, $"AsReference on '{col.Path}'");
       }
 
       if (col.ExplicitRequired.HasValue)
@@ -489,19 +447,7 @@ public abstract partial class GridService<TEntity, TRow>
 
   private GridNavStatusModel? BuildStatusNavElement(string servicePath, IRecordStatuses<TEntity> statusFlow)
   {
-    string? statusMemberName = null;
-    if (statusFlow.StatusMember.Body is MemberExpression memberExpr)
-    {
-      statusMemberName = memberExpr.Member.Name;
-    }
-    else if (statusFlow.StatusMember.Body is UnaryExpression { Operand: MemberExpression ueMember })
-    {
-      statusMemberName = ueMember.Member.Name;
-    }
-
-    var statusPath = !string.IsNullOrEmpty(statusMemberName)
-      ? char.ToLowerInvariant(statusMemberName[0]) + statusMemberName[1..]
-      : "docStatusId";
+    var statusPath = StatusMoveNavBuilder.ResolveStatusPath(statusFlow.StatusMember);
 
     var statusMoves = statusFlow.Transitions
       .Where(t => StatusMoveNavBuilder.CanMove(Feature, User, t.Name))

@@ -9,7 +9,6 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 {
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 
-  public PlatformDbContext DbContext => db;
   public PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected Localizer L => Localizer.Instance.For(Feature.Module);
@@ -42,6 +41,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     var parent = new Parent();
     SetParent(parent);
+    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), parent.BoundParentServiceType, "Parent.Bind/Read");
     return _cachedParent = parent;
   }
 

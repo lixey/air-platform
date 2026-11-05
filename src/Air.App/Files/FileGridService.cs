@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using Platform.Api.Files.Internals;
 using Platform.App.Files.Internals;
+using Platform.App.Internals;
 
 namespace Platform.App.Files;
 
@@ -123,13 +124,8 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     }
   }
 
-  private static Expression<Func<TFile, bool>> BuildParentFilter(System.Reflection.PropertyInfo boundProp, object parentVal)
-  {
-    var param = Expression.Parameter(typeof(TFile), "f");
-    var propExpr = Expression.Property(param, boundProp);
-    var valExpr = Expression.Constant(parentVal, boundProp.PropertyType);
-    return Expression.Lambda<Func<TFile, bool>>(Expression.Equal(propExpr, valExpr), param);
-  }
+  private static Expression<Func<TFile, bool>> BuildParentFilter(PropertyInfo boundProp, object parentVal) =>
+    ParentScopeValidator.BuildParentKeyFilter<TFile>(boundProp, parentVal);
 
   [RequireAction(EndpointAction.View)]
   public virtual async Task<FileInfoDto> GetInfo(GridRequest request, CancellationToken cancellationToken = default)
@@ -149,22 +145,10 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       ?? throw new KeyNotFoundException("File not found.");
 
     string? uploadedBy = null;
-    if (file.UploadedById is { } uid)
+    if (file.UploadedById is > 0 and var uid)
     {
-      var userType = db.Model.GetEntityTypes()
-        .Select(t => t.ClrType)
-        .FirstOrDefault(t => typeof(BaseAppUser).IsAssignableFrom(t) && !t.IsAbstract);
-      if (userType != null)
-      {
-        try
-        {
-          if (await db.FindAsync(userType, [uid], cancellationToken) is BaseAppUser u)
-          {
-            uploadedBy = !string.IsNullOrWhiteSpace(u.Name) ? u.Name : u.Login;
-          }
-        }
-        catch { }
-      }
+      var users = await db.LoadUserNamesAsync([uid], cancellationToken);
+      users.TryGetValue(uid, out uploadedBy);
     }
 
     return new FileInfoDto
@@ -289,7 +273,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     return Results.File(memoryStream, "application/zip", fileName);
   }
 
-  async Task<FormFilesModel> IFormFilesSource.BuildFormFilesAsync(
+  Task<FormFilesModel> IFormFilesSource.BuildFormFilesAsync(
     string key,
     string? label,
     string? tab,
@@ -299,10 +283,13 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     CancellationToken cancellationToken
   )
   {
+    ParentService = parentService;
+    ParentId = parentId;
     var rules = FileRulesAttribute.Of(typeof(TFile));
     var canEdit = !IsReadOnly;
-    var canReadMeta = User is { IsAuthenticated: true } && (User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All));
-    return new FormFilesModel
+    var canReadMeta = Feature.Rights.Any(r => r.Key.EndsWith(".FileMetadata", StringComparison.OrdinalIgnoreCase))
+      && (User is not { IsAuthenticated: true } || User.Can(Feature.Action("FileMetadata")) || User.Can(Feature.All) || User.Can("*"));
+    return Task.FromResult(new FormFilesModel
     {
       Key = key,
       Label = label,
@@ -316,7 +303,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       CanDelete = canEdit,
       CanSetCover = HasCovers && canEdit,
       CanReadMetadata = canReadMeta
-    };
+    });
   }
 
   async Task<long?> IFormFilesSource.FindExistingParentIdByHashAsync(
@@ -366,28 +353,12 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       return new Dictionary<long, GridCoverDto>();
     }
 
-    var param = Expression.Parameter(typeof(TFile), "f");
-    var propExpr = Expression.Property(param, parent.BoundProperty);
-    var isCoverExpr = Expression.Property(param, nameof(IHasCoverFile.IsCover));
-
-    // f.IsCover == true
-    var coverCheck = Expression.Equal(isCoverExpr, Expression.Constant(true));
-
-    // parentId in owners
-    var ownerLongs = owners.ToList();
-    var containsMethod = typeof(Enumerable).GetMethods()
-      .First(m => m.Name == "Contains" && m.GetParameters().Length == 2)
-      .MakeGenericMethod(typeof(long));
-
-    Expression parentLongExpr = propExpr;
-    if (parent.BoundProperty.PropertyType == typeof(long?))
-    {
-      parentLongExpr = Expression.Coalesce(propExpr, Expression.Constant(0L));
-    }
-
-    var inOwnersExpr = Expression.Call(containsMethod, Expression.Constant(ownerLongs), parentLongExpr);
-    var combinedExpr = Expression.AndAlso(coverCheck, inOwnersExpr);
-    var lambda = Expression.Lambda<Func<TFile, bool>>(combinedExpr, param);
+    var inOwnersLambda = ParentScopeValidator.BuildKeyInFilter<TFile>(parent.BoundProperty, owners);
+    var param = inOwnersLambda.Parameters[0];
+    var isCoverExpr = Expression.Equal(
+      Expression.Property(param, nameof(IHasCoverFile.IsCover)),
+      Expression.Constant(true));
+    var lambda = Expression.Lambda<Func<TFile, bool>>(Expression.AndAlso(isCoverExpr, inOwnersLambda.Body), param);
 
     var covers = await RestrictedQuery().AsNoTracking().Where(lambda).ToListAsync(cancellationToken);
     var result = new Dictionary<long, GridCoverDto>();

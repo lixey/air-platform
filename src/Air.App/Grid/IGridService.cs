@@ -2,7 +2,6 @@ namespace Platform.App.Grid;
 
 public interface IGridService : IPlatformService
 {
-  PlatformDbContext DbContext { get; }
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
   Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);

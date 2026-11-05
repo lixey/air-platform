@@ -12,6 +12,7 @@ public static class ModuleOwnershipExtensions
   internal const string ModuleAnnotation = "Platform:SchemaModule";
   private const string OwnerAnnotation = "Platform:TableOwner";
   private static readonly ConcurrentDictionary<Type, string?> HandleCache = new();
+  private static readonly ConcurrentDictionary<Assembly, string?> AssemblyHandleCache = new();
 
   /// <summary>
   /// Explicitly overrides the owning module handle for <typeparamref name="TEntity"/>'s table.
@@ -197,6 +198,11 @@ public static class ModuleOwnershipExtensions
       }
     }
 
+    if (GetAssemblyModuleHandle(clrAssembly) is { } externalModuleHandle)
+    {
+      return externalModuleHandle;
+    }
+
     foreach (var level in levels)
     {
       if (level.DeclaredDbSets.Contains(rootType.ClrType) || level.DeclaredDbSets.Contains(entity.ClrType))
@@ -208,6 +214,28 @@ public static class ModuleOwnershipExtensions
     throw new InvalidOperationException(
       $"Entity '{entity.DisplayName()}' (table '{entity.GetTableName()}') has no inferred module owner in '{levels[^1].ContextType.Name}'. Place it in a module's .Data assembly or configure .HasModuleOwner(...).");
   }
+
+  private static string? GetAssemblyModuleHandle(Assembly assembly) =>
+    AssemblyHandleCache.GetOrAdd(assembly, static asm =>
+    {
+      Type[] types;
+      try
+      {
+        types = asm.GetTypes();
+      }
+      catch (ReflectionTypeLoadException ex)
+      {
+        types = ex.Types.Where(t => t is not null).ToArray()!;
+      }
+
+      var handles = types
+        .Where(t => typeof(PlatformDbContext).IsAssignableFrom(t))
+        .Select(t => t.GetCustomAttribute<ModuleSchemaAttribute>(inherit: false)?.Handle)
+        .Where(h => !string.IsNullOrWhiteSpace(h))
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+      return handles.Length == 1 ? handles[0] : null;
+    });
 
   private static string? FindExplicitOwner(IReadOnlyEntityType? entity)
   {

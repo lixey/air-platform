@@ -7,10 +7,7 @@ namespace Platform.Agent.Providers;
 /// </summary>
 public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 {
-  private IReadOnlyList<AgentModelDto>? _cachedModels;
-  private DateTime _cachedBinaryWriteUtc;
-  private string? _cachedBinaryPath;
-  private readonly SemaphoreSlim _modelsLock = new(1, 1);
+  private readonly CliModelCache _modelCache = new();
 
   private static readonly Regex BinaryModelRegex = new(
     @"\bclaude-(?<family>opus|sonnet|haiku)-(?<major>\d{1,2})(?:-(?<minor>\d{1,2}))?(?![0-9-])\b",
@@ -20,59 +17,20 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
   public string Name => "Claude CLI (claude)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
 
-  public async Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
   {
     var claudePath = ResolveExecutablePath();
-    if (claudePath is null)
-    {
-      return [];
-    }
-
-    var realPath = File.ResolveLinkTarget(claudePath, returnFinalTarget: true)?.FullName ?? claudePath;
-    if (!File.Exists(realPath))
-    {
-      return [];
-    }
-
-    var writeUtc = File.GetLastWriteTimeUtc(realPath);
-    if (!forceRefresh &&
-        _cachedModels is { Count: > 0 } &&
-        string.Equals(_cachedBinaryPath, realPath, StringComparison.Ordinal) &&
-        _cachedBinaryWriteUtc == writeUtc)
-    {
-      return _cachedModels;
-    }
-
-    await _modelsLock.WaitAsync(ct);
-    try
-    {
-      if (!forceRefresh &&
-          _cachedModels is { Count: > 0 } &&
-          string.Equals(_cachedBinaryPath, realPath, StringComparison.Ordinal) &&
-          _cachedBinaryWriteUtc == writeUtc)
-      {
-        return _cachedModels;
-      }
-
-      var discovered = await DiscoverModelsFromBinaryStreamAsync(realPath, ct);
-      if (discovered.Count > 0)
-      {
-        _cachedModels = discovered;
-        _cachedBinaryPath = realPath;
-        _cachedBinaryWriteUtc = writeUtc;
-        return _cachedModels;
-      }
-    }
-    catch (Exception ex) when (ex is not OperationCanceledException)
-    {
-      // Ignore binary inspection errors
-    }
-    finally
-    {
-      _modelsLock.Release();
-    }
-
-    return _cachedModels ?? [];
+    var realPath = claudePath is not null
+      ? (File.ResolveLinkTarget(claudePath, returnFinalTarget: true)?.FullName ?? claudePath)
+      : null;
+    var cacheKey = realPath is not null && File.Exists(realPath)
+      ? $"{realPath}|{File.GetLastWriteTimeUtc(realPath).Ticks}"
+      : null;
+    return _modelCache.GetOrLoadAsync(
+      cacheKey,
+      forceRefresh,
+      token => DiscoverModelsFromBinaryStreamAsync(realPath!, token),
+      ct);
   }
 
   private static async Task<List<AgentModelDto>> DiscoverModelsFromBinaryStreamAsync(string realPath, CancellationToken ct)
@@ -202,7 +160,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : (_cachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (_modelCache.CachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
     var (cliModel, effort) = CliTurnRunner.ResolveCliModelArgs(selectedModel, "-high", "-medium", "-low");
 
     await foreach (var evt in CliTurnRunner.StreamTurnAsync(

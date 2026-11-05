@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Flow;
 
 public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : IRecordStatuses<TEntity>
@@ -103,17 +105,10 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
 
   protected TFlowService FlowOf<TFlowService>() where TFlowService : class
   {
-    if (PlatformApp?.Services.GetService(typeof(TFlowService)) is TFlowService resolved)
-    {
-      return resolved;
-    }
-
-    if (ModuleCatalog.Instance.CreateServiceInstance(typeof(TFlowService), Db, PlatformApp) is TFlowService created)
-    {
-      return created;
-    }
-
-    return (TFlowService)Activator.CreateInstance(typeof(TFlowService), Db)!;
+    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), typeof(TFlowService), nameof(FlowOf));
+    return (TFlowService)(PlatformApp?.Services.GetService(typeof(TFlowService))
+      ?? ModuleCatalog.Instance.CreateServiceInstance(typeof(TFlowService), Db, PlatformApp)
+      ?? throw new InvalidOperationException($"Cannot resolve or instantiate flow service '{typeof(TFlowService).FullName}'."));
   }
 
   public class ChildRule(Func<IMutationContext, IReadOnlyList<TEntity>, CancellationToken, Task> executor)
@@ -141,6 +136,11 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     internal virtual async Task ExecuteAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken ct)
     {
       await executor(context, records, ct);
+      await RunFollowEffectsAsync(context, records, ct);
+    }
+
+    protected async Task RunFollowEffectsAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken ct)
+    {
       if (context.Errors.Count > 0 || _followEffects.Count == 0)
       {
         return;
@@ -226,13 +226,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       {
         var parentIds = parents.Select(p => p.Id).Distinct().ToList();
         var keyCompiled = _parentKey.Compile();
-        var param = _parentKey.Parameters[0];
-        var containsMethod = typeof(Enumerable).GetMethods(BindingFlags.Static | BindingFlags.Public)
-          .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
-          .MakeGenericMethod(typeof(long));
-        var filterExpr = Expression.Lambda<Func<TChild, bool>>(
-          Expression.Call(containsMethod, Expression.Constant(parentIds), _parentKey.Body),
-          param);
+        var filterExpr = ParentScopeValidator.BuildKeyInFilter(_parentKey, parentIds);
 
         var allChildren = await _parentFlow.Db.Set<TChild>()
           .Where(filterExpr)
@@ -293,25 +287,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
         }
       }
 
-      if (context.Errors.Count > 0 || FollowEffects.Count == 0)
-      {
-        return;
-      }
-
-      foreach (var record in parents)
-      {
-        var follow = new Follow { Record = record, Context = context };
-        foreach (var effect in FollowEffects)
-        {
-          await effect(follow, ct);
-          if (context.Errors.Count > 0)
-          {
-            return;
-          }
-        }
-      }
-
-      await context.FlushAsync(ct);
+      await RunFollowEffectsAsync(context, parents, ct);
     }
   }
 
@@ -721,6 +697,11 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     SetFlow(flow);
 
     _statuses.AddRange(flow.DeclaredStatuses);
+    foreach (var followerType in flow.FollowerTypes)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), followerType, "Flow.AddFollower");
+    }
+
     _followers.AddRange(flow.FollowerTypes);
     if (flow.InitialStatusId.HasValue)
     {

@@ -32,17 +32,7 @@ public abstract partial class FormService<TEntity, TInput>
     TEntity entity;
     if (IsNew)
     {
-      entity = new TEntity();
-      if (entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
-      {
-        tenantEntity.TenantId = tid;
-      }
-
-      ApplyBoundParentId(entity, parent, request.ParentId);
-      if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
-      {
-        statusFlow.Initialize(entity);
-      }
+      entity = CreateBlankEntity(parent, request.ParentId);
     }
     else
     {
@@ -120,33 +110,15 @@ public abstract partial class FormService<TEntity, TInput>
     _lastSavedEntity = entity;
 
     var input = entity is TInput same ? same : new TInput();
-    if (!ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input);
-    }
-
-    if (!IsNew)
-    {
-      await PopulateJoinedReferencesAsync(elements, entity, input, ct);
-    }
-
     var hooks = GetHooks();
 
     if (IsNew)
     {
-      ApplyParentChildPreset(entity, input, parent);
+      await InitializeNewRecordAsync(entity, input, elements, parent, hooks, copyBackToEntity: false, ct);
     }
-
-    var loadCtx = new FormLoadContext<TEntity, TInput>
+    else
     {
-      Entity = entity,
-      Input = input,
-      IsNew = IsNew
-    };
-
-    foreach (var h in hooks.AfterLoadActions)
-    {
-      await h(loadCtx, ct);
+      await PopulateExistingInputAsync(entity, input, elements, hooks, ct);
     }
 
     if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
@@ -340,13 +312,7 @@ public abstract partial class FormService<TEntity, TInput>
     if (IsNew)
     {
       await EnsureParentScopeAsync(parent, lockParent: true, ct);
-      entity = new TEntity();
-      if (entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
-      {
-        tenantEntity.TenantId = tid;
-      }
-
-      ApplyBoundParentId(entity, parent, Request.ParentId);
+      entity = CreateBlankEntity(parent, Request.ParentId);
       if (parent.BoundProperty != null && !parent.IsOptional)
       {
         var boundParentVal = PropertyAccessorCache.GetValue(entity, parent.BoundProperty.Name)
@@ -404,48 +370,13 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (IsNew)
     {
-      if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
-      {
-        statusFlow.Initialize(entity);
-      }
-
       var newLoadInput = entity is TInput sameNew ? sameNew : new TInput();
-      CopyMatchingProperties(entity, newLoadInput);
-      ApplyParentChildPreset(entity, newLoadInput, parent);
-
-      var newLoadCtx = new FormLoadContext<TEntity, TInput>
-      {
-        Entity = entity,
-        Input = newLoadInput,
-        IsNew = true
-      };
-      foreach (var h in hooks.AfterLoadActions)
-      {
-        await h(newLoadCtx, ct);
-      }
-
-      CopyMatchingProperties(newLoadInput, entity);
+      await InitializeNewRecordAsync(entity, newLoadInput, elements, parent, hooks, copyBackToEntity: true, ct);
     }
     else
     {
       var baselineInput = cellPatch.HasValue && entity is TInput same ? same : new TInput();
-      if (!ReferenceEquals(entity, baselineInput))
-      {
-        CopyMatchingProperties(entity, baselineInput);
-      }
-
-      await PopulateJoinedReferencesAsync(elements, entity, baselineInput, ct);
-      var baselineLoadCtx = new FormLoadContext<TEntity, TInput>
-      {
-        Entity = entity,
-        Input = baselineInput,
-        IsNew = false
-      };
-      foreach (var h in hooks.AfterLoadActions)
-      {
-        await h(baselineLoadCtx, ct);
-      }
-
+      await PopulateExistingInputAsync(entity, baselineInput, elements, hooks, ct);
       originalValues = SnapshotValues(baselineInput);
 
       if (cellPatch is { } patch)
@@ -636,6 +567,82 @@ public abstract partial class FormService<TEntity, TInput>
     }
 
     return result;
+  }
+
+  private TEntity CreateBlankEntity(Parent parent, long? parentId)
+  {
+    var entity = new TEntity();
+    if (entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
+    {
+      tenantEntity.TenantId = tid;
+    }
+
+    ApplyBoundParentId(entity, parent, parentId);
+    return entity;
+  }
+
+  private async Task InitializeNewRecordAsync(
+    TEntity entity,
+    TInput input,
+    Elements elements,
+    Parent parent,
+    Hooks hooks,
+    bool copyBackToEntity,
+    CancellationToken ct)
+  {
+    if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
+    {
+      statusFlow.Initialize(entity);
+    }
+
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
+
+    ApplyParentChildPreset(entity, input, parent);
+
+    var loadCtx = new FormLoadContext<TEntity, TInput>
+    {
+      Entity = entity,
+      Input = input,
+      IsNew = true
+    };
+    foreach (var h in hooks.AfterLoadActions)
+    {
+      await h(loadCtx, ct);
+    }
+
+    if (copyBackToEntity && !ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(input, entity);
+    }
+  }
+
+  private async Task PopulateExistingInputAsync(
+    TEntity entity,
+    TInput input,
+    Elements elements,
+    Hooks hooks,
+    CancellationToken ct)
+  {
+    if (!ReferenceEquals(entity, input))
+    {
+      CopyMatchingProperties(entity, input);
+    }
+
+    await PopulateJoinedReferencesAsync(elements, entity, input, ct);
+
+    var loadCtx = new FormLoadContext<TEntity, TInput>
+    {
+      Entity = entity,
+      Input = input,
+      IsNew = false
+    };
+    foreach (var h in hooks.AfterLoadActions)
+    {
+      await h(loadCtx, ct);
+    }
   }
 
   private async Task PopulateJoinedReferencesAsync(
