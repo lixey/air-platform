@@ -17,4 +17,7 @@ public abstract class BaseAppAuthRole : BaseEntity, IInheritedByChildTenants
 
   [Comment("Active status flag")]
   public bool IsActive { get; set; } = true;
+
+  [NotMapped]
+  public string[]? Permissions { get; set; } = [];
 }

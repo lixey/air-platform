@@ -6,7 +6,7 @@ internal static class ParentScopeValidator
   {
     for (var t = type; t != null && t != typeof(object); t = t.BaseType)
     {
-      if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Form.FormService<,>))
+      if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Form.FormService<>))
       {
         return t.GetGenericArguments()[0];
       }

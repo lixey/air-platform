@@ -1,18 +1,18 @@
 namespace Platform.App.Form;
 
-public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TProp> getter, string? path = null)
+public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> getter, string? path = null)
 {
   private sealed class ValidatorEntry
   {
-    public required Func<TProp, RuleContext<TInput>, ValidatorEntry, CancellationToken, Task> Execute { get; init; }
-    public Func<TInput, bool>? Condition { get; set; }
+    public required Func<TProp, RuleContext<TEntity>, ValidatorEntry, CancellationToken, Task> Execute { get; init; }
+    public Func<TEntity, bool>? Condition { get; set; }
     public string? Message { get; set; }
     public string? Code { get; set; }
   }
 
   private readonly List<ValidatorEntry> _entries = [];
 
-  public RuleBuilder<TInput, TProp> Custom(Action<TProp, RuleContext<TInput>> action)
+  public RuleBuilder<TEntity, TProp> Custom(Action<TProp, RuleContext<TEntity>> action)
   {
     _entries.Add(new ValidatorEntry
     {
@@ -25,7 +25,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> CustomAsync(Func<TProp, RuleContext<TInput>, CancellationToken, Task> func)
+  public RuleBuilder<TEntity, TProp> CustomAsync(Func<TProp, RuleContext<TEntity>, CancellationToken, Task> func)
   {
     _entries.Add(new ValidatorEntry
     {
@@ -34,7 +34,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> Must(Func<TProp, bool> predicate)
+  public RuleBuilder<TEntity, TProp> Must(Func<TProp, bool> predicate)
   {
     _entries.Add(new ValidatorEntry
     {
@@ -51,13 +51,13 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> Must(Func<TInput, TProp, bool> predicate)
+  public RuleBuilder<TEntity, TProp> Must(Func<TEntity, TProp, bool> predicate)
   {
     _entries.Add(new ValidatorEntry
     {
       Execute = (val, ctx, entry, _) =>
       {
-        if (!predicate(ctx.SaveContext.Input, val))
+        if (!predicate(ctx.SaveContext.Entity, val))
         {
           ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
         }
@@ -68,7 +68,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> MustAsync(Func<TProp, CancellationToken, Task<bool>> predicate)
+  public RuleBuilder<TEntity, TProp> MustAsync(Func<TProp, CancellationToken, Task<bool>> predicate)
   {
     _entries.Add(new ValidatorEntry
     {
@@ -83,13 +83,13 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> MustAsync(Func<TInput, TProp, CancellationToken, Task<bool>> predicate)
+  public RuleBuilder<TEntity, TProp> MustAsync(Func<TEntity, TProp, CancellationToken, Task<bool>> predicate)
   {
     _entries.Add(new ValidatorEntry
     {
       Execute = async (val, ctx, entry, ct) =>
       {
-        if (!await predicate(ctx.SaveContext.Input, val, ct))
+        if (!await predicate(ctx.SaveContext.Entity, val, ct))
         {
           ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
         }
@@ -98,7 +98,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> Matches(string pattern)
+  public RuleBuilder<TEntity, TProp> Matches(string pattern)
   {
     var regex = new Regex(pattern);
     _entries.Add(new ValidatorEntry
@@ -116,7 +116,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> WithMessage(string message)
+  public RuleBuilder<TEntity, TProp> WithMessage(string message)
   {
     if (_entries.Count > 0)
     {
@@ -126,7 +126,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> WithErrorCode(string code)
+  public RuleBuilder<TEntity, TProp> WithErrorCode(string code)
   {
     if (_entries.Count > 0)
     {
@@ -136,7 +136,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  public RuleBuilder<TInput, TProp> When(Func<TInput, bool> condition)
+  public RuleBuilder<TEntity, TProp> When(Func<TEntity, bool> condition)
   {
     if (_entries.Count > 0)
     {
@@ -146,7 +146,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
     return this;
   }
 
-  internal async Task ValidateAsync(FormSaveContext<object, TInput> ctx, RuleContext<TInput> ruleCtx, CancellationToken ct)
+  internal async Task ValidateAsync(FormSaveContext<TEntity> ctx, RuleContext<TEntity> ruleCtx, CancellationToken ct)
   {
     var prevPath = ruleCtx.CurrentPath;
     ruleCtx.CurrentPath = path;
@@ -155,7 +155,7 @@ public class RuleBuilder<TInput, TProp>(Func<FormSaveContext<object, TInput>, TP
       var val = getter(ctx);
       foreach (var entry in _entries)
       {
-        if (entry.Condition != null && !entry.Condition(ctx.Input))
+        if (entry.Condition != null && !entry.Condition(ctx.Entity))
         {
           continue;
         }

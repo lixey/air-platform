@@ -2,9 +2,8 @@ using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   protected async Task<FormActionDto> ExecuteActionAsync(
     FormRequest request,

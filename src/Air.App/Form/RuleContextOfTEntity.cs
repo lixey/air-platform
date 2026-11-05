@@ -1,9 +1,10 @@
 namespace Platform.App.Form;
 
-public class RuleContext<TInput>
+public class RuleContext<TEntity>
 {
-  public required object? Target { get; init; }
-  public required FormSaveContext<object, TInput> SaveContext { get; init; }
+  public required FormSaveContext<TEntity> SaveContext { get; init; }
+  public TEntity Entity => SaveContext.Entity;
+  public bool IsNew => SaveContext.IsNew;
   public List<MessageDto> Failures { get; } = [];
   internal string? CurrentPath { get; set; }
 

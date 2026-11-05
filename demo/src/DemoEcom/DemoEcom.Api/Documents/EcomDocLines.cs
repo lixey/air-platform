@@ -2,31 +2,61 @@ namespace DemoEcom.Documents;
 
 public static class EcomDocLines
 {
-  public static void Load(EcomDocLine entity, EcomDocLineEdit input, bool isNew)
+  public static async Task LoadAsync(
+    EcomDbContext db,
+    EcomDoc? doc,
+    EcomDocLine entity,
+    bool isNew,
+    CancellationToken cancellationToken)
   {
+    ArgumentNullException.ThrowIfNull(db);
     ArgumentNullException.ThrowIfNull(entity);
-    ArgumentNullException.ThrowIfNull(input);
-    input.Price = isNew ? null : entity.Price;
-    input.DiscountPercent = isNew ? null : entity.DiscountPercent;
+    if (isNew && doc != null && entity.DiscountPercent == 0m)
+    {
+      entity.DiscountPercent = Math.Round(await CustomerDiscountAsync(db, doc, cancellationToken), 2, MidpointRounding.AwayFromZero);
+    }
+  }
+
+  public static Task PriceAsync(
+    EcomDbContext db,
+    EcomDoc doc,
+    FormSaveContext<EcomDocLine> context,
+    Expression<Func<OrgProduct, decimal>> productPrice,
+    CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(context);
+    return PriceAsync(
+      db,
+      doc,
+      context.Entity,
+      context.IsNew,
+      productPrice,
+      cancellationToken,
+      context.HasInput(e => e.Price),
+      context.HasInput(e => e.DiscountPercent));
   }
 
   public static async Task PriceAsync(
     EcomDbContext db,
     EcomDoc doc,
     EcomDocLine entity,
-    EcomDocLineEdit input,
     bool isNew,
     Expression<Func<OrgProduct, decimal>> productPrice,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken,
+    bool hasPrice = false,
+    bool hasDiscount = false)
   {
     ArgumentNullException.ThrowIfNull(db);
     ArgumentNullException.ThrowIfNull(doc);
     ArgumentNullException.ThrowIfNull(entity);
-    ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(productPrice);
 
-    var price = input.Price ?? await ProductPriceAsync(db, entity.ProductId, productPrice, cancellationToken);
-    var discount = input.DiscountPercent ?? await CustomerDiscountAsync(db, doc, cancellationToken);
+    var price = hasPrice
+      ? entity.Price
+      : await ProductPriceAsync(db, entity.ProductId, productPrice, cancellationToken);
+    var discount = hasDiscount
+      ? entity.DiscountPercent
+      : await CustomerDiscountAsync(db, doc, cancellationToken);
     entity.Price = Math.Round(price, 2, MidpointRounding.AwayFromZero);
     entity.DiscountPercent = Math.Round(discount, 2, MidpointRounding.AwayFromZero);
     entity.Amount = EcomDocTotals.LineAmount(entity.Qty, entity.Price, entity.DiscountPercent);
@@ -37,10 +67,6 @@ public static class EcomDocLines
       var highest = await db.EcomDocLine.Where(line => line.DocId == docId).MaxAsync(line => (int?)line.SortOrder, cancellationToken);
       entity.SortOrder = (highest ?? 0) + 10;
     }
-
-    input.Price = entity.Price;
-    input.DiscountPercent = entity.DiscountPercent;
-    input.Amount = entity.Amount;
   }
 
   private static Task<decimal> ProductPriceAsync(

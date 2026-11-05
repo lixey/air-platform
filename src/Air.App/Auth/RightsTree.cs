@@ -157,7 +157,7 @@ public static class RightsTree
         if (cur.IsGenericType)
         {
           var def = cur.GetGenericTypeDefinition();
-          if (def == typeof(Grid.GridService<,>) || def == typeof(Form.FormService<,>))
+          if (def == typeof(Grid.GridService<,>) || def == typeof(Form.FormService<>))
           {
             entityTypes.Add(cur.GetGenericArguments()[0]);
             break;

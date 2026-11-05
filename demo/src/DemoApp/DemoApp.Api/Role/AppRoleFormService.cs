@@ -1,7 +1,7 @@
 namespace DemoApp.Role;
 
 public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
-  : AppFormService<AppAuthRole, AppRoleEdit>(db, app)
+  : AppFormService<AppAuthRole>(db, app)
 {
   private IReadOnlySet<string> _shown = new HashSet<string>();
 
@@ -10,7 +10,7 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
   {
     elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.TenantId).InputOnly().AsReference<AppTenantGridService>();
+    elements.Add(e => e.TenantId).AsReference<AppTenantGridService>();
     elements.Add(e => e.SortOrder);
     elements.Add(e => e.IsActive).AsCheckbox();
     elements.Add(e => e.Description).AsTextarea();
@@ -26,9 +26,8 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
     var taken = L["A role of this name already exists in its tenant."];
     rules.For(e => e.Name).CustomAsync(async (name, c, cancellationToken) =>
     {
-      var mutation = SaveContextOf(c);
-      var id = mutation.Entity.Id;
-      var tenant = mutation.Input.TenantId;
+      var id = c.Entity.Id;
+      var tenant = c.Entity.TenantId;
       if (!string.IsNullOrWhiteSpace(name) &&
           await db.AppAuthRole.AnyAsync(r => r.Id != id && r.TenantId == tenant && r.Name == name, cancellationToken))
       {
@@ -43,16 +42,13 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
     {
       if (c.IsNew)
       {
-        c.Input.TenantId = db.TenantContext.TenantId;
+        c.Entity.TenantId = db.TenantContext.TenantId;
         return;
       }
 
-      c.Input.TenantId = c.Entity.TenantId;
       var granted = await Grants(c.Entity.Id).Select(g => g.Permission).ToListAsync(cancellationToken);
-      c.Input.Permissions = [.. granted.Where(_shown.Contains).Order(StringComparer.Ordinal)];
+      c.Entity.Permissions = [.. granted.Where(_shown.Contains).Order(StringComparer.Ordinal)];
     });
-
-    hooks.BeforeValidate(c => c.Entity.TenantId = c.Input.TenantId);
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
@@ -61,8 +57,8 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
         return;
       }
 
-      var wanted = (c.Input.Permissions ?? []).Where(_shown.Contains).ToHashSet(StringComparer.Ordinal);
-      var losesAdmin = !c.Input.IsActive || _shown.Contains("*") && !wanted.Contains("*");
+      var wanted = (c.Entity.Permissions ?? []).Where(_shown.Contains).ToHashSet(StringComparer.Ordinal);
+      var losesAdmin = !c.Entity.IsActive || _shown.Contains("*") && !wanted.Contains("*");
       if (losesAdmin && await IsLastActiveAdminRoleAsync(c.Entity.Id, c.Entity.TenantId, cancellationToken))
       {
         c.Refuse(L["The last administrator role cannot be deactivated or stripped of administrator rights."]);
@@ -71,7 +67,7 @@ public sealed class AppRoleFormService(AppDbContext db, AppService? app = null)
 
     hooks.AfterSave(async (c, cancellationToken) =>
     {
-      var wanted = (c.Input.Permissions ?? []).Where(_shown.Contains).ToHashSet(StringComparer.Ordinal);
+      var wanted = (c.Entity.Permissions ?? []).Where(_shown.Contains).ToHashSet(StringComparer.Ordinal);
       var grants = await Grants(c.Entity.Id).ToListAsync(cancellationToken);
       db.RemoveRange(grants.Where(g => _shown.Contains(g.Permission) && !wanted.Contains(g.Permission)));
       db.AddRange(wanted.Except(grants.Select(g => g.Permission)).Select(p => new AppAuthGrant { AuthRoleId = c.Entity.Id, Permission = p }));

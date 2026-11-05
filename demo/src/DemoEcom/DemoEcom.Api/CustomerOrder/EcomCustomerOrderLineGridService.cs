@@ -38,7 +38,7 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
 
         line.ProductId = picked.Id;
         line.Qty = 1m;
-        return EcomDocLines.PriceAsync(db, doc, line, new EcomDocLineEdit(), isNew: true, p => p.Price, token);
+        return EcomDocLines.PriceAsync(db, doc, line, isNew: true, p => p.Price, token);
       },
       cancellationToken);
 }

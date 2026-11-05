@@ -3,25 +3,24 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
-  private async Task<(FormSaveContext<TEntity, TInput> SaveContext, RuleContext<TInput> RuleContext)> RunValidationPipelineAsync(
+  private async Task<(FormSaveContext<TEntity> SaveContext, RuleContext<TEntity> RuleContext)> RunValidationPipelineAsync(
     Elements elements,
     Hooks hooks,
     TEntity entity,
-    TInput input,
     IReadOnlyDictionary<string, object?>? originalValues,
+    IReadOnlySet<string>? presentPaths,
     CancellationToken ct)
   {
-    var saveCtx = new FormSaveContext<TEntity, TInput>
+    var saveCtx = new FormSaveContext<TEntity>
     {
       Entity = entity,
-      Input = input,
       IsNew = IsNew,
       Db = db,
-      OriginalValues = originalValues
+      OriginalValues = originalValues,
+      PresentPaths = presentPaths
     };
 
     foreach (var h in hooks.BeforeValidateActions)
@@ -29,44 +28,30 @@ public abstract partial class FormService<TEntity, TInput>
       h(saveCtx);
     }
 
-    if (!ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input, BuildInputOnlyPaths(elements));
-    }
-
     var rules = new Rules();
     SetRules(rules);
 
-    var ruleCtx = new RuleContext<TInput>
+    var ruleCtx = new RuleContext<TEntity>
     {
-      Target = input,
-      SaveContext = new FormSaveContext<object, TInput>
-      {
-        Entity = entity,
-        Input = input,
-        IsNew = IsNew,
-        Db = db,
-        OriginalValues = originalValues
-      }
+      SaveContext = saveCtx
     };
 
-    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: true);
+    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: true);
 
     foreach (var r in rules.Validators)
     {
-      await r(ruleCtx.SaveContext, ruleCtx, ct);
+      await r(saveCtx, ruleCtx, ct);
     }
 
     await ValidateUniqueElementsAsync(elements, entity, ruleCtx, ct);
-    await ValidateReferenceElementsAsync(elements, entity, input, originalValues, ruleCtx, ct);
+    await ValidateReferenceElementsAsync(elements, entity, originalValues, ruleCtx, ct);
     return (saveCtx, ruleCtx);
   }
 
   private void ValidateElementConstraints(
     Elements elements,
     TEntity entity,
-    TInput input,
-    RuleContext<TInput> ruleCtx,
+    RuleContext<TEntity> ruleCtx,
     bool onlyAcceptingInput)
   {
     var efEntityType = db.Model.FindEntityType(typeof(TEntity));
@@ -78,7 +63,7 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var isDisabledNow = IsElementDisabled(el, entity, input);
+      var isDisabledNow = IsElementDisabled(el, entity);
       var acceptsInput = !isDisabledNow && !el.IsServerOwned && el.Model is not FormInfoModel;
       if (onlyAcceptingInput)
       {
@@ -95,18 +80,15 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
-      var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
-      var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
-      if (inputProp == null && entityProp == null)
+      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
+      if (entityProp == null)
       {
         continue;
       }
 
-      var val = inputProp != null
-        ? PropertyAccessorCache.GetValue(input, inputProp.Name)
-        : PropertyAccessorCache.GetValue(entity, entityProp!.Name);
+      var val = PropertyAccessorCache.GetValue(entity, entityProp.Name);
 
-      var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
+      var efProp = efEntityType != null && !el.IsInputOnly ? efEntityType.FindProperty(entityProp.Name) : null;
       var isFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || (efProp?.IsForeignKey() ?? false);
       var isRequiredNow = IsElementRequired(el);
 
@@ -300,21 +282,20 @@ public abstract partial class FormService<TEntity, TInput>
         else
         {
           var normalized = Platform.App.Auth.RightsTree.Normalize(treeNodes, keyList);
-          if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
-          {
-            inputProp.SetValue(input, normalized);
-          }
-
-          if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
+          if (entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
           {
             entityProp.SetValue(entity, normalized);
+          }
+          else if (entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(string[])))
+          {
+            entityProp.SetValue(entity, normalized.ToArray());
           }
         }
       }
     }
   }
 
-  private static bool IsElementDisabled(FormElementDto el, TEntity? entity, object? input)
+  private static bool IsElementDisabled(FormElementDto el, TEntity? entity, TEntity? input = null)
   {
     if (el.IsDisabled)
     {
@@ -323,10 +304,12 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (el.DisabledWhenPredicate != null)
     {
-      return input != null && el.DisabledWhenPredicate(input) || entity != null && el.DisabledWhenPredicate(entity);
+      return entity != null && el.DisabledWhenPredicate(entity) || input != null && el.DisabledWhenPredicate(input);
     }
 
-    return el.DisabledWhen != null && EvaluateFilterNode(el.DisabledWhen, input, entity);
+    return el.DisabledWhen != null &&
+           (EvaluateFilterNode(el.DisabledWhen, entity, input) ||
+            input != null && EvaluateFilterNode(el.DisabledWhen, input, entity));
   }
 
   private static bool IsElementRequired(FormElementDto el) =>
@@ -384,7 +367,7 @@ public abstract partial class FormService<TEntity, TInput>
     uri.Host.Contains('.', StringComparison.Ordinal) && !uri.Host.StartsWith('.') && !uri.Host.EndsWith('.') &&
     !(prefixed && uri.UserInfo.Length > 0);
 
-  private async Task ValidateUniqueElementsAsync(Elements elements, TEntity entity, RuleContext<TInput> ruleCtx, CancellationToken ct)
+  private async Task ValidateUniqueElementsAsync(Elements elements, TEntity entity, RuleContext<TEntity> ruleCtx, CancellationToken ct)
   {
     foreach (var el in elements.List)
     {
@@ -458,15 +441,14 @@ public abstract partial class FormService<TEntity, TInput>
   private async Task ValidateReferenceElementsAsync(
     Elements elements,
     TEntity entity,
-    TInput input,
     IReadOnlyDictionary<string, object?>? originalValues,
-    RuleContext<TInput> ruleCtx,
+    RuleContext<TEntity> ruleCtx,
     CancellationToken ct)
   {
     foreach (var el in elements.List)
     {
       if (el.ValueKind != FormValueKind.Reference && el.ValueKind != FormValueKind.List ||
-          IsElementDisabled(el, entity, input) ||
+          IsElementDisabled(el, entity) ||
           el.IsServerOwned ||
           string.IsNullOrEmpty(el.Path))
       {
@@ -478,16 +460,13 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
-      var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
-      if (inputProp == null && entityProp == null)
+      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
+      if (entityProp == null)
       {
         continue;
       }
 
-      var val = inputProp != null
-        ? PropertyAccessorCache.GetValue(input, inputProp.Name)
-        : PropertyAccessorCache.GetValue(entity, entityProp!.Name);
+      var val = PropertyAccessorCache.GetValue(entity, entityProp.Name);
 
       var refGridType = el.ReferenceServiceType
         ?? (el.Model is FormSelectModel { ReferenceService: { } rs } ? ModuleCatalog.Instance.FindServiceType(rs) : null);
@@ -502,13 +481,10 @@ public abstract partial class FormService<TEntity, TInput>
       {
         foreach (var dr in draftRulesForCheck)
         {
-          var dp = PropertyAccessorCache.GetProperty(typeof(TInput), dr.DraftField)
-            ?? PropertyAccessorCache.GetProperty(typeof(TEntity), dr.DraftField);
+          var dp = PropertyAccessorCache.GetProperty(typeof(TEntity), dr.DraftField);
           if (dp != null)
           {
-            var curDraft = PropertyAccessorCache.GetProperty(typeof(TInput), dr.DraftField) != null
-              ? PropertyAccessorCache.GetValue(input, dp.Name)
-              : PropertyAccessorCache.GetValue(entity, dp.Name);
+            var curDraft = PropertyAccessorCache.GetValue(entity, dp.Name);
             originalValues.TryGetValue(dp.Name, out var origDraft);
             if (!Equals(curDraft, origDraft))
             {
@@ -571,7 +547,7 @@ public abstract partial class FormService<TEntity, TInput>
         if (!IsNew &&
             !draftRulesChanged &&
             originalValues != null &&
-            originalValues.TryGetValue((inputProp ?? entityProp!).Name, out var origListVal) &&
+            originalValues.TryGetValue(entityProp.Name, out var origListVal) &&
             origListVal is IEnumerable origEnum)
         {
           var origSet = new HashSet<long>();
@@ -605,7 +581,7 @@ public abstract partial class FormService<TEntity, TInput>
         if (!IsNew &&
             !draftRulesChanged &&
             originalValues != null &&
-            originalValues.TryGetValue((inputProp ?? entityProp!).Name, out var origVal) &&
+            originalValues.TryGetValue(entityProp.Name, out var origVal) &&
             origVal is long origId &&
             origId == refId)
         {
@@ -638,13 +614,10 @@ public abstract partial class FormService<TEntity, TInput>
         {
           foreach (var draftRule in selectModel.ReferenceDraftRules)
           {
-            var draftProp = PropertyAccessorCache.GetProperty(typeof(TInput), draftRule.DraftField)
-              ?? PropertyAccessorCache.GetProperty(typeof(TEntity), draftRule.DraftField);
+            var draftProp = PropertyAccessorCache.GetProperty(typeof(TEntity), draftRule.DraftField);
             if (draftProp != null)
             {
-              var draftVal = PropertyAccessorCache.GetProperty(typeof(TInput), draftRule.DraftField) != null
-                ? PropertyAccessorCache.GetValue(input, draftProp.Name)
-                : PropertyAccessorCache.GetValue(entity, draftProp.Name);
+              var draftVal = PropertyAccessorCache.GetValue(entity, draftProp.Name);
               if (draftVal != null)
               {
                 filterItems.Add(Platform.Data.Contracts.FilterNode.Rule(draftRule.SourceField, Platform.Data.Contracts.FilterOperator.Equals, draftVal));

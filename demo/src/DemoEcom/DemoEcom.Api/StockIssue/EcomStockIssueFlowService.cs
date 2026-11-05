@@ -13,7 +13,7 @@ public sealed class EcomStockIssueFlowService(EcomDbContext db) : EcomDocFlowSer
 
   public override Feature Feature => Ecom.StockIssue;
 
-  protected override void SetFlow(Flow<EcomDoc> flow)
+  protected override void SetFlow(Flow flow)
   {
     base.SetFlow(flow);
     flow.Status(Draft, L["Draft"], UiColor.Slate);
@@ -22,9 +22,9 @@ public sealed class EcomStockIssueFlowService(EcomDbContext db) : EcomDocFlowSer
     flow.Initial(Draft);
   }
 
-  public Transition<EcomDoc> Reopen => From(Posted).To(Draft).Do(PostAsync);
+  public Transition Reopen => From(Posted).To(Draft).Do(PostAsync);
 
-  public Transition<EcomDoc> Post => From(Draft).To(Posted).Do(PostAsync);
+  public Transition Post => From(Draft).To(Posted).Do(PostAsync);
 
-  public Transition<EcomDoc> Cancel => From(Draft, Posted).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
+  public Transition Cancel => From(Draft, Posted).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
 }

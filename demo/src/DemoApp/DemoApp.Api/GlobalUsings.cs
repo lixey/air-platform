@@ -1,4 +1,3 @@
-global using System.ComponentModel.DataAnnotations;
 global using DemoApp.AgentMemory;
 global using DemoApp.AgentModel;
 global using DemoApp.AgentProvider;

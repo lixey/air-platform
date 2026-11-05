@@ -17,8 +17,8 @@ public sealed class EcomSalesInvoiceLineFormService(EcomDbContext db, EcomServic
       .Required()
       .Span(12);
     elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(3);
-    elements.Add(e => e.Price).InputOnly().AsMoney().Min(0m).Placeholder("The product's price").Span(3);
-    elements.Add(e => e.DiscountPercent).Label("Discount").InputOnly().AsPercent().Range(0, 100)
+    elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's price").Span(3);
+    elements.Add(e => e.DiscountPercent).Label("Discount").AsPercent().Range(0, 100)
       .Placeholder("The customer's discount").Span(3);
     elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(3);
     elements.Add(e => e.Note).AsTextarea().Span(12);
@@ -40,7 +40,7 @@ public sealed class EcomSalesInvoiceLineFormService(EcomDbContext db, EcomServic
       var doc = ParentRecord<EcomDoc>();
       if (doc != null)
       {
-        await EcomDocLines.PriceAsync(db, doc, c.Entity, c.Input, c.IsNew, product => product.Price, cancellationToken);
+        await EcomDocLines.PriceAsync(db, doc, c, product => product.Price, cancellationToken);
       }
       else
       {

@@ -517,8 +517,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     return key;
   }
 
-  protected virtual void SetFlow(Flow<TEntity> flow) { }
-  protected virtual void SetFlow(Flow flow) => SetFlow((Flow<TEntity>)flow);
+  protected virtual void SetFlow(Flow flow) { }
 
   protected TransitionSource<TEntity> From(params long[] statuses)
   {
@@ -530,14 +529,10 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     });
   }
 
-  protected virtual Task OnMovedAsync(Move<TEntity> move, CancellationToken cancellationToken) => Task.CompletedTask;
-  protected virtual Task OnMovedAsync(Move move, CancellationToken cancellationToken) => OnMovedAsync((Move<TEntity>)move, cancellationToken);
-
-  protected virtual ValueTask<string> RefusalAsync(Transition<TEntity> transition, long status, CancellationToken cancellationToken) =>
-    new(L["StatusRefusesMove", L[NameOf(status)], L[NameOf(transition.To)]]);
+  protected virtual Task OnMovedAsync(Move move, CancellationToken cancellationToken) => Task.CompletedTask;
 
   protected virtual ValueTask<string> RefusalAsync(Transition transition, long status, CancellationToken cancellationToken) =>
-    RefusalAsync((Transition<TEntity>)transition, status, cancellationToken);
+    new(L["StatusRefusesMove", L[NameOf(status)], L[NameOf(transition.To)]]);
 
   protected virtual Task LockAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken cancellationToken) =>
     Db.Database.CurrentTransaction != null
@@ -611,7 +606,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       {
         var refusal = transition is Transition nestedTransition
           ? await RefusalAsync(nestedTransition, currentStatus, cancellationToken)
-          : await RefusalAsync(transition, currentStatus, cancellationToken);
+          : L["StatusRefusesMove", L[NameOf(currentStatus)], L[NameOf(transition.To)]];
         context.AddError("status.transition", refusal, record.Id);
         return;
       }

@@ -1,9 +1,8 @@
 namespace DemoApp;
 
-public abstract class AppFormService<TEntity, TInput>(AppDbContext db, AppService? app = null)
-  : FormService<TEntity, TInput>(db, app)
+public abstract class AppFormService<TEntity>(AppDbContext db, AppService? app = null)
+  : FormService<TEntity>(db, app)
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   protected AppService? AppService => app;
 }

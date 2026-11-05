@@ -14,7 +14,7 @@ public sealed class EcomPurchaseOrderFlowService(EcomDbContext db) : EcomDocFlow
 
   public override Feature Feature => Ecom.PurchaseOrder;
 
-  protected override void SetFlow(Flow<EcomDoc> flow)
+  protected override void SetFlow(Flow flow)
   {
     base.SetFlow(flow);
     flow.Status(New, L["New"], UiColor.Sky);
@@ -24,11 +24,11 @@ public sealed class EcomPurchaseOrderFlowService(EcomDbContext db) : EcomDocFlow
     flow.Initial(New);
   }
 
-  public Transition<EcomDoc> Reopen => From(Sent).To(New).Do(PostAsync);
+  public Transition Reopen => From(Sent).To(New).Do(PostAsync);
 
-  public Transition<EcomDoc> Send => From(New).To(Sent).Do(PostAsync);
+  public Transition Send => From(New).To(Sent).Do(PostAsync);
 
-  public Transition<EcomDoc> Complete => From(New, Sent).To(Completed).Do(PostAsync);
+  public Transition Complete => From(New, Sent).To(Completed).Do(PostAsync);
 
-  public Transition<EcomDoc> Cancel => From(New, Sent).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
+  public Transition Cancel => From(New, Sent).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
 }

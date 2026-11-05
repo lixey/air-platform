@@ -1,7 +1,7 @@
 namespace DemoApp.User;
 
 public class AppUserFormService(AppDbContext db, AppService? app = null)
-  : AppFormService<AppUser, AppUserEdit>(db, app)
+  : AppFormService<AppUser>(db, app)
 {
   private HashSet<long> _offered = [];
 
@@ -58,7 +58,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       {
         c.AddFailure(L["The password must be at most {0} characters.", 128]);
       }
-      else if (!string.IsNullOrEmpty(mutation.Input.Login) && string.Equals(password, mutation.Input.Login, StringComparison.OrdinalIgnoreCase))
+      else if (!string.IsNullOrEmpty(mutation.Entity.Login) && string.Equals(password, mutation.Entity.Login, StringComparison.OrdinalIgnoreCase))
       {
         c.AddFailure(L["The password must not equal the login name."]);
       }
@@ -67,12 +67,20 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
   protected override void SetHooks(Hooks hooks)
   {
-    hooks.AfterLoad(async (c, cancellationToken) => c.Input.RoleIds = c.IsNew
-        ? []
-        : await db.Set<AppAuthAssignment>()
-            .Where(r => r.UserId == c.Entity.Id && r.IsActive && _offered.Contains(r.AuthRoleId))
-            .Select(r => r.AuthRoleId)
-            .ToArrayAsync(cancellationToken));
+    hooks.AfterLoad(async (c, cancellationToken) =>
+    {
+      if (c.IsNew)
+      {
+        c.Entity.MustChangePassword = true;
+        c.Entity.RoleIds = [];
+        return;
+      }
+
+      c.Entity.RoleIds = await db.Set<AppAuthAssignment>()
+        .Where(r => r.UserId == c.Entity.Id && r.IsActive && _offered.Contains(r.AuthRoleId))
+        .Select(r => r.AuthRoleId)
+        .ToArrayAsync(cancellationToken);
+    });
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
@@ -97,13 +105,13 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
           }
         }
 
-        if (!c.Input.IsActive)
+        if (!c.Entity.IsActive)
         {
           c.Refuse(L["The root user cannot be deactivated."]);
           return;
         }
 
-        var selectedRoles = (c.Input.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
+        var selectedRoles = (c.Entity.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
         var hasAdminRole = await db.Set<AppAuthGrant>()
           .AnyAsync(g => g.Permission == "*" && (
             selectedRoles.Contains(g.AuthRoleId) ||
@@ -116,9 +124,9 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         }
       }
 
-      if (!string.IsNullOrEmpty(c.Input.Password))
+      if (!string.IsNullOrEmpty(c.Entity.Password))
       {
-        c.Entity.PasswordHash = (app?.Hasher ?? new PasswordHasher()).HashPassword(c.Input.Password);
+        c.Entity.PasswordHash = (app?.Hasher ?? new PasswordHasher()).HashPassword(c.Entity.Password);
       }
 
       if (!c.IsNew && c.Changed(e => e.Login, e => e.IsActive, e => e.MustChangePassword, e => e.Password, e => e.RoleIds))
@@ -133,7 +141,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       var assignments = await db.Set<AppAuthAssignment>()
         .Where(r => r.UserId == c.Entity.Id && _offered.Contains(r.AuthRoleId))
         .ToListAsync(cancellationToken);
-      var roles = (c.Input.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
+      var roles = (c.Entity.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
       foreach (var assignment in assignments)
       {
         assignment.IsActive = roles.Contains(assignment.AuthRoleId);

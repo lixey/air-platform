@@ -3,9 +3,8 @@ using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db, PlatformAppService? app = null) : IFormService
+public abstract partial class FormService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : IFormService
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   private Elements? _lastElements;
   private Parent? _cachedParent;
@@ -45,7 +44,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected TEntity? CurrentEntity { get; private set; }
 
-  public sealed class Elements : Elements<TInput>
+  public sealed class Elements : Elements<TEntity>
   {
     public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
       Expression<Func<TChildEntity, long>> foreignKey,
@@ -378,7 +377,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
         nameof(RecalculateAsync),
         BindingFlags.Instance | BindingFlags.NonPublic,
         [typeof(TEntity), typeof(CancellationToken)]);
-      return m != null && m.DeclaringType != typeof(FormService<TEntity, TInput>);
+      return m != null && m.DeclaringType != typeof(FormService<TEntity>);
     });
 
   protected virtual Task RecalculateAsync(TEntity entity, CancellationToken ct) => Task.CompletedTask;
@@ -408,32 +407,32 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public sealed class Hooks
   {
-    internal List<Func<FormLoadContext<TEntity, TInput>, CancellationToken, Task>> AfterLoadActions { get; } = [];
-    internal List<Action<FormSaveContext<TEntity, TInput>>> BeforeValidateActions { get; } = [];
-    internal List<Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task>> BeforeSaveActions { get; } = [];
-    internal List<Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task>> AfterSaveActions { get; } = [];
+    internal List<Func<FormLoadContext<TEntity>, CancellationToken, Task>> AfterLoadActions { get; } = [];
+    internal List<Action<FormSaveContext<TEntity>>> BeforeValidateActions { get; } = [];
+    internal List<Func<FormSaveContext<TEntity>, CancellationToken, Task>> BeforeSaveActions { get; } = [];
+    internal List<Func<FormSaveContext<TEntity>, CancellationToken, Task>> AfterSaveActions { get; } = [];
 
-    public void AfterLoad(Func<FormLoadContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterLoadActions.Add(handler);
-    public void AfterLoad(Action<FormLoadContext<TEntity, TInput>> handler) =>
+    public void AfterLoad(Func<FormLoadContext<TEntity>, CancellationToken, Task> handler) => AfterLoadActions.Add(handler);
+    public void AfterLoad(Action<FormLoadContext<TEntity>> handler) =>
       AfterLoadActions.Add((c, ct) =>
       {
         handler(c);
         return Task.CompletedTask;
       });
 
-    public void BeforeValidate(Action<FormSaveContext<TEntity, TInput>> handler) => BeforeValidateActions.Add(handler);
-    public void Compute(Action<FormSaveContext<TEntity, TInput>> handler) => BeforeValidateActions.Add(handler);
+    public void BeforeValidate(Action<FormSaveContext<TEntity>> handler) => BeforeValidateActions.Add(handler);
+    public void Compute(Action<FormSaveContext<TEntity>> handler) => BeforeValidateActions.Add(handler);
 
-    public void BeforeSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => BeforeSaveActions.Add(handler);
-    public void BeforeSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
+    public void BeforeSave(Func<FormSaveContext<TEntity>, CancellationToken, Task> handler) => BeforeSaveActions.Add(handler);
+    public void BeforeSave(Action<FormSaveContext<TEntity>> handler) =>
       BeforeSaveActions.Add((c, ct) =>
       {
         handler(c);
         return Task.CompletedTask;
       });
 
-    public void AfterSave(Func<FormSaveContext<TEntity, TInput>, CancellationToken, Task> handler) => AfterSaveActions.Add(handler);
-    public void AfterSave(Action<FormSaveContext<TEntity, TInput>> handler) =>
+    public void AfterSave(Func<FormSaveContext<TEntity>, CancellationToken, Task> handler) => AfterSaveActions.Add(handler);
+    public void AfterSave(Action<FormSaveContext<TEntity>> handler) =>
       AfterSaveActions.Add((c, ct) =>
       {
         handler(c);
@@ -443,9 +442,9 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public sealed class Rules
   {
-    internal List<Func<FormSaveContext<object, TInput>, RuleContext<TInput>, CancellationToken, Task>> Validators { get; } = [];
+    internal List<Func<FormSaveContext<TEntity>, RuleContext<TEntity>, CancellationToken, Task>> Validators { get; } = [];
 
-    public RuleBuilder<TInput, TProp> For<TProp>(Expression<Func<TInput, TProp>> member)
+    public RuleBuilder<TEntity, TProp> For<TProp>(Expression<Func<TEntity, TProp>> member)
     {
       var compiled = member.Compile();
       string? path = null;
@@ -455,21 +454,13 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
         path = char.ToLowerInvariant(me.Member.Name[0]) + me.Member.Name[1..];
       }
 
-      var builder = new RuleBuilder<TInput, TProp>(ctx => compiled(ctx.Input), path);
+      var builder = new RuleBuilder<TEntity, TProp>(ctx => compiled(ctx.Entity), path);
       Validators.Add((ctx, rCtx, ct) => builder.ValidateAsync(ctx, rCtx, ct));
       return builder;
     }
   }
 
-  protected static FormSaveContext<TEntity, TInput> SaveContextOf(RuleContext<TInput> context) =>
-    new()
-    {
-      Entity = (TEntity)context.SaveContext.Entity,
-      Input = context.SaveContext.Input,
-      IsNew = context.SaveContext.IsNew,
-      Db = context.SaveContext.Db,
-      OriginalValues = context.SaveContext.OriginalValues
-    };
+  protected static FormSaveContext<TEntity> SaveContextOf(RuleContext<TEntity> context) => context.SaveContext;
 
   public sealed class FormNavActionEntry
   {

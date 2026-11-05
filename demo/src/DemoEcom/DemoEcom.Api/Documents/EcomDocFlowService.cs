@@ -8,9 +8,9 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
   protected abstract long Type { get; }
   protected EcomDocTexts Texts => field ??= EcomDocTexts.Of(L);
 
-  protected override void SetFlow(Flow<EcomDoc> flow) => flow.State(doc => doc.DocStatusId);
+  protected override void SetFlow(Flow flow) => flow.State(doc => doc.DocStatusId);
 
-  protected async Task PostAsync(Move<EcomDoc> move, CancellationToken cancellationToken)
+  protected async Task PostAsync(Move move, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(move);
     var statuses = await StatusesAsync(cancellationToken);
@@ -22,7 +22,7 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
     }
   }
 
-  protected Task NoteAsync(Move<EcomDoc> move, CancellationToken cancellationToken)
+  protected Task NoteAsync(Move move, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(move);
     var doc = move.Record;
@@ -43,7 +43,7 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
     return Task.CompletedTask;
   }
 
-  protected override Task OnMovedAsync(Move<EcomDoc> move, CancellationToken cancellationToken)
+  protected override Task OnMovedAsync(Move move, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(move);
     db.Add(new EcomDocMove
@@ -60,7 +60,7 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
     return Task.CompletedTask;
   }
 
-  protected override ValueTask<string> RefusalAsync(Transition<EcomDoc> transition, long status, CancellationToken cancellationToken)
+  protected override ValueTask<string> RefusalAsync(Transition transition, long status, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(transition);
     return new(Texts.Transition(NameOf(transition.To)));

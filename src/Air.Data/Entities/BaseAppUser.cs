@@ -47,4 +47,10 @@ public abstract class BaseAppUser : BaseEntity
 
   [Comment("Navigation property to preferred AppLanguage"), ForeignKey(nameof(LanguageId))]
   public virtual AppLanguage? Language { get; set; }
+
+  [NotMapped, Sensitive]
+  public string? Password { get; set; }
+
+  [NotMapped]
+  public long[]? RoleIds { get; set; } = [];
 }

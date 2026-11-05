@@ -13,7 +13,7 @@ public sealed class EcomStockTransferLineFormService(EcomDbContext db, EcomServi
       .Required()
       .Span(12);
     elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(4);
-    elements.Add(e => e.Price).InputOnly().AsMoney().Min(0m).Placeholder("The product's purchase price").Span(4);
+    elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's purchase price").Span(4);
     elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(4);
     elements.Add(e => e.Note).AsTextarea().Span(12);
   }
@@ -26,7 +26,7 @@ public sealed class EcomStockTransferLineFormService(EcomDbContext db, EcomServi
       var doc = ParentRecord<EcomDoc>();
       if (doc != null)
       {
-        return EcomDocLines.PriceAsync(db, doc, c.Entity, c.Input, c.IsNew, product => product.PurchasePrice, cancellationToken);
+        return EcomDocLines.PriceAsync(db, doc, c, product => product.PurchasePrice, cancellationToken);
       }
 
       c.Entity.Amount = Math.Round(c.Entity.Qty * c.Entity.Price, 2);

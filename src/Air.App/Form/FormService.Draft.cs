@@ -2,9 +2,8 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   private static readonly JsonSerializerOptions DraftJsonOptions = new(JsonSerializerDefaults.Web)
   {
@@ -128,30 +127,12 @@ public abstract partial class FormService<TEntity, TInput>
       draftEntity.Id = CurrentEntity.Id;
     }
 
-    TInput draftInput;
-    if (typeof(TInput) == typeof(TEntity))
-    {
-      draftInput = (TInput)(object)draftEntity;
-    }
-    else
-    {
-      draftInput = new TInput();
-      if (modelObj is TInput existingInput)
-      {
-        CopyMatchingProperties(existingInput, draftInput);
-      }
-    }
-
     var mergedJson = JsonSerializer.SerializeToElement(values, DraftJsonOptions);
     if (mergedJson.ValueKind == JsonValueKind.Object)
     {
       foreach (var prop in mergedJson.EnumerateObject())
       {
-        SetPropertyValue(draftInput, prop.Name, prop.Value);
-        if (!ReferenceEquals(draftInput, draftEntity))
-        {
-          SetPropertyValue(draftEntity, prop.Name, prop.Value);
-        }
+        SetPropertyValue(draftEntity, prop.Name, prop.Value);
       }
     }
 
@@ -162,8 +143,8 @@ public abstract partial class FormService<TEntity, TInput>
         elements,
         hooks,
         draftEntity,
-        draftInput,
         originalValues,
+        explicitlyProvided,
         ct);
       messages = ruleCtx.Failures;
     }
@@ -174,7 +155,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (hooks.BeforeValidateActions.Count > 0)
     {
-      var computedJson = JsonSerializer.SerializeToElement(draftInput, DraftJsonOptions);
+      var computedJson = JsonSerializer.SerializeToElement(draftEntity, DraftJsonOptions);
       if (computedJson.ValueKind == JsonValueKind.Object)
       {
         var afterCompute = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);

@@ -2,17 +2,26 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public class FormSaveContext<TEntity, TInput> : IMutationContext
+public class FormSaveContext<TEntity> : IMutationContext
 {
   public required TEntity Entity { get; init; }
-  public required TInput Input { get; init; }
   public bool IsNew { get; init; }
   internal PlatformDbContext? Db { get; init; }
   internal IReadOnlyDictionary<string, object?>? OriginalValues { get; init; }
+  internal IReadOnlySet<string>? PresentPaths { get; init; }
   private readonly List<MutationError> _mutationErrors = [];
   private readonly List<MutationError> _mutationWarnings = [];
   public List<MessageDto> Errors { get; } = [];
   public List<MessageDto> Warnings { get; } = [];
+
+  public bool HasInput(string path) =>
+    !string.IsNullOrEmpty(path) && PresentPaths != null && PresentPaths.Contains(path);
+
+  public bool HasInput<TProp>(Expression<Func<TEntity, TProp>> property)
+  {
+    var body = property.Body is UnaryExpression ue ? ue.Operand : property.Body;
+    return body is MemberExpression me && HasInput(me.Member.Name);
+  }
 
   IReadOnlyList<MutationError> IMutationContext.Errors => _mutationErrors;
   IReadOnlyList<MutationError> IMutationContext.Warnings => _mutationWarnings;
@@ -71,7 +80,7 @@ public class FormSaveContext<TEntity, TInput> : IMutationContext
   public Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
     MutationContext.AcquireLocksAsync(Db, typeof(TLocked), keys, cancellationToken);
 
-  public TProp Original<TProp>(Expression<Func<TInput, TProp>> property)
+  public TProp Original<TProp>(Expression<Func<TEntity, TProp>> property)
   {
     if (IsNew || OriginalValues is null)
     {
@@ -89,7 +98,7 @@ public class FormSaveContext<TEntity, TInput> : IMutationContext
     return default!;
   }
 
-  public bool Changed(params Expression<Func<TInput, object?>>[] properties)
+  public bool Changed(params Expression<Func<TEntity, object?>>[] properties)
   {
     if (IsNew || OriginalValues is null)
     {
@@ -106,7 +115,7 @@ public class FormSaveContext<TEntity, TInput> : IMutationContext
       var body = propExpr.Body is UnaryExpression ue ? ue.Operand : propExpr.Body;
       if (body is MemberExpression me && me.Member is PropertyInfo pi)
       {
-        var currentVal = PropertyAccessorCache.GetValue(Input, pi.Name);
+        var currentVal = PropertyAccessorCache.GetValue(Entity, pi.Name);
         OriginalValues.TryGetValue(pi.Name, out var origVal);
         if (!ValuesEqual(currentVal, origVal))
         {

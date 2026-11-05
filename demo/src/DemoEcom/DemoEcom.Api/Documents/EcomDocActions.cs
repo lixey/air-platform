@@ -18,7 +18,7 @@ public static class EcomDocActions
 
   public static async Task SaveAsync(
     EcomDbContext db,
-    FormSaveContext<EcomDoc, EcomDoc> context,
+    FormSaveContext<EcomDoc> context,
     long? userId,
     EcomDocStatus status,
     CancellationToken cancellationToken

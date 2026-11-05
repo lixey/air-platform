@@ -2,9 +2,8 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   internal static void SetPropertyValue(object target, string path, JsonElement val)
   {
@@ -47,7 +46,9 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
     {
-      converted = null;
+      converted = prop.PropertyType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) == null
+        ? Activator.CreateInstance(prop.PropertyType)
+        : null;
     }
     else if (targetType == typeof(string))
     {
@@ -122,25 +123,39 @@ public abstract partial class FormService<TEntity, TInput>
     return dict;
   }
 
-  private HashSet<string> BuildProtectedPaths(
-    Elements elements,
-    JsonElement? clientJson = null,
-    bool isNew = true,
-    TEntity? entity = null,
-    TInput? input = null)
+  private static HashSet<string>? BuildPresentPaths(JsonElement? clientJson)
   {
-    HashSet<string>? presentInJson = null;
-    if (!isNew && clientJson is { ValueKind: JsonValueKind.Object } jsonObj)
+    if (clientJson is not { ValueKind: JsonValueKind.Object } jsonObj)
     {
-      presentInJson = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-      foreach (var jProp in jsonObj.EnumerateObject())
-      {
-        presentInJson.Add(jProp.Name);
-      }
+      return null;
     }
 
+    var presentInJson = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var jProp in jsonObj.EnumerateObject())
+    {
+      if (jProp.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+      {
+        var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), jProp.Name);
+        if (prop != null && prop.PropertyType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) == null)
+        {
+          continue;
+        }
+      }
+
+      presentInJson.Add(jProp.Name);
+    }
+
+    return presentInJson;
+  }
+
+  private HashSet<string> BuildProtectedPaths(
+    Elements elements,
+    HashSet<string>? presentInJson = null,
+    bool isNew = true,
+    TEntity? entity = null,
+    TEntity? input = null)
+  {
     var editablePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var isSeparateInput = typeof(TInput) != typeof(TEntity);
     foreach (var el in elements.List)
     {
       if (string.IsNullOrEmpty(el.Path))
@@ -150,7 +165,7 @@ public abstract partial class FormService<TEntity, TInput>
 
       var isDisabled = el.IsDisabled || (entity != null || input != null) && IsElementDisabled(el, entity, input);
       var acceptsInput = !isDisabled && !el.IsServerOwned && el.Model is not FormInfoModel;
-      if (acceptsInput && !(isSeparateInput && el.IsInputOnly))
+      if (acceptsInput)
       {
         if (presentInJson == null || presentInJson.Contains(el.Path))
         {
@@ -365,7 +380,7 @@ public abstract partial class FormService<TEntity, TInput>
     }
   }
 
-  private void ApplyParentChildPreset(TEntity entity, TInput input, Parent parent)
+  private void ApplyParentChildPreset(TEntity entity, Parent parent)
   {
     if (parent.BoundProperty != null && parent.MatchesService(Request.ParentService) ||
         Request.ParentId is not > 0 ||
@@ -378,10 +393,6 @@ public abstract partial class FormService<TEntity, TInput>
     if (match?.PresetProvider != null)
     {
       match.PresetProvider(db, Request.ParentId.Value, entity);
-      if (!ReferenceEquals(entity, input))
-      {
-        CopyMatchingProperties(entity, input);
-      }
     }
   }
 

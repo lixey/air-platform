@@ -2,9 +2,8 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   private async Task ResolveTimeZoneInheritLabelsAsync(Elements elements, TEntity? entity, CancellationToken ct)
   {

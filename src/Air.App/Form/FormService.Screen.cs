@@ -4,9 +4,8 @@ using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default) =>
     BuildScreenAsync(servicePath, new FormRequest { Id = id }, ct);
@@ -348,10 +347,9 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
-      var entityProp = !el.IsInputOnly ? PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path) : null;
-      var propType = inputProp?.PropertyType ?? entityProp?.PropertyType;
-      var efProp = efEntityType != null && entityProp != null ? efEntityType.FindProperty(entityProp.Name) : null;
+      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
+      var propType = entityProp?.PropertyType;
+      var efProp = efEntityType != null && entityProp != null && !el.IsInputOnly ? efEntityType.FindProperty(entityProp.Name) : null;
 
       if (efProp != null)
       {
@@ -379,10 +377,9 @@ public abstract partial class FormService<TEntity, TInput>
         }
       }
 
-      var annotations = new[] { inputProp, entityProp }
-        .OfType<PropertyInfo>()
-        .Distinct()
-        .SelectMany(p => p.GetCustomAttributes<ValidationAttribute>());
+      var annotations = entityProp != null
+        ? entityProp.GetCustomAttributes<ValidationAttribute>()
+        : [];
 
       foreach (var attr in annotations)
       {

@@ -1,7 +1,7 @@
 namespace DemoEcom.Documents;
 
 public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomService? ecom = null)
-  : EcomFormService<EcomDocLine, EcomDocLineEdit>(db, ecom)
+  : EcomFormService<EcomDocLine>(db, ecom)
   where TDocForm : class
 {
   protected override bool IsReadOnly => base.IsReadOnly || ParentRecord<EcomDoc>() is not { DocStatus.IsEditable: true };
@@ -12,11 +12,11 @@ public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomSer
 
   protected override void SetHooks(Hooks hooks)
   {
-    hooks.AfterLoad(c => EcomDocLines.Load(c.Entity, c.Input, c.IsNew));
+    hooks.AfterLoad((c, ct) => EcomDocLines.LoadAsync(db, ParentRecord<EcomDoc>(), c.Entity, c.IsNew, ct));
     hooks.Compute(c =>
       c.Entity.Amount = EcomDocTotals.LineAmount(
         c.Entity.Qty,
-        c.Input.Price ?? c.Entity.Price,
-        c.Input.DiscountPercent ?? c.Entity.DiscountPercent));
+        c.Entity.Price,
+        c.Entity.DiscountPercent));
   }
 }

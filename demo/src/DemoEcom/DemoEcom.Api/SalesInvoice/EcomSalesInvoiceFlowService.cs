@@ -15,7 +15,7 @@ public sealed class EcomSalesInvoiceFlowService(EcomDbContext db) : EcomDocFlowS
 
   public override Feature Feature => Ecom.SalesInvoice;
 
-  protected override void SetFlow(Flow<EcomDoc> flow)
+  protected override void SetFlow(Flow flow)
   {
     base.SetFlow(flow);
     flow.Status(Draft, L["Draft"], UiColor.Slate);
@@ -26,13 +26,13 @@ public sealed class EcomSalesInvoiceFlowService(EcomDbContext db) : EcomDocFlowS
     flow.Initial(Draft);
   }
 
-  public Transition<EcomDoc> Reopen => From(ReadyToShip, InTransit).To(Draft).Do(PostAsync);
+  public Transition Reopen => From(ReadyToShip, InTransit).To(Draft).Do(PostAsync);
 
-  public Transition<EcomDoc> Ready => From(Draft, InTransit).To(ReadyToShip).Do(PostAsync);
+  public Transition Ready => From(Draft, InTransit).To(ReadyToShip).Do(PostAsync);
 
-  public Transition<EcomDoc> Ship => From(Draft, ReadyToShip).To(InTransit).Do(PostAsync);
+  public Transition Ship => From(Draft, ReadyToShip).To(InTransit).Do(PostAsync);
 
-  public Transition<EcomDoc> Deliver => From(Draft, ReadyToShip, InTransit).To(Delivered).Do(PostAsync);
+  public Transition Deliver => From(Draft, ReadyToShip, InTransit).To(Delivered).Do(PostAsync);
 
-  public Transition<EcomDoc> Cancel => From(Draft, ReadyToShip, InTransit).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
+  public Transition Cancel => From(Draft, ReadyToShip, InTransit).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
 }

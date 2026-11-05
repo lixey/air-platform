@@ -2,9 +2,8 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public abstract partial class FormService<TEntity, TInput>
+public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
-  where TInput : class, new()
 {
   public virtual Task<object?> GetModelAsync(long? id, CancellationToken ct = default) =>
     GetModelAsync(new FormRequest { Id = id }, ct);
@@ -109,16 +108,15 @@ public abstract partial class FormService<TEntity, TInput>
     CurrentEntity = entity;
     _lastSavedEntity = entity;
 
-    var input = entity is TInput same ? same : new TInput();
     var hooks = GetHooks();
 
     if (IsNew)
     {
-      await InitializeNewRecordAsync(entity, input, elements, parent, hooks, copyBackToEntity: false, ct);
+      await InitializeNewRecordAsync(entity, elements, parent, hooks, ct);
     }
     else
     {
-      await PopulateExistingInputAsync(entity, input, elements, hooks, ct);
+      await PopulateExistingRecordAsync(entity, elements, hooks, ct);
     }
 
     if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
@@ -135,14 +133,10 @@ public abstract partial class FormService<TEntity, TInput>
         }
 
         SetPropertyValue(entity, targetName, prop.Value);
-        if (!ReferenceEquals(entity, input))
-        {
-          SetPropertyValue(input, targetName, prop.Value);
-        }
       }
     }
 
-    return input;
+    return entity;
   }
 
   public virtual async Task<FormDataDto> BuildFormDataAsync(
@@ -218,12 +212,11 @@ public abstract partial class FormService<TEntity, TInput>
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
     var (req, entityJson) = FormRequest.Normalize(json, request);
-    var input = JsonSerializer.Deserialize<TInput>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
-      ?? new TInput();
+    var input = DeserializeInput(entityJson);
 
-    if (req.Id is null or <= 0 && input is IEntity { Id: > 0 } inpEntity)
+    if (req.Id is null or <= 0 && input.Id > 0)
     {
-      req.Id = inpEntity.Id;
+      req.Id = input.Id;
     }
 
     var id = req.Id;
@@ -301,9 +294,78 @@ public abstract partial class FormService<TEntity, TInput>
     return entity;
   }
 
+  private static TEntity DeserializeInput(JsonElement entityJson)
+  {
+    if (entityJson.ValueKind == JsonValueKind.Object && NeedsPropertyDeserialization(entityJson))
+    {
+      var result = new TEntity();
+      foreach (var jProp in entityJson.EnumerateObject())
+      {
+        var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), jProp.Name);
+        var setter = PropertyAccessorCache.GetSetter(typeof(TEntity), jProp.Name);
+        if (prop == null || setter == null || IsIgnoredNavigationProperty(prop.PropertyType))
+        {
+          continue;
+        }
+
+        var val = jProp.Value;
+        var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+        if (val.ValueKind == JsonValueKind.Object &&
+            (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)) &&
+            val.TryGetProperty("id", out var idElem))
+        {
+          val = idElem;
+        }
+
+        if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined &&
+            prop.PropertyType.IsValueType &&
+            Nullable.GetUnderlyingType(prop.PropertyType) == null)
+        {
+          continue;
+        }
+
+        var deserialized = JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType, PlatformJsonOptions.DefaultOptions);
+        setter(result, deserialized);
+      }
+
+      return result;
+    }
+
+    return JsonSerializer.Deserialize<TEntity>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
+      ?? new TEntity();
+  }
+
+  private static bool NeedsPropertyDeserialization(JsonElement entityJson)
+  {
+    foreach (var jProp in entityJson.EnumerateObject())
+    {
+      var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), jProp.Name);
+      if (prop == null)
+      {
+        continue;
+      }
+
+      if (jProp.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined &&
+          prop.PropertyType.IsValueType &&
+          Nullable.GetUnderlyingType(prop.PropertyType) == null)
+      {
+        return true;
+      }
+
+      var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+      if (jProp.Value.ValueKind == JsonValueKind.Object &&
+          (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)))
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async Task<object> SaveCoreAsync(
     JsonElement entityJson,
-    TInput input,
+    TEntity input,
     long? id,
     int? clientVer,
     (string Path, JsonElement Value)? cellPatch,
@@ -357,7 +419,7 @@ public abstract partial class FormService<TEntity, TInput>
     if (cellPatch is { } cp)
     {
       var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
-      if (IsReadOnly || targetElement == null || IsElementDisabled(targetElement, entity, entity) || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
+      if (IsReadOnly || targetElement == null || IsElementDisabled(targetElement, entity) || targetElement.IsServerOwned || targetElement.Model is FormInfoModel)
       {
         throw new FormRefusedException(
           MutationOutcome.Refused,
@@ -375,38 +437,32 @@ public abstract partial class FormService<TEntity, TInput>
 
     if (IsNew)
     {
-      var newLoadInput = entity is TInput sameNew ? sameNew : new TInput();
-      await InitializeNewRecordAsync(entity, newLoadInput, elements, parent, hooks, copyBackToEntity: true, ct);
+      await InitializeNewRecordAsync(entity, elements, parent, hooks, ct);
     }
     else
     {
-      var baselineInput = cellPatch.HasValue && entity is TInput same ? same : new TInput();
-      await PopulateExistingInputAsync(entity, baselineInput, elements, hooks, ct);
-      originalValues = SnapshotValues(baselineInput);
+      await PopulateExistingRecordAsync(entity, elements, hooks, ct);
+      originalValues = SnapshotValues(entity);
 
       if (cellPatch is { } patch)
       {
-        input = baselineInput;
-        SetPropertyValue(input, patch.Path, patch.Value);
-        if (!ReferenceEquals(entity, input))
-        {
-          SetPropertyValue(entity, patch.Path, patch.Value);
-        }
-
-        NormalizeNullableStrings(elements, input);
-        if (!ReferenceEquals(entity, input))
-        {
-          NormalizeNullableStrings(elements, entity);
-        }
+        SetPropertyValue(entity, patch.Path, patch.Value);
+        NormalizeNullableStrings(elements, entity);
       }
     }
 
-    var inputOnlyPaths = BuildInputOnlyPaths(elements);
-    if (cellPatch == null)
+    HashSet<string>? presentPaths = null;
+    if (cellPatch is { } cellPatchInfo)
     {
+      presentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cellPatchInfo.Path };
+    }
+    else
+    {
+      presentPaths = BuildPresentPaths(entityJson);
       NormalizeNullableStrings(elements, input);
-      var protectedPaths = BuildProtectedPaths(elements, entityJson, IsNew, entity, input);
+      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input);
       CopyMatchingProperties(input, entity, protectedPaths);
+      NormalizeNullableStrings(elements, entity);
       if (id.HasValue && id.Value > 0)
       {
         entity.Id = id.Value;
@@ -434,14 +490,9 @@ public abstract partial class FormService<TEntity, TInput>
             }]);
         }
       }
-
-      if (!ReferenceEquals(entity, input))
-      {
-        CopyMatchingProperties(entity, input, inputOnlyPaths);
-      }
     }
 
-    var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, input, originalValues, ct);
+    var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, originalValues, presentPaths, ct);
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
@@ -457,12 +508,7 @@ public abstract partial class FormService<TEntity, TInput>
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
     }
 
-    if (cellPatch == null && !ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input, inputOnlyPaths);
-    }
-
-    ValidateElementConstraints(elements, entity, input, ruleCtx, onlyAcceptingInput: false);
+    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: false);
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
@@ -479,7 +525,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     await db.SaveChangesAsync(ct);
 
-    await SyncJoinedReferencesAsync(elements, entity, input, ct);
+    await SyncJoinedReferencesAsync(elements, entity, ct);
 
     if (hooks.AfterSaveActions.Count > 0)
     {
@@ -517,12 +563,7 @@ public abstract partial class FormService<TEntity, TInput>
 
     _lastSavedEntity = entity;
     _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
-    if (cellPatch == null && !ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input, inputOnlyPaths);
-    }
-
-    return input;
+    return entity;
   }
 
   public virtual async Task<GridCellDto> SaveCellAsync(
@@ -543,7 +584,7 @@ public abstract partial class FormService<TEntity, TInput>
     {
       try
       {
-        await SaveCoreAsync(default, new TInput(), id, request.Ver, (path, value), mutationCt);
+        await SaveCoreAsync(default, new TEntity(), id, request.Ver, (path, value), mutationCt);
       }
       catch (FormRefusedException ex)
       {
@@ -588,11 +629,9 @@ public abstract partial class FormService<TEntity, TInput>
 
   private async Task InitializeNewRecordAsync(
     TEntity entity,
-    TInput input,
     Elements elements,
     Parent parent,
     Hooks hooks,
-    bool copyBackToEntity,
     CancellationToken ct)
   {
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow && statusFlow.Initial != null)
@@ -600,48 +639,30 @@ public abstract partial class FormService<TEntity, TInput>
       statusFlow.Initialize(entity);
     }
 
-    if (!ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input);
-    }
+    ApplyParentChildPreset(entity, parent);
 
-    ApplyParentChildPreset(entity, input, parent);
-
-    var loadCtx = new FormLoadContext<TEntity, TInput>
+    var loadCtx = new FormLoadContext<TEntity>
     {
       Entity = entity,
-      Input = input,
       IsNew = true
     };
     foreach (var h in hooks.AfterLoadActions)
     {
       await h(loadCtx, ct);
     }
-
-    if (copyBackToEntity && !ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(input, entity);
-    }
   }
 
-  private async Task PopulateExistingInputAsync(
+  private async Task PopulateExistingRecordAsync(
     TEntity entity,
-    TInput input,
     Elements elements,
     Hooks hooks,
     CancellationToken ct)
   {
-    if (!ReferenceEquals(entity, input))
-    {
-      CopyMatchingProperties(entity, input);
-    }
+    await PopulateJoinedReferencesAsync(elements, entity, ct);
 
-    await PopulateJoinedReferencesAsync(elements, entity, input, ct);
-
-    var loadCtx = new FormLoadContext<TEntity, TInput>
+    var loadCtx = new FormLoadContext<TEntity>
     {
       Entity = entity,
-      Input = input,
       IsNew = false
     };
     foreach (var h in hooks.AfterLoadActions)
@@ -653,7 +674,6 @@ public abstract partial class FormService<TEntity, TInput>
   private async Task PopulateJoinedReferencesAsync(
     Elements elements,
     TEntity entity,
-    TInput input,
     CancellationToken ct)
   {
     foreach (var el in elements.List)
@@ -669,22 +689,12 @@ public abstract partial class FormService<TEntity, TInput>
       {
         entityProp.SetValue(entity, new List<long>(ids));
       }
-
-      if (!ReferenceEquals(entity, input))
-      {
-        var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
-        if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
-        {
-          inputProp.SetValue(input, new List<long>(ids));
-        }
-      }
     }
   }
 
   private async Task SyncJoinedReferencesAsync(
     Elements elements,
     TEntity entity,
-    TInput input,
     CancellationToken ct)
   {
     var anyChanged = false;
@@ -695,7 +705,7 @@ public abstract partial class FormService<TEntity, TInput>
         continue;
       }
 
-      var raw = PropertyAccessorCache.GetValue(input, el.Path) ?? PropertyAccessorCache.GetValue(entity, el.Path);
+      var raw = PropertyAccessorCache.GetValue(entity, el.Path);
       var desired = new List<long>();
       if (raw is IEnumerable<long> longSeq)
       {
@@ -721,15 +731,6 @@ public abstract partial class FormService<TEntity, TInput>
       if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
       {
         entityProp.SetValue(entity, new List<long>(desired));
-      }
-
-      if (!ReferenceEquals(entity, input))
-      {
-        var inputProp = PropertyAccessorCache.GetProperty(typeof(TInput), el.Path);
-        if (inputProp != null && inputProp.CanWrite && inputProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
-        {
-          inputProp.SetValue(input, new List<long>(desired));
-        }
       }
     }
 

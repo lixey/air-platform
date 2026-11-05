@@ -95,80 +95,52 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
     query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
     query.SearchBy(r => r.Id, r => r.RowId, r => r.Table, r => r.Operation, r => r.Before, r => r.After, r => r.CorrelationId);
+    query.Compute(FillChangesAsync);
   }
 
-  public override async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
+  private async Task FillChangesAsync(IReadOnlyList<GridComputedRow<AppPlatformChange>> rows, CancellationToken ct)
   {
-    var page = await base.GetDataAsync(request, ct);
-    if (page.Rows.Count == 0)
-    {
-      return page;
-    }
-
-    var userIds = new HashSet<long>();
-    foreach (var rowObj in page.Rows)
-    {
-      if (rowObj is Dictionary<string, object?> dict &&
-          dict.TryGetValue("userId", out var uidObj) &&
-          uidObj != null &&
-          long.TryParse(uidObj.ToString(), out var uid) &&
-          uid > 0)
-      {
-        userIds.Add(uid);
-      }
-    }
+    var userIds = rows
+      .Select(r => r.Record.UserId)
+      .Where(id => id is > 0)
+      .Select(id => id!.Value)
+      .Distinct()
+      .ToHashSet();
 
     var userNames = userIds.Count > 0 ? await db.LoadUserNamesAsync(userIds, ct) : [];
 
-    foreach (var rowObj in page.Rows)
+    foreach (var row in rows)
     {
-      if (rowObj is Dictionary<string, object?> dict)
+      var e = row.Record;
+      if (row.Values.ContainsKey("userId"))
       {
-        if (dict.TryGetValue("userId", out var uidObj) &&
-            uidObj != null &&
-            long.TryParse(uidObj.ToString(), out var uid) &&
-            uid > 0)
+        if (e.UserId is > 0 and var uid)
         {
           var name = userNames.TryGetValue(uid, out var n) && !string.IsNullOrWhiteSpace(n) ? n : $"#{uid}";
-          dict["userId"] = new Reference { Id = uid, Name = name };
+          row["userId"] = new Reference { Id = uid, Name = name };
         }
         else
         {
-          dict["userId"] = null;
+          row["userId"] = null;
         }
       }
-    }
 
-    return page;
-  }
-
-  protected override object ShapeRow(
-    AppPlatformChange row,
-    IReadOnlyList<GridColumnDto> columns,
-    IReadOnlyList<(string Name, Func<AppPlatformChange, bool> Predicate)>? rowFlags = null)
-  {
-    var shaped = base.ShapeRow(row, columns, rowFlags);
-    if (shaped is Dictionary<string, object?> dict)
-    {
-      if (dict.TryGetValue("operation", out var opObj) && opObj is string opStr && !string.IsNullOrEmpty(opStr))
+      if (row.Values.ContainsKey("operation") && !string.IsNullOrEmpty(e.Operation))
       {
-        dict["operation"] = L[opStr];
+        row["operation"] = L[e.Operation];
       }
 
-      var onlyDiff = row.Operation == ChangeOperations.Modified;
-
-      if (dict.TryGetValue("before", out var beforeObj) && beforeObj is string beforeStr)
+      var onlyDiff = e.Operation == ChangeOperations.Modified;
+      if (row.Values.ContainsKey("before") && e.Before != null)
       {
-        dict["before"] = FormatCompactAuditJson(beforeStr, row.After, onlyDiff);
+        row["before"] = FormatCompactAuditJson(e.Before, e.After, onlyDiff);
       }
 
-      if (dict.TryGetValue("after", out var afterObj) && afterObj is string afterStr)
+      if (row.Values.ContainsKey("after") && e.After != null)
       {
-        dict["after"] = FormatCompactAuditJson(afterStr, row.Before, onlyDiff);
+        row["after"] = FormatCompactAuditJson(e.After, e.Before, onlyDiff);
       }
     }
-
-    return shaped;
   }
 
   private string ResolveParentTableName(string parentService)
