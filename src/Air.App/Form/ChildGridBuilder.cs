@@ -7,6 +7,7 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
   public string? Tab => tab;
   public string DeclaredKey { get; private set; } = servicePath;
   public string DeclaredLabel { get; private set; } = string.Empty;
+  public string? DeclaredTitle { get; private set; }
   public bool IsFiles { get; private set; }
   public bool IsReadOnly { get; private set; }
   public string Look { get; private set; } = FilesLook.Tiles;
@@ -25,6 +26,15 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
     DeclaredLabel = label;
     return this;
   }
+
+  public ChildGridBuilder Title(string title)
+  {
+    DeclaredTitle = title;
+    return this;
+  }
+
+  public ChildGridBuilder Title(string uiSource, string dbSource) =>
+    Title(Feature.FormatSourceTitle(uiSource, dbSource));
 
   public ChildGridBuilder ReadOnly(bool readOnly = true)
   {

@@ -23,6 +23,9 @@ public class Flow<TEntity>
     });
   }
 
+  public void Status(long id, string name, string color, string uiSource, string dbSource) =>
+    Status(id, name, color, Feature.FormatSourceTitle(uiSource, dbSource));
+
   public void Initial(long id)
   {
     InitialStatusId = id;

@@ -55,8 +55,12 @@ internal static class StatusMoveNavBuilder
       ? l.TextOr($"{feature.Module}: {transition.Name}", l[transition.Name])
       : l[transition.Name];
     var targetLabel = target != null ? l[target.Name] : verbLabel;
-    var label = verbLabel != transition.Name ? verbLabel : targetLabel;
-    var title = target?.Title != null ? l[target.Title] : null;
+    var label = !string.IsNullOrEmpty(transition.Label)
+      ? l[transition.Label]
+      : (verbLabel != transition.Name ? verbLabel : targetLabel);
+    var title = !string.IsNullOrEmpty(transition.Title)
+      ? l[transition.Title]
+      : (target?.Title != null ? l[target.Title] : null);
     var confirmMessage = transition.Confirm != null ? l[transition.Confirm] : null;
     var confirm = transition.Ask is not null || confirmMessage is null
       ? null

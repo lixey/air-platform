@@ -57,6 +57,65 @@ public class Columns
     return new GridColumn<TProp>(col, this);
   }
 
+  private static readonly ConcurrentDictionary<(Type RowType, string ExpressionKey), Func<object, object?>> CompiledValueEvaluators = new();
+
+  public GridColumn<TProp> Add<TRow, TProp>(string path, Expression<Func<TRow, TProp>> expression)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(path);
+    ArgumentNullException.ThrowIfNull(expression);
+
+    var camelPath = ToCamelPath(path);
+    var isRefType = typeof(Reference).IsAssignableFrom(typeof(TProp));
+    var isSubquery = GridColumn<TProp>.ContainsClosure(expression.Body);
+
+    Func<object, object?>? evaluator = null;
+    if (!isSubquery)
+    {
+      var exprKey = expression.ToString();
+      evaluator = CompiledValueEvaluators.GetOrAdd(
+        (typeof(TRow), exprKey),
+        _ => BuildSafeEvaluator(expression));
+    }
+
+    var col = new GridColumnDto
+    {
+      Path = camelPath,
+      FilterPath = isRefType && !camelPath.EndsWith("Id", StringComparison.OrdinalIgnoreCase) ? camelPath + "Id" : camelPath,
+      Label = PathToLabel(camelPath, typeof(TRow)),
+      Type = isRefType ? UiFieldType.Text : ResolveFieldType(typeof(TProp)),
+      TemporalType = Form.Elements.ResolveTemporalType(typeof(TProp)),
+      Cell = isRefType ? new GridCellReferenceModel() : ResolveDefaultCell(typeof(TProp)),
+      Header = isRefType ? new GridHeaderReferenceModel() : null,
+      MemberType = typeof(TProp),
+      ValueExpression = expression,
+      ValueEvaluator = evaluator,
+      IsSubqueryExpression = isSubquery
+    };
+    _columns.Add(col);
+    return new GridColumn<TProp>(col, this);
+  }
+
+  private static Func<object, object?> BuildSafeEvaluator<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
+  {
+    var compiled = expression.Compile();
+    return obj =>
+    {
+      if (obj is TRow typed)
+      {
+        try
+        {
+          return compiled(typed);
+        }
+        catch (NullReferenceException)
+        {
+          return null;
+        }
+      }
+
+      return null;
+    };
+  }
+
   public GridColumn<TProp> Add<TProp>(string path)
   {
     var col = new GridColumnDto
@@ -89,7 +148,15 @@ public class Columns
 
   internal static string PathToLabel(string path, Type? ownerType = null)
   {
-    var last = path.Split('.').Last();
+    var parts = path.Split('.');
+    var last = parts[^1];
+    if (parts.Length >= 2 &&
+        (string.Equals(last, "name", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(last, "title", StringComparison.OrdinalIgnoreCase)))
+    {
+      last = parts[^2];
+    }
+
     if (last.EndsWith("Id", StringComparison.Ordinal) && last.Length > 2)
     {
       var navCandidate = last[..^2];

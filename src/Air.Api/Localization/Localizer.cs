@@ -171,6 +171,13 @@ public sealed class Localizer : ILocalizer
       return true;
     }
 
+    if (TryFormatSourceTitle(key, out var formattedSourceTitle))
+    {
+      _cache.TryAdd(cacheKey, formattedSourceTitle);
+      result = formattedSourceTitle;
+      return true;
+    }
+
     _canonicalKeys.TryGetValue(key, out var canonical);
     if (canonical != null || _hasUnindexedManager)
     {
@@ -202,6 +209,59 @@ public sealed class Localizer : ILocalizer
 
     result = key;
     return false;
+  }
+
+  private bool TryFormatSourceTitle(string key, out string formatted)
+  {
+    if (!string.Equals(key, "LegacyTitleFormat", StringComparison.OrdinalIgnoreCase) &&
+        _managersSnapshot is [var rm, ..])
+    {
+      if ((TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", System.Globalization.CultureInfo.InvariantCulture), out var uiSource, out var dbSource) ||
+           TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", new System.Globalization.CultureInfo("uk")), out uiSource, out dbSource)) &&
+          TryGetString("LegacyTitleFormat", out var template))
+      {
+        formatted = string.Format(System.Globalization.CultureInfo.CurrentUICulture, template, uiSource, dbSource);
+        return true;
+      }
+    }
+
+    formatted = string.Empty;
+    return false;
+  }
+
+  private static bool TryParseByTemplate(string key, string? template, out string uiSource, out string dbSource)
+  {
+    uiSource = string.Empty;
+    dbSource = string.Empty;
+    if (string.IsNullOrEmpty(template))
+    {
+      return false;
+    }
+
+    var p0 = template.IndexOf("{0}", StringComparison.Ordinal);
+    var p1 = template.IndexOf("{1}", StringComparison.Ordinal);
+    if (p0 < 0 || p1 <= p0 + 3)
+    {
+      return false;
+    }
+
+    var prefix = template[..p0];
+    var sep = template[(p0 + 3)..p1];
+    var suffix = template[(p1 + 3)..];
+    if (!key.StartsWith(prefix, StringComparison.Ordinal) || !key.EndsWith(suffix, StringComparison.Ordinal))
+    {
+      return false;
+    }
+
+    var sepIdx = key.IndexOf(sep, prefix.Length, StringComparison.Ordinal);
+    if (sepIdx < 0 || sepIdx + sep.Length > key.Length - suffix.Length)
+    {
+      return false;
+    }
+
+    uiSource = key[prefix.Length..sepIdx];
+    dbSource = key[(sepIdx + sep.Length)..(key.Length - suffix.Length)];
+    return true;
   }
 
   public string TextOr(string key, string fallback)

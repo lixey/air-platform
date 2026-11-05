@@ -14,6 +14,16 @@ public class GridColumn<TEntity, TProp>(GridColumnDto dto, Columns owner) : Grid
     base.Title(title);
     return this;
   }
+  public new GridColumn<TEntity, TProp> Title(string uiSource, string dbSource)
+  {
+    base.Title(uiSource, dbSource);
+    return this;
+  }
+  public new GridColumn<TEntity, TProp> Format(Func<TProp, object?> formatter)
+  {
+    base.Format(formatter);
+    return this;
+  }
   public new GridColumn<TEntity, TProp> Width(int px)
   {
     base.Width(px);

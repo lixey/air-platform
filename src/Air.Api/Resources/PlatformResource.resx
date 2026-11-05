@@ -1279,4 +1279,7 @@
   <data name="AgentDuplicateReceiptWarning" xml:space="preserve">
     <value>A record with this date and amount already exists: {0}</value>
   </data>
+  <data name="LegacyTitleFormat" xml:space="preserve">
+    <value>Legacy UI: {0} | DB: {1}</value>
+  </data>
 </root>

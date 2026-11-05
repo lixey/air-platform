@@ -378,6 +378,10 @@ public abstract partial class GridService<TEntity, TRow>
         var isCollection = retType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(retType);
         col.IsRequired = !isCollection && retType.IsValueType && Nullable.GetUnderlyingType(retType) is null;
       }
+      else if (col.ValueExpression is not null)
+      {
+        col.IsRequired = false;
+      }
       else if (!string.IsNullOrEmpty(col.Path))
       {
         col.IsRequired = ColumnRequiredResolver.Resolve(typeof(TEntity), col.Path, db.Model)

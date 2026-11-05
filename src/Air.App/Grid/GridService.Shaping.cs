@@ -75,7 +75,14 @@ public abstract partial class GridService<TEntity, TRow>
         continue;
       }
 
-      var value = ReadPathValue(row, column.Path);
+      var value = column.ValueEvaluator != null
+        ? column.ValueEvaluator(row)
+        : ReadPathValue(row, column.Path);
+      if (column.ValueFormatter != null && (!column.IsSubqueryExpression || value != null))
+      {
+        value = column.ValueFormatter(value);
+      }
+
       var allocatedRef = false;
 
       if (column.Options is { Count: > 0 } options)
@@ -255,9 +262,40 @@ public abstract partial class GridService<TEntity, TRow>
     IReadOnlyList<GridColumnDto> columns,
     [EnumeratorCancellation] CancellationToken ct)
   {
+    var hasSubqueryCols = columns.Any(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null);
+    if (!hasSubqueryCols)
+    {
+      await foreach (var item in source.WithCancellation(ct))
+      {
+        yield return ShapeRow((item as TRow)!, columns);
+      }
+
+      yield break;
+    }
+
+    var batch = new List<object>(500);
     await foreach (var item in source.WithCancellation(ct))
     {
-      yield return ShapeRow((item as TRow)!, columns);
+      batch.Add(ShapeRow((item as TRow)!, columns));
+      if (batch.Count >= 500)
+      {
+        await PopulateComputedColumnsAsync(batch, columns, ct);
+        foreach (var shaped in batch)
+        {
+          yield return shaped;
+        }
+
+        batch.Clear();
+      }
+    }
+
+    if (batch.Count > 0)
+    {
+      await PopulateComputedColumnsAsync(batch, columns, ct);
+      foreach (var shaped in batch)
+      {
+        yield return shaped;
+      }
     }
   }
 

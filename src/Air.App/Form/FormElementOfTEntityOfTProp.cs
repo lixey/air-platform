@@ -1,4 +1,5 @@
 using Platform.App.Internals;
+using Platform.Data.Internals;
 
 namespace Platform.App.Form;
 
@@ -19,6 +20,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     dto.Title = title;
     return this;
   }
+  public FormElement<TEntity, TProp> Title(string uiSource, string dbSource) =>
+    Title(Feature.FormatSourceTitle(uiSource, dbSource));
   public FormElement<TEntity, TProp> Span(int cols)
   {
     _hasSpan = true;
@@ -391,9 +394,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
     }
 
     var labelPaths = label
-      .Select(expr => GetMemberName(expr.Body))
+      .Select(expr => Elements.ToCamelPath(MemberPath.Of(expr)))
       .Where(n => !string.IsNullOrEmpty(n))
-      .Select(n => ToCamel(n!))
       .ToList();
     if (labelPaths.Count == 0)
     {

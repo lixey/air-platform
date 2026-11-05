@@ -73,6 +73,24 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
       base.RequireRight(right);
       return this;
     }
+
+    public new Transition Label(string label)
+    {
+      base.Label(label);
+      return this;
+    }
+
+    public new Transition Title(string title)
+    {
+      base.Title(title);
+      return this;
+    }
+
+    public new Transition Title(string uiSource, string dbSource)
+    {
+      base.Title(uiSource, dbSource);
+      return this;
+    }
   }
 
   protected PlatformDbContext Db => db;
@@ -438,6 +456,8 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
           Name = t.Name,
           From = t.From,
           To = t.To,
+          Label = t.LabelText,
+          Title = t.TitleText,
           Confirm = t.Question,
           Ask = t.Asked,
           Offers = t.Availability
@@ -460,6 +480,42 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
 
   public string NameOf(long status) =>
     Statuses.FirstOrDefault(option => option.Id == status)?.Name ?? status.ToString();
+
+  public string? TransitionName(string? key)
+  {
+    if (string.IsNullOrEmpty(key))
+    {
+      return key;
+    }
+
+    EnsureDeclared();
+    if (_transitionsByName.TryGetValue(key, out var t))
+    {
+      if (!string.IsNullOrEmpty(t.LabelText))
+      {
+        return L[t.LabelText];
+      }
+
+      if (!string.IsNullOrEmpty(Feature.Module) &&
+          L.TryGetString($"{Feature.Module}: {t.Name}", out var moduleByName))
+      {
+        return moduleByName;
+      }
+
+      if (L.TryGetString(t.Name, out var byName))
+      {
+        return byName;
+      }
+
+      var spaced = Grid.Columns.PathToLabel(t.Name);
+      var sentence = spaced.Contains(' ')
+        ? string.Concat(spaced.AsSpan(0, 1), spaced[1..].ToLowerInvariant())
+        : spaced;
+      return L[sentence];
+    }
+
+    return key;
+  }
 
   protected virtual void SetFlow(Flow<TEntity> flow) { }
   protected virtual void SetFlow(Flow flow) => SetFlow((Flow<TEntity>)flow);

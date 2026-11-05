@@ -135,11 +135,17 @@ public class Feature
     return this;
   }
 
+  public static string FormatSourceTitle(string uiSource, string dbSource) =>
+    Localizer.Instance["LegacyTitleFormat", uiSource, dbSource];
+
   public Feature WithTitle(string title)
   {
     Title = title;
     return this;
   }
+
+  public Feature WithTitle(string uiSource, string dbSource) =>
+    WithTitle(FormatSourceTitle(uiSource, dbSource));
 
   public Feature<TAccess> WithAccess<TAccess>() where TAccess : FeatureAccess, new()
   {

@@ -11,31 +11,15 @@ public abstract partial class GridService<TEntity, TRow>
   protected IQueryable<TEntity> RestrictedQuery()
   {
     var query = BuildBaseEntityQuery(null, out _, out var queryDeclaration, preserveParent: true);
-    if (queryDeclaration.LabelSelector != null &&
-        ExtractNavigationPath(queryDeclaration.LabelSelector.Body) is { } labelNav &&
-        !string.IsNullOrWhiteSpace(labelNav))
+    if (queryDeclaration.LabelSelector != null)
     {
-      query = query.Include(labelNav);
+      foreach (var labelNav in Form.Elements.ExtractNavigationPaths(queryDeclaration.LabelSelector))
+      {
+        query = query.Include(labelNav);
+      }
     }
 
     return query;
-  }
-
-  private static string? ExtractNavigationPath(System.Linq.Expressions.Expression expr)
-  {
-    if (expr is System.Linq.Expressions.UnaryExpression ue)
-    {
-      expr = ue.Operand;
-    }
-
-    var parts = new List<string>();
-    while (expr is System.Linq.Expressions.MemberExpression me)
-    {
-      parts.Insert(0, me.Member.Name);
-      expr = me.Expression!;
-    }
-
-    return parts.Count > 1 ? string.Join('.', parts.Take(parts.Count - 1)) : null;
   }
 
   private async Task<(List<TEntity> Entities, List<MessageDto> MissingErrors)> LoadSelectedEntitiesAsync(
@@ -648,7 +632,6 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (queryDeclaration.Selector != null)
     {
-      query = IncludeColumnNavigations(query, cols.List);
       var row = await query.Select(queryDeclaration.Selector).FirstOrDefaultAsync(ct);
       if (row is null)
       {
@@ -679,6 +662,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var shapedEntity = ShapeRow((entity as TRow)!, cols.List, queryDeclaration.RowFlags);
+    await PopulateComputedColumnsAsync([shapedEntity], cols.List, ct);
     await PopulateCoversAsync([shapedEntity], cols.List, ct);
     await PopulateRowAvailabilityAsync([shapedEntity], cols, ct);
     return shapedEntity;
@@ -759,7 +743,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (queryDeclaration.Selector != null)
     {
-      var dataProvider = DataProvider.Create(IncludeColumnNavigations(query.AsNoTracking(), exportColumns), queryMap, queryDeclaration.Selector);
+      var dataProvider = DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector);
       rowStream = queryDeclaration.ComputeAction != null
         ? ShapeComputedStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), queryDeclaration.ComputeAction, cols.List, ct)
         : ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
@@ -781,7 +765,7 @@ public abstract partial class GridService<TEntity, TRow>
     var cleanName = Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
     var fileName = $"{cleanName}_{DateTime.UtcNow:yyyyMMdd_HHmm}.xlsx";
     TimeZones.TryFind(User?.TimeZone, out var exportTimeZone);
-    await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
+    await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => col.MemberType ?? PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
     fileStream.Position = 0;
     return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
   }

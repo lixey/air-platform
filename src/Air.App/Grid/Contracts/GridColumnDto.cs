@@ -109,4 +109,16 @@ public sealed class GridColumnDto
 
   [JsonIgnore]
   internal System.Linq.Expressions.LambdaExpression? FilterExpression { get; set; }
+
+  [JsonIgnore]
+  internal Func<object?, object?>? ValueFormatter { get; set; }
+
+  [JsonIgnore]
+  internal Func<object, object?>? ValueEvaluator { get; set; }
+
+  [JsonIgnore]
+  internal System.Linq.Expressions.LambdaExpression? ValueExpression { get; set; }
+
+  [JsonIgnore]
+  internal bool IsSubqueryExpression { get; set; }
 }

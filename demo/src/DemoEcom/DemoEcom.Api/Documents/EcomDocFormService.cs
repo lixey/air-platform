@@ -9,7 +9,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
   protected IReadOnlyList<EcomDocStatus> Statuses { get; private set; } = [];
 
-  protected EcomDoc? Doc { get; private set; }
+  protected EcomDoc? Doc => CurrentEntity;
 
   protected EcomDocStatus? Status { get; private set; }
 
@@ -31,8 +31,9 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
     }
 
     Statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
-    Doc = IsNew ? null : await Reachable().FirstOrDefaultAsync(doc => doc.Id == Request.Id, cancellationToken);
-    Status = IsNew ? (Statuses.Count > 0 ? Statuses[0] : null) : Doc?.DocStatus;
+    Status = IsNew
+      ? (Statuses.Count > 0 ? Statuses[0] : null)
+      : (Doc?.DocStatus ?? Statuses.FirstOrDefault(s => s.Id == Doc?.DocStatusId));
     await base.SetElementsAsync(elements, cancellationToken);
   }
 

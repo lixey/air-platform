@@ -36,6 +36,31 @@ public class GridReferenceColumn<TEntity, TSourceEntity, TProp>(GridColumnDto dt
     base.Title(title);
     return this;
   }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Title(string uiSource, string dbSource)
+  {
+    base.Title(uiSource, dbSource);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Width(int px)
+  {
+    base.Width(px);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Disabled(bool disabled = true)
+  {
+    base.Disabled(disabled);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Sortable(bool sortable = true)
+  {
+    base.Sortable(sortable);
+    return this;
+  }
+  public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Filterable(bool filterable = true)
+  {
+    base.Filterable(filterable);
+    return this;
+  }
   public new GridReferenceColumn<TEntity, TSourceEntity, TProp> Color(Expression<Func<TEntity, string?>> colorSelector)
   {
     base.Color(colorSelector);

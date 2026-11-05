@@ -192,6 +192,15 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     {
       try
       {
+        if (typed.Id > 0)
+        {
+          var navs = Form.Elements.ExtractNavigationPaths(q.LabelSelector);
+          if (navs.Any(nav => IsNavigationPathUnloaded(typed, nav)))
+          {
+            typed = RestrictedQuery().AsNoTracking().FirstOrDefault(e => e.Id == typed.Id) ?? typed;
+          }
+        }
+
         return q.LabelSelector.Compile().DynamicInvoke(typed)?.ToString();
       }
       catch
@@ -201,6 +210,42 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     return null;
+  }
+
+  private bool IsNavigationPathUnloaded(object root, string navPath)
+  {
+    var current = root;
+    foreach (var seg in navPath.Split('.'))
+    {
+      if (current == null)
+      {
+        return false;
+      }
+
+      var navValue = PropertyAccessorCache.GetValue(current, seg);
+      if (navValue == null)
+      {
+        var fkName = seg + "Id";
+        if (PropertyAccessorCache.GetProperty(current.GetType(), fkName) == null)
+        {
+          fkName = db.Model.FindEntityType(current.GetType())?.FindNavigation(seg)?.ForeignKey.Properties.FirstOrDefault()?.Name ?? fkName;
+        }
+
+        var fkValue = PropertyAccessorCache.GetValue(current, fkName);
+        return fkValue switch
+        {
+          long l => l > 0,
+          int i => i > 0,
+          short s => s > 0,
+          not null => true,
+          _ => false
+        };
+      }
+
+      current = navValue;
+    }
+
+    return false;
   }
 
   private static readonly ConcurrentDictionary<Type, bool> CustomShapeRowTypes = new();

@@ -151,6 +151,11 @@ public abstract partial class FormService<TEntity, TInput>
     string? outcome = null,
     CancellationToken ct = default)
   {
+    if (entity is TEntity typedEntity && typedEntity.Id > 0)
+    {
+      CurrentEntity ??= typedEntity;
+    }
+
     var entityId = (entity as IEntity)?.Id
       ?? (_lastSavedEntity?.Id is > 0 ? _lastSavedEntity.Id : (long?)null)
       ?? (outcome == null ? Request.Id : null);

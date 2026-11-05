@@ -29,6 +29,8 @@ internal static class GridProjectionBuilder
 
       colSigBuilder
         .Append(col.Path).Append('|')
+        .Append(col.ValueExpression?.ToString()).Append('|')
+        .Append(col.IsSubqueryExpression ? '1' : '0').Append('|')
         .Append(col.ColorNavPath).Append('|')
         .Append(col.ColorExpressionKey ?? col.ColorExpression?.ToString()).Append('|')
         .Append(col.ReferenceService != null ? '1' : '0')
@@ -80,18 +82,28 @@ internal static class GridProjectionBuilder
           continue;
         }
 
-        var members = GridProjectionNode.ResolveMembers(entityType, col.Path);
-        if (members.Count == 0)
+        if (col.ValueExpression != null)
         {
-          return null;
+          if (!col.IsSubqueryExpression && !TryAddExpressionMemberPaths(entityType, col.ValueExpression, root))
+          {
+            return null;
+          }
         }
-
-        var isRef = col.ReferenceService != null ||
-                    col.Cell is GridCellReferenceModel ||
-                    !GridProjectionNode.IsScalar(members[^1].PropertyType);
-        if (!root.TryAddPath(members, isRef, col.ReferenceLabelPaths))
+        else
         {
-          return null;
+          var members = GridProjectionNode.ResolveMembers(entityType, col.Path);
+          if (members.Count == 0)
+          {
+            return null;
+          }
+
+          var isRef = col.ReferenceService != null ||
+                      col.Cell is GridCellReferenceModel ||
+                      !GridProjectionNode.IsScalar(members[^1].PropertyType);
+          if (!root.TryAddPath(members, isRef, col.ReferenceLabelPaths))
+          {
+            return null;
+          }
         }
       }
 

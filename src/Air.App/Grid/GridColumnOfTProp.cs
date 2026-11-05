@@ -19,6 +19,27 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Title = title;
     return this;
   }
+  public GridColumn<TProp> Title(string uiSource, string dbSource) =>
+    Title(Feature.FormatSourceTitle(uiSource, dbSource));
+  public GridColumn<TProp> Format(Func<TProp, object?> formatter)
+  {
+    ArgumentNullException.ThrowIfNull(formatter);
+    dto.ValueFormatter = val =>
+    {
+      if (val is TProp typed)
+      {
+        return formatter(typed);
+      }
+
+      if (val is null && default(TProp) is null)
+      {
+        return formatter(default!);
+      }
+
+      return val;
+    };
+    return this;
+  }
   public GridColumn<TProp> Width(int px)
   {
     dto.Width = px;

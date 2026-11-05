@@ -49,6 +49,9 @@ public class Elements
     _tabs.Add(new FormTabDto { Key = tabKey, Label = label, Title = title });
   }
 
+  public void AddTab(string label, string? key, string uiSource, string dbSource) =>
+    AddTab(label, key, Feature.FormatSourceTitle(uiSource, dbSource));
+
   public void AddSeparator(string? label = null)
   {
     if (_elements.Count > 0)
@@ -321,7 +324,15 @@ public class Elements
 
   internal static string PathToLabel(string path, Type? ownerType = null)
   {
-    var last = path.Split('.').Last();
+    var parts = path.Split('.');
+    var last = parts[^1];
+    if (parts.Length >= 2 &&
+        (string.Equals(last, "name", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(last, "title", StringComparison.OrdinalIgnoreCase)))
+    {
+      last = parts[^2];
+    }
+
     if (last.EndsWith("Id", StringComparison.Ordinal) && last.Length > 2)
     {
       var navCandidate = last[..^2];

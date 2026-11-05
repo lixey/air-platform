@@ -17,6 +17,8 @@ public class Transition<TEntity>
   public string Name { get; }
   public IReadOnlyList<long> From { get; }
   public long To { get; }
+  public string? LabelText { get; private set; }
+  public string? TitleText { get; private set; }
   public string? Question { get; private set; }
   public RecordAsk? Asked { get; private set; }
   public Right? RequiredRight { get; private set; }
@@ -25,6 +27,21 @@ public class Transition<TEntity>
   public IReadOnlyList<Func<Move<TEntity>, CancellationToken, Task>> Effects => _effects;
 
   public string? NoteOf(object? input) => input is null ? null : _note?.Invoke(input);
+
+  public Transition<TEntity> Label(string label)
+  {
+    LabelText = label;
+    return this;
+  }
+
+  public Transition<TEntity> Title(string title)
+  {
+    TitleText = title;
+    return this;
+  }
+
+  public Transition<TEntity> Title(string uiSource, string dbSource) =>
+    Title(Feature.FormatSourceTitle(uiSource, dbSource));
 
   public Transition<TEntity> When(Func<TEntity, bool> guard, string refusal, string? path = null)
   {

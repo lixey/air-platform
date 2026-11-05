@@ -233,7 +233,17 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     if (tracked != null)
     {
       var reachableExists = await query.AnyAsync(e => e.Id == id, ct);
-      return reachableExists ? tracked : null;
+      if (reachableExists)
+      {
+        if (Request.Id is null || Request.Id == id)
+        {
+          CurrentEntity = tracked;
+        }
+
+        return tracked;
+      }
+
+      return null;
     }
 
     var efModel = db.Model.FindEntityType(typeof(TEntity));
@@ -248,7 +258,13 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       }
     }
 
-    return await query.FirstOrDefaultAsync(e => e.Id == id, ct);
+    var loaded = await query.FirstOrDefaultAsync(e => e.Id == id, ct);
+    if (Request.Id is null || Request.Id == id)
+    {
+      CurrentEntity = loaded;
+    }
+
+    return loaded;
   }
 
   protected async Task EnsureParentScopeAsync(Parent parent, bool lockParent, CancellationToken ct)
@@ -632,6 +648,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
   public virtual async Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default)
   {
     Request = request;
+    await EnsureEntityAndParentLoadedAsync(ct);
     var nav = new Nav(Service, L);
     await SetNavAsync(nav, ct);
     var entry = nav.Actions.FirstOrDefault(a =>
@@ -706,6 +723,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
     var probe = new Elements();
     try
     {
+      EnsureEntityAndParentLoadedAsync(CancellationToken.None).GetAwaiter().GetResult();
       SetElementsAsync(probe, CancellationToken.None).GetAwaiter().GetResult();
     }
     catch
@@ -786,6 +804,26 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity, id);
 
+  private async Task EnsureEntityAndParentLoadedAsync(CancellationToken ct = default)
+  {
+    IsNew = Request.Id is null or <= 0;
+    var parent = GetParent();
+    if (!IsNew && Request.Id is > 0 && CurrentEntity?.Id != Request.Id.Value)
+    {
+      CurrentEntity = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == Request.Id.Value)
+        ?? await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == Request.Id.Value, ct);
+      if (CurrentEntity != null)
+      {
+        RestoreBoundParentId(CurrentEntity, parent);
+      }
+    }
+
+    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+    {
+      await PreloadParentRecordAsync(parent, ct);
+    }
+  }
+
   private async Task<Elements> EnsureElementsAsync(CancellationToken ct = default, bool reload = false)
   {
     if (!reload && _lastElements != null)
@@ -793,6 +831,7 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
       return _lastElements;
     }
 
+    await EnsureEntityAndParentLoadedAsync(ct);
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
     LocalizeAndResolveSelectElements(elements);
@@ -802,12 +841,6 @@ public abstract partial class FormService<TEntity, TInput>(PlatformDbContext db,
 
   public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
   {
-    IsNew = Request.Id is null or <= 0;
-    if (!IsNew && CurrentEntity == null && Request.Id is > 0)
-    {
-      CurrentEntity = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == Request.Id.Value);
-    }
-
     var elements = await EnsureElementsAsync(ct, reload: true);
     if (Feature.IsReadOnly)
     {

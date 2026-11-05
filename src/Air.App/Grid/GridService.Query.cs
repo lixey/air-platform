@@ -198,8 +198,7 @@ public abstract partial class GridService<TEntity, TRow>
     if (queryDeclaration.Selector != null)
     {
       var noTrackingFiltered = filteredQuery.AsNoTracking();
-      var query = IncludeColumnNavigations(noTrackingFiltered, allColumns);
-      var dataProvider = DataProvider.Create(query, queryMap, queryDeclaration.Selector);
+      var dataProvider = DataProvider.Create(noTrackingFiltered, queryMap, queryDeclaration.Selector);
       var page = await dataProvider.GetPageAsync(request, ct);
       if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
       {
@@ -242,6 +241,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
+    await PopulateComputedColumnsAsync(defaultShapedRows, cols.List, ct);
     await PopulateCoversAsync(defaultShapedRows, cols.List, ct);
     await PopulateRowAvailabilityAsync(defaultShapedRows, cols, ct);
     var sumSourceQuery = DataProvider.Create(filteredQuery.AsNoTracking(), queryMap).Filter(request);
@@ -393,6 +393,75 @@ public abstract partial class GridService<TEntity, TRow>
         {
           unav.TryAdd(kvp.Key, kvp.Value);
         }
+      }
+    }
+  }
+
+  private static readonly ConcurrentDictionary<
+    Type,
+    Func<IQueryable<TEntity>, IReadOnlyList<long>, LambdaExpression, Func<object?, object?>?, CancellationToken, Task<Dictionary<long, object?>>>> ComputedColumnEvaluators = new();
+
+  private static Func<IQueryable<TEntity>, IReadOnlyList<long>, LambdaExpression, Func<object?, object?>?, CancellationToken, Task<Dictionary<long, object?>>> GetComputedColumnEvaluator(Type propType) =>
+    ComputedColumnEvaluators.GetOrAdd(propType, static pt =>
+    {
+      var method = typeof(ComputedColumnRow<>)
+        .MakeGenericType(pt)
+        .GetMethod(nameof(ComputedColumnRow<object>.EvaluateAsync), BindingFlags.Public | BindingFlags.Static)!
+        .MakeGenericMethod(typeof(TEntity));
+      return method.CreateDelegate<Func<IQueryable<TEntity>, IReadOnlyList<long>, LambdaExpression, Func<object?, object?>?, CancellationToken, Task<Dictionary<long, object?>>>>();
+    });
+
+  private async Task PopulateComputedColumnsAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  {
+    if (typeof(TRow) != typeof(TEntity) || shapedRows.Count == 0)
+    {
+      return;
+    }
+
+    var subqueryCols = columns.Where(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null && !string.IsNullOrEmpty(c.Path)).ToList();
+    if (subqueryCols.Count == 0)
+    {
+      return;
+    }
+
+    var rowIds = ExtractRowIds(shapedRows);
+    if (rowIds.Count == 0)
+    {
+      return;
+    }
+
+    var baseQuery = db.Set<TEntity>().AsNoTracking();
+    foreach (var col in subqueryCols)
+    {
+      var evaluator = GetComputedColumnEvaluator(col.ValueExpression!.ReturnType);
+      var valuesById = await evaluator(baseQuery, rowIds, col.ValueExpression, col.ValueFormatter, ct);
+      foreach (var rowObj in shapedRows)
+      {
+        if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
+        {
+          continue;
+        }
+
+        if (!long.TryParse(idVal.ToString(), out var parsedId) || !valuesById.TryGetValue(parsedId, out var computedVal) || computedVal == null)
+        {
+          continue;
+        }
+
+        if (col.Options is { Count: > 0 } options && computedVal is not Reference)
+        {
+          var optId = Convert.ToInt64(computedVal, CultureInfo.InvariantCulture);
+          var opt = options.FirstOrDefault(o => o.Id == optId);
+          var optName = opt != null ? L[opt.Name] : optId.ToString(CultureInfo.InvariantCulture);
+          string? hue = null;
+          if (dict.Remove($"{col.Path}Color", out var colorObj))
+          {
+            hue = colorObj?.ToString();
+          }
+
+          computedVal = new Reference { Id = optId, Name = optName, Color = hue };
+        }
+
+        PutValue(dict, col.Path!, computedVal);
       }
     }
   }
@@ -575,6 +644,18 @@ public abstract partial class GridService<TEntity, TRow>
           catch { }
         }
       }
+
+      if (col.ValueExpression != null && !col.IsSubqueryExpression)
+      {
+        foreach (var navPath in Form.Elements.ExtractNavigationPaths(col.ValueExpression))
+        {
+          try
+          {
+            query = query.Include(navPath);
+          }
+          catch { }
+        }
+      }
     }
 
     return query;
@@ -640,14 +721,18 @@ public abstract partial class GridService<TEntity, TRow>
       for (var i = 0; i < columns.Count; i++)
       {
         var col = columns[i];
-        if (col.FilterExpression is not null)
+        if (col.FilterExpression is not null || col.IsSubqueryExpression)
         {
           canCache = false;
           break;
         }
 
         var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
-        sb.Append(col.Path).Append('|').Append(col.FilterPath).Append('|').Append(isRef ? '1' : '0').Append('|').Append(col.IsHidden ? '1' : '0').Append(';');
+        sb.Append(col.Path).Append('|')
+          .Append(col.FilterPath).Append('|')
+          .Append(col.ValueExpression?.ToString()).Append('|')
+          .Append(isRef ? '1' : '0').Append('|')
+          .Append(col.IsHidden ? '1' : '0').Append(';');
       }
 
       if (canCache)
@@ -715,10 +800,25 @@ public abstract partial class GridService<TEntity, TRow>
         continue;
       }
 
+      if (col.ValueExpression is not null)
+      {
+        builder.Field(col.Path, col.ValueExpression);
+        if (!hasExplicitSearchFields && !col.IsHidden && col.ValueExpression.ReturnType == typeof(string))
+        {
+          builder.Configure(col.Path, f => f.Searchable());
+        }
+
+        continue;
+      }
+
       var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
       if (isRef)
       {
-        var nameExpr = builder.FindExpression(col.Path + ".Name")
+        var primaryLabelProp = col.ReferenceLabelPaths is { Count: > 0 } ? col.ReferenceLabelPaths[0] : null;
+        var nameExpr = (primaryLabelProp != null
+            ? builder.FindExpression($"{col.Path}.{primaryLabelProp}") ?? BuildEntityMemberExpression(entityParam, $"{col.Path}.{primaryLabelProp}", preferNameOnObject: true)
+            : null)
+          ?? builder.FindExpression(col.Path + ".Name")
           ?? BuildEntityMemberExpression(entityParam, col.Path, preferNameOnObject: true);
         if (nameExpr != null)
         {
@@ -761,6 +861,10 @@ public abstract partial class GridService<TEntity, TRow>
         if (builder.FindExpression(sf) is not null)
         {
           builder.Configure(sf, f => f.Searchable());
+        }
+        else if (BuildEntityMemberExpression(entityParam, sf, preferNameOnObject: true) is { } searchExpr)
+        {
+          builder.Field(sf, searchExpr, f => f.Searchable());
         }
       }
     }

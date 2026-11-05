@@ -1,4 +1,5 @@
 using Platform.App.Internals;
+using Platform.Data.Internals;
 
 namespace Platform.App.Grid;
 
@@ -202,7 +203,7 @@ public abstract partial class GridService<TEntity, TRow>
     public Query ReferenceLabel(params Expression<Func<TRow, object?>>[] label)
     {
       ReferenceLabelPaths = label
-        .Select(expr => GetMemberName(expr.Body)?.ToLowerInvariant() ?? "")
+        .Select(expr => Columns.ToCamelPath(MemberPath.Of(expr)))
         .Where(s => !string.IsNullOrEmpty(s))
         .ToList();
       return this;
@@ -286,6 +287,9 @@ public abstract partial class GridService<TEntity, TRow>
       item.Title = title;
       return this;
     }
+
+    public GridNamedFilterBuilder Title(string uiSource, string dbSource) =>
+      Title(Feature.FormatSourceTitle(uiSource, dbSource));
   }
 
   public sealed class GridNamedFilterGroupBuilder(NamedFilterGroup group)
@@ -331,6 +335,9 @@ public abstract partial class GridService<TEntity, TRow>
 
       return this;
     }
+
+    public GridNamedFilterGroupBuilder Title(string uiSource, string dbSource) =>
+      Title(Feature.FormatSourceTitle(uiSource, dbSource));
 
     public GridNamedFilterGroupBuilder Remember(bool remember = true)
     {
@@ -378,6 +385,8 @@ public abstract partial class GridService<TEntity, TRow>
       TitleText = title;
       return this;
     }
+    public ButtonBuilder Title(string uiSource, string dbSource) =>
+      Title(Feature.FormatSourceTitle(uiSource, dbSource));
     public ButtonBuilder Icon(string icon)
     {
       IconHandle = icon;
@@ -682,6 +691,12 @@ public abstract partial class GridService<TEntity, TRow>
     public new GridColumn<TEntity, TRow, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
     {
       var col = base.Add(expression);
+      return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
+    }
+
+    public new GridColumn<TEntity, TRow, TProp> Add<TProp>(string path, Expression<Func<TRow, TProp>> expression)
+    {
+      var col = base.Add(path, expression);
       return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
     }
 

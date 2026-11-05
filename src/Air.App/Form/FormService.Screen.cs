@@ -578,6 +578,7 @@ public abstract partial class FormService<TEntity, TInput>
         {
           Key = child.DeclaredKey,
           Label = childLabel,
+          Title = child.DeclaredTitle != null ? L[child.DeclaredTitle] : null,
           Color = UiColor.Indigo,
           Variant = ButtonVariant.Soft,
           Path = child.DeclaredKey
@@ -707,7 +708,13 @@ public abstract partial class FormService<TEntity, TInput>
       return null;
     }
 
-    var elements = await EnsureElementsAsync(ct);
+    var idChanged = Request.Id != id;
+    if (idChanged)
+    {
+      Request.Id = id;
+    }
+
+    var elements = await EnsureElementsAsync(ct, reload: idChanged);
 
     var offers = new List<(string ActionKey, int ReasonIndex, Expression<Func<TEntity, bool>> Condition)>();
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)

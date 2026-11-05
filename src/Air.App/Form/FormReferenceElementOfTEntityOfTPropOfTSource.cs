@@ -16,16 +16,16 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
     Expression<Func<TSourceRow, object?>> source,
     bool onlyWhenEmpty = false)
   {
-    var targetPath = GetMemberName(target.Body);
-    var sourcePath = GetMemberName(source.Body);
-    if (targetPath != null && sourcePath != null)
+    var targetPath = MemberPath.Of(target);
+    var sourcePath = MemberPath.Of(source);
+    if (!string.IsNullOrEmpty(targetPath) && !string.IsNullOrEmpty(sourcePath))
     {
-      var camelSource = ToCamel(sourcePath);
+      var camelSource = Elements.ToCamelPath(sourcePath);
       ReferenceLookupAllowlist.RegisterPatchColumn(dto.ReferenceServiceType, camelSource);
       dto.SelectPatches ??= [];
       dto.SelectPatches.Add(new SelectPatchDto
       {
-        TargetField = ToCamel(targetPath),
+        TargetField = Elements.ToCamelPath(targetPath),
         SourceColumn = camelSource,
         OnlyWhenEmpty = onlyWhenEmpty
       });
@@ -112,6 +112,12 @@ public class FormReferenceElement<TEntity, TProp, TSource>(FormElementDto dto) :
   public new FormReferenceElement<TEntity, TProp, TSource> Title(string title)
   {
     base.Title(title);
+    return this;
+  }
+
+  public new FormReferenceElement<TEntity, TProp, TSource> Title(string uiSource, string dbSource)
+  {
+    base.Title(uiSource, dbSource);
     return this;
   }
 
