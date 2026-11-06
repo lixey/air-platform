@@ -1282,7 +1282,13 @@
   <data name="AgentDuplicateReceiptWarning" xml:space="preserve">
     <value>Запис із цією датою та сумою вже існує: {0}</value>
   </data>
+  <data name="AgentDuplicateRecordWarning" xml:space="preserve">
+    <value>Запис із цією датою та сумою вже існує: {0}</value>
+  </data>
   <data name="LegacyTitleFormat" xml:space="preserve">
     <value>Легасі UI: {0} | БД: {1}</value>
+  </data>
+  <data name="Ok" xml:space="preserve">
+    <value>OK</value>
   </data>
 </root>

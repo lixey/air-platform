@@ -69,6 +69,9 @@ public sealed class FormElementDto
   public FilterNode? DisabledWhen { get; set; }
 
   [JsonIgnore]
+  internal Func<object, bool>? VisibleWhenPredicate { get; set; }
+
+  [JsonIgnore]
   internal Func<object, bool>? DisabledWhenPredicate { get; set; }
 
   [JsonIgnore]

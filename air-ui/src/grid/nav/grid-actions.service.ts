@@ -213,7 +213,7 @@ export class GridActionsService {
       isCurrent: mutation.isCurrent,
       input,
       send: call => this.send(call),
-      apply: (answer, call) => this.adopt(answer, call, mutation, action.label),
+      apply: (answer, call) => this.adopt(answer, call, mutation, action.label ?? undefined),
       fail: error => {
         own = action.ask ? ownMessages(action.ask, classifyMutationFailure(error).messages) : [];
         this.report(error, own);

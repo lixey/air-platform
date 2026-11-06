@@ -18,7 +18,7 @@ public abstract partial class FileGridService<TFile>
 
     ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
-    if (IsReadOnly)
+    if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken) || IsReadOnly)
     {
       return new GridActionDto { Outcome = MutationOutcome.Refused };
     }
@@ -60,7 +60,7 @@ public abstract partial class FileGridService<TFile>
       };
     }
 
-    var sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(fileBytes));
+    var sha256 = Convert.ToHexStringLower(SHA256.HashData(fileBytes));
 
     string? normalizedMetadata = null;
     if (!string.IsNullOrWhiteSpace(request.Metadata))
@@ -185,7 +185,7 @@ public abstract partial class FileGridService<TFile>
     var parent = GetParent();
     var parentId = ParentId;
     List<TFile>? siblings = null;
-    if (parentId.HasValue && parent.BoundProperty != null)
+    if (parent.BoundProperty == null || parentId.HasValue)
     {
       siblings = await RestrictedQuery()
         .AsTracking()
@@ -261,7 +261,7 @@ public abstract partial class FileGridService<TFile>
         SortOrder = 0
       };
 
-      if (parentId.HasValue && parent.BoundProperty != null && siblings != null)
+      if (parentId.HasValue && parent.BoundProperty != null)
       {
         if (parent.BoundProperty.PropertyType == typeof(long))
         {
@@ -271,7 +271,10 @@ public abstract partial class FileGridService<TFile>
         {
           parent.BoundProperty.SetValue(entity, (long?)parentId.Value);
         }
+      }
 
+      if (siblings != null)
+      {
         var place = afterId is { } aid && siblings.FindIndex(f => f.Id == aid) is >= 0 and var idx
           ? idx + 1
           : siblings.Count;
@@ -347,15 +350,18 @@ public abstract partial class FileGridService<TFile>
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
-      if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
-      {
-        return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
-      }
-
       var ids = request.SelectedIds ?? [];
       if (ids.Count == 0 && request.Id.HasValue)
       {
         ids = [request.Id.Value];
+      }
+
+      var parent = GetParent();
+      await InferBoundParentIdFromIdsAsync(ids, mutationCt);
+
+      if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
+      {
+        return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
       }
 
       var list = await RestrictedQuery().AsTracking().Where(f => ids.Contains(f.Id)).ToListAsync(mutationCt);
@@ -364,7 +370,6 @@ public abstract partial class FileGridService<TFile>
         return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
       }
 
-      var parent = GetParent();
       var parentsLosingCover = new HashSet<object>();
 
       foreach (var item in list)
@@ -652,7 +657,7 @@ public abstract partial class FileGridService<TFile>
       return null;
     }
 
-    var sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+    var sha256 = Convert.ToHexStringLower(SHA256.HashData(content));
 
     var result = await db.RunMutationAsync(
       mutationCt => SaveUploadedFileInMutationAsync(

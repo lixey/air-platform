@@ -273,7 +273,6 @@ export interface ReportServiceEndpoints {
 }
 
 export interface FormServiceEndpoints {
-  delete: { request: FormRequest; answer: GridDeleteDto };
   'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };
   'get-data': { request: FormRequest | null; answer: ScreenDto };
   save: { request: FormRequest; answer: FormDataDto };
@@ -1019,6 +1018,7 @@ export interface GridCellPickerModel {
   referenceService: string;
   method: string;
   minLength: number;
+  readsParent?: boolean;
   colorPath?: string | null;
 }
 

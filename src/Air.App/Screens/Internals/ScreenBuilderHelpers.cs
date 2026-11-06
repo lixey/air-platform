@@ -43,15 +43,25 @@ internal static class ScreenBuilderHelpers
     bool isScreenReadOnly,
     bool isAllowedInReadOnly)
   {
+    if (user is not { IsAuthenticated: true })
+    {
+      return false;
+    }
+
     var hasExplicitAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
                           methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null;
-    if (hasExplicitAttr && user is { IsAuthenticated: true })
+    if (hasExplicitAttr)
     {
       return ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, feature, user);
     }
 
-    var isUserReadOnly = user is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(feature, user);
-    return isAllowedInReadOnly || !isScreenReadOnly && !isUserReadOnly;
+    if (isScreenReadOnly && !isAllowedInReadOnly)
+    {
+      return false;
+    }
+
+    return ServiceEndpointsExtensions.CanEdit(feature, user) ||
+           isAllowedInReadOnly && ServiceEndpointsExtensions.CanView(feature, user);
   }
 
   public static FormAskModel BuildActionAsk(

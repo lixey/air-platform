@@ -210,8 +210,11 @@ internal static class GridProjectionBuilder
   {
     switch (expr)
     {
-      case null:
+      case null or ConstantExpression:
         return true;
+
+      case ParameterExpression pe:
+        return pe != param;
 
       case MemberExpression me:
         {
@@ -245,10 +248,31 @@ internal static class GridProjectionBuilder
         return CollectParameterMemberChains(entityType, be.Left, param, root) &&
                CollectParameterMemberChains(entityType, be.Right, param, root);
 
+      case TypeBinaryExpression tbe:
+        return CollectParameterMemberChains(entityType, tbe.Expression, param, root);
+
       case ConditionalExpression ce:
         return CollectParameterMemberChains(entityType, ce.Test, param, root) &&
                CollectParameterMemberChains(entityType, ce.IfTrue, param, root) &&
                CollectParameterMemberChains(entityType, ce.IfFalse, param, root);
+
+      case InvocationExpression ie:
+        return CollectParameterMemberChains(entityType, ie.Expression, param, root) &&
+               ie.Arguments.All(arg => CollectParameterMemberChains(entityType, arg, param, root));
+
+      case NewExpression ne:
+        return ne.Arguments.All(arg => CollectParameterMemberChains(entityType, arg, param, root));
+
+      case NewArrayExpression nae:
+        return nae.Expressions.All(e => CollectParameterMemberChains(entityType, e, param, root));
+
+      case MemberInitExpression mie:
+        return CollectParameterMemberChains(entityType, mie.NewExpression, param, root) &&
+               mie.Bindings.All(b => b is MemberAssignment ma && CollectParameterMemberChains(entityType, ma.Expression, param, root));
+
+      case ListInitExpression lie:
+        return CollectParameterMemberChains(entityType, lie.NewExpression, param, root) &&
+               lie.Initializers.All(init => init.Arguments.All(arg => CollectParameterMemberChains(entityType, arg, param, root)));
 
       case MethodCallExpression mce:
         if (!CollectParameterMemberChains(entityType, mce.Object, param, root))
@@ -267,7 +291,7 @@ internal static class GridProjectionBuilder
         return true;
 
       default:
-        return true;
+        return false;
     }
   }
 }

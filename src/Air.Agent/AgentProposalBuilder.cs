@@ -49,7 +49,7 @@ public static partial class AgentProposalBuilder
              typeof(IGridService).IsAssignableFrom(initialForm.Feature.ServiceType) &&
              ModuleCatalog.Instance.CreateServiceInstance(initialForm.Feature.ServiceType, db, app) is IGridService ownerGrid)
     {
-      var siblingCreates = ownerGrid.GetCreateForms();
+      var siblingCreates = ownerGrid.GetAgentForms();
       var explicitlyMatchedSibling = !string.IsNullOrWhiteSpace(requestedService) &&
         siblingCreates.Any(c =>
           string.Equals(c.ServicePath, requestedService, StringComparison.OrdinalIgnoreCase) ||
@@ -105,13 +105,13 @@ public static partial class AgentProposalBuilder
       throw new InvalidOperationException($"Access denied or form service '{targetDesc.ServicePath}' is unavailable.");
     }
 
-    var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
-    var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-
     var initialDraft = await formInst.PrepareDraftAsync(isEdit ? recordId : null, ct: ct);
     var originalFormValues = initialDraft.OriginalValues;
     var formValues = initialDraft.Values;
     var recordVer = initialDraft.Ver;
+
+    var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
+    var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
 
     var refServices = editableElements
       .Select(e => (e.Model as FormSelectModel)?.ReferenceService)
@@ -119,25 +119,24 @@ public static partial class AgentProposalBuilder
       .Cast<string>()
       .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    var lineChild = children.FirstOrDefault(c => !c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType));
-    GridCreateDescriptor? childFormDesc = null;
-    IFormService? childFormInst = null;
+    var resolvedChildLine = AgentFeatureRegistry.ResolveEditableChildLineGrid(children, db, app);
+    var childFormDesc = resolvedChildLine?.ChildCreate;
+    var childFormInst = resolvedChildLine?.ChildForm;
     List<FormElementDto> childEditableElements = [];
-    if (lineChild?.ServiceType != null)
+    if (childFormInst != null)
     {
-      childFormDesc = AgentFeatureRegistry.ResolveChildCreateForm(lineChild.ServiceType, db, app);
-      if (childFormDesc != null &&
-          ModuleCatalog.Instance.CreateServiceInstance(childFormDesc.FormServiceType, db, app) is IFormService childForm)
+      childFormInst.SetRequest(new FormRequest
       {
-        childFormInst = childForm;
-        var (cEls, _) = await childForm.GetElementsMetadataAsync(ct);
-        childEditableElements = cEls.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-        foreach (var cel in childEditableElements)
+        ParentId = isEdit ? recordId : null,
+        ParentService = targetDesc.ServicePath
+      });
+      var (cEls, _) = await childFormInst.GetElementsMetadataAsync(ct);
+      childEditableElements = cEls.Where(AgentFeatureRegistry.IsEditableElement).ToList();
+      foreach (var cel in childEditableElements)
+      {
+        if (cel.Model is FormSelectModel cs && !string.IsNullOrEmpty(cs.ReferenceService))
         {
-          if (cel.Model is FormSelectModel cs && !string.IsNullOrEmpty(cs.ReferenceService))
-          {
-            refServices.Add(cs.ReferenceService);
-          }
+          refServices.Add(cs.ReferenceService);
         }
       }
     }
@@ -217,7 +216,8 @@ public static partial class AgentProposalBuilder
               dictionaries,
               db,
               app,
-              ct);
+              ct,
+              select.ReferenceLabelPaths);
             if (itemId is > 0 and var id)
             {
               if (!ids.Contains(id))
@@ -283,7 +283,8 @@ public static partial class AgentProposalBuilder
             dictionaries,
             db,
             app,
-            ct);
+            ct,
+            select.ReferenceLabelPaths);
         }
 
         // Also check explicit new-reference alias like "newCounterpartyName"
@@ -305,7 +306,8 @@ public static partial class AgentProposalBuilder
               dictionaries,
               db,
               app,
-              ct);
+              ct,
+              select.ReferenceLabelPaths);
             if (matched != null && TryGetRowId(matched, out var mId))
             {
               resolvedId = mId;
@@ -389,52 +391,34 @@ public static partial class AgentProposalBuilder
       }
     }
 
-    // Ensure required single-reference fields have a valid default if not provided and not pending creation
-    foreach (var el in editableElements)
-    {
-      if (!el.IsRequired || el.Model is not FormSelectModel select || select.IsMultiple || el.ValueKind == FormValueKind.List)
-      {
-        continue;
-      }
-
-      if (newReferences.Any(nr => !nr.IsMultiple && string.Equals(nr.FieldPath, el.Path, StringComparison.OrdinalIgnoreCase)))
-      {
-        continue;
-      }
-
-      if (formValues.TryGetValue(el.Path, out var curVal) && TryConvertToLong(curVal, out var curId) && curId > 0)
-      {
-        continue;
-      }
-
-      if (select.Options is { Count: > 0 })
-      {
-        formValues[el.Path] = select.Options[0].Id;
-      }
-      else if (!string.IsNullOrEmpty(select.ReferenceService) &&
-               dictionaries.TryGetValue(select.ReferenceService, out var allRows) &&
-               allRows.Count > 0)
-      {
-        var candidateRows = FilterRowsByReferenceFilter(allRows, select.ReferenceFilter);
-        var activeRow = candidateRows.FirstOrDefault(r => !r.TryGetValue("isActive", out var act) || act is not false)
-          ?? candidateRows.FirstOrDefault();
-        if (activeRow != null && TryGetRowId(activeRow, out var fallbackId) && fallbackId > 0)
-        {
-          formValues[el.Path] = fallbackId;
-        }
-      }
-    }
-
     // Parse child line items universally if present
     var proposalLines = new List<AgentProposalLineDto>();
     var rawLineDicts = new List<Dictionary<string, object?>>();
     var linesMode = TryGetString(args, "linesMode") ?? TryGetString(valuesSource, "linesMode") ?? "replace";
+    var hasLinesProp = (TryGetPropertyIgnoreCase(args, "lines", out var linesProp) ||
+                        TryGetPropertyIgnoreCase(valuesSource, "lines", out linesProp)) &&
+                       linesProp.ValueKind == JsonValueKind.Array;
     if (childFormDesc != null &&
         childFormInst != null &&
-        (TryGetPropertyIgnoreCase(args, "lines", out var linesProp) ||
-          TryGetPropertyIgnoreCase(valuesSource, "lines", out linesProp)) &&
-        linesProp.ValueKind == JsonValueKind.Array)
+        hasLinesProp)
     {
+      if (isEdit &&
+          resolvedChildLine is { } childInfo &&
+          !string.Equals(linesMode, "append", StringComparison.OrdinalIgnoreCase) &&
+          !childInfo.ChildGrid.CanDelete())
+      {
+        var allHaveIds = linesProp.GetArrayLength() > 0 &&
+                         linesProp.EnumerateArray().All(el => el.ValueKind == JsonValueKind.Object && TryGetRecordId(el) is > 0);
+        if (!allHaveIds)
+        {
+          var countDto = await childInfo.ChildGrid.GetCountAsync(new GridRequest { ParentId = recordId }, ct);
+          if (countDto.Total > 0)
+          {
+            throw new InvalidOperationException(L["MutationRefused"]);
+          }
+        }
+      }
+
       var childDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(childFormInst, ct);
 
       foreach (var item in linesProp.EnumerateArray())
@@ -444,7 +428,21 @@ public static partial class AgentProposalBuilder
           continue;
         }
 
-        var lineDict = new Dictionary<string, object?>(childDefaults, StringComparer.OrdinalIgnoreCase);
+        var itemLineId = isEdit ? TryGetRecordId(item) : null;
+        var baseLineValues = itemLineId is > 0
+          ? (await childFormInst.PrepareDraftAsync(
+              recordId: itemLineId.Value,
+              parentId: recordId,
+              parentService: targetDesc.ServicePath,
+              ct: ct)).Values
+          : childDefaults;
+
+        var lineDict = new Dictionary<string, object?>(baseLineValues, StringComparer.OrdinalIgnoreCase);
+        if (itemLineId is > 0)
+        {
+          lineDict["id"] = itemLineId.Value;
+        }
+
         var lineRefLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var explicitlySetLineFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -469,7 +467,8 @@ public static partial class AgentProposalBuilder
                 dictionaries,
                 db,
                 app,
-                ct);
+                ct,
+                cSelect.ReferenceLabelPaths);
             }
 
             if (resolvedCellId == null && cel.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
@@ -495,7 +494,8 @@ public static partial class AgentProposalBuilder
                     dictionaries,
                     db,
                     app,
-                    ct);
+                    ct,
+                    cSelect.ReferenceLabelPaths);
                   if (resolvedCellId != null)
                   {
                     break;
@@ -586,7 +586,7 @@ public static partial class AgentProposalBuilder
           k => lineDict.GetValueOrDefault(k),
           StringComparer.OrdinalIgnoreCase);
         var lineDraft = await childFormInst.PrepareDraftAsync(
-          recordId: null,
+          recordId: itemLineId,
           overrides: lineOverrides,
           parentId: isEdit ? recordId : null,
           parentService: targetDesc.ServicePath,
@@ -709,16 +709,16 @@ public static partial class AgentProposalBuilder
         rawLineDicts.Add(lineDict);
       }
 
-      var primaryMoneyEl = editableElements.FirstOrDefault(e => e.Model is FormMoneyModel);
+      var moneyElements = editableElements.Where(e => e.Model is FormMoneyModel).ToList();
+      var primaryMoneyEl = moneyElements.Count == 1 ? moneyElements[0] : null;
+      var linesTotal = proposalLines.Sum(l => l.Amount);
       if (proposalLines.Count > 0 &&
+          linesTotal > 0m &&
           primaryMoneyEl != null &&
-          (!explicitlyProvided.Contains(primaryMoneyEl.Path) || !isEdit && formValues.TryGetValue(primaryMoneyEl.Path, out var curAmt) && (!TryConvertToDecimal(curAmt, out var decAmt) || decAmt <= 0m)))
+          !explicitlyProvided.Contains(primaryMoneyEl.Path) &&
+          (!formValues.TryGetValue(primaryMoneyEl.Path, out var curAmt) || !TryConvertToDecimal(curAmt, out var decAmt) || decAmt == 0m))
       {
-        var linesTotal = proposalLines.Sum(l => l.Amount);
-        formValues[primaryMoneyEl.Path] = isEdit && string.Equals(linesMode, "append", StringComparison.OrdinalIgnoreCase) &&
-            formValues.TryGetValue(primaryMoneyEl.Path, out var baseAmtObj) && TryConvertToDecimal(baseAmtObj, out var baseAmt) && baseAmt > 0m
-          ? baseAmt + linesTotal
-          : linesTotal;
+        formValues[primaryMoneyEl.Path] = linesTotal;
       }
     }
 
@@ -776,9 +776,18 @@ public static partial class AgentProposalBuilder
       }
       else
       {
+        var primaryTextKey = "name";
+        var refFormType = ModuleCatalog.Instance.FindServiceType(pendingRef.FormService);
+        if (refFormType != null &&
+            ModuleCatalog.Instance.CreateServiceInstance(refFormType, db, app) is IFormService refFormInst)
+        {
+          var (refEls, _) = await refFormInst.GetElementsMetadataAsync(ct);
+          primaryTextKey = ResolvePrimaryTextFieldPath(refEls, (sourceEl?.Model as FormSelectModel)?.ReferenceLabelPaths);
+        }
+
         var prereqValues = new Dictionary<string, object?>(pendingRef.ExtraValues, StringComparer.OrdinalIgnoreCase)
         {
-          ["name"] = pendingRef.Name
+          [primaryTextKey] = pendingRef.Name
         };
 
         var prereqArgs = JsonSerializer.SerializeToElement(new
@@ -888,7 +897,7 @@ public static partial class AgentProposalBuilder
       Values = formValues,
       NewReferences = orderedNewRefs,
       ChildFormService = childFormDesc?.ServicePath,
-      HasLinesUpdate = proposalLines.Count > 0,
+      HasLinesUpdate = isEdit ? hasLinesProp && childFormDesc != null : proposalLines.Count > 0,
       LinesMode = linesMode,
       Lines = rawLineDicts
     }, WebJson);
@@ -910,7 +919,7 @@ public static partial class AgentProposalBuilder
       AttachmentIds = attachmentIds,
       Payload = payloadElement,
       FormService = targetDesc.ServicePath,
-      Overlay = formInst.Overlay(targetDesc.ServicePath),
+      Overlay = await formInst.OverlayAsync(targetDesc.ServicePath, ct),
       DuplicateWarning = dupWarning,
       DuplicateRecordId = dupRecordId,
       DuplicateFormService = dupFormService

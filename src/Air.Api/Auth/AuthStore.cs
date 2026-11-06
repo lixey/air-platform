@@ -116,5 +116,25 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     }
   }
 
+  public async Task<string?> ResolveLanguageCodeAsync(long? languageId, CancellationToken ct = default)
+  {
+    if (languageId is not > 0 || db.SetOfBase<AppLanguage>() is not { } langSet)
+    {
+      return null;
+    }
+
+    var code = await langSet.IgnoreQueryFilters().AsNoTracking()
+      .Where(l => l.Id == languageId.Value && l.IsActive)
+      .Select(l => l.Code)
+      .FirstOrDefaultAsync(ct);
+    if (string.IsNullOrWhiteSpace(code))
+    {
+      return null;
+    }
+
+    var trimmed = code.Trim();
+    return trimmed.Length >= 2 ? trimmed[..2].ToLowerInvariant() : trimmed.ToLowerInvariant();
+  }
+
   public Task SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
 }

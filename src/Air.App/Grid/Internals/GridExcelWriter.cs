@@ -417,6 +417,7 @@ internal static partial class GridExcelWriter
       {
         null or DBNull => 0,
         Reference reference => reference.Name?.Length ?? 0,
+        IDictionary<string, object?> dict when dict.TryGetValue("name", out var n) => n?.ToString()?.Length ?? 0,
         bool flag => (flag ? _yes : _no).Length,
         DateOnly => 10,
         DateTime or DateTimeOffset => column.Type == UiFieldType.Date ? 10 : 16,

@@ -105,6 +105,9 @@ public sealed class GridColumnDto
   internal Type? MemberType { get; set; }
 
   [JsonIgnore]
+  internal Type? PickerSourceType { get; set; }
+
+  [JsonIgnore]
   internal Func<object, Type?>? FormServiceResolver { get; set; }
 
   [JsonIgnore]

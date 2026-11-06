@@ -1,14 +1,14 @@
-# New Application Setup Guide
+# Посібник зі створення нового застосунку та модуля
 
-Follow this checklist when creating a new application repository alongside `air-platform` (e.g. `../my-app` referencing `../air-platform`).
+Використовуйте цей чекліст під час розгортання нового застосунку поруч із `air-platform` (наприклад, `../my-port` або `../ak-bcc`) або під час додавання нового модуля до існуючого застосунку.
 
 ---
 
-## 1. Repository Root Files
+## 1. Кореневі файли репозиторію застосунку
 
-Create the following files at the root of the new application repository:
+У корені репозиторію створюються:
 
-1. **`Directory.Build.props`**:
+1. **`Directory.Build.props`** — задає `.NET 10`, `LangVersion=preview`, `Nullable=enable`, `<GenerateDocumentationFile>true</GenerateDocumentationFile>` (для автоматичного очищення зайвих `using` через `IDE0005`) та глобальні імпорти просторів імен платформи (`Platform.Data.*`, `Platform.Api.*`, `Platform.App.*`):
    ```xml
    <Project>
      <PropertyGroup>
@@ -16,82 +16,94 @@ Create the following files at the root of the new application repository:
        <ImplicitUsings>enable</ImplicitUsings>
        <Nullable>enable</Nullable>
        <LangVersion>preview</LangVersion>
-       <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
        <GenerateDocumentationFile>true</GenerateDocumentationFile>
        <NoWarn>$(NoWarn);CS1591;CS9107</NoWarn>
      </PropertyGroup>
-
-     <ItemGroup Condition="$(MSBuildProjectName.EndsWith('.Api')) and '$(MSBuildProjectName)' != 'MyHost.Api'">
-       <FrameworkReference Include="Microsoft.AspNetCore.App" />
+     <ItemGroup>
+       <Using Include="Platform.Data" />
+       <Using Include="Platform.Data.Entities" />
+       <Using Include="Platform.Data.Schema" />
      </ItemGroup>
    </Project>
    ```
-2. **`.editorconfig`**: Copy `.editorconfig` from `air-platform/.editorconfig` so C# (`dotnet format`) and TypeScript/HTML (`prettier`) rules match the platform.
-3. **`.githooks/pre-commit` & `.githooks/commit-msg`**: Copy `.githooks/` from `air-platform/.githooks/`, mark executable (`chmod +x .githooks/*`), and enable via `git config core.hooksPath .githooks`.
-4. **`AGENTS.md`**: Configure agent instructions including dedicated agent dev ports (distinct from IDE ports).
-5. **`Makefile`**: Include `build`, `format`, `format-check`, `check-paths`, `export-contracts`, `db-prepare`, `db-reset`, `agent-up`, `agent-restart`, `agent-down`, and `mcp-check`.
+2. **`.editorconfig`** та **`.githooks/`** — копіюються з `air-platform` і активуються командою `git config core.hooksPath .githooks`.
+3. **`Makefile`** — містить стандартні цілі: `build`, `format`, `format-check`, `check-paths`, `check-arch`, `check-ts`, `contracts`, `gate`, `audit`, `agent-up`, `agent-restart`, `agent-down`.
+4. **`AGENTS.md`** — інструкції для ШІ-агентів із виділеними портами розробки.
 
 ---
 
-## 2. Backend Solution & Module Structure (`src/`)
+## 2. Структура бекенд-модуля (`src/<Mod>/`)
 
-Each module `<Mod>` is split into three projects under `src/<Mod>/`:
+Кожен бізнес-модуль `<Mod>` (наприклад, `BccApp`, `BccOrg`, `BccEcom`) складається з **трьох окремих проєктів**:
 
-- **`<Mod>.Data`**:
-  - `<Mod>DbContext : PlatformDbContext`
-  - Entity models in `Models/` inheriting `BaseEntity`, `BaseDictionaryEntity`, `BaseCodeEntity`, or `BaseExplicitIdEntity`.
-  - `GlobalUsings.cs` containing `Air.Data.*`, `Microsoft.EntityFrameworkCore`, and `<Mod>.Data.Models`.
-- **`<Mod>.Api`**:
-  - `<Mod>.cs`: Module handle, feature constants, and `ModuleDefinition` (menu, features, `.AllowAgent()` where needed).
-  - `<Mod>Module.cs`: `PlatformModule` registration (`AddPlatformDbContext<<Mod>DbContext>`, resource registration).
-  - Base services: `<Mod>Service`, `<Mod>GridService`, `<Mod>FormService`, `<Mod>FileGridService`.
-  - Feature folders (`<Feature>/<Mod><Feature>GridService.cs`, `<Mod><Feature>FormService.cs`).
-  - `Resources/<Mod>Resource.resx` and localized `.resx` files.
-  - `GlobalUsings.cs` containing all `Air.App.*`, `Air.Data.*`, and `<Mod>.*` feature namespaces so feature files need zero local `using` statements.
-- **`<Mod>.Migrations`**:
-  - `<Mod>Seed.cs` and seed data classes.
-  - `GlobalUsings.cs`.
+### 2.1. `<Mod>.Data` (Схема даних та `DbContext`)
 
-### Host & DevMigrations Projects
+- Не залежить від ASP.NET Core чи `Air.Api`.
+- У `GlobalUsings.cs` або на класі контексту обов'язково оголошується атрибут схеми модуля:
+  ```csharp
+  [assembly: ModuleSchema("ecom")]
+  ```
+- `<Mod>DbContext` успадковує контекст базового модуля (`PlatformDbContext` → `AppDbContext` → `OrgDbContext` → `EcomDbContext`).
+- Кожен клас сутності розміщується в окремому файлі (1 тип = 1 файл) відповідно до структури папок.
 
-- **`src/<Host>.Api`**:
-  - Registers modules via `builder.AddPlatformModule<...>()` and optional `builder.Services.AddAirAgent()`.
-  - Maps endpoints via `app.MapPlatform()` and `app.MapAirAgent()`.
-  - Supports `--export-ui-contracts <output-dir>` via `ContractExporter.TryRunCliAsync(app, args)`.
-  - Has its own `GlobalUsings.cs`.
-- **`src/<Host>.DevMigrations`**:
-  - CLI runner for `prepare` and `reset` database commands.
-  - Has its own `GlobalUsings.cs`.
+### 2.2. `<Mod>.Migrations` (Міграції EF Core та початкові дані `Seeds`)
 
----
+- Містить файли міграцій, `*ModelSnapshot.cs` та класи початкового наповнення (`<Mod>Seed.cs`, `<Mod>CodeRows.cs`).
+- Відокремлений від `<Mod>.Data` згідно з **ADR #5**, щоб багатотисячні файли знімків міграцій не сповільнювали компіляцію доменних проєктів.
 
-## 3. Frontend Workspace (`<web-dir>/`)
+### 2.3. `<Mod>.Api` (Фічі, сервіси таблиць, форм, звітів і потоків статусів)
 
-1. **Nx & Angular 22+ Workspace**:
-   - Create symlink `.air-ui -> ../../air-platform/air-ui/src` inside `<web-dir>/` so TypeScript path mappings (`@air/ui`) resolve directly against platform source without absolute paths.
-   - Configure `tsconfig.base.json` paths:
-     ```json
-     "paths": {
-       "@air/ui": ["./.air-ui/index.ts"]
-     }
-     ```
-2. **Proxy Configuration (`proxy.conf.cjs`)**:
-   - Read backend target URL from an environment variable with fallback to the default IDE backend port:
-     ```js
-     const target = process.env.MY_APP_API_URL || 'http://localhost:5095';
-     module.exports = {
-       '/api': { target, secure: false },
-     };
-     ```
-3. **Contract Export**:
-   - Run `make export-contracts` to generate `contracts.ts` and `ui-texts.json` from the backend host into the frontend app.
+- **`<Mod>.cs`**: оголошує `Handle` модуля (у `PascalCase`) та всі фічі (`public static readonly Feature ...`).
+- **`<Mod>Module.cs`**: спадкоємець `PlatformModule<<Mod>DbContext>`, який реєструє модуль, ресурси локалізації (`<Mod>Resource`) та `DbContext`.
+- **Базові сервіси модуля**: `<Mod>AppService`, `<Mod>GridService<TEntity>`, `<Mod>FormService<TEntity>`, `<Mod>StatusFlowService<TEntity>`.
+- **Папки фіч (`Orders/`, `Products/` тощо)**:
+  - Дотримуйтесь правила **«1 набір сервісів на кожну `Feature`» (ADR #4)**: кожна фіча має власний конкретний `*GridService`, `*FormService`, `*FlowService` в окремому файлі з явною властивістю:
+    ```csharp
+    public override Feature Feature => Ecom.Order;
+    ```
+  - Усі DTO та моделі запитів лежать у папці `Contracts/`, а внутрішні допоміжні класи — у `Internals/` (простори імен `*.Internals` підключаються локальним `using`, а не в `GlobalUsings.cs`).
+  - Методи розширення розміщуються у класах та файлах із суфіксом `*Extensions.cs`.
+- **`Resources/<Mod>Resource.resx` та `<Mod>Resource.uk.resx`**: усі назви полів, колонок, кнопок, помилок і підказок зберігаються в ресурсах (нуль захардкоджених рядків у C#).
 
 ---
 
-## 4. Verification Before First Commit
+## 3. Хост застосунку (`src/<Host>.Api/Program.cs`)
 
-1. Run `make db-reset` to verify schema creation and seed data.
-2. Run `make export-contracts` to verify UI contract and localization export.
-3. Run `make format` to format all C# and frontend files and strip unused `using`s.
-4. Run `make check-paths` to ensure zero absolute machine paths exist in tracked files.
-5. Run `make agent-restart` to verify both backend and frontend start cleanly on agent ports.
+Вхідна точка хоста використовує єдиний лаконічний виклик `PlatformHost.RunAsync`:
+
+```csharp
+await PlatformHost.RunAsync(
+  args,
+  options =>
+  {
+    options.AddModule<AppModule>();
+    options.AddModule<OrgModule>();
+    options.AddModule<EcomModule>();
+    options.Services.AddAirAgent();
+  },
+  app =>
+  {
+    app.MapAirAgent();
+  });
+```
+
+> [!IMPORTANT]
+> Не додавайте у `Program.cs` ручні виклики `app.UseDefaultFiles()`, `app.UseStaticFiles()` або `app.MapFallbackToFile("index.html")` — `PlatformHost` (`app.MapPlatform()`) вже автоматично налаштовує роздачу статики та безпечний SPA-fallback із захистом `/api/* -> 404 NotFound`.
+
+---
+
+## 4. Фронтенд-воркспейс (`<web-dir>/`)
+
+1. Створюється Nx + Angular 22+ воркспейс із симлінком `.air-ui -> ../../air-platform/air-ui/src`.
+2. У `tsconfig.base.json` вмикається `"strict": true` та прописується шлях `"@air/ui": ["./.air-ui/index.ts"]` (жодних абсолютних шляхів у конфігураціях).
+3. Усі згенеровані контракти (`contracts.ts`, `endpoints.ts`, `ui-texts.json`) імпортуються безпосередньо з `@air/ui` — не створюйте дублюючих папок `generated/` усередині окремих застосунків.
+
+---
+
+## 5. Перевірка перед першим комітом
+
+1. `make prepare` (або `make reset`) — перевірка створення таблиць, схем модулів (`__PlatformMigrations`) та сидів.
+2. `make contracts` — синхронізація TypeScript-контрактів і текстів локалізації.
+3. `make format` — форматування C# (`dotnet format`) та фронтенду (`prettier`).
+4. `make gate` — повна перевірка форматування, відсутності абсолютних шляхів, архітектурних правил, типів TypeScript (`ngc --noEmit` зі `strict: true`), збірки та тестів.
+5. `make agent-restart` — перезапуск виділених агентських серверів.

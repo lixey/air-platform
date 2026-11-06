@@ -142,10 +142,14 @@ internal static class AgentValueHelpers
   public static Dictionary<string, object?>? FindDictionaryRowByName(
     IReadOnlyList<Dictionary<string, object?>> rows,
     string name,
-    bool allowFuzzy = false)
+    bool allowFuzzy = false,
+    IReadOnlyList<string>? labelPaths = null)
   {
     var clean = name.Trim();
-    var exact = rows.FirstOrDefault(r => string.Equals(GetRowDisplayName(r), clean, StringComparison.OrdinalIgnoreCase));
+    var exact = rows.FirstOrDefault(r =>
+      string.Equals(GetRowDisplayName(r, labelPaths), clean, StringComparison.OrdinalIgnoreCase) ||
+      labelPaths is { Count: > 0 } && labelPaths.Any(lp => r.TryGetValue(lp, out var lv) && string.Equals(lv?.ToString()?.Trim(), clean, StringComparison.OrdinalIgnoreCase)) ||
+      string.Equals(GetRowDisplayName(r), clean, StringComparison.OrdinalIgnoreCase));
     if (exact != null || !allowFuzzy)
     {
       return exact;
@@ -153,7 +157,7 @@ internal static class AgentValueHelpers
 
     return rows.FirstOrDefault(r =>
     {
-      var rowName = GetRowDisplayName(r);
+      var rowName = GetRowDisplayName(r, labelPaths) ?? GetRowDisplayName(r);
       return !string.IsNullOrEmpty(rowName) &&
              (rowName.Contains(clean, StringComparison.OrdinalIgnoreCase) ||
               clean.Contains(rowName, StringComparison.OrdinalIgnoreCase));
@@ -171,22 +175,98 @@ internal static class AgentValueHelpers
     return false;
   }
 
-  public static string? GetRowDisplayName(Dictionary<string, object?>? row)
+  public static string? GetRowDisplayName(Dictionary<string, object?>? row, IReadOnlyList<string>? labelPaths = null)
   {
     if (row == null)
     {
       return null;
     }
 
-    foreach (var key in new[] { "name", "title", "code", "label" })
+    if (labelPaths is { Count: > 0 })
     {
-      if (row.TryGetValue(key, out var val) && val != null)
+      var parts = new List<string>();
+      foreach (var path in labelPaths)
       {
-        return val.ToString();
+        if (row.TryGetValue(path, out var pathVal) && pathVal != null)
+        {
+          var s = pathVal is IDictionary<string, object?> subDict && subDict.TryGetValue("name", out var subName)
+            ? subName?.ToString()?.Trim()
+            : pathVal.ToString()?.Trim();
+          if (!string.IsNullOrWhiteSpace(s))
+          {
+            parts.Add(s);
+          }
+        }
+      }
+
+      if (parts.Count > 0)
+      {
+        return string.Join(" ", parts);
+      }
+    }
+
+    foreach (var key in new[] { "name", "title", "code", "label", "fullName", "number", "partNumber" })
+    {
+      if (row.TryGetValue(key, out var val) && val != null && val.ToString()?.Trim() is { Length: > 0 } str)
+      {
+        return str;
+      }
+    }
+
+    foreach (var (k, v) in row)
+    {
+      if (v is string s &&
+          !string.IsNullOrWhiteSpace(s) &&
+          !string.Equals(k, "id", StringComparison.OrdinalIgnoreCase) &&
+          !string.Equals(k, "form", StringComparison.OrdinalIgnoreCase) &&
+          !string.Equals(k, "color", StringComparison.OrdinalIgnoreCase) &&
+          !string.Equals(k, "kind", StringComparison.OrdinalIgnoreCase))
+      {
+        return s.Trim();
       }
     }
 
     return null;
+  }
+
+  public static string ResolvePrimaryTextFieldPath(
+    IReadOnlyList<FormElementDto> elements,
+    IReadOnlyList<string>? referenceLabelPaths = null)
+  {
+    var editableText = elements
+      .Where(e => AgentFeatureRegistry.IsEditableElement(e) &&
+                  e.Type == UiFieldType.Text &&
+                  e.Model is not FormSelectModel)
+      .ToList();
+
+    if (referenceLabelPaths is { Count: > 0 })
+    {
+      foreach (var labelPath in referenceLabelPaths)
+      {
+        var matched = editableText.FirstOrDefault(e => string.Equals(e.Path, labelPath, StringComparison.OrdinalIgnoreCase));
+        if (matched != null)
+        {
+          return matched.Path;
+        }
+      }
+    }
+
+    foreach (var preferred in new[] { "name", "title", "code", "label", "fullName", "number" })
+    {
+      var matched = editableText.FirstOrDefault(e => string.Equals(e.Path, preferred, StringComparison.OrdinalIgnoreCase));
+      if (matched != null)
+      {
+        return matched.Path;
+      }
+    }
+
+    var firstRequired = editableText.FirstOrDefault(e => e.IsRequired);
+    if (firstRequired != null)
+    {
+      return firstRequired.Path;
+    }
+
+    return editableText.FirstOrDefault()?.Path ?? "name";
   }
 
   public static string? ResolveSingleName(
@@ -209,7 +289,7 @@ internal static class AgentValueHelpers
       var row = rows.FirstOrDefault(r => TryGetRowId(r, out var rid) && rid == id);
       if (row != null)
       {
-        return GetRowDisplayName(row);
+        return GetRowDisplayName(row, select.ReferenceLabelPaths);
       }
     }
 
@@ -377,10 +457,14 @@ internal static class AgentValueHelpers
         return true;
       case JsonValueKind.False:
         return false;
-      case JsonValueKind.Number when prop.TryGetInt64(out var lng):
-        return lng;
       case JsonValueKind.Number when fieldType == UiFieldType.Number && prop.TryGetDecimal(out var dec):
         return dec;
+      case JsonValueKind.Number when fieldType == UiFieldType.Number && prop.TryGetDouble(out var numDbl):
+        return numDbl;
+      case JsonValueKind.Number when prop.TryGetInt64(out var lng):
+        return lng;
+      case JsonValueKind.Number when prop.TryGetDecimal(out var anyDec):
+        return anyDec;
       case JsonValueKind.Number when prop.TryGetDouble(out var dbl):
         return dbl;
       case JsonValueKind.String:
@@ -398,14 +482,14 @@ internal static class AgentValueHelpers
               return null;
             }
 
-            if (long.TryParse(str.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sLng))
-            {
-              return sLng;
-            }
-
             if (TryParseFlexibleDecimal(str, out var sDec))
             {
               return sDec;
+            }
+
+            if (long.TryParse(str.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sLng))
+            {
+              return sLng;
             }
           }
 

@@ -72,6 +72,7 @@ internal static class CliTurnRunner
       yield break;
     }
 
+    var sessionWorkspaceDir = store.GetSessionWorkspaceDirectory(request.Owner, request.SessionId);
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, providerHandle);
     var contextFilePath = AgentStore.GetContextFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
     try
@@ -83,19 +84,68 @@ internal static class CliTurnRunner
     }
     catch { }
 
+    var stagedAttachmentPaths = new List<string>();
+    var effectiveRequest = request;
+    if (request.Attachments.Count > 0)
+    {
+      var stagedAttachments = new List<AgentAttachmentDto>(request.Attachments.Count);
+      foreach (var att in request.Attachments)
+      {
+        if (!string.IsNullOrWhiteSpace(att.LocalPath) && File.Exists(att.LocalPath))
+        {
+          var stagedPath = Path.Combine(sessionWorkspaceDir, Path.GetFileName(att.LocalPath));
+          if (!string.Equals(Path.GetFullPath(att.LocalPath), Path.GetFullPath(stagedPath), StringComparison.OrdinalIgnoreCase))
+          {
+            File.Copy(att.LocalPath, stagedPath, overwrite: true);
+            stagedAttachmentPaths.Add(stagedPath);
+          }
+
+          stagedAttachments.Add(new AgentAttachmentDto
+          {
+            Id = att.Id,
+            FileName = att.FileName,
+            ContentType = att.ContentType,
+            Size = att.Size,
+            PreviewUrl = att.PreviewUrl,
+            LocalPath = stagedPath,
+            Sha256 = att.Sha256
+          });
+        }
+        else
+        {
+          stagedAttachments.Add(att);
+        }
+      }
+
+      effectiveRequest = new AgentTurnRequest
+      {
+        SessionId = request.SessionId,
+        Owner = request.Owner,
+        Message = request.Message,
+        Attachments = stagedAttachments,
+        Locale = request.Locale,
+        ProviderHandle = request.ProviderHandle,
+        Model = request.Model,
+        ModelName = request.ModelName,
+        Services = request.Services
+      };
+    }
+
     string? contextJson = null;
     try
     {
-      var hasPhoto = request.Attachments.Count > 0;
+      var hasPhoto = effectiveRequest.Attachments.Count > 0;
       var includeReports = !hasPhoto;
-      var includeRecentRecords = !hasPhoto || request.Message.Contains('#') || Regex.IsMatch(request.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports, includeRecentRecords);
+      var includeRecentRecords = !hasPhoto || effectiveRequest.Message.Contains('#') || Regex.IsMatch(effectiveRequest.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
+      var ctxObj = await AirAgentRuntime.BuildContextAsync(effectiveRequest.Services, effectiveRequest.Message, ct, includeReports, includeRecentRecords);
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
       if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {
         await File.WriteAllTextAsync(contextFilePath, contextJson, Encoding.UTF8, ct);
-        var compactObj = await AirAgentRuntime.BuildContextAsync(request.Services, request.Message, ct, includeReports: false, includeRecentRecords);
-        contextJson = JsonSerializer.Serialize(compactObj, PromptJsonOptions);
+        if (ctxObj is IDictionary<string, object?> ctxDict && ctxDict.Remove("reports"))
+        {
+          contextJson = JsonSerializer.Serialize(ctxDict, PromptJsonOptions);
+        }
       }
     }
     catch
@@ -103,12 +153,12 @@ internal static class CliTurnRunner
       // Ignore context prefetch errors
     }
 
-    var prompt = AgentPromptBuilder.BuildPrompt(request, contextJson, store.WorkspaceDirectory);
+    var prompt = AgentPromptBuilder.BuildPrompt(effectiveRequest, contextJson, store.WorkspaceDirectory);
 
     var psi = new ProcessStartInfo
     {
       FileName = executablePath,
-      WorkingDirectory = store.WorkspaceDirectory,
+      WorkingDirectory = sessionWorkspaceDir,
       RedirectStandardInput = true,
       RedirectStandardOutput = true,
       RedirectStandardError = true,
@@ -223,6 +273,18 @@ internal static class CliTurnRunner
         try
         {
           File.Delete(contextFilePath);
+        }
+        catch { }
+      }
+
+      foreach (var stagedPath in stagedAttachmentPaths)
+      {
+        try
+        {
+          if (File.Exists(stagedPath))
+          {
+            File.Delete(stagedPath);
+          }
         }
         catch { }
       }

@@ -1,6 +1,7 @@
 import { inject, Service } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { MessageDto, OverlayConfirmModel } from '../core/generated/contracts';
+import { TextsService } from '../core/texts.service';
 import { singlePanelLayout } from '../panels/single-panel-layout';
 import { OverlayService } from './overlay.service';
 
@@ -8,6 +9,7 @@ import { OverlayService } from './overlay.service';
 @Service()
 export class ConfirmationService {
   private readonly overlay = inject(OverlayService);
+  private readonly texts = inject(TextsService);
 
   /**
    * Opens the confirmation and answers whether the user confirmed. A `signal` that aborts closes it unanswered, as a
@@ -39,7 +41,7 @@ export class ConfirmationService {
     await this.confirm({
       title,
       message,
-      confirmLabel: 'OK',
+      confirmLabel: this.texts.of('Ok'),
       cancelLabel: '',
       color: 'primary',
     });

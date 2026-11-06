@@ -19,13 +19,13 @@ public static class AgentEndpointsExtensions
 
   private static async Task<(List<IAgentProvider> EnabledProviders, List<AppAgentModel> DbModels)> LoadActiveProvidersAndModelsAsync(
     PlatformDbContext db,
+    AgentStore store,
     IAgentModelSynchronizer synchronizer,
     AgentOptions options,
     List<IAgentProvider> enabledProviders,
     CancellationToken ct)
   {
-    await AgentModelCatalog.EnsureSeededAsync(db, ct);
-    await AgentMemoryCatalog.EnsureSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
+    await store.EnsureCatalogsSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
 
     var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
     var filteredProviders = enabledProviders
@@ -95,8 +95,16 @@ public static class AgentEndpointsExtensions
       if (db is not null)
       {
         var opts = scope.ServiceProvider.GetService<AgentOptions>();
-        AgentModelCatalog.EnsureSeededAsync(db).GetAwaiter().GetResult();
-        AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
+        var store = scope.ServiceProvider.GetService<AgentStore>();
+        if (store is not null)
+        {
+          store.EnsureCatalogsSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
+        }
+        else
+        {
+          AgentModelCatalog.EnsureSeededAsync(db).GetAwaiter().GetResult();
+          AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
+        }
 
         if (!db.AppAgentModel.Any() &&
             scope.ServiceProvider.GetService<IAgentModelSynchronizer>() is { } synchronizer)
@@ -130,6 +138,7 @@ public static class AgentEndpointsExtensions
 
     group.MapGet("/status", async (
       HttpContext ctx,
+      AgentStore store,
       IEnumerable<IAgentProvider> providers,
       IAgentModelSynchronizer synchronizer,
       AgentOptions options,
@@ -147,7 +156,7 @@ public static class AgentEndpointsExtensions
       if (db is not null)
       {
         List<AppAgentModel> dbModels;
-        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, synchronizer, options, enabledProviders, ct);
+        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, store, synchronizer, options, enabledProviders, ct);
 
         var availableHandles = enabledProviders
           .Where(p => p.IsAvailable)
@@ -224,9 +233,16 @@ public static class AgentEndpointsExtensions
       }
 
       var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      await using var stream = file.OpenReadStream();
-      var saved = await store.SaveAttachmentAsync(owner, file.FileName, file.ContentType, stream, ct);
-      return Results.Ok(saved);
+      try
+      {
+        await using var stream = file.OpenReadStream();
+        var saved = await store.SaveAttachmentAsync(owner, file.FileName, file.ContentType, stream, ct);
+        return Results.Ok(saved);
+      }
+      catch (InvalidOperationException ex)
+      {
+        return Results.BadRequest(new { title = ex.Message });
+      }
     });
 
     group.MapGet("/attachments/{id}", (string id, HttpContext ctx, AgentStore store) =>
@@ -343,7 +359,7 @@ public static class AgentEndpointsExtensions
       if (db is not null)
       {
         List<AppAgentModel> dbModels;
-        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, synchronizer, options, enabledProviders, ct);
+        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, store, synchronizer, options, enabledProviders, ct);
 
         if (!string.IsNullOrWhiteSpace(selectedModel))
         {
@@ -360,7 +376,12 @@ public static class AgentEndpointsExtensions
           }
           else
           {
-            var fallbackDef = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
+            var fallbackDef = (!string.IsNullOrWhiteSpace(body.Provider)
+                ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+                  ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+                : null)
+              ?? dbModels.FirstOrDefault(m => m.IsDefault)
+              ?? dbModels.FirstOrDefault();
             if (fallbackDef is not null)
             {
               selectedModel = fallbackDef.ModelId;
@@ -371,7 +392,12 @@ public static class AgentEndpointsExtensions
         }
         else if (attachments.Count > 0)
         {
-          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos)
+          var photoRow = (!string.IsNullOrWhiteSpace(body.Provider)
+              ? dbModels.FirstOrDefault(m => m.IsForPhotos && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+                ?? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+                ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+              : null)
+            ?? dbModels.FirstOrDefault(m => m.IsForPhotos)
             ?? dbModels.FirstOrDefault(m => m.IsDefault)
             ?? dbModels.FirstOrDefault();
           if (photoRow is not null)
@@ -383,7 +409,12 @@ public static class AgentEndpointsExtensions
         }
         else
         {
-          var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
+          var defRow = (!string.IsNullOrWhiteSpace(body.Provider)
+              ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+                ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
+              : null)
+            ?? dbModels.FirstOrDefault(m => m.IsDefault)
+            ?? dbModels.FirstOrDefault();
           if (defRow is not null)
           {
             selectedModel = defRow.ModelId;

@@ -34,18 +34,5 @@ public class AppDbContext : PlatformDbContext
       .OnDelete(DeleteBehavior.Restrict);
 
     modelBuilder.Entity<AppAuthRole>().HasIndex(row => row.Name).IsUnique().HasFilter("\"TenantId\" IS NULL");
-
-    var appAssembly = typeof(AppDbContext).Assembly;
-    foreach (var key in modelBuilder.Model.GetEntityTypes()
-               .Where(type => type.ClrType.Assembly == appAssembly)
-               .SelectMany(type => type.GetForeignKeys()))
-    {
-      key.DeleteBehavior = key.DeclaringEntityType.ClrType == typeof(Models.AppAuthAssignment) && key.Properties.Any(p => p.Name == nameof(Models.AppAuthAssignment.UserId)) ||
-          key.DeclaringEntityType.ClrType == typeof(Models.AppAuthSession) && key.Properties.Any(p => p.Name == nameof(Models.AppAuthSession.UserId))
-        ? DeleteBehavior.Cascade
-        : key.DeclaringEntityType.ClrType == typeof(Models.AppUser) && key.Properties.Any(p => p.Name == nameof(Models.AppUser.UserGroupId))
-          ? DeleteBehavior.SetNull
-          : DeleteBehavior.Restrict;
-    }
   }
 }

@@ -127,16 +127,6 @@ public abstract partial class GridService<TEntity, TRow>
     public Func<IReadOnlyList<TRow>, CancellationToken, Task>? ComputeAction { get; private set; }
     public Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? RowComputeAction { get; private set; }
 
-    private static string? GetMemberName(Expression expr)
-    {
-      if (expr is UnaryExpression ue)
-      {
-        expr = ue.Operand;
-      }
-
-      return expr is MemberExpression me ? me.Member.Name : null;
-    }
-
     private static string? GetMemberPath(Expression expr)
     {
       if (expr is UnaryExpression ue)
@@ -596,6 +586,7 @@ public abstract partial class GridService<TEntity, TRow>
     private readonly Localizer _l = localizer ?? Localizer.Instance;
     internal List<NavActionEntry> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
+    internal List<(Type SourceType, GridNavPickerModel Model)> PickerEntries { get; } = [];
     internal List<NavElementModel> CustomStart { get; } = [];
     internal List<(Type FormType, GridNavAddModel Model)> Creates { get; } = [];
 
@@ -713,8 +704,7 @@ public abstract partial class GridService<TEntity, TRow>
       Delegate method,
       string? label = null)
     {
-      var setParentMethod = typeof(TSource).GetMethod("SetParent", BindingFlags.Instance | BindingFlags.NonPublic);
-      var readsParent = setParentMethod != null && setParentMethod.DeclaringType != null && !setParentMethod.DeclaringType.IsGenericType;
+      var readsParent = ParentScopeValidator.DeclaresParentScope(typeof(TSource));
       var picker = new GridNavPickerModel
       {
         Key = method.Method.Name.ToLowerInvariant(),
@@ -725,6 +715,7 @@ public abstract partial class GridService<TEntity, TRow>
         ReadsParent = readsParent
       };
       Pickers.Add(picker);
+      PickerEntries.Add((typeof(TSource), picker));
       return new NavPickerBuilder(picker);
     }
   }

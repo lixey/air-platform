@@ -17,6 +17,15 @@ public static class GrantedRights
   {
     ArgumentNullException.ThrowIfNull(db);
 
+    var isRoot = false;
+    if ((db as PlatformDbContext)?.SetOfBase<BaseAppUser>() is { } usersSet)
+    {
+      isRoot = await usersSet.IgnoreQueryFilters().AsNoTracking()
+        .Where(u => u.Id == userId)
+        .Select(u => u.IsRoot)
+        .FirstOrDefaultAsync(cancellationToken);
+    }
+
     var activeRoles = await (
       from a in db.Set<TAssignment>().IgnoreQueryFilters().AsNoTracking()
       join r in db.Set<TRole>().IgnoreQueryFilters().AsNoTracking() on a.AuthRoleId equals r.Id
@@ -26,18 +35,18 @@ public static class GrantedRights
 
     if (activeRoles.Count == 0)
     {
-      return new SecurityInfo([]);
+      return isRoot ? new SecurityInfo(["*"], Global: true) : new SecurityInfo([]);
     }
 
-    var isGlobal = activeRoles.Any(r => r.TenantId == null);
+    var isGlobal = isRoot || activeRoles.Any(r => r.TenantId == null);
     var homeTenantId = activeRoles.Where(r => r.TenantId != null).OrderBy(r => r.TenantId).FirstOrDefault()?.TenantId;
     var allowedTenantIds = activeRoles
       .Where(r => r.TenantId != null)
       .Select(r => r.TenantId!.Value)
       .ToHashSet();
 
-    var effectiveTenantId = (db as Platform.Data.PlatformDbContext)?.TenantContext.TenantId
-      ?? Platform.Data.Tenancy.AsyncLocalTenantContext.Instance.TenantId
+    var effectiveTenantId = (db as PlatformDbContext)?.TenantContext.TenantId
+      ?? AsyncLocalTenantContext.Instance.TenantId
       ?? homeTenantId;
 
     var roleIds = activeRoles
@@ -47,7 +56,7 @@ public static class GrantedRights
 
     if (roleIds.Count == 0)
     {
-      return new SecurityInfo([], isGlobal, homeTenantId, allowedTenantIds);
+      return new SecurityInfo(isRoot ? ["*"] : [], isGlobal, homeTenantId, allowedTenantIds);
     }
 
     var permissions = await db.Set<TGrant>()
@@ -57,6 +66,11 @@ public static class GrantedRights
       .Select(g => g.Permission)
       .Distinct()
       .ToListAsync(cancellationToken);
+
+    if (isRoot && !permissions.Contains("*", StringComparer.OrdinalIgnoreCase))
+    {
+      permissions.Add("*");
+    }
 
     return new SecurityInfo(permissions, isGlobal, homeTenantId, allowedTenantIds);
   }

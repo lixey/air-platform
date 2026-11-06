@@ -43,7 +43,7 @@ public static partial class AgentProposalBuilder
           if (string.IsNullOrWhiteSpace(sha256) && File.Exists(att.LocalPath))
           {
             var bytes = await File.ReadAllBytesAsync(att.LocalPath, ct);
-            sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
+            sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes));
             att.Sha256 = sha256;
           }
 
@@ -207,7 +207,7 @@ public static partial class AgentProposalBuilder
       var summary = string.Join(" · ", summaryParts);
       var warning = isExactFileMatch
         ? L["AgentDuplicateFileWarning", summary]
-        : L["AgentDuplicateReceiptWarning", summary];
+        : L["AgentDuplicateRecordWarning", summary];
 
       return (warning, duplicateId.Value, dupDesc.ServicePath);
     }

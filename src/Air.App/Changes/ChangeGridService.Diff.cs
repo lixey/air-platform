@@ -60,7 +60,8 @@ public abstract partial class ChangeGridService
         : $"#{change.UserId.Value}";
     }
 
-    var timestampText = change.At.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+    TimeZones.TryFind(User?.TimeZone, out var userTimeZone);
+    var timestampText = TimeZoneInfo.ConvertTime(change.At, userTimeZone).ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
     var subtitle = !string.IsNullOrEmpty(userName) ? $"{timestampText} · {userName}" : timestampText;
 
     var opColor = change.Operation switch
@@ -282,9 +283,13 @@ public abstract partial class ChangeGridService
       if ((propName.EndsWith("At", StringComparison.Ordinal) || propName.Contains("Date", StringComparison.Ordinal)) &&
           DateTimeOffset.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
       {
-        return propName.EndsWith("Date", StringComparison.Ordinal) && dto.TimeOfDay == TimeSpan.Zero
-          ? dto.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
-          : dto.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+        if (propName.EndsWith("Date", StringComparison.Ordinal) && dto.TimeOfDay == TimeSpan.Zero)
+        {
+          return dto.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        }
+
+        TimeZones.TryFind(User?.TimeZone, out var userTimeZone);
+        return TimeZoneInfo.ConvertTime(dto, userTimeZone).ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.InvariantCulture);
       }
 
       return str;

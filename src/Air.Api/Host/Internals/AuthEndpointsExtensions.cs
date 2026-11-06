@@ -2,6 +2,9 @@ namespace Platform.Api.Host.Internals;
 
 internal static class AuthEndpointsExtensions
 {
+  private static readonly Lazy<string> DummyPasswordHash = new(() =>
+    new PasswordHasher().HashPassword("dummy-password-for-timing-defense"));
+
   public static void MapAuthEndpoints(this RouteGroupBuilder api)
   {
     api.MapPost("/auth/get-login-screen", (HttpContext ctx) =>
@@ -33,13 +36,16 @@ internal static class AuthEndpointsExtensions
 
       if (ctx.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot && snapshot.IsActive)
       {
+        var lang = !string.IsNullOrEmpty(snapshot.LanguageCode)
+          ? snapshot.LanguageCode
+          : IsUkrainian(ctx.Request) ? "uk" : "en";
         return Results.Ok(new UserProfileDto
         {
           Id = snapshot.Id,
           Login = snapshot.Login,
           Name = snapshot.Name,
           Email = snapshot.Email,
-          Language = IsUkrainian(ctx.Request) ? "uk" : "en",
+          Language = lang,
           TimeZone = !string.IsNullOrEmpty(snapshot.TimeZone) ? snapshot.TimeZone : "UTC",
           MustChangePassword = snapshot.MustChangePassword,
           Permissions = snapshot.Permissions.ToList()
@@ -53,7 +59,8 @@ internal static class AuthEndpointsExtensions
       }
 
       var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
-      return Results.Ok(BuildUserProfileDto(user, securityInfo, IsUkrainian(ctx.Request)));
+      var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+      return Results.Ok(BuildUserProfileDto(user, securityInfo, isUk));
     });
 
     api.MapPost("/auth/login", async (LoginRequest? req, HttpContext ctx, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
@@ -67,6 +74,7 @@ internal static class AuthEndpointsExtensions
       var user = await authStore.FindUserByLoginAsync(login, ct);
       if (user == null || !user.IsActive)
       {
+        hasher.VerifyPassword(req.Password, DummyPasswordHash.Value);
         return Results.Unauthorized();
       }
 
@@ -119,7 +127,18 @@ internal static class AuthEndpointsExtensions
       IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
       IssueRefreshCookie(ctx.Response, refreshToken, now.AddDays(30), ctx.Request.IsHttps);
 
-      return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
+      var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+      if (user.LanguageId is > 0)
+      {
+        ctx.Response.Cookies.Append("culture", isUk ? "uk" : "en", new CookieOptions
+        {
+          Path = "/",
+          Expires = now.AddYears(1),
+          SameSite = SameSiteMode.Lax
+        });
+      }
+
+      return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
     });
 
     api.MapPost("/auth/change-password", async (ChangePasswordRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
@@ -135,9 +154,9 @@ internal static class AuthEndpointsExtensions
           return Results.BadRequest(new { detail = Localizer.Instance["FormValidationRequired"] });
         }
 
-        if (req.NewPassword.Length < 8)
+        if (req.NewPassword.Length < 10)
         {
-          return Results.BadRequest(new { detail = Localizer.Instance["PasswordTooShort", 8] });
+          return Results.BadRequest(new { detail = Localizer.Instance["PasswordTooShort", 10] });
         }
 
         if (req.NewPassword.Length > 128)
@@ -216,11 +235,17 @@ internal static class AuthEndpointsExtensions
           IssueRefreshCookie(ctx.Response, newRefreshToken, now.AddDays(30), ctx.Request.IsHttps);
         }
 
-        return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
+        var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+        return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
       }));
 
     api.MapPost("/auth/refresh", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
+      if (!HasClientHeader(ctx.Request))
+      {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+      }
+
       RefreshRequest? req = null;
       if (ctx.Request.ContentLength > 0)
       {
@@ -335,11 +360,17 @@ internal static class AuthEndpointsExtensions
 
       IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
 
-      return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
+      var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+      return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
     });
 
     api.MapPost("/auth/logout", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
+      if (!HasClientHeader(ctx.Request))
+      {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+      }
+
       BaseAppAuthSession? session = null;
       if (userContext.SessionId is { } sid)
       {
@@ -372,7 +403,13 @@ internal static class AuthEndpointsExtensions
 
     var switchLanguageHandler = async (SwitchRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
-      var isUk = req?.Id == 2;
+      if (!HasClientHeader(ctx.Request))
+      {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+      }
+
+      var resolvedCode = await authStore.ResolveLanguageCodeAsync(req?.Id, ct);
+      var isUk = resolvedCode != null ? resolvedCode == "uk" : req?.Id == 2;
       ctx.Response.Cookies.Append("culture", isUk ? "uk" : "en", new CookieOptions
       {
         Path = "/",
@@ -385,7 +422,7 @@ internal static class AuthEndpointsExtensions
         var user = await authStore.FindUserByIdAsync(uid, ct);
         if (user != null && user.IsActive)
         {
-          if (req?.Id is 1 or 2 && user.LanguageId != req.Id)
+          if (resolvedCode != null && req?.Id is > 0 && user.LanguageId != req.Id)
           {
             user.LanguageId = req.Id;
             await authStore.SaveChangesAsync(ct);
@@ -413,6 +450,11 @@ internal static class AuthEndpointsExtensions
 
     var switchTenantHandler = async (SwitchRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
+      if (!HasClientHeader(ctx.Request))
+      {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+      }
+
       if (req == null)
       {
         return Results.BadRequest(new { detail = "Tenant id is required." });
@@ -470,11 +512,26 @@ internal static class AuthEndpointsExtensions
       }
 
       IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
-      return Results.Ok(BuildSessionDto(user, securityInfo, IsUkrainian(ctx.Request)));
+      var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+      return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
     };
 
     api.MapPost("/platform-tenant/switch", switchTenantHandler);
     api.MapPost("/PlatformTenantService/Switch", switchTenantHandler);
+  }
+
+  private static bool HasClientHeader(HttpRequest request) =>
+    request.Headers.ContainsKey(AuthClaims.ClientHeader);
+
+  private static async Task<bool> ResolveIsUkrainianAsync(BaseAppUser user, HttpRequest request, IAuthStore authStore, CancellationToken ct)
+  {
+    var code = await authStore.ResolveLanguageCodeAsync(user.LanguageId, ct);
+    if (!string.IsNullOrEmpty(code))
+    {
+      return code == "uk";
+    }
+
+    return IsUkrainian(request);
   }
 
   private static bool IsUkrainian(HttpRequest request) =>

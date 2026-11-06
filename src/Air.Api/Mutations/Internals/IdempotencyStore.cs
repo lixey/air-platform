@@ -4,6 +4,8 @@ namespace Platform.Api.Mutations.Internals;
 
 internal static class IdempotencyStore
 {
+  private const int MaxKeyLength = 128;
+  private const int MaxEntries = 100_000;
   private static readonly TimeSpan Retention = TimeSpan.FromHours(24);
   private static readonly ConcurrentDictionary<string, KeyLock> KeyLocks = new(StringComparer.Ordinal);
   private static readonly ConcurrentDictionary<string, KeptEntry> Entries = new(StringComparer.Ordinal);
@@ -15,8 +17,17 @@ internal static class IdempotencyStore
     return Convert.ToHexString(bytes);
   }
 
+  private static void ValidateKey(string key)
+  {
+    if (key.Length > MaxKeyLength)
+    {
+      throw new IdempotencyConflictException($"Idempotency-Key must not exceed {MaxKeyLength} characters.");
+    }
+  }
+
   public static async Task<IDisposable> AcquireLockAsync(long? tenantId, long? userId, string key, CancellationToken ct)
   {
+    ValidateKey(key);
     var lockId = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
     KeyLock entry;
     while (true)
@@ -49,6 +60,7 @@ internal static class IdempotencyStore
     string payloadHash,
     out long recordId)
   {
+    ValidateKey(key);
     PruneIfNeeded();
     var storeKey = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
     if (!Entries.TryGetValue(storeKey, out var entry))
@@ -82,7 +94,20 @@ internal static class IdempotencyStore
     string payloadHash,
     long recordId)
   {
+    ValidateKey(key);
     PruneIfNeeded();
+    if (Entries.Count >= MaxEntries)
+    {
+      PruneExpired(DateTimeOffset.UtcNow);
+      if (Entries.Count >= MaxEntries)
+      {
+        foreach (var oldest in Entries.OrderBy(kv => kv.Value.CreatedAt).Take(Math.Max(1, MaxEntries / 10)))
+        {
+          Entries.TryRemove(oldest.Key, out _);
+        }
+      }
+    }
+
     var storeKey = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
     Entries[storeKey] = new KeptEntry(serviceKey, payloadHash, recordId, DateTimeOffset.UtcNow);
   }
@@ -107,6 +132,11 @@ internal static class IdempotencyStore
       return;
     }
 
+    PruneExpired(now);
+  }
+
+  private static void PruneExpired(DateTimeOffset now)
+  {
     foreach (var kv in Entries)
     {
       if (now - kv.Value.CreatedAt > Retention)

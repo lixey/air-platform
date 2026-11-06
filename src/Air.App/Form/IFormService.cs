@@ -5,6 +5,7 @@ public interface IFormService : IPlatformService
   PlatformDbContext DbContext { get; }
   string Service { get; }
   OverlayDto Overlay(string service);
+  Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) => Task.FromResult(Overlay(service));
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct) => BuildScreenAsync(servicePath, (long?)null, ct);
@@ -28,6 +29,7 @@ public interface IFormService : IPlatformService
     ISet<string>? pendingReferencePaths = null,
     long? parentId = null,
     string? parentService = null,
+    string? triggerField = null,
     CancellationToken ct = default);
   bool HasCustomRecalculate => false;
   Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default) => Task.CompletedTask;

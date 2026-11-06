@@ -110,7 +110,7 @@ internal static class MetadataEndpointsExtensions
 
         foreach (var feat in catalog.AllFeatures)
         {
-          if (userContext.IsAuthenticated && !userContext.Can(feat.View))
+          if (userContext.IsAuthenticated && !ServiceEndpointsExtensions.CanView(feat, userContext))
           {
             continue;
           }
@@ -165,7 +165,7 @@ internal static class MetadataEndpointsExtensions
         return null;
       }
 
-      if (user.IsAuthenticated && (!user.Can(feature.View) || !user.Can(feature.MenuView)))
+      if (user.IsAuthenticated && (!ServiceEndpointsExtensions.CanView(feature, user) || !user.Can(feature.MenuView)))
       {
         return null;
       }

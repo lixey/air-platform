@@ -194,6 +194,8 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
           psi.ArgumentList.Add("--skip-git-repo-check");
           psi.ArgumentList.Add("--ignore-user-config");
           psi.ArgumentList.Add("--ignore-rules");
+          psi.ArgumentList.Add("--add-dir");
+          psi.ArgumentList.Add(psi.WorkingDirectory);
           if (!string.IsNullOrWhiteSpace(cliModel))
           {
             psi.ArgumentList.Add("-m");
@@ -217,7 +219,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
           psi.ArgumentList.Add("-s");
           psi.ArgumentList.Add("read-only");
           psi.ArgumentList.Add("--add-dir");
-          psi.ArgumentList.Add(store.WorkspaceDirectory);
+          psi.ArgumentList.Add(psi.WorkingDirectory);
           if (!string.IsNullOrWhiteSpace(cliModel))
           {
             psi.ArgumentList.Add("-m");
@@ -229,10 +231,16 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
 
           foreach (var att in request.Attachments)
           {
-            if (!string.IsNullOrWhiteSpace(att.LocalPath) && File.Exists(att.LocalPath))
+            var stagedCandidate = !string.IsNullOrWhiteSpace(att.LocalPath)
+              ? Path.Combine(psi.WorkingDirectory, Path.GetFileName(att.LocalPath))
+              : null;
+            var pathToUse = !string.IsNullOrWhiteSpace(stagedCandidate) && File.Exists(stagedCandidate)
+              ? stagedCandidate
+              : att.LocalPath;
+            if (!string.IsNullOrWhiteSpace(pathToUse) && File.Exists(pathToUse))
             {
               psi.ArgumentList.Add("-i");
-              psi.ArgumentList.Add(att.LocalPath);
+              psi.ArgumentList.Add(pathToUse);
             }
           }
 
@@ -286,7 +294,8 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
             });
           }
         }
-        else if (type == "turn.failed")
+        else if (type is "turn.failed" or "error" ||
+                 root.TryGetProperty("is_error", out var isErrProp) && isErrProp.ValueKind == JsonValueKind.True)
         {
           string? errMsg = null;
           if (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String)
@@ -318,7 +327,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
           }
         }
 
-        return (type is "turn.completed" or "turn.failed", emittedError);
+        return (type is "turn.completed" or "turn.failed" or "error", emittedError);
       },
       ct))
     {

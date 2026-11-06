@@ -219,68 +219,113 @@ public sealed class ModuleCatalog
       ?? _servicesByPath.GetValueOrDefault(path.Replace("-", ""));
   }
 
-  public object? CreateServiceInstance(Type serviceType, params object?[] availableServices)
+  private static readonly IServiceProvider EmptyServiceProvider = new ServiceCollection().BuildServiceProvider();
+
+  public object? CreateServiceInstance(Type serviceType, params object?[] availableServices) =>
+    CreateServiceInstanceCore(serviceType, availableServices, []);
+
+  private object? CreateServiceInstanceCore(Type serviceType, object?[] availableServices, HashSet<Type> visited)
   {
-    if (serviceType.IsAbstract)
-    {
-      var candidates = AllServiceTypes
-        .Where(t => !t.IsAbstract && serviceType.IsAssignableFrom(t))
-        .ToList();
-      var canonicalName = serviceType.Name.EndsWith("Base", StringComparison.Ordinal)
-        ? serviceType.Name[..^4]
-        : null;
-      var resolved = candidates.Count == 1
-        ? candidates[0]
-        : canonicalName != null
-          ? candidates.FirstOrDefault(t => string.Equals(t.Name, canonicalName, StringComparison.Ordinal))
-          : null;
-      if (resolved is null)
-      {
-        return null;
-      }
-
-      serviceType = resolved;
-    }
-
-    var ctor = serviceType.GetConstructors().FirstOrDefault();
-    if (ctor is null)
+    if (visited.Count >= 8 || !visited.Add(serviceType))
     {
       return null;
     }
 
-    var serviceProvider = availableServices.OfType<IServiceProvider>().FirstOrDefault()
-      ?? availableServices.OfType<PlatformAppService>().FirstOrDefault()?.Services;
-    var appService = availableServices.OfType<PlatformAppService>().FirstOrDefault()
-      ?? serviceProvider?.GetService(typeof(PlatformAppService)) as PlatformAppService;
-
-    var parameters = ctor.GetParameters();
-    var args = new object?[parameters.Length];
-    for (var i = 0; i < parameters.Length; i++)
+    try
     {
-      var param = parameters[i];
-      var match = availableServices.FirstOrDefault(s => s is not null && param.ParameterType.IsInstanceOfType(s))
-        ?? serviceProvider?.GetService(param.ParameterType);
-      if (match is not null)
+      if (serviceType.IsAbstract)
       {
-        args[i] = match;
-      }
-      else if (param.HasDefaultValue)
-      {
-        args[i] = param.DefaultValue;
-      }
-      else if (param.ParameterType.IsValueType)
-      {
-        args[i] = Activator.CreateInstance(param.ParameterType);
-      }
-    }
+        var candidates = AllServiceTypes
+          .Where(t => !t.IsAbstract && serviceType.IsAssignableFrom(t))
+          .ToList();
+        var canonicalName = serviceType.Name.EndsWith("Base", StringComparison.Ordinal)
+          ? serviceType.Name[..^4]
+          : null;
+        var resolved = candidates.Count == 1
+          ? candidates[0]
+          : canonicalName != null
+            ? candidates.FirstOrDefault(t => string.Equals(t.Name, canonicalName, StringComparison.Ordinal))
+            : null;
+        if (resolved is null || resolved != serviceType && !visited.Add(resolved))
+        {
+          return null;
+        }
 
-    var instance = ctor.Invoke(args);
-    if (appService is not null && instance is IPlatformService platformService)
+        serviceType = resolved;
+      }
+
+      var ctor = serviceType.GetConstructors().FirstOrDefault();
+      if (ctor is null)
+      {
+        return null;
+      }
+
+      var serviceProvider = availableServices.OfType<IServiceProvider>().FirstOrDefault()
+        ?? availableServices.OfType<PlatformAppService>().FirstOrDefault()?.Services;
+      var appService = availableServices.OfType<PlatformAppService>().FirstOrDefault()
+        ?? serviceProvider?.GetService(typeof(PlatformAppService)) as PlatformAppService;
+
+      var parameters = ctor.GetParameters();
+      var args = new object?[parameters.Length];
+      for (var i = 0; i < parameters.Length; i++)
+      {
+        var param = parameters[i];
+        var match = availableServices.FirstOrDefault(s => s is not null && param.ParameterType.IsInstanceOfType(s))
+          ?? serviceProvider?.GetService(param.ParameterType);
+        if (match is not null)
+        {
+          args[i] = match;
+        }
+        else if (param.HasDefaultValue)
+        {
+          args[i] = param.DefaultValue;
+        }
+        else if (param.ParameterType.IsValueType)
+        {
+          args[i] = Activator.CreateInstance(param.ParameterType);
+        }
+        else if (param.ParameterType == typeof(IUserContext))
+        {
+          args[i] = new UserContext(new HttpContextAccessor());
+        }
+        else if (param.ParameterType == typeof(ITenantContext))
+        {
+          args[i] = AsyncLocalTenantContext.Instance;
+        }
+        else if (param.ParameterType == typeof(ILocalizer))
+        {
+          args[i] = Localizer.Instance;
+        }
+        else if (param.ParameterType == typeof(IServiceProvider))
+        {
+          args[i] = EmptyServiceProvider;
+        }
+        else if (param.ParameterType == typeof(TimeProvider))
+        {
+          args[i] = TimeProvider.System;
+        }
+        else if (!param.ParameterType.IsInterface &&
+                 !param.ParameterType.IsAbstract &&
+                 param.ParameterType != typeof(string) &&
+                 !typeof(DbContext).IsAssignableFrom(param.ParameterType) &&
+                 !visited.Contains(param.ParameterType))
+        {
+          args[i] = CreateServiceInstanceCore(param.ParameterType, availableServices, visited);
+        }
+      }
+
+      var instance = ctor.Invoke(args);
+      if (appService is not null && instance is IPlatformService platformService)
+      {
+        platformService.AttachPlatformApp(appService);
+      }
+
+      return instance;
+    }
+    finally
     {
-      platformService.AttachPlatformApp(appService);
+      visited.Remove(serviceType);
     }
-
-    return instance;
   }
 
   public static IEnumerable<ModuleMenuNode> Flatten(IEnumerable<ModuleMenuNode> nodes)

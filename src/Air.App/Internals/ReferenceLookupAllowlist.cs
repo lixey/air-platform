@@ -5,17 +5,18 @@ internal static class ReferenceLookupAllowlist
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedLabels = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedPatches = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedFilters = new();
-  private static readonly Lock WarmLock = new();
+  private static readonly SemaphoreSlim WarmSemaphore = new(1, 1);
   private static volatile bool _warmed;
 
-  public static void EnsureWarm(IServiceProvider? services)
+  public static async Task EnsureWarmAsync(IServiceProvider? services, CancellationToken ct = default)
   {
     if (_warmed || services == null)
     {
       return;
     }
 
-    lock (WarmLock)
+    await WarmSemaphore.WaitAsync(ct);
+    try
     {
       if (_warmed)
       {
@@ -31,7 +32,7 @@ internal static class ReferenceLookupAllowlist
           {
             if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is IFormService form)
             {
-              form.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+              await form.GetElementsMetadataAsync(ct);
             }
           }
           else if (typeof(IGridService).IsAssignableFrom(serviceType))
@@ -48,6 +49,10 @@ internal static class ReferenceLookupAllowlist
       }
 
       _warmed = true;
+    }
+    finally
+    {
+      WarmSemaphore.Release();
     }
   }
 

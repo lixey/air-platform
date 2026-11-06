@@ -22,6 +22,52 @@ public abstract partial class GridService<TEntity, TRow>
     return query;
   }
 
+  protected async Task<IReadOnlyList<long>> InferBoundParentIdFromIdsAsync(
+    IReadOnlyList<long> ids,
+    CancellationToken ct,
+    bool includeQueryFilters = false)
+  {
+    if (ParentId is > 0 || ids.Count == 0 || GetParent().BoundProperty is not { } boundProp)
+    {
+      return [];
+    }
+
+    var probeQuery = BaseQuery(db).AsNoTracking();
+    var restrictions = new UserRestrictions();
+    SetUserRestrictions(restrictions);
+    foreach (var restriction in restrictions.Filters)
+    {
+      probeQuery = probeQuery.Where(restriction);
+    }
+
+    if (includeQueryFilters)
+    {
+      foreach (var filter in GetQueryDeclaration().Filters)
+      {
+        probeQuery = probeQuery.Where(filter);
+      }
+    }
+
+    var probeRows = await probeQuery.Where(e => ids.Contains(e.Id)).ToListAsync(ct);
+    if (probeRows.Count == 0 || includeQueryFilters && probeRows.Count != ids.Distinct().Count())
+    {
+      return [];
+    }
+
+    var distinctParentIds = probeRows
+      .Select(e => boundProp.GetValue(e) is { } raw ? Convert.ToInt64(raw, CultureInfo.InvariantCulture) : 0L)
+      .Where(pid => pid > 0)
+      .Distinct()
+      .OrderBy(pid => pid)
+      .ToList();
+    if (distinctParentIds.Count == 1)
+    {
+      ParentId = distinctParentIds[0];
+    }
+
+    return distinctParentIds;
+  }
+
   private async Task<(List<TEntity> Entities, List<MessageDto> MissingErrors)> LoadSelectedEntitiesAsync(
     IReadOnlyList<long> ids,
     CancellationToken ct,
@@ -34,30 +80,19 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var parent = GetParent();
-    if (ParentId is null or <= 0 && parent.BoundProperty is { } boundProp)
+    if (ParentId is null or <= 0 && parent.BoundProperty != null)
     {
-      var probeRows = await RestrictedQuery().AsNoTracking().Where(e => ids.Contains(e.Id)).ToListAsync(ct);
-      if (probeRows.Count == ids.Distinct().Count())
+      var distinctParentIds = await InferBoundParentIdFromIdsAsync(ids, ct, includeQueryFilters: true);
+      if (distinctParentIds.Count == 1)
       {
-        var distinctParentIds = probeRows
-          .Select(e => boundProp.GetValue(e) as long?)
-          .Where(pid => pid is > 0)
-          .Select(pid => pid!.Value)
-          .Distinct()
-          .OrderBy(pid => pid)
-          .ToList();
-        if (distinctParentIds.Count == 1)
+        if (!await EnsureParentScopeAsync(lockParent: lockEntities && db.Database.CurrentTransaction != null, ct))
         {
-          ParentId = distinctParentIds[0];
-          if (!await EnsureParentScopeAsync(lockParent: lockEntities && db.Database.CurrentTransaction != null, ct))
-          {
-            return ([], [new MessageDto { Code = "grid.delete.unavailable", Detail = L["GridDeleteUnavailable"], Type = MessageType.Error }]);
-          }
+          return ([], [new MessageDto { Code = "grid.delete.unavailable", Detail = L["GridDeleteUnavailable"], Type = MessageType.Error }]);
         }
-        else if (distinctParentIds.Count > 1 && lockEntities && db.Database.CurrentTransaction != null && parent.BoundParentEntityType is { } parentEntityType)
-        {
-          await MutationContext.AcquireLocksAsync(db, parentEntityType, distinctParentIds.Select(pid => new[] { pid }).ToList(), ct);
-        }
+      }
+      else if (distinctParentIds.Count > 1 && lockEntities && db.Database.CurrentTransaction != null && parent.BoundParentEntityType is { } parentEntityType)
+      {
+        await MutationContext.AcquireLocksAsync(db, parentEntityType, distinctParentIds.Select(pid => new[] { pid }).ToList(), ct);
       }
     }
 
@@ -145,6 +180,8 @@ public abstract partial class GridService<TEntity, TRow>
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
+      var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
+      await InferBoundParentIdFromIdsAsync(ids, mutationCt);
       if (!await EnsureParentScopeAsync(lockParent: true, mutationCt))
       {
         return new GridActionDto
@@ -154,10 +191,7 @@ public abstract partial class GridService<TEntity, TRow>
         };
       }
 
-      var nav = new Nav(localizer: L);
-      SetNav(nav);
-
-      var ids = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : new List<long>());
+      var nav = GetNav();
       SelectedIds = ids;
       NavActionEntry? navAction = null;
       if (!string.IsNullOrEmpty(actionName))
@@ -288,6 +322,8 @@ public abstract partial class GridService<TEntity, TRow>
 
     return await db.RunMutationAsync(async mutationCt =>
     {
+      var selectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
+      await InferBoundParentIdFromIdsAsync(selectedIds, mutationCt);
       if (!await EnsureParentScopeAsync(lockParent: true, mutationCt))
       {
         return new GridActionDto
@@ -328,7 +364,6 @@ public abstract partial class GridService<TEntity, TRow>
         return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
       }
 
-      var selectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
       if (selectedIds.Count == 0)
       {
         return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
@@ -408,6 +443,13 @@ public abstract partial class GridService<TEntity, TRow>
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
+      var ids = request.SelectedIds ?? [];
+      if (ids.Count == 0 && request.Id.HasValue)
+      {
+        ids = [request.Id.Value];
+      }
+
+      await InferBoundParentIdFromIdsAsync(ids, mutationCt);
       if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || !CanDelete())
       {
         return new GridDeleteDto
@@ -416,12 +458,6 @@ public abstract partial class GridService<TEntity, TRow>
           Deleted = 0,
           Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
         };
-      }
-
-      var ids = request.SelectedIds ?? [];
-      if (ids.Count == 0 && request.Id.HasValue)
-      {
-        ids = [request.Id.Value];
       }
 
       if (ids.Count == 0)
@@ -693,6 +729,7 @@ public abstract partial class GridService<TEntity, TRow>
       throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
     }
 
+    await InferBoundParentIdFromIdsAsync([request.Id.Value], ct);
     if (!await EnsureParentScopeAsync(lockParent: false, ct))
     {
       return new GridCellDto
@@ -723,8 +760,25 @@ public abstract partial class GridService<TEntity, TRow>
         form.AttachPlatformApp(PlatformApp);
       }
 
-      var formReq = new FormRequest { Id = request.Id, Ver = request.Ver, ParentId = request.ParentId, ParentService = request.ParentService };
-      return await form.SaveCellAsync(request.Id.Value, request.Path, request.Value, formReq, token => ReadRowAsync(request.Id.Value, token), ct);
+      var formReq = new FormRequest
+      {
+        Id = request.Id,
+        Ver = request.Ver,
+        ParentId = ParentId,
+        ParentService = ParentService ?? GetParent().BoundParentService
+      };
+      try
+      {
+        return await form.SaveCellAsync(request.Id.Value, request.Path, request.Value, formReq, token => ReadRowAsync(request.Id.Value, token), ct);
+      }
+      catch (JsonException)
+      {
+        return new GridCellDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["FormValidationInvalid"], Path = request.Path, Type = MessageType.Error }]
+        };
+      }
     }
 
     return new GridCellDto
@@ -736,43 +790,53 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default)
   {
-    var query = BuildFilteredEntityQuery(request, out _, out var queryDeclaration);
+    ParentService = request.ParentService;
+    ParentId = request.ParentId;
+    var parentScopeValid = await EnsureParentScopeAsync(lockParent: false, ct);
     var cols = CreateColumns();
     LocalizeAndConfigureColumns(cols.List);
     var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.Cell is not AddOns.Covers.Contracts.GridCellCoverModel).ToList();
 
-    if (request.SelectedIds is { Count: > 0 } selectedIds)
-    {
-      query = query.Where(e => selectedIds.Contains(e.Id));
-    }
-
-    if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
-    {
-      request.Sort = queryDeclaration.DefaultSort.ToList();
-    }
-
-    NormalizeGridRequest(request, request, queryDeclaration, isSelect: false, applyInitialFilters: false);
-
     const int limit = 100_000;
     IAsyncEnumerable<object> rowStream;
-    var queryMap = BuildQueryMap(queryDeclaration, cols.List);
-
-    if (queryDeclaration.Selector != null)
+    if (!parentScopeValid)
     {
-      var dataProvider = DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector);
-      rowStream = queryDeclaration.ComputeAction != null
-        ? ShapeComputedStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), queryDeclaration.ComputeAction, cols.List, ct)
-        : ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), cols.List, ct);
+      rowStream = AsyncEnumerable.Empty<object>();
     }
     else
     {
-      var exportSelector = CanUseDefaultProjection(query, queryDeclaration)
-        ? GridProjectionBuilder.TryBuildSelector<TEntity>(exportColumns, HasCustomShapeRow)
-        : null;
-      var defaultDataProvider = exportSelector != null
-        ? DataProvider.Create(query.AsNoTracking(), queryMap, exportSelector)
-        : DataProvider.Create(IncludeColumnNavigations(query.AsNoTracking(), exportColumns), queryMap);
-      rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), cols.List, queryDeclaration.RowComputeAction, ct);
+      var query = BuildFilteredEntityQuery(request, out _, out var queryDeclaration);
+      if (request.SelectedIds is { Count: > 0 } selectedIds)
+      {
+        query = query.Where(e => selectedIds.Contains(e.Id));
+      }
+
+      if (request.Sort is not { Count: > 0 } && queryDeclaration.DefaultSort.Count > 0)
+      {
+        request.Sort = queryDeclaration.DefaultSort.ToList();
+      }
+
+      NormalizeGridRequest(request, request, queryDeclaration, isSelect: false, applyInitialFilters: false);
+
+      var queryMap = BuildQueryMap(queryDeclaration, cols.List);
+
+      if (queryDeclaration.Selector != null)
+      {
+        var dataProvider = DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector);
+        rowStream = queryDeclaration.ComputeAction != null
+          ? ShapeComputedStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), queryDeclaration.ComputeAction, exportColumns, ct)
+          : ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), exportColumns, ct);
+      }
+      else
+      {
+        var exportSelector = CanUseDefaultProjection(query, queryDeclaration)
+          ? GridProjectionBuilder.TryBuildSelector<TEntity>(exportColumns, HasCustomShapeRow)
+          : null;
+        var defaultDataProvider = exportSelector != null
+          ? DataProvider.Create(query.AsNoTracking(), queryMap, exportSelector)
+          : DataProvider.Create(IncludeColumnNavigations(query.AsNoTracking(), exportColumns), queryMap);
+        rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), exportColumns, queryDeclaration.RowComputeAction, ct);
+      }
     }
 
     var tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());

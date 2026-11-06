@@ -212,13 +212,23 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
-    User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
+    PlatformApp != null && (User is not { IsAuthenticated: true } || !ServiceEndpointsExtensions.CanEdit(Feature, User));
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
   private object? _preloadedParent;
   private long? _preloadedParentId;
+  private bool _parentRecordLoaded;
 
-  public void SetRequest(FormRequest request) => Request = request;
+  public void SetRequest(FormRequest request)
+  {
+    if (Request.ParentId != request.ParentId ||
+        !string.Equals(Request.ParentService, request.ParentService, StringComparison.OrdinalIgnoreCase))
+    {
+      _parentRecordLoaded = false;
+    }
+
+    Request = request;
+  }
 
   public async Task<object?> LoadParentRecordAsync(long id, CancellationToken ct = default)
   {
@@ -243,18 +253,6 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       }
 
       return null;
-    }
-
-    var efModel = db.Model.FindEntityType(typeof(TEntity));
-    if (efModel != null)
-    {
-      foreach (var nav in efModel.GetNavigations())
-      {
-        if (!nav.IsCollection)
-        {
-          query = query.Include(nav.Name);
-        }
-      }
     }
 
     var loaded = await query.FirstOrDefaultAsync(e => e.Id == id, ct);
@@ -290,6 +288,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
     _preloadedParent = preloaded;
     _preloadedParentId = Request.ParentId;
+    _parentRecordLoaded = Request.ParentId is > 0;
     var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
       ? Request.ParentService
       : parent.BoundParentService;
@@ -301,7 +300,12 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected async Task PreloadParentRecordAsync(Parent parent, CancellationToken ct)
   {
-    if (Request.ParentId is not > 0)
+    if (_parentRecordLoaded && _preloadedParentId == Request.ParentId)
+    {
+      return;
+    }
+
+    if (Request.ParentId is not > 0 && string.IsNullOrEmpty(Request.ParentService) && parent.BoundParentService == null)
     {
       return;
     }
@@ -320,6 +324,11 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       ct);
     _preloadedParent = preloaded;
     _preloadedParentId = Request.ParentId;
+    if (Request.ParentId is > 0)
+    {
+      _parentRecordLoaded = true;
+    }
+
     var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
       ? Request.ParentService
       : parent.BoundParentService;
@@ -704,7 +713,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
 
-  private bool HasChildPages()
+  private async Task<bool> HasChildPagesAsync(CancellationToken ct = default)
   {
     if (_lastElements is not null)
     {
@@ -714,8 +723,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     var probe = new Elements();
     try
     {
-      EnsureEntityAndParentLoadedAsync(CancellationToken.None).GetAwaiter().GetResult();
-      SetElementsAsync(probe, CancellationToken.None).GetAwaiter().GetResult();
+      await EnsureEntityAndParentLoadedAsync(ct);
+      await SetElementsAsync(probe, ct);
     }
     catch
     {
@@ -724,12 +733,35 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     return probe.Children.Any(c => !c.IsFiles);
   }
 
+  public virtual async Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) =>
+    BuildResolvedOverlay(service, await HasChildPagesAsync(ct));
+
   public virtual OverlayDto Overlay(string service)
+  {
+    var hasChildPages = _lastElements?.Children.Any(c => !c.IsFiles);
+    if (hasChildPages is null)
+    {
+      var probe = new Elements();
+      try
+      {
+        SetElements(probe);
+      }
+      catch
+      {
+      }
+
+      hasChildPages = probe.Children.Any(c => !c.IsFiles);
+    }
+
+    return BuildResolvedOverlay(service, hasChildPages == true);
+  }
+
+  private OverlayDto BuildResolvedOverlay(string service, bool hasChildPages)
   {
     var dto = Presentation($"{service}.modal").Screen(service).Build();
     if (dto.Presentation != OverlayPresentation.Drawer)
     {
-      if (HasChildPages())
+      if (hasChildPages)
       {
         dto.Presentation = OverlayPresentation.Drawer;
         dto.Width = null;
@@ -793,7 +825,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   public string GetTitle() => L[Title];
 
-  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity, id);
+  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity ?? _lastSavedEntity, id);
 
   private async Task EnsureEntityAndParentLoadedAsync(CancellationToken ct = default)
   {
@@ -844,7 +876,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       }
     }
 
-    LocalizeAndResolveSelectElements(elements);
+    await LocalizeAndResolveSelectElementsAsync(elements, ct);
     _lastElements = elements;
     return elements;
   }

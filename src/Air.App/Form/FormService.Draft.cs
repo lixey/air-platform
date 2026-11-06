@@ -16,6 +16,7 @@ public abstract partial class FormService<TEntity>
     ISet<string>? pendingReferencePaths = null,
     long? parentId = null,
     string? parentService = null,
+    string? triggerField = null,
     CancellationToken ct = default)
   {
     var isEdit = recordId is > 0;
@@ -40,9 +41,24 @@ public abstract partial class FormService<TEntity>
       ParentService = parentService
     };
     SetRequest(req);
+    _lastElements = null;
 
-    var (elementDtos, _) = await GetElementsMetadataAsync(ct);
-    var editableElements = elementDtos
+    await PreloadParentRecordAsync(parent, ct);
+    if (isEdit && CurrentEntity?.Id != recordId!.Value)
+    {
+      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == recordId.Value, ct);
+      if (CurrentEntity != null)
+      {
+        RestoreBoundParentId(CurrentEntity, parent);
+        if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+        {
+          await PreloadParentRecordAsync(parent, ct);
+        }
+      }
+    }
+
+    var elements = await EnsureElementsAsync(ct, reload: true);
+    var editableElements = elements.List
       .Where(static el =>
         !string.IsNullOrEmpty(el.Path) &&
         !el.IsDisabled &&
@@ -119,6 +135,7 @@ public abstract partial class FormService<TEntity>
       explicitlyProvided,
       pendingReferencePaths,
       isEdit,
+      triggerField,
       ct);
 
     foreach (var el in editableElements)
@@ -131,7 +148,7 @@ public abstract partial class FormService<TEntity>
         continue;
       }
 
-      if (pendingReferencePaths?.Contains(el.Path) == true)
+      if (explicitlyProvided.Contains(el.Path) || pendingReferencePaths?.Contains(el.Path) == true)
       {
         continue;
       }
@@ -144,7 +161,6 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    var elements = await EnsureElementsAsync(ct);
     var hooks = GetHooks();
 
     var draftEntity = new TEntity();
@@ -227,11 +243,20 @@ public abstract partial class FormService<TEntity>
     HashSet<string> explicitlyProvided,
     ISet<string>? pendingReferencePaths,
     bool isEdit,
+    string? triggerField,
     CancellationToken ct)
   {
+    var hasTriggerField = !string.IsNullOrWhiteSpace(triggerField);
     foreach (var el in editableElements)
     {
-      if (isEdit && !explicitlyProvided.Contains(el.Path))
+      if (hasTriggerField)
+      {
+        if (!string.Equals(el.Path, triggerField, StringComparison.OrdinalIgnoreCase))
+        {
+          continue;
+        }
+      }
+      else if (isEdit && !explicitlyProvided.Contains(el.Path))
       {
         continue;
       }
@@ -247,6 +272,7 @@ public abstract partial class FormService<TEntity>
 
       var selectedId = (long)selectedDec;
       if (isEdit &&
+          !hasTriggerField &&
           originalValues.TryGetValue(el.Path, out var oldSrcVal) &&
           FilterNodeEvaluator.TryConvertToDecimal(oldSrcVal, out var oldSrcDec) &&
           (long)oldSrcDec == selectedId)
@@ -279,13 +305,13 @@ public abstract partial class FormService<TEntity>
 
       foreach (var patch in patches)
       {
-        if (explicitlyProvided.Contains(patch.TargetField) ||
+        if (!hasTriggerField && explicitlyProvided.Contains(patch.TargetField) ||
             pendingReferencePaths?.Contains(patch.TargetField) == true)
         {
           continue;
         }
 
-        if ((!isEdit || patch.OnlyWhenEmpty) &&
+        if ((!isEdit && !hasTriggerField || patch.OnlyWhenEmpty) &&
             values.TryGetValue(patch.TargetField, out var existingTarget) &&
             existingTarget != null &&
             !(FilterNodeEvaluator.TryConvertToDecimal(existingTarget, out var existingDec) && existingDec == 0m) &&
@@ -335,10 +361,7 @@ public abstract partial class FormService<TEntity>
 
         if (FilterNodeEvaluator.TryConvertToDecimal(patchVal, out var decVal))
         {
-          if (decVal != 0m)
-          {
-            values[patch.TargetField] = patchVal is int or long ? patchVal : decVal;
-          }
+          values[patch.TargetField] = patchVal is int or long ? patchVal : decVal;
         }
         else if (patchVal is bool bVal)
         {
@@ -386,6 +409,7 @@ public abstract partial class FormService<TEntity>
   {
     Reference r => r.Id > 0 ? r.Id : null,
     IDictionary<string, object?> d when d.TryGetValue("id", out var idObj) && FilterNodeEvaluator.TryConvertToDecimal(idObj, out var dec) && dec > 0 => (long)dec,
+    JsonElement { ValueKind: JsonValueKind.Object } je when TryGetJsonPropertyIgnoreCase(je, "id", out var idProp) && FilterNodeEvaluator.TryConvertToDecimal(idProp, out var jDec) && jDec > 0 => (long)jDec,
     _ when FilterNodeEvaluator.TryConvertToDecimal(val, out var dVal) && dVal > 0 => (long)dVal,
     _ => null
   };

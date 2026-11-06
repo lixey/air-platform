@@ -218,6 +218,14 @@ internal static class FilterNodeEvaluator
         result = (decimal)dbVal; return true;
       case float flVal and not float.NaN and not float.PositiveInfinity and not float.NegativeInfinity:
         result = (decimal)flVal; return true;
+      case JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetDecimal(out result):
+        return true;
+      case JsonElement { ValueKind: JsonValueKind.Number } jeDbl when jeDbl.TryGetDouble(out var jd) && !double.IsNaN(jd) && !double.IsInfinity(jd):
+        result = (decimal)jd; return true;
+      case JsonElement { ValueKind: JsonValueKind.String } jeStr when decimal.TryParse(jeStr.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result):
+        return true;
+      case string strVal when decimal.TryParse(strVal, NumberStyles.Any, CultureInfo.InvariantCulture, out result):
+        return true;
       default:
         result = 0; return false;
     }

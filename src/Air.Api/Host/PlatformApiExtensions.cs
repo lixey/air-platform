@@ -64,7 +64,8 @@ public static class PlatformApiExtensions
       filesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, filesPath));
     }
 
-    builder.Services.TryAddSingleton<IFileStores>(_ => new DefaultFileStores(new LocalFileStorage(filesPath)));
+    builder.Services.TryAddSingleton<IFileStorage>(_ => new LocalFileStorage(filesPath));
+    builder.Services.TryAddSingleton<IFileStores>(sp => new DefaultFileStores(sp.GetRequiredService<IFileStorage>()));
     builder.Services.TryAddScoped<IUserContext, UserContext>();
     builder.Services.TryAddScoped<PlatformAppService>();
     builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();

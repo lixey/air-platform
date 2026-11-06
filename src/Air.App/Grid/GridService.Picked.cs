@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
@@ -24,14 +26,19 @@ public abstract partial class GridService<TEntity, TRow>
     var pickerServicePath = matchedNavPicker?.ReferenceService;
     var readsParent = matchedNavPicker?.ReadsParent ?? false;
 
-    pickerServicePath ??= cols.List
+    var matchedCellPicker = cols.List
       .Select(c => c.Cell)
       .OfType<GridCellPickerModel>()
       .FirstOrDefault(p =>
         !string.IsNullOrEmpty(actionName) &&
         (string.Equals(p.Method, actionName, StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(p.Method, kebabAction, StringComparison.OrdinalIgnoreCase)))
-      ?.ReferenceService;
+         string.Equals(p.Method, kebabAction, StringComparison.OrdinalIgnoreCase)));
+
+    if (string.IsNullOrEmpty(pickerServicePath) && matchedCellPicker != null)
+    {
+      pickerServicePath = matchedCellPicker.ReferenceService;
+      readsParent = matchedCellPicker.ReadsParent;
+    }
 
     if (string.IsNullOrEmpty(pickerServicePath))
     {
@@ -45,7 +52,13 @@ public abstract partial class GridService<TEntity, TRow>
         pickerServicePath = allPickerServices[0];
         readsParent = nav.Pickers
           .FirstOrDefault(p => string.Equals(p.ReferenceService, pickerServicePath, StringComparison.OrdinalIgnoreCase))
-          ?.ReadsParent ?? false;
+          ?.ReadsParent
+          ?? cols.List
+            .Select(c => c.Cell)
+            .OfType<GridCellPickerModel>()
+            .FirstOrDefault(p => string.Equals(p.ReferenceService, pickerServicePath, StringComparison.OrdinalIgnoreCase))
+            ?.ReadsParent
+          ?? false;
       }
     }
 
@@ -59,6 +72,11 @@ public abstract partial class GridService<TEntity, TRow>
         ModuleCatalog.Instance.CreateServiceInstance(pickerType, db, PlatformApp) is not IGridService pickerGrid)
     {
       return false;
+    }
+
+    if (!readsParent)
+    {
+      readsParent = ParentScopeValidator.DeclaresParentScope(pickerType);
     }
 
     var countDto = await pickerGrid.GetCountAsync(new GridRequest

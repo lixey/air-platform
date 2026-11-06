@@ -13,7 +13,8 @@ internal static class AgentReferenceResolver
     Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
     PlatformDbContext db,
     PlatformAppService app,
-    CancellationToken ct)
+    CancellationToken ct,
+    IReadOnlyList<string>? labelPaths = null)
   {
     if (string.IsNullOrEmpty(refService))
     {
@@ -42,7 +43,7 @@ internal static class AgentReferenceResolver
 
       if (allowWrongKindFallback &&
           allDictRows.FirstOrDefault(r => TryGetRowId(r, out var rid) && rid == numId) is { } wrongKindRow &&
-          GetRowDisplayName(wrongKindRow) is { Length: > 0 } wrongName &&
+          GetRowDisplayName(wrongKindRow, labelPaths) is { Length: > 0 } wrongName &&
           await AgentContextQueryService.FindOrSearchReferenceRowAsync(
             refService,
             refFilter,
@@ -51,7 +52,8 @@ internal static class AgentReferenceResolver
             dictionaries,
             db,
             app,
-            ct) is { } sameNameMatch &&
+            ct,
+            labelPaths) is { } sameNameMatch &&
           TryGetRowId(sameNameMatch, out var correctedId))
       {
         return (correctedId, null, null);
@@ -77,7 +79,8 @@ internal static class AgentReferenceResolver
         dictionaries,
         db,
         app,
-        ct);
+        ct,
+        labelPaths);
       return matched != null && TryGetRowId(matched, out var mId)
         ? (mId, null, null)
         : (null, strVal, null);
@@ -92,7 +95,14 @@ internal static class AgentReferenceResolver
         return (objId, null, null);
       }
 
-      if (TryGetString(rawProp, "name")?.Trim() is { Length: > 0 } objName)
+      var objName = (labelPaths is { Count: > 0 }
+          ? labelPaths.Select(lp => TryGetString(rawProp, lp)?.Trim()).FirstOrDefault(s => !string.IsNullOrEmpty(s))
+          : null)
+        ?? TryGetString(rawProp, "name")?.Trim()
+        ?? TryGetString(rawProp, "title")?.Trim()
+        ?? TryGetString(rawProp, "code")?.Trim();
+
+      if (!string.IsNullOrEmpty(objName))
       {
         var matched = await AgentContextQueryService.FindOrSearchReferenceRowAsync(
           refService,
@@ -102,7 +112,8 @@ internal static class AgentReferenceResolver
           dictionaries,
           db,
           app,
-          ct);
+          ct,
+          labelPaths);
         if (matched != null && TryGetRowId(matched, out var mId))
         {
           return (mId, null, null);

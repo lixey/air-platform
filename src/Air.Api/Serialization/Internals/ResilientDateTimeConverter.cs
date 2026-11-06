@@ -17,7 +17,12 @@ internal sealed class ResilientDateTimeConverter : JsonConverter<DateTime>
         return DateTime.MinValue;
       }
 
-      if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var dt))
+      if (DateTimeOffset.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
+      {
+        return DateTime.SpecifyKind(dto.DateTime, DateTimeKind.Unspecified);
+      }
+
+      if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
       {
         return DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
       }
@@ -28,6 +33,11 @@ internal sealed class ResilientDateTimeConverter : JsonConverter<DateTime>
       }
 
       throw new JsonException($"Unable to convert \"{str}\" to {nameof(DateTime)}.");
+    }
+
+    if (reader.TryGetDateTime(out var tokenDt))
+    {
+      return DateTime.SpecifyKind(tokenDt, DateTimeKind.Unspecified);
     }
 
     throw new JsonException($"Unable to convert {reader.TokenType} to {nameof(DateTime)}.");

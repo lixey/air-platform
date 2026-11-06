@@ -239,6 +239,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
 
       _parentFlow.EnsureDeclared();
       _childFlow.EnsureDeclared();
+      await _parentFlow.LockAsync(context, parents, ct);
 
       if (_clauses.Count > 0)
       {
@@ -444,33 +445,49 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     get
     {
       EnsureDeclared();
-      return _publicTransitions
-        .Where(IsTransitionPermitted)
-        .OrderBy(t =>
-        {
-          var idx = _statuses.FindIndex(s => s.Id == t.To);
-          return idx >= 0 ? idx : int.MaxValue;
-        })
-        .Select(t => new RecordTransition
-        {
-          Name = t.Name,
-          From = t.From,
-          To = t.To,
-          Label = t.LabelText,
-          Title = t.TitleText,
-          Confirm = t.Question,
-          Ask = t.Asked,
-          Offers = t.Availability
-        })
-        .ToList();
+      return BuildRecordTransitions(_publicTransitions.Where(IsTransitionPermitted));
     }
   }
 
+  public IReadOnlyList<RecordTransition> AllTransitions
+  {
+    get
+    {
+      EnsureDeclared();
+      return BuildRecordTransitions(_publicTransitions);
+    }
+  }
+
+  private List<RecordTransition> BuildRecordTransitions(IEnumerable<Transition<TEntity>> transitions) =>
+    transitions
+      .OrderBy(t =>
+      {
+        var idx = _statuses.FindIndex(s => s.Id == t.To);
+        return idx >= 0 ? idx : int.MaxValue;
+      })
+      .Select(t => new RecordTransition
+      {
+        Name = t.Name,
+        From = t.From,
+        To = t.To,
+        Label = t.LabelText,
+        Title = t.TitleText,
+        Confirm = t.Question,
+        Ask = t.Asked,
+        Offers = t.Availability
+      })
+      .ToList();
+
   private bool IsTransitionPermitted(Transition<TEntity> transition)
   {
-    if (transition.RequiredRight is not { } reqRight || User == null || !User.IsAuthenticated)
+    if (transition.RequiredRight is not { } reqRight)
     {
       return true;
+    }
+
+    if (User is not { IsAuthenticated: true })
+    {
+      return false;
     }
 
     return User.Can(reqRight) ||
@@ -639,6 +656,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     }
 
     var userId = Db.TenantContext.UserId;
+    var moves = new List<(Move Move, long CurrentStatus)>(records.Count);
 
     foreach (var record in records)
     {
@@ -657,13 +675,29 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
 
       foreach (var (passes, refusal, path) in transition.Guards)
       {
+        var guardErrorsBefore = context.Errors.Count;
         if (!await passes(move, cancellationToken))
         {
-          context.AddError("status.guard", refusal, record.Id, path);
+          if (context.Errors.Count == guardErrorsBefore)
+          {
+            context.AddError("status.guard", refusal, record.Id, path);
+          }
+
+          return;
+        }
+
+        if (context.Errors.Count > guardErrorsBefore)
+        {
           return;
         }
       }
 
+      moves.Add((move, currentStatus));
+    }
+
+    foreach (var (move, currentStatus) in moves)
+    {
+      var record = move.Record;
       _statusSetter?.Invoke(record, transition.To);
 
       var errorsBefore = context.Errors.Count;

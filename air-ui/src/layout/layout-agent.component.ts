@@ -157,6 +157,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                   [class.bg-hover]="copiedId() === msg.id"
                   [class.text-ink]="copiedId() === msg.id"
                   [title]="copiedId() === msg.id ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
+                  [attr.aria-label]="copiedId() === msg.id ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
                   (click)="copyMessage(msg)"
                 >
                   <i class="flex scale-85 items-center justify-center" [icon]="copiedId() === msg.id ? 'checkmark' : 'copy'"></i>
@@ -165,6 +166,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                   type="button"
                   class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink"
                   [title]="texts.of('AgentReturnToInput')"
+                  [attr.aria-label]="texts.of('AgentReturnToInput')"
                   (click)="returnToInput(msg.text)"
                 >
                   <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
@@ -174,6 +176,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                 type="button"
                 class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
                 [title]="texts.of('AgentRetryMessage')"
+                [attr.aria-label]="texts.of('AgentRetryMessage')"
                 [disabled]="agent.isStreaming()"
                 (click)="agent.retryMessage(msg.id)"
               >
@@ -285,7 +288,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                           <div class="min-w-0 flex-1">
                             <div class="truncate text-ink" [title]="line.name">{{ line.name }}</div>
                             <div class="text-[11px] text-muted">
-                              {{ line.qty | number: '1.0-3' }} × {{ line.price | number: '1.2-2' }}
+                              {{ line.qty | number: '1.0-4' }} × {{ line.price | number: '1.2-4' }}
                               @if (line.category) {
                                 <span>· {{ line.category }}</span>
                               }
@@ -295,7 +298,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                             </div>
                           </div>
                           <div class="shrink-0 font-medium tabular-nums text-ink">
-                            {{ line.amount | number: '1.2-2' }}
+                            {{ line.amount | number: '1.2-4' }}
                           </div>
                         </div>
                       }
@@ -349,6 +352,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                     [class.bg-hover]="copiedId() === msg.id"
                     [class.text-ink]="copiedId() === msg.id"
                     [title]="copiedId() === msg.id ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
+                    [attr.aria-label]="copiedId() === msg.id ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
                     (click)="copyMessage(msg)"
                   >
                     <i class="flex scale-85 items-center justify-center" [icon]="copiedId() === msg.id ? 'checkmark' : 'copy'"></i>
@@ -357,6 +361,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                     type="button"
                     class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-ink"
                     [title]="texts.of('AgentReturnToInput')"
+                    [attr.aria-label]="texts.of('AgentReturnToInput')"
                     (click)="returnToInput(msg.text)"
                   >
                     <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
@@ -366,6 +371,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                   type="button"
                   class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
                   [title]="texts.of('AgentRetryMessage')"
+                  [attr.aria-label]="texts.of('AgentRetryMessage')"
                   [disabled]="agent.isStreaming()"
                   (click)="agent.retryMessage(msg.id)"
                 >
@@ -404,6 +410,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                 type="button"
                 class="absolute top-0.5 right-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-surface/90 text-ink hover:bg-red-500 hover:text-white"
                 [title]="texts.of('Delete')"
+                [attr.aria-label]="texts.of('Delete')"
                 (click)="agent.removePendingAttachment(att.id)"
               >
                 <i class="flex items-center justify-center" [icon]="'close'"></i>

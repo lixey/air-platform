@@ -73,14 +73,127 @@ public class PlatformAppService(
       return false;
     }
 
-    var grants = await (
-      from g in grantsSet.IgnoreQueryFilters().AsNoTracking()
-      join r in rolesSet.IgnoreQueryFilters().AsNoTracking() on g.AuthRoleId equals r.Id
+    var usersSet = db.SetOfBase<BaseAppUser>();
+    var targetIsRoot = await IsRootUserAsync(usersSet, targetUserId, ct);
+    var actorId = user?.UserId ?? db.TenantContext.UserId;
+    var actorIsRoot = await IsRootUserAsync(usersSet, actorId, ct);
+    if (targetIsRoot && !actorIsRoot)
+    {
+      return false;
+    }
+
+    var targetRoles = await (
+      from r in rolesSet.IgnoreQueryFilters().AsNoTracking()
       join a in assignmentsSet.IgnoreQueryFilters().AsNoTracking() on r.Id equals a.AuthRoleId
       where a.UserId == targetUserId && a.IsActive && r.IsActive
-      select g.Permission
-    ).Distinct().ToListAsync(ct);
+      select new { r.Id, r.TenantId }
+    ).ToListAsync(ct);
 
+    if (!await ActorCoversRoleTenantsAsync(db, rolesSet, assignmentsSet, actorId, actorIsRoot, targetRoles.Select(r => r.TenantId), ct))
+    {
+      return false;
+    }
+
+    if (targetRoles.Count == 0)
+    {
+      return true;
+    }
+
+    var targetRoleIds = targetRoles.Select(r => r.Id).ToList();
+    var grants = await grantsSet.IgnoreQueryFilters().AsNoTracking()
+      .Where(g => targetRoleIds.Contains(g.AuthRoleId))
+      .Select(g => g.Permission)
+      .Distinct()
+      .ToListAsync(ct);
+
+    return CoversGrants(db, app, user, grants);
+  }
+
+  /// <summary>
+  /// Whether the principal's held permissions and tenant scope cover the specified role.
+  /// </summary>
+  public static async Task<bool> CoversRoleGrantsAsync(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    IUserContext? user,
+    long roleId,
+    CancellationToken ct = default)
+  {
+    if (db.SetOfBase<BaseAppAuthGrant>() is not { } grantsSet ||
+        db.SetOfBase<BaseAppAuthRole>() is not { } rolesSet)
+    {
+      return false;
+    }
+
+    var role = await rolesSet.IgnoreQueryFilters().AsNoTracking()
+      .Where(r => r.Id == roleId)
+      .Select(r => new { r.Id, r.TenantId })
+      .FirstOrDefaultAsync(ct);
+    if (role == null)
+    {
+      return true;
+    }
+
+    var actorId = user?.UserId ?? db.TenantContext.UserId;
+    var actorIsRoot = await IsRootUserAsync(db.SetOfBase<BaseAppUser>(), actorId, ct);
+    if (!await ActorCoversRoleTenantsAsync(db, rolesSet, db.SetOfBase<BaseAppAuthAssignment>(), actorId, actorIsRoot, [role.TenantId], ct))
+    {
+      return false;
+    }
+
+    var grants = await grantsSet.IgnoreQueryFilters().AsNoTracking()
+      .Where(g => g.AuthRoleId == roleId)
+      .Select(g => g.Permission)
+      .Distinct()
+      .ToListAsync(ct);
+
+    return CoversGrants(db, app, user, grants);
+  }
+
+  private static async Task<bool> IsRootUserAsync(IQueryable<BaseAppUser>? usersSet, long? userId, CancellationToken ct) =>
+    userId is > 0 && usersSet != null && await usersSet.IgnoreQueryFilters().AsNoTracking()
+      .Where(u => u.Id == userId.Value)
+      .Select(u => u.IsRoot)
+      .FirstOrDefaultAsync(ct);
+
+  private static async Task<bool> ActorCoversRoleTenantsAsync(
+    PlatformDbContext db,
+    IQueryable<BaseAppAuthRole> rolesSet,
+    IQueryable<BaseAppAuthAssignment>? assignmentsSet,
+    long? actorId,
+    bool actorIsRoot,
+    IEnumerable<long?> targetTenantIds,
+    CancellationToken ct)
+  {
+    if (actorIsRoot || db.TenantContext.IsSystemScope)
+    {
+      return true;
+    }
+
+    var actorRoles = actorId is > 0 && assignmentsSet != null
+      ? await (
+          from r in rolesSet.IgnoreQueryFilters().AsNoTracking()
+          join a in assignmentsSet.IgnoreQueryFilters().AsNoTracking() on r.Id equals a.AuthRoleId
+          where a.UserId == actorId.Value && a.IsActive && r.IsActive
+          select r.TenantId
+        ).ToListAsync(ct)
+      : [];
+    if (actorRoles.Any(tid => tid == null))
+    {
+      return true;
+    }
+
+    var actorTenantSet = actorRoles.Where(tid => tid != null).Select(tid => tid!.Value).ToHashSet();
+    if (db.TenantContext.TenantId is { } currentTid)
+    {
+      actorTenantSet.Add(currentTid);
+    }
+
+    return targetTenantIds.All(tid => tid != null && actorTenantSet.Contains(tid.Value));
+  }
+
+  private static bool CoversGrants(PlatformDbContext db, PlatformAppService? app, IUserContext? user, List<string> grants)
+  {
     if (app != null)
     {
       return app.Covers(grants);
@@ -97,7 +210,8 @@ public class PlatformAppService(
     PlatformDbContext db,
     IReadOnlyCollection<long> userIds,
     string reason,
-    CancellationToken ct = default)
+    CancellationToken ct = default,
+    PlatformAppService? app = null)
   {
     if (userIds.Count == 0 || db.SetOfBase<BaseAppAuthSession>() is not { } sessionsSet)
     {
@@ -114,6 +228,19 @@ public class PlatformAppService(
       session.RevokedAt = now;
       session.RevokedReason = reason;
     }
+
+    if (app?.AuthCache is { } cache)
+    {
+      foreach (var session in sessions)
+      {
+        await cache.RemoveSessionAsync(session.Id, ct);
+      }
+
+      foreach (var uid in userIds)
+      {
+        await cache.RemoveUserAsync(uid, ct);
+      }
+    }
   }
 
   /// <summary>
@@ -121,8 +248,10 @@ public class PlatformAppService(
   /// </summary>
   public bool CanOpen(Type screen)
   {
-    var feat = Feature.FeaturesByServiceType.TryGetValue(screen, out var f) ? f : null;
-    return feat == null || User.Can(feat.View);
+    var feat = Feature.FeaturesByServiceType.TryGetValue(screen, out var f)
+      ? f
+      : ModuleCatalog.Instance.FindFeature(ServicePathResolver.Resolve(screen));
+    return feat == null || Host.ServiceEndpointsExtensions.CanView(feat, User);
   }
 
   /// <summary>

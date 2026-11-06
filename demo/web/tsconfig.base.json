@@ -14,7 +14,7 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "preserveSymlinks": true,
-    "strict": false,
+    "strict": true,
     "paths": {
       "@air-ui/*": ["./libs/air-ui/src/*"]
     }

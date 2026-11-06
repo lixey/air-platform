@@ -116,7 +116,8 @@ public static class AgentProposalExecutor
                 refDefaults[k] = v;
               }
 
-              refDefaults["name"] = pendingRef.Name;
+              var primaryTextPath = ResolvePrimaryTextFieldPath(refEls);
+              refDefaults[primaryTextPath] = pendingRef.Name;
 
               var refJson = JsonSerializer.SerializeToElement(refDefaults, WebJson);
               object refSaved;
@@ -165,14 +166,15 @@ public static class AgentProposalExecutor
           throw new InvalidOperationException(L["MutationRefused"]);
         }
 
-        var (formElements, children) = await formInst.GetElementsMetadataAsync(mutationCt);
-
         var ver = payload.Ver;
-        if (isEdit && !ver.HasValue)
+        if (isEdit)
         {
+          formInst.SetRequest(new FormRequest { Id = payload.RecordId });
           var existingEntity = await formInst.LoadParentRecordAsync(payload.RecordId!.Value, mutationCt);
-          ver = (existingEntity as IHasVersion)?.Ver;
+          ver ??= (existingEntity as IHasVersion)?.Ver;
         }
+
+        var (formElements, children) = await formInst.GetElementsMetadataAsync(mutationCt);
 
         var valueJson = JsonSerializer.SerializeToElement(payload.Values, WebJson);
         object saveResult;
@@ -203,77 +205,118 @@ public static class AgentProposalExecutor
           var childFormType = ModuleCatalog.Instance.FindServiceType(payload.ChildFormService);
           if (childFormType != null)
           {
+            if (ModuleCatalog.Instance.CreateServiceInstance(childFormType, db, app) is not IFormService metaChildForm ||
+                metaChildForm.Feature.IsReadOnly ||
+                !AgentFeatureRegistry.CanEditFeature(metaChildForm.Feature, app))
+            {
+              throw new InvalidOperationException(L["MutationRefused"]);
+            }
+
+            metaChildForm.SetRequest(new FormRequest
+            {
+              ParentService = formInst.Service,
+              ParentId = recordId
+            });
+            var (childElements, _) = await metaChildForm.GetElementsMetadataAsync(mutationCt);
+            var hasSortOrderField = childElements.Any(e => string.Equals(e.Path, "sortOrder", StringComparison.OrdinalIgnoreCase));
+            var childPrimaryTextKey = ResolvePrimaryTextFieldPath(childElements);
+
             var sortOrder = 0;
             IGridService? childGrid = null;
             var existingLineIds = new List<long>();
             var isAppendLines = string.Equals(payload.LinesMode, "append", StringComparison.OrdinalIgnoreCase);
 
-            if (isEdit)
+            var resolvedChildLine = AgentFeatureRegistry.ResolveEditableChildLineGrid(children, db, app);
+            if (resolvedChildLine is { } childInfo)
             {
-              var lineChild = children.FirstOrDefault(c => !c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType));
-              if (lineChild?.ServiceType != null &&
-                  ModuleCatalog.Instance.CreateServiceInstance(lineChild.ServiceType, db, app) is IGridService cg)
+              childGrid = childInfo.ChildGrid;
+            }
+            else
+            {
+              var fallbackLineChild = children.FirstOrDefault(c =>
+                !c.IsFiles && !c.IsReadOnly && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType));
+              if (fallbackLineChild?.ServiceType != null &&
+                  ModuleCatalog.Instance.CreateServiceInstance(fallbackLineChild.ServiceType, db, app) is IGridService cg)
               {
-                childGrid = cg;
-                var existingPage = await childGrid.GetDataAsync(new GridRequest
+                if (cg.Feature.IsReadOnly ||
+                    !AgentFeatureRegistry.CanViewFeature(cg.Feature, app) ||
+                    !AgentFeatureRegistry.CanEditFeature(cg.Feature, app))
                 {
-                  ParentId = recordId,
-                  Page = 0,
-                  PageSize = 500,
-                  IsDataOnly = true
-                }, mutationCt);
-
-                var maxSortOrder = 0;
-                foreach (var rowObj in existingPage.Rows)
-                {
-                  if (rowObj is IDictionary<string, object?> rowDict)
-                  {
-                    if (rowDict.TryGetValue("id", out var idObj) &&
-                        TryConvertToLong(idObj, out var lid) &&
-                        lid > 0)
-                    {
-                      existingLineIds.Add(lid);
-                    }
-
-                    if (rowDict.TryGetValue("sortOrder", out var soObj) &&
-                        TryConvertToLong(soObj, out var soVal) &&
-                        soVal > maxSortOrder)
-                    {
-                      maxSortOrder = (int)soVal;
-                    }
-                  }
+                  throw new InvalidOperationException(L["MutationRefused"]);
                 }
 
-                if (isAppendLines)
+                childGrid = cg;
+              }
+            }
+
+            if (isEdit && childGrid != null)
+            {
+              var existingPage = await childGrid.GetDataAsync(new GridRequest
+              {
+                ParentId = recordId,
+                Page = 0,
+                PageSize = 500,
+                IsDataOnly = true
+              }, mutationCt);
+
+              var maxSortOrder = 0;
+              foreach (var rowObj in existingPage.Rows)
+              {
+                if (rowObj is IDictionary<string, object?> rowDict)
                 {
-                  sortOrder = Math.Max(existingLineIds.Count, maxSortOrder);
+                  if (rowDict.TryGetValue("id", out var idObj) &&
+                      TryConvertToLong(idObj, out var lid) &&
+                      lid > 0)
+                  {
+                    existingLineIds.Add(lid);
+                  }
+
+                  if (rowDict.TryGetValue("sortOrder", out var soObj) &&
+                      TryConvertToLong(soObj, out var soVal) &&
+                      soVal > maxSortOrder)
+                  {
+                    maxSortOrder = (int)soVal;
+                  }
+                }
+              }
+
+              if (isAppendLines)
+              {
+                sortOrder = Math.Max(existingLineIds.Count, maxSortOrder);
+              }
+            }
+
+            var updatedLineIds = new HashSet<long>();
+            if (isEdit)
+            {
+              foreach (var lineDict in payload.Lines)
+              {
+                if (lineDict.TryGetValue("id", out var lidObj) &&
+                    TryConvertToLong(lidObj, out var parsedLid) &&
+                    parsedLid > 0 &&
+                    existingLineIds.Contains(parsedLid))
+                {
+                  updatedLineIds.Add(parsedLid);
                 }
               }
             }
 
-            if (isEdit && !isAppendLines && childGrid != null && existingLineIds.Count > 0)
+            if (isEdit && !isAppendLines && childGrid != null)
             {
-              if (childGrid.AllowsMultiDelete || existingLineIds.Count <= 1)
+              var idsToDelete = existingLineIds.Where(id => !updatedLineIds.Contains(id)).ToList();
+              if (idsToDelete.Count > 0)
               {
-                var delRes = await childGrid.DeleteAsync(new GridRequest
+                if (!childGrid.CanDelete())
                 {
-                  ParentId = recordId,
-                  SelectedIds = existingLineIds
-                }, mutationCt);
-                if (delRes.Outcome != MutationOutcome.Committed)
-                {
-                  var delErr = delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
-                  throw new InvalidOperationException(delErr);
+                  throw new InvalidOperationException(L["MutationRefused"]);
                 }
-              }
-              else
-              {
-                foreach (var lineId in existingLineIds)
+
+                if (childGrid.AllowsMultiDelete || idsToDelete.Count <= 1)
                 {
                   var delRes = await childGrid.DeleteAsync(new GridRequest
                   {
                     ParentId = recordId,
-                    SelectedIds = [lineId]
+                    SelectedIds = idsToDelete
                   }, mutationCt);
                   if (delRes.Outcome != MutationOutcome.Committed)
                   {
@@ -281,19 +324,29 @@ public static class AgentProposalExecutor
                     throw new InvalidOperationException(delErr);
                   }
                 }
+                else
+                {
+                  foreach (var lineId in idsToDelete)
+                  {
+                    var delRes = await childGrid.DeleteAsync(new GridRequest
+                    {
+                      ParentId = recordId,
+                      SelectedIds = [lineId]
+                    }, mutationCt);
+                    if (delRes.Outcome != MutationOutcome.Committed)
+                    {
+                      var delErr = delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
+                      throw new InvalidOperationException(delErr);
+                    }
+                  }
+                }
               }
-            }
-
-            IReadOnlyList<FormElementDto> childElements = [];
-            if (ModuleCatalog.Instance.CreateServiceInstance(childFormType, db, app) is IFormService metaChildForm)
-            {
-              (childElements, _) = await metaChildForm.GetElementsMetadataAsync(mutationCt);
             }
 
             foreach (var lineDict in payload.Lines)
             {
               sortOrder++;
-              if (!lineDict.ContainsKey("sortOrder") || isAppendLines)
+              if (hasSortOrderField && (!lineDict.ContainsKey("sortOrder") || isAppendLines))
               {
                 lineDict["sortOrder"] = sortOrder;
               }
@@ -309,6 +362,13 @@ public static class AgentProposalExecutor
                 }
               }
 
+              long? existingLineId = isEdit &&
+                                     lineDict.TryGetValue("id", out var lineIdObj) &&
+                                     TryConvertToLong(lineIdObj, out var parsedLineId) &&
+                                     parsedLineId > 0
+                ? parsedLineId
+                : null;
+
               if (ModuleCatalog.Instance.CreateServiceInstance(childFormType, db, app) is IFormService childFormInst)
               {
                 var lineJson = JsonSerializer.SerializeToElement(lineDict, WebJson);
@@ -316,20 +376,21 @@ public static class AgentProposalExecutor
                 {
                   var savedLine = await childFormInst.SaveAsync(lineJson, new FormRequest
                   {
+                    Id = existingLineId,
                     ParentService = formInst.Service,
                     ParentId = recordId,
                     Value = lineJson
                   }, mutationCt);
                   if (!TryExtractSavedId(savedLine, out _))
                   {
-                    var lineName = lineDict.TryGetValue("name", out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
+                    var lineName = lineDict.TryGetValue(childPrimaryTextKey, out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
                     var lineErr = (savedLine as FormDataDto)?.Warnings?.FirstOrDefault()?.Detail ?? L["MutationRefused"];
                     throw new InvalidOperationException($"{lineName}: {lineErr}");
                   }
                 }
                 catch (FormRefusedException refusedEx)
                 {
-                  var lineName = lineDict.TryGetValue("name", out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
+                  var lineName = lineDict.TryGetValue(childPrimaryTextKey, out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
                   throw new InvalidOperationException(FormatRefusedException(refusedEx, childElements, lineName), refusedEx);
                 }
               }
@@ -357,11 +418,20 @@ public static class AgentProposalExecutor
         }
 
         var recordLabel = $"#{recordId}";
-        if (payload.Values.TryGetValue("name", out var nameObj) && nameObj is JsonElement { ValueKind: JsonValueKind.String } nameEl && !string.IsNullOrWhiteSpace(nameEl.GetString()))
+        var caption = formInst.GetRecordCaption(saveResult, recordId);
+        var genericCaption = L.For(formInst.Feature.Module)["FormRecord", formInst.GetTitle(), recordId];
+        var primaryTextKey = ResolvePrimaryTextFieldPath(formElements);
+        if (!string.IsNullOrWhiteSpace(caption) && !string.Equals(caption, genericCaption, StringComparison.Ordinal))
+        {
+          recordLabel = caption.Contains($"#{recordId}", StringComparison.Ordinal)
+            ? caption
+            : $"{caption} (#{recordId})";
+        }
+        else if (payload.Values.TryGetValue(primaryTextKey, out var nameObj) && nameObj is JsonElement { ValueKind: JsonValueKind.String } nameEl && !string.IsNullOrWhiteSpace(nameEl.GetString()))
         {
           recordLabel = $"{nameEl.GetString()} (#{recordId})";
         }
-        else if (payload.Values.TryGetValue("name", out var nameStrObj) && nameStrObj is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
+        else if (payload.Values.TryGetValue(primaryTextKey, out var nameStrObj) && nameStrObj is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
         {
           recordLabel = $"{nameStr} (#{recordId})";
         }

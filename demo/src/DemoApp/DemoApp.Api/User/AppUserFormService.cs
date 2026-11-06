@@ -3,8 +3,6 @@ namespace DemoApp.User;
 public class AppUserFormService(AppDbContext db, AppService? app = null)
   : AppFormService<AppUser>(db, app)
 {
-  private HashSet<long> _offered = [];
-
   public override Feature Feature => App.User;
 
   protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
@@ -22,19 +20,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
     elements.Add(e => e.MustChangePassword).AsCheckbox();
 
     elements.AddTab("Roles");
-    var roles = await db.Set<AppAuthRole>().Where(r => r.IsActive).OrderBy(r => r.SortOrder)
-      .Select(r => new
-      {
-        r.Id,
-        r.Name,
-        Grants = db.Set<AppAuthGrant>().Where(g => g.AuthRoleId == r.Id).Select(g => g.Permission).ToList()
-      })
-      .ToListAsync(cancellationToken);
-    var offered = roles
-      .Where(r => app == null || app.Covers(r.Grants))
-      .Select(r => new OptionDto { Id = r.Id, Name = L[r.Name] })
-      .ToList();
-    _offered = [.. offered.Select(r => r.Id)];
+    var offered = await GetOfferedRolesAsync(cancellationToken);
     elements.Add(e => e.RoleIds).InputOnly().AsCheckboxSet(offered);
 
     elements.AddChild<AppSessionGridService>().Key("sessions").Label("Sessions");
@@ -76,8 +62,9 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         return;
       }
 
+      var offeredIds = await GetOfferedRoleIdsAsync(cancellationToken);
       c.Entity.RoleIds = await db.Set<AppAuthAssignment>()
-        .Where(r => r.UserId == c.Entity.Id && r.IsActive && _offered.Contains(r.AuthRoleId))
+        .Where(r => r.UserId == c.Entity.Id && r.IsActive && offeredIds.Contains(r.AuthRoleId))
         .Select(r => r.AuthRoleId)
         .ToArrayAsync(cancellationToken);
     });
@@ -90,6 +77,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
         return;
       }
 
+      var offeredIds = await GetOfferedRoleIdsAsync(cancellationToken);
       if (c.Entity.Id == 1 || c.Entity.IsRoot)
       {
         if (User?.UserId is long actorId && actorId != c.Entity.Id)
@@ -111,11 +99,11 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
           return;
         }
 
-        var selectedRoles = (c.Entity.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
+        var selectedRoles = (c.Entity.RoleIds ?? []).Where(offeredIds.Contains).ToHashSet();
         var hasAdminRole = await db.Set<AppAuthGrant>()
           .AnyAsync(g => g.Permission == "*" && (
             selectedRoles.Contains(g.AuthRoleId) ||
-            db.Set<AppAuthAssignment>().Any(a => a.UserId == c.Entity.Id && a.IsActive && !_offered.Contains(a.AuthRoleId) && a.AuthRoleId == g.AuthRoleId)),
+            db.Set<AppAuthAssignment>().Any(a => a.UserId == c.Entity.Id && a.IsActive && !offeredIds.Contains(a.AuthRoleId) && a.AuthRoleId == g.AuthRoleId)),
             cancellationToken);
         if (!hasAdminRole)
         {
@@ -132,16 +120,17 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       if (!c.IsNew && c.Changed(e => e.Login, e => e.IsActive, e => e.MustChangePassword, e => e.Password, e => e.RoleIds))
       {
         c.Entity.TokenVersion++;
-        await PlatformAppService.RevokeUserSessionsAsync(db, [c.Entity.Id], "app-user-security-changed", cancellationToken);
+        await PlatformAppService.RevokeUserSessionsAsync(db, [c.Entity.Id], "app-user-security-changed", cancellationToken, app);
       }
     });
 
     hooks.AfterSave(async (c, cancellationToken) =>
     {
+      var offeredIds = await GetOfferedRoleIdsAsync(cancellationToken);
       var assignments = await db.Set<AppAuthAssignment>()
-        .Where(r => r.UserId == c.Entity.Id && _offered.Contains(r.AuthRoleId))
+        .Where(r => r.UserId == c.Entity.Id && offeredIds.Contains(r.AuthRoleId))
         .ToListAsync(cancellationToken);
-      var roles = (c.Entity.RoleIds ?? []).Where(_offered.Contains).ToHashSet();
+      var roles = (c.Entity.RoleIds ?? []).Where(offeredIds.Contains).ToHashSet();
       foreach (var assignment in assignments)
       {
         assignment.IsActive = roles.Contains(assignment.AuthRoleId);
@@ -153,5 +142,24 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       }
     });
   }
+
+  private async Task<List<OptionDto>> GetOfferedRolesAsync(CancellationToken cancellationToken)
+  {
+    var roles = await db.Set<AppAuthRole>().Where(r => r.IsActive).OrderBy(r => r.SortOrder)
+      .Select(r => new
+      {
+        r.Id,
+        r.Name,
+        Grants = db.Set<AppAuthGrant>().Where(g => g.AuthRoleId == r.Id).Select(g => g.Permission).ToList()
+      })
+      .ToListAsync(cancellationToken);
+    return roles
+      .Where(r => app == null || app.Covers(r.Grants))
+      .Select(r => new OptionDto { Id = r.Id, Name = L[r.Name] })
+      .ToList();
+  }
+
+  private async Task<HashSet<long>> GetOfferedRoleIdsAsync(CancellationToken cancellationToken) =>
+    [.. (await GetOfferedRolesAsync(cancellationToken)).Select(r => r.Id)];
 }
 

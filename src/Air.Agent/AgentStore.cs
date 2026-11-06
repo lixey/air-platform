@@ -18,6 +18,8 @@ public sealed class AgentStore
   private readonly ConcurrentDictionary<string, OwnedAttachment> _attachments = new(StringComparer.OrdinalIgnoreCase);
   private readonly ConcurrentDictionary<string, OwnedProposal> _proposals = new(StringComparer.OrdinalIgnoreCase);
   private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.OrdinalIgnoreCase);
+  private readonly SemaphoreSlim _seedLock = new(1, 1);
+  private bool _catalogsSeeded;
   private long _lastCleanupTicks = DateTimeOffset.UtcNow.UtcTicks;
 
   public string WorkspaceDirectory { get; }
@@ -30,37 +32,68 @@ public sealed class AgentStore
     CleanupStaleDiskFiles();
   }
 
+  public async Task EnsureCatalogsSeededAsync(PlatformDbContext db, string? domainKnowledge, CancellationToken ct = default)
+  {
+    if (_catalogsSeeded)
+    {
+      return;
+    }
+
+    await _seedLock.WaitAsync(ct);
+    try
+    {
+      if (_catalogsSeeded)
+      {
+        return;
+      }
+
+      await AgentModelCatalog.EnsureSeededAsync(db, ct);
+      await AgentMemoryCatalog.EnsureSeededAsync(db, domainKnowledge, ct);
+      _catalogsSeeded = true;
+    }
+    finally
+    {
+      _seedLock.Release();
+    }
+  }
+
+  private static readonly HashSet<string> AllowedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
+  {
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".pdf", ".txt", ".csv", ".json", ".xml", ".md"
+  };
+
+  private static readonly HashSet<string> BlockedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
+  {
+    ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".msi", ".com", ".scr", ".vbs", ".js"
+  };
+
+  private const long MaxAttachmentSizeBytes = 25 * 1024 * 1024;
+
   public static AgentOwnerScope ResolveOwner(IServiceProvider services)
   {
     var tenant = services.GetService<ITenantContext>() ?? AsyncLocalTenantContext.Instance;
     var user = services.GetService<IUserContext>();
-    var tenantId = tenant?.TenantId ?? 1;
+    var tenantId = tenant?.TenantId;
     var userId = user is { IsAuthenticated: true } ? user.UserId : tenant?.UserId;
     return new AgentOwnerScope(tenantId, userId);
   }
 
-  private static bool MatchesOwner(AgentOwnerScope entryOwner, AgentOwnerScope caller)
-  {
-    if (entryOwner.TenantId != caller.TenantId)
-    {
-      return false;
-    }
-
-    if (entryOwner.UserId.HasValue && caller.UserId.HasValue && entryOwner.UserId.Value != caller.UserId.Value)
-    {
-      return false;
-    }
-
-    if (entryOwner.UserId.HasValue && !caller.UserId.HasValue)
-    {
-      return false;
-    }
-
-    return true;
-  }
+  private static bool MatchesOwner(AgentOwnerScope entryOwner, AgentOwnerScope caller) =>
+    entryOwner.TenantId == caller.TenantId && entryOwner.UserId == caller.UserId;
 
   private static string SessionKey(AgentOwnerScope owner, string sessionId) =>
-    $"{owner.TenantId}:{owner.UserId ?? 0}:{sessionId}";
+    $"{owner.TenantId ?? 0}:{owner.UserId ?? 0}:{sessionId}";
+
+  public string GetSessionWorkspaceDirectory(AgentOwnerScope owner, string? sessionId) =>
+    GetSessionWorkspaceDirectory(WorkspaceDirectory, owner, sessionId);
+
+  public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId)
+  {
+    var safeSessionId = NormalizeSessionId(sessionId);
+    var dir = Path.Combine(workspaceDirectory, $"t_{owner.TenantId ?? 0}", $"u_{owner.UserId ?? 0}", safeSessionId);
+    Directory.CreateDirectory(dir);
+    return dir;
+  }
 
   public static bool IsValidSessionId(string? sessionId)
   {
@@ -94,34 +127,62 @@ public sealed class AgentStore
 
     var id = Guid.NewGuid().ToString("N")[..12];
     var ext = Path.GetExtension(fileName);
-    if (string.IsNullOrWhiteSpace(ext))
+    if (!string.IsNullOrWhiteSpace(ext) && BlockedAttachmentExtensions.Contains(ext))
+    {
+      throw new InvalidOperationException(Localizer.Instance["FileTypeRefused"]);
+    }
+
+    if (string.IsNullOrWhiteSpace(ext) || !AllowedAttachmentExtensions.Contains(ext))
     {
       ext = contentType switch
       {
         "image/png" => ".png",
         "image/webp" => ".webp",
+        "image/gif" => ".gif",
+        "application/pdf" => ".pdf",
+        "text/plain" => ".txt",
+        "text/csv" => ".csv",
+        "application/json" => ".json",
         _ => ".jpg"
       };
     }
 
+    if (content.CanSeek && content.Length > MaxAttachmentSizeBytes)
+    {
+      throw new InvalidOperationException(Localizer.Instance["FileTooLarge"]);
+    }
+
     var safeFileName = $"attachment-{id}{ext}";
-    var dir = Path.Combine(WorkspaceDirectory, "uploads");
+    var dir = Path.Combine(WorkspaceDirectory, $"t_{owner.TenantId ?? 0}", $"u_{owner.UserId ?? 0}", "uploads");
     Directory.CreateDirectory(dir);
     var localPath = Path.Combine(dir, safeFileName);
 
     await using (var fs = File.Create(localPath))
     {
       await content.CopyToAsync(fs, ct);
+      if (fs.Length > MaxAttachmentSizeBytes)
+      {
+        fs.Close();
+        TryDeleteFile(localPath);
+        throw new InvalidOperationException(Localizer.Instance["FileTooLarge"]);
+      }
     }
 
-    var fileBytes = await File.ReadAllBytesAsync(localPath, ct);
-    var sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(fileBytes));
+    long fileSize;
+    string sha256;
+    await using (var readFs = File.OpenRead(localPath))
+    {
+      fileSize = readFs.Length;
+      var hashBytes = await SHA256.HashDataAsync(readFs, ct);
+      sha256 = Convert.ToHexStringLower(hashBytes);
+    }
+
     var dto = new AgentAttachmentDto
     {
       Id = id,
-      FileName = string.IsNullOrWhiteSpace(fileName) ? safeFileName : fileName,
+      FileName = string.IsNullOrWhiteSpace(fileName) ? safeFileName : Path.GetFileName(fileName),
       ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
-      Size = fileBytes.LongLength,
+      Size = fileSize,
       PreviewUrl = $"/api/agent/attachments/{id}",
       LocalPath = localPath,
       Sha256 = sha256
@@ -294,7 +355,7 @@ public sealed class AgentStore
   }
 
   public static string GetContextFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
-    Path.Combine(workspaceDirectory, $"context-{owner.TenantId}-{owner.UserId ?? 0}-{NormalizeSessionId(sessionId)}.json");
+    Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"context-{NormalizeSessionId(sessionId)}.json");
 
   private void CleanupStaleDiskFiles()
   {
@@ -302,32 +363,12 @@ public sealed class AgentStore
 
     try
     {
-      if (Directory.Exists(WorkspaceDirectory))
-      {
-        foreach (var file in Directory.GetFiles(WorkspaceDirectory, "context-*.json"))
-        {
-          try
-          {
-            if (File.GetLastWriteTimeUtc(file) < cutoff)
-            {
-              File.Delete(file);
-            }
-          }
-          catch { }
-        }
-      }
-    }
-    catch { }
-
-    try
-    {
-      var dir = Path.Combine(WorkspaceDirectory, "uploads");
-      if (!Directory.Exists(dir))
+      if (!Directory.Exists(WorkspaceDirectory))
       {
         return;
       }
 
-      foreach (var file in Directory.GetFiles(dir))
+      foreach (var file in Directory.EnumerateFiles(WorkspaceDirectory, "*", SearchOption.AllDirectories))
       {
         try
         {

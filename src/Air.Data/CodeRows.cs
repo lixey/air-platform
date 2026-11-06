@@ -67,6 +67,7 @@ public static partial class CodeRows
 
     if (db.ChangeTracker.HasChanges())
     {
+      using var _ = (db as PlatformDbContext)?.SuppressAuditScope();
       var isSqlServer = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
       var entityType = db.Model.FindEntityType(typeof(TEntity));
       var idProp = entityType?.FindPrimaryKey()?.Properties.FirstOrDefault();

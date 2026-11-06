@@ -171,6 +171,9 @@ public sealed class AgentProposalAndSecurityTests : IDisposable
     var scopeB = bridge.BeginTurn(2, 20, new HashSet<string>(["B"]), "sess-b");
 
     Assert.Equal(10, bridge.GetContext("sess-a")?.UserId);
+    Assert.Equal(10, bridge.GetContext("sess-a", tenantId: 1, userId: 10)?.UserId);
+    Assert.Null(bridge.GetContext("sess-a", tenantId: 2, userId: 10));
+    Assert.Null(bridge.GetContext("sess-a", tenantId: 1, userId: 20));
     Assert.Equal(20, bridge.GetContext("sess-b")?.UserId);
     Assert.Null(bridge.GetContext("sess-unknown"));
 
@@ -185,5 +188,42 @@ public sealed class AgentProposalAndSecurityTests : IDisposable
     Assert.False(AgentStore.IsValidSessionId("../escape"));
     var normalized = AgentStore.NormalizeSessionId("../escape");
     Assert.True(AgentStore.IsValidSessionId(normalized));
+
+    var store = new AgentStore();
+    var dirA = store.GetSessionWorkspaceDirectory(new AgentOwnerScope(1, 10), "sess-a");
+    var dirB = store.GetSessionWorkspaceDirectory(new AgentOwnerScope(1, 20), "sess-a");
+    var dirTenant2 = store.GetSessionWorkspaceDirectory(new AgentOwnerScope(2, 10), "sess-a");
+    Assert.NotEqual(dirA, dirB);
+    Assert.NotEqual(dirA, dirTenant2);
+    Assert.Contains(Path.Combine("t_1", "u_10", "sess-a"), dirA, StringComparison.OrdinalIgnoreCase);
+
+    store.StageProposal(new AgentProposalDto { Id = "p-null-user", SessionId = "sess-a", Title = "Global" }, new AgentOwnerScope(1, null));
+    Assert.Null(store.GetProposal("p-null-user", new AgentOwnerScope(1, 10)));
+    Assert.NotNull(store.GetProposal("p-null-user", new AgentOwnerScope(1, null)));
+  }
+
+  [Fact]
+  public async Task StageProposalAsync_DoesNotBlindlySubstituteFirstDictionaryRecord_WhenReferenceNotProvided()
+  {
+    var (services, db, _) = CreateTestServices();
+    using (db.BeginMutationRun())
+    {
+      db.Categories.Add(new AgentTestCategory { Name = "FirstCat" });
+      db.Categories.Add(new AgentTestCategory { Name = "SecondCat" });
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    var receiptFormPath = ServicePathResolver.Resolve(typeof(ReceiptFormService));
+    var stageArgs = JsonSerializer.SerializeToElement(new
+    {
+      sessionId = "sess-no-blind-ref",
+      service = receiptFormPath,
+      values = new { title = "Honest Proposal", amount = 75m }
+    });
+
+    var proposal = await AgentProposalBuilder.StageProposalAsync(stageArgs, services, CancellationToken.None);
+    var payload = proposal.Payload.Deserialize<StagedProposalPayload>(AgentValueHelpers.WebJson)!;
+    Assert.True(!payload.Values.TryGetValue("categoryId", out var catVal) || catVal is null);
   }
 }

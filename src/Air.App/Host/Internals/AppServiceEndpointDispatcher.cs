@@ -122,7 +122,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext!, services))
+          if (!await AuthorizeAndSanitizeGridReadAsync(serviceType, grid, req, userContext!, services, ct))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -149,7 +149,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          if (!AuthorizeAndSanitizeGridRead(serviceType, grid, req, userContext!, services))
+          if (!await AuthorizeAndSanitizeGridReadAsync(serviceType, grid, req, userContext!, services, ct))
           {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
           }
@@ -596,12 +596,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
   private static Task<IResult> InvokeServiceMethodAsync(MethodInfo method, object target, object?[] args) =>
     ServiceEndpointsExtensions.InvokeServiceMethodAsync(method, target, args);
 
-  private static bool AuthorizeAndSanitizeGridRead(
+  private static async Task<bool> AuthorizeAndSanitizeGridReadAsync(
     Type serviceType,
     IGridService grid,
     GridRequest req,
     IUserContext userContext,
-    IServiceProvider services)
+    IServiceProvider services,
+    CancellationToken ct)
   {
     var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
     var canView = grid.CanView(req, userContext);
@@ -612,7 +613,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
     if (!canView)
     {
-      ReferenceLookupAllowlist.EnsureWarm(services);
+      await ReferenceLookupAllowlist.EnsureWarmAsync(services, ct);
       req.IsReferencePicker = true;
       req.IsDataOnly = true;
       req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);

@@ -49,9 +49,13 @@ public static class AgentMemoryCatalog
     string? seedDomainKnowledge = null,
     CancellationToken ct = default)
   {
+    seedDomainKnowledge ??= DefaultDomainKnowledge;
     using (AsyncLocalTenantContext.UseSystemScope())
     {
-      var existing = await db.AppAgentMemory.IgnoreQueryFilters().ToListAsync(ct);
+      var existing = await db.AppAgentMemory
+        .IgnoreQueryFilters()
+        .Where(m => m.TenantId == null)
+        .ToListAsync(ct);
 
       var changed = false;
       foreach (var seed in DefaultRows())
@@ -64,9 +68,7 @@ public static class AgentMemoryCatalog
         }
       }
 
-      seedDomainKnowledge ??= DefaultDomainKnowledge;
-      if (!string.IsNullOrWhiteSpace(seedDomainKnowledge) &&
-          !existing.Any(e => e.Kind == AgentMemoryKinds.Seed))
+      if (!string.IsNullOrWhiteSpace(seedDomainKnowledge))
       {
         var trimmed = seedDomainKnowledge.Trim();
         if (trimmed.Length > 3800)
@@ -74,16 +76,27 @@ public static class AgentMemoryCatalog
           trimmed = trimmed[..3800];
         }
 
-        db.AppAgentMemory.Add(new AppAgentMemory
+        var existingSeed = existing.FirstOrDefault(e => e.Kind == AgentMemoryKinds.Seed);
+        if (existingSeed is null)
         {
-          Kind = AgentMemoryKinds.Seed,
-          Title = "Application Domain Knowledge & Workflows",
-          Content = trimmed,
-          Priority = 150,
-          IsPinned = true,
-          IsActive = true
-        });
-        changed = true;
+          db.AppAgentMemory.Add(new AppAgentMemory
+          {
+            Kind = AgentMemoryKinds.Seed,
+            Title = "Application Domain Knowledge & Workflows",
+            Content = trimmed,
+            Priority = 150,
+            IsPinned = true,
+            IsActive = true
+          });
+          changed = true;
+        }
+        else if (existingSeed.UpdatedAt == null &&
+                 existingSeed.Ver <= 1 &&
+                 !string.Equals(existingSeed.Content, trimmed, StringComparison.Ordinal))
+        {
+          existingSeed.Content = trimmed;
+          changed = true;
+        }
       }
 
       if (changed)

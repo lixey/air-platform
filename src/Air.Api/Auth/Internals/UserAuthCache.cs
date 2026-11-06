@@ -64,6 +64,8 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
           securityInfo = await store.LoadSecurityInfoAsync(user.Id, token);
         }
 
+        var languageCode = await store.ResolveLanguageCodeAsync(user.LanguageId, token);
+
         return new UserAuthSnapshot(
           user.Id,
           user.Login,
@@ -77,7 +79,8 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
           (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
           securityInfo.Permissions,
           securityInfo.Global,
-          securityInfo.AllowedTenantIds?.ToList());
+          securityInfo.AllowedTenantIds?.ToList(),
+          languageCode);
       },
       ProfileTtl,
       [AuthTag, UserTag(userId)],

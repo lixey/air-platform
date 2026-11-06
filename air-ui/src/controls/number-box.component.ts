@@ -53,7 +53,7 @@ const STEPPER_LOOK = {
   template: `
     <input
       [uiControl]="this"
-      [uiControlValue]="formattedValue()"
+      [uiControlValue]="rawValue()"
       type="number"
       [attr.step]="'any'"
       [attr.min]="min()"
@@ -126,10 +126,6 @@ export class NumberBoxComponent implements FormValueControl<number | null> {
   private readonly isFixed = computed(() => this.disabled() || this.readonly());
   protected readonly canDecrease = computed(() => this.canStepTo(-1));
   protected readonly canIncrease = computed(() => this.canStepTo(1));
-  protected readonly formattedValue = computed(() => {
-    const v = this.value();
-    return v == null ? '' : Object.is(v, -0) ? '-0' : String(v);
-  });
 
   protected readonly rawValue = transformedValue(this.value, {
     parse: (val: string) => {
@@ -142,7 +138,7 @@ export class NumberBoxComponent implements FormValueControl<number | null> {
       }
       return { value: num };
     },
-    format: (val: number | null) => (val == null ? '' : String(val)),
+    format: (val: number | null) => (val == null ? '' : Object.is(val, -0) ? '-0' : String(val)),
   });
 
   /** A press of the stepper: the value less or plus the step, held within the bounds; nothing on a fixed field. */

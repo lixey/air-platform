@@ -29,11 +29,26 @@ public static class PlatformJsonOptions
     options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 
     // Resilient scalar converters for numbers & dates
-    options.Converters.Add(new ResilientDecimalConverter());
-    options.Converters.Add(new ResilientIntConverter());
-    options.Converters.Add(new ResilientLongConverter());
-    options.Converters.Add(new ResilientDateTimeConverter());
-    options.Converters.Add(new ResilientNullableDateTimeConverter());
+    JsonConverter[] converters =
+    [
+      new ResilientDecimalConverter(),
+      new ResilientNullableDecimalConverter(),
+      new ResilientIntConverter(),
+      new ResilientNullableIntConverter(),
+      new ResilientLongConverter(),
+      new ResilientNullableLongConverter(),
+      new ResilientDateTimeConverter(),
+      new ResilientNullableDateTimeConverter()
+    ];
+
+    foreach (var converter in converters)
+    {
+      var converterType = converter.GetType();
+      if (!options.Converters.Any(c => c.GetType() == converterType))
+      {
+        options.Converters.Add(converter);
+      }
+    }
   }
 
   private static void ModifySlotPolymorphism(JsonTypeInfo info)

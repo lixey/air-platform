@@ -5,7 +5,7 @@ import { BtnComponent } from '../btn/btn.component';
 import { ChartComponent } from '../chart/chart.component';
 import type { ReportChartDto, ReportColumnDto, ReportKpiDto, ReportTableDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
-import { formatCellAmount, formatCellNumber, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
@@ -90,7 +90,10 @@ export class AgentKpiBlockComponent {
     if (kpi.isPercent) {
       return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
     }
-    return formatCellNumber(kpi.value, loc, 0, true);
+    if (kpi.currency) {
+      return formatCellAmount(kpi.value, loc, moneyFormatOf({ decimals: 0, currency: kpi.currency }));
+    }
+    return formatCellNumber(kpi.value, loc, Number.isInteger(kpi.value) ? 0 : null, true);
   }
 
   protected hueTextClass(color: string | null | undefined): string {
@@ -174,7 +177,7 @@ export class AgentChartBlockComponent {
                 <tr [class]="idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'">
                   @for (col of t.columns; track col.key) {
                     <td [class]="bodyCellClass(col, row)">
-                      {{ formatCell(col, row[col.key]) }}
+                      {{ formatCell(col, row) }}
                     </td>
                   }
                 </tr>
@@ -186,7 +189,7 @@ export class AgentChartBlockComponent {
                   <tr class="bg-surface-2 border-t border-line font-semibold">
                     @for (col of t.columns; track col.key) {
                       <td [class]="footerCellClass(col, row)">
-                        {{ formatCell(col, row[col.key]) }}
+                        {{ formatCell(col, row) }}
                       </td>
                     }
                   </tr>
@@ -202,6 +205,7 @@ export class AgentChartBlockComponent {
 })
 export class AgentTableBlockComponent {
   private readonly locale = inject(LocaleService).current;
+  private readonly zone = inject(LocaleService).zone;
   private readonly overlay = inject(OverlayService);
   private readonly injector = inject(Injector);
   protected readonly texts = inject(TextsService);
@@ -229,20 +233,31 @@ export class AgentTableBlockComponent {
     );
   }
 
-  protected formatCell(col: ReportColumnDto, raw: unknown): string {
+  protected formatCell(col: ReportColumnDto, row: Record<string, unknown>): string {
+    const raw = row[col.key];
     if (raw === null || raw === undefined || raw === '') {
       return '';
     }
-    if (typeof raw === 'string' && col.kind === 'text') {
+    if (typeof raw === 'string' && (col.kind === 'text' || col.kind === 'badge')) {
       return raw;
     }
     const loc = this.locale();
+    if (col.kind === 'date' || col.kind === 'datetime') {
+      return formatCellDate(raw, col.kind, loc, this.zone());
+    }
     if (typeof raw === 'number' || (typeof raw === 'string' && /^[+-]?\d+(?:\.\d+)?$/.test(raw.trim()))) {
-      if (col.kind === 'money' || col.kind === 'number') {
-        return formatCellNumber(raw, loc, 0, true);
+      const decimals = col.decimals ?? (col.kind === 'percent' ? 1 : null);
+      if (col.kind === 'money') {
+        const currency = (row[`${col.key}Currency`] as string | undefined) ?? (row['currency'] as string | undefined) ?? col.currency;
+        return currency
+          ? formatCellAmount(raw, loc, moneyFormatOf({ decimals: col.decimals ?? 0, currency }))
+          : formatCellNumber(raw, loc, decimals, true);
+      }
+      if (col.kind === 'number') {
+        return formatCellNumber(raw, loc, decimals, true);
       }
       if (col.kind === 'percent') {
-        return formatCellAmount(raw, loc, percentFormatOf({ decimals: 1 }));
+        return formatCellAmount(raw, loc, percentFormatOf({ decimals: decimals ?? 1 }));
       }
     }
     return String(raw);

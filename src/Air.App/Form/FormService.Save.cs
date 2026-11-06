@@ -257,7 +257,7 @@ public abstract partial class FormService<TEntity>
   {
     var requestedParentId = Request.ParentId;
     if (parent.BoundProperty != null &&
-        (parent.MatchesService(Request.ParentService) || ResolveParentChildBuilder(requirePreset: true)?.PresetProvider == null))
+        (parent.MatchesService(Request.ParentService) || (await ResolveParentChildBuilderAsync(requirePreset: true, ct))?.PresetProvider == null))
     {
       var probe = await db.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
       if (probe != null)
@@ -312,14 +312,8 @@ public abstract partial class FormService<TEntity>
         var val = jProp.Value;
         var underlying = Nullable.GetUnderlyingType(prop.PropertyType);
         var targetType = underlying ?? prop.PropertyType;
-        if (val.ValueKind == JsonValueKind.Object &&
-            (targetType == typeof(long) || targetType == typeof(int) || targetType == typeof(string)) &&
-            val.TryGetProperty("id", out var idElem))
-        {
-          val = idElem;
-        }
-
-        if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ||
+            val.ValueKind == JsonValueKind.String && targetType != typeof(string) && string.IsNullOrWhiteSpace(val.GetString()))
         {
           if (!prop.PropertyType.IsValueType || underlying != null)
           {
@@ -329,20 +323,7 @@ public abstract partial class FormService<TEntity>
           continue;
         }
 
-        if (val.ValueKind == JsonValueKind.String &&
-            targetType != typeof(string) &&
-            string.IsNullOrWhiteSpace(val.GetString()))
-        {
-          if (!prop.PropertyType.IsValueType || underlying != null)
-          {
-            setter(result, null);
-          }
-
-          continue;
-        }
-
-        var deserialized = JsonSerializer.Deserialize(val.GetRawText(), prop.PropertyType, PlatformJsonOptions.DefaultOptions);
-        setter(result, deserialized);
+        SetPropertyValue(result, prop.Name, val);
       }
 
       return result;
@@ -431,6 +412,7 @@ public abstract partial class FormService<TEntity>
     }
 
     HashSet<string>? presentPaths = null;
+    HashSet<string> disabledElementPaths;
     if (cellPatch is { } cp)
     {
       var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
@@ -438,10 +420,12 @@ public abstract partial class FormService<TEntity>
       CopyMatchingProperties(entity, input);
       SetPropertyValue(input, cp.Path, cp.Value);
       NormalizeNullableStrings(elements, input);
-      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input);
+      disabledElementPaths = ComputeDisabledElementPaths(elements, IsNew, entity, input, presentPaths);
+      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input, disabledElementPaths);
       var propName = PropertyAccessorCache.GetProperty(typeof(TEntity), cp.Path)?.Name ?? cp.Path;
       if (targetElement == null ||
-          IsElementDisabled(targetElement, entity, input) ||
+          targetElement.IsDisabled ||
+          disabledElementPaths.Contains(targetElement.Path) ||
           targetElement.IsServerOwned ||
           targetElement.Model is FormInfoModel ||
           protectedPaths.Contains(propName))
@@ -459,7 +443,8 @@ public abstract partial class FormService<TEntity>
     {
       presentPaths = BuildPresentPaths(entityJson);
       NormalizeNullableStrings(elements, input);
-      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input);
+      disabledElementPaths = ComputeDisabledElementPaths(elements, IsNew, entity, input, presentPaths);
+      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input, disabledElementPaths);
       CopyMatchingProperties(input, entity, protectedPaths);
       NormalizeNullableStrings(elements, entity);
       if (id.HasValue && id.Value > 0)
@@ -491,7 +476,7 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, originalValues, presentPaths, ct);
+    var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, originalValues, presentPaths, ct, disabledElementPaths);
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
@@ -507,7 +492,7 @@ public abstract partial class FormService<TEntity>
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
     }
 
-    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: false);
+    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: false, disabledElementPaths);
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
@@ -594,6 +579,15 @@ public abstract partial class FormService<TEntity>
           Warnings = ex.Messages.Select(m => m.Path == null
             ? new MessageDto { Detail = m.Detail, Path = path, Code = m.Code, Type = m.Type }
             : m).ToList()
+        };
+      }
+      catch (JsonException)
+      {
+        db.MarkMutationRollbackOnly();
+        return new GridCellDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Warnings = [new MessageDto { Detail = L["FormInvalid"], Path = path, Type = MessageType.Error }]
         };
       }
 

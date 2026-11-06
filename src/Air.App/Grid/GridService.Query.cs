@@ -79,12 +79,10 @@ public abstract partial class GridService<TEntity, TRow>
   {
     var myService = ServicePathResolver.Resolve(GetType());
     return ParentScopeValidator.ResolveChildBuilder(
-      db,
-      PlatformApp,
       ParentService,
       GetParent().BoundParentService,
       ParentId,
-      ref _cachedParentChildren,
+      _cachedParentChildren,
       c => c.ServiceType == GetType() || string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
   }
 
@@ -147,22 +145,19 @@ public abstract partial class GridService<TEntity, TRow>
   public virtual async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
   {
     var gridReq = request as GridRequest;
-    if (gridReq is { ParentId: > 0 })
+    ParentService = gridReq?.ParentService;
+    ParentId = gridReq?.ParentId;
+    var isReferenceSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
+    var isSelect = isReferenceSelect || (gridReq?.IsReferencePicker ?? false);
+    if (!await EnsureParentScopeAsync(lockParent: false, ct) && (ParentId is > 0 || !isSelect))
     {
-      ParentService = gridReq.ParentService;
-      ParentId = gridReq.ParentId;
-      if (!await EnsureParentScopeAsync(lockParent: false, ct))
-      {
-        return new GridPageDto<object> { Rows = [], Total = 0, Number = request.Page, Size = request.PageSize, HasMore = false };
-      }
+      return new GridPageDto<object> { Rows = [], Total = 0, Number = request.Page, Size = request.PageSize, HasMore = false };
     }
 
     var filteredQuery = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
     var cols = CreateColumns();
     var allColumns = cols.List.ToList();
 
-    var isReferenceSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
-    var isSelect = isReferenceSelect || (gridReq?.IsReferencePicker ?? false);
     if (isReferenceSelect)
     {
       var labelPaths = gridReq!.ReferenceLabelPaths!;
@@ -210,7 +205,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         Rows = shapedRows,
         BottomRows = bottomRows,
-        Forms = CollectRowFormOverlays(shapedRows),
+        Forms = await CollectRowFormOverlaysAsync(shapedRows, ct),
         Total = page.Total,
         Number = page.Number,
         Size = page.Size,
@@ -256,7 +251,7 @@ public abstract partial class GridService<TEntity, TRow>
     {
       Rows = defaultShapedRows,
       BottomRows = defaultBottomRows,
-      Forms = CollectRowFormOverlays(defaultShapedRows),
+      Forms = await CollectRowFormOverlaysAsync(defaultShapedRows, ct),
       Total = defaultPage.Total,
       Number = defaultPage.Number,
       Size = defaultPage.Size,
@@ -297,20 +292,17 @@ public abstract partial class GridService<TEntity, TRow>
 
   public virtual async Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default)
   {
-    if (request.ParentId is > 0)
+    ParentService = request.ParentService;
+    ParentId = request.ParentId;
+    var isSelect = request.ReferenceLabelPaths is { Count: > 0 } || request.IsReferencePicker;
+    if (!await EnsureParentScopeAsync(lockParent: false, ct) && (ParentId is > 0 || !isSelect))
     {
-      ParentService = request.ParentService;
-      ParentId = request.ParentId;
-      if (!await EnsureParentScopeAsync(lockParent: false, ct))
-      {
-        return new GridCountDto { Total = 0 };
-      }
+      return new GridCountDto { Total = 0 };
     }
 
     var baseEntityQuery = BuildBaseEntityQuery(request, out _, out var queryDeclaration);
     var query = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration);
     var cols = CreateColumns();
-    var isSelect = request.ReferenceLabelPaths is { Count: > 0 } || request.IsReferencePicker;
 
     NormalizeGridRequest(request, request, queryDeclaration, isSelect);
 
@@ -333,6 +325,11 @@ public abstract partial class GridService<TEntity, TRow>
     var nav = GetNav();
     var actionsWithOffers = nav.Actions.Where(a => a.Offers.Count > 0).ToList();
     var statusFlow = columns.StatusFlow as Screens.IRecordStatuses<TEntity>;
+    if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+    {
+      flowSvc.AttachPlatformApp(PlatformApp);
+    }
+
     var transitionsWithOffers = statusFlow?.Transitions.Where(t => t.Offers.Count > 0).ToList() ?? [];
     if (transitionsWithOffers.Count == 0 && actionsWithOffers.Count == 0)
     {
@@ -452,7 +449,7 @@ public abstract partial class GridService<TEntity, TRow>
           continue;
         }
 
-        if (col.Options is { Count: > 0 } options && computedVal is not Reference)
+        if (col.Options is { Count: > 0 } options && col.ValueFormatter == null && computedVal is not Reference)
         {
           var optId = Convert.ToInt64(computedVal, CultureInfo.InvariantCulture);
           var opt = options.FirstOrDefault(o => o.Id == optId);
@@ -688,7 +685,7 @@ public abstract partial class GridService<TEntity, TRow>
     return validProps.Count > 0 ? string.Join('.', validProps) : null;
   }
 
-  private Dictionary<string, OverlayDto>? CollectRowFormOverlays(List<object> shapedRows)
+  private async Task<Dictionary<string, OverlayDto>?> CollectRowFormOverlaysAsync(List<object> shapedRows, CancellationToken ct = default)
   {
     Dictionary<string, OverlayDto>? forms = null;
     foreach (var rowObj in shapedRows)
@@ -710,7 +707,7 @@ public abstract partial class GridService<TEntity, TRow>
         if (formType != null && typeof(Form.IFormService).IsAssignableFrom(formType))
         {
           forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
-          forms[formHandle] = ResolveFormOverlayForType(formType, formHandle);
+          forms[formHandle] = await ResolveFormOverlayForTypeAsync(formType, formHandle, ct);
         }
       }
     }
@@ -724,7 +721,8 @@ public abstract partial class GridService<TEntity, TRow>
   {
     if (queryDeclaration.Selector is null)
     {
-      var sb = new StringBuilder(columns.Count * 24 + 32);
+      var sb = new StringBuilder(columns.Count * 32 + 64);
+      sb.Append(typeof(TEntity).FullName).Append('|').Append(typeof(TRow).FullName).Append('#');
       var canCache = true;
       for (var i = 0; i < columns.Count; i++)
       {
@@ -740,7 +738,18 @@ public abstract partial class GridService<TEntity, TRow>
           .Append(col.FilterPath).Append('|')
           .Append(col.ValueExpression?.ToString()).Append('|')
           .Append(isRef ? '1' : '0').Append('|')
-          .Append(col.IsHidden ? '1' : '0').Append(';');
+          .Append(col.IsHidden ? '1' : '0').Append('|')
+          .Append(col.IsSortable ? '1' : '0').Append('|')
+          .Append(col.IsFilterable ? '1' : '0');
+        if (col.ReferenceLabelPaths is { Count: > 0 } refLabels)
+        {
+          for (var j = 0; j < refLabels.Count; j++)
+          {
+            sb.Append(',').Append(refLabels[j]);
+          }
+        }
+
+        sb.Append(';');
       }
 
       if (canCache)
@@ -811,10 +820,23 @@ public abstract partial class GridService<TEntity, TRow>
       if (col.ValueExpression is not null)
       {
         builder.Field(col.Path, col.ValueExpression);
-        if (!hasExplicitSearchFields && !col.IsHidden && col.ValueExpression.ReturnType == typeof(string))
+        builder.Configure(col.Path, f =>
         {
-          builder.Configure(col.Path, f => f.Searchable());
-        }
+          if (!hasExplicitSearchFields && !col.IsHidden && col.ValueExpression.ReturnType == typeof(string))
+          {
+            f.Searchable();
+          }
+
+          if (!col.IsSortable && !queryDeclaration.DefaultSort.Any(s => string.Equals(s.Field, col.Path, StringComparison.OrdinalIgnoreCase)))
+          {
+            f.Sortable(false);
+          }
+
+          if (!col.IsFilterable)
+          {
+            f.Filterable(false);
+          }
+        });
 
         continue;
       }
@@ -859,6 +881,13 @@ public abstract partial class GridService<TEntity, TRow>
       else if (!hasExplicitSearchFields && !col.IsHidden && existingExpr.ReturnType == typeof(string))
       {
         builder.Configure(col.Path, f => f.Searchable());
+      }
+
+      if (!col.IsSortable &&
+          builder.FindExpression(col.Path) is not null &&
+          !queryDeclaration.DefaultSort.Any(s => string.Equals(s.Field, col.Path, StringComparison.OrdinalIgnoreCase)))
+      {
+        builder.Configure(col.Path, f => f.Sortable(false));
       }
     }
 

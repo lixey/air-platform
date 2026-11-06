@@ -277,10 +277,24 @@ public static class AgentPromptBuilder
       [
         .. elements.OrderBy(el =>
         {
-          var name = el.TryGetProperty("values", out var v) && v.ValueKind == JsonValueKind.Object &&
-                     v.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
-            ? n.GetString()
-            : null;
+          string? name = null;
+          if (el.TryGetProperty("values", out var v) && v.ValueKind == JsonValueKind.Object)
+          {
+            foreach (var key in new[] { "name", "title", "code", "label", "fullName", "number" })
+            {
+              if (v.TryGetProperty(key, out var n) && n.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(n.GetString()))
+              {
+                name = n.GetString();
+                break;
+              }
+            }
+
+            name ??= v.EnumerateObject()
+              .Where(p => p.Value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(p.Value.GetString()))
+              .Select(p => p.Value.GetString())
+              .FirstOrDefault() ?? string.Empty;
+          }
+
           if (string.IsNullOrWhiteSpace(name))
           {
             return 1;
@@ -326,7 +340,13 @@ public static class AgentPromptBuilder
 
     var db = request.Services?.GetService<PlatformDbContext>();
     var app = request.Services?.GetService<PlatformAppService>();
-    if (db is null || app is null)
+    if (db is null || app is null || app.User is not { IsAuthenticated: true, UserId: > 0 })
+    {
+      return;
+    }
+
+    var tenantId = db.TenantContext.TenantId;
+    if (db.SetOfBase<BaseAppTenant>() != null && tenantId is null or <= 0)
     {
       return;
     }
@@ -409,12 +429,13 @@ public static class AgentPromptBuilder
             ? AgentMemoryKinds.Preference
             : AgentMemoryKinds.Fact;
 
-        var tenantId = db.TenantContext.TenantId;
         var existing = await db.AppAgentMemory
+          .IgnoreQueryFilters()
           .FirstOrDefaultAsync(m => m.Title == title && m.TenantId == tenantId, ct);
         if (existing is not null)
         {
-          if (existing.IsPinned)
+          if (existing.IsPinned ||
+              string.Equals(existing.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase))
           {
             continue;
           }

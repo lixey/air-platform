@@ -2,6 +2,12 @@ namespace Platform.App.Internals;
 
 internal static class ParentScopeValidator
 {
+  public static bool DeclaresParentScope(Type? serviceType)
+  {
+    var setParentMethod = serviceType?.GetMethod("SetParent", BindingFlags.Instance | BindingFlags.NonPublic);
+    return setParentMethod is { DeclaringType.IsGenericType: false };
+  }
+
   public static Type? GetFormEntityType(Type? type)
   {
     for (var t = type; t != null && t != typeof(object); t = t.BaseType)
@@ -134,20 +140,7 @@ internal static class ParentScopeValidator
       return tracked;
     }
 
-    var efModel = db.Model.FindEntityType(typeof(TParent));
-    IQueryable<TParent> query = db.Set<TParent>();
-    if (efModel != null)
-    {
-      foreach (var nav in efModel.GetNavigations())
-      {
-        if (!nav.IsCollection)
-        {
-          query = query.Include(nav.Name);
-        }
-      }
-    }
-
-    return query.FirstOrDefault(e => e.Id == parentId.Value);
+    return db.Set<TParent>().FirstOrDefault(e => e.Id == parentId.Value);
   }
 
   public static async Task<(bool Allowed, object? PreloadedParent, IReadOnlyList<Form.ChildGridBuilder>? ParentChildren)> ValidateAndLoadAsync(
@@ -182,8 +175,7 @@ internal static class ParentScopeValidator
 
     if (parentId is not > 0)
     {
-      if (lockParent &&
-          parentServiceType != null &&
+      if (parentServiceType != null &&
           typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
           ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is Form.IFormService metadataForm)
       {
@@ -226,14 +218,16 @@ internal static class ParentScopeValidator
     return (true, null, null);
   }
 
-  public static Form.ChildGridBuilder? ResolveChildBuilder(
+  public static async Task<Form.ChildGridBuilder?> ResolveChildBuilderAsync(
     PlatformDbContext db,
     PlatformAppService? app,
     string? requestParentService,
     string? boundParentService,
     long? parentId,
-    ref (string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)? cache,
-    Func<Form.ChildGridBuilder, bool> predicate)
+    Action<(string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)> setCache,
+    (string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)? cache,
+    Func<Form.ChildGridBuilder, bool> predicate,
+    CancellationToken ct = default)
   {
     var effectiveParentService = !string.IsNullOrEmpty(requestParentService)
       ? requestParentService
@@ -259,13 +253,38 @@ internal static class ParentScopeValidator
           ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, app) is Form.IFormService parentForm)
       {
         parentForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
-        (_, children) = parentForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+        (_, children) = await parentForm.GetElementsMetadataAsync(ct);
       }
 
-      cache = (effectiveParentService, parentId, children);
+      setCache((effectiveParentService, parentId, children));
     }
 
     return children.FirstOrDefault(predicate);
+  }
+
+  public static Form.ChildGridBuilder? ResolveChildBuilder(
+    string? requestParentService,
+    string? boundParentService,
+    long? parentId,
+    (string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)? cache,
+    Func<Form.ChildGridBuilder, bool> predicate)
+  {
+    var effectiveParentService = !string.IsNullOrEmpty(requestParentService)
+      ? requestParentService
+      : boundParentService;
+    if (string.IsNullOrEmpty(effectiveParentService))
+    {
+      return null;
+    }
+
+    if (cache is { } cached &&
+        string.Equals(cached.Service, effectiveParentService, StringComparison.OrdinalIgnoreCase) &&
+        (cached.ParentId == parentId || cached.Children.Count > 0))
+    {
+      return cached.Children.FirstOrDefault(predicate);
+    }
+
+    return null;
   }
 
   public static async Task RecalculateBoundParentsAsync(

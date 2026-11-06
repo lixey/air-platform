@@ -18,11 +18,11 @@ internal static class StatusMoveNavBuilder
       : "docStatusId";
 
   public static bool CanMove(Feature feature, IUserContext? user, string transitionName) =>
-    user == null ||
-    !user.IsAuthenticated ||
-    user.Can(feature.Action(transitionName)) ||
-    user.Can(feature.Edit) ||
-    user.Can(feature.All);
+    user is { IsAuthenticated: true } &&
+    (string.IsNullOrEmpty(feature.Module) ||
+     user.Can(feature.Action(transitionName)) ||
+     user.Can(feature.Edit) ||
+     user.Can(feature.All));
 
   public static List<FormElementDto> LocalizeElements(IReadOnlyList<FormElementDto> elements, Localizer l) =>
     [.. elements.Select(e =>

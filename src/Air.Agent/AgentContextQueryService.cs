@@ -38,9 +38,9 @@ public static class AgentContextQueryService
         continue;
       }
 
+      var defaultValues = await GetDefaultFormValuesAsync(formInst, ct);
       var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
       var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-      var defaultValues = await GetDefaultFormValuesAsync(formInst, ct);
 
       var editableFields = new List<object>();
       foreach (var el in editableElements)
@@ -69,47 +69,40 @@ public static class AgentContextQueryService
       }
 
       object? lineSchema = null;
-      var lineChild = children.FirstOrDefault(c => !c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType));
-      if (lineChild?.ServiceType != null &&
-          ModuleCatalog.Instance.CreateServiceInstance(lineChild.ServiceType, db, app) is IGridService childGrid)
+      if (AgentFeatureRegistry.ResolveEditableChildLineGrid(children, db, app) is { } childLineInfo)
       {
-        var childCreate = childGrid.GetCreateForms().FirstOrDefault();
-        if (childCreate != null &&
-            ModuleCatalog.Instance.CreateServiceInstance(childCreate.FormServiceType, db, app) is IFormService childForm)
+        var childDefaults = await GetDefaultFormValuesAsync(childLineInfo.ChildForm, ct);
+        var (childElements, _) = await childLineInfo.ChildForm.GetElementsMetadataAsync(ct);
+        var childEditable = childElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
+        var childFields = new List<object>();
+        foreach (var cel in childEditable)
         {
-          var (childElements, _) = await childForm.GetElementsMetadataAsync(ct);
-          var childEditable = childElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
-          var childDefaults = await GetDefaultFormValuesAsync(childForm, ct);
-          var childFields = new List<object>();
-          foreach (var cel in childEditable)
+          var cSelect = cel.Model as FormSelectModel;
+          if (!string.IsNullOrEmpty(cSelect?.ReferenceService))
           {
-            var cSelect = cel.Model as FormSelectModel;
-            if (!string.IsNullOrEmpty(cSelect?.ReferenceService))
-            {
-              refServices.Add(cSelect.ReferenceService);
-            }
-
-            childDefaults.TryGetValue(cel.Path, out var cDefVal);
-            childFields.Add(new
-            {
-              path = cel.Path,
-              label = cel.Label,
-              type = cel.Type,
-              required = cel.IsRequired ? true : (bool?)null,
-              referenceService = cSelect?.ReferenceService,
-              defaultValue = cDefVal
-            });
+            refServices.Add(cSelect.ReferenceService);
           }
 
-          lineSchema = new
+          childDefaults.TryGetValue(cel.Path, out var cDefVal);
+          childFields.Add(new
           {
-            service = childCreate.ServicePath,
-            label = !string.IsNullOrEmpty(lineChild.DeclaredLabel)
-              ? Localizer.Instance.For(formInst.Feature.Module)[lineChild.DeclaredLabel]
-              : childCreate.Label,
-            fields = childFields
-          };
+            path = cel.Path,
+            label = cel.Label,
+            type = cel.Type,
+            required = cel.IsRequired ? true : (bool?)null,
+            referenceService = cSelect?.ReferenceService,
+            defaultValue = cDefVal
+          });
         }
+
+        lineSchema = new
+        {
+          service = childLineInfo.ChildCreate.ServicePath,
+          label = !string.IsNullOrEmpty(childLineInfo.Child.DeclaredLabel)
+            ? Localizer.Instance.For(formInst.Feature.Module)[childLineInfo.Child.DeclaredLabel]
+            : childLineInfo.ChildCreate.Label,
+          fields = childFields
+        };
       }
 
       forms.Add(new
@@ -137,15 +130,28 @@ public static class AgentContextQueryService
       : [];
     var reports = includeReports ? await LoadReportsSummaryAsync(db, app, ct) : [];
 
-    return new
+    var contextResult = new Dictionary<string, object?>
     {
-      today = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
-      forms,
-      dictionaries,
-      largeDictionaries = largeDictionaries.Count > 0 ? largeDictionaries : null,
-      recentRecords = recentRecords.Count > 0 ? recentRecords : null,
-      reports = reports.Count > 0 ? reports : null
+      ["today"] = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
+      ["forms"] = forms,
+      ["dictionaries"] = dictionaries
     };
+    if (largeDictionaries.Count > 0)
+    {
+      contextResult["largeDictionaries"] = largeDictionaries;
+    }
+
+    if (recentRecords.Count > 0)
+    {
+      contextResult["recentRecords"] = recentRecords;
+    }
+
+    if (reports.Count > 0)
+    {
+      contextResult["reports"] = reports;
+    }
+
+    return contextResult;
   }
 
   public static async Task<(
@@ -250,7 +256,8 @@ public static class AgentContextQueryService
     Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
     PlatformDbContext db,
     PlatformAppService app,
-    CancellationToken ct)
+    CancellationToken ct,
+    IReadOnlyList<string>? labelPaths = null)
   {
     var cleanName = searchName.Trim();
     if (string.IsNullOrEmpty(cleanName))
@@ -265,7 +272,7 @@ public static class AgentContextQueryService
     }
 
     var filteredRows = FilterRowsByReferenceFilter(allRows, referenceFilter);
-    var inMemoryMatch = FindDictionaryRowByName(filteredRows, cleanName, allowFuzzy);
+    var inMemoryMatch = FindDictionaryRowByName(filteredRows, cleanName, allowFuzzy, labelPaths);
     if (inMemoryMatch != null)
     {
       return inMemoryMatch;
@@ -280,6 +287,7 @@ public static class AgentContextQueryService
         if (ModuleCatalog.Instance.CreateServiceInstance(svcType, db, app) is IGridService grid &&
             AgentFeatureRegistry.CanViewFeature(grid.Feature, app))
         {
+          labelPaths ??= grid.GetReferenceLabelPaths();
           var searchPage = await grid.GetDataAsync(new ListRequest
           {
             Page = 0,
@@ -298,7 +306,7 @@ public static class AgentContextQueryService
           }
 
           filteredRows = FilterRowsByReferenceFilter(allRows, referenceFilter);
-          return FindDictionaryRowByName(filteredRows, cleanName, allowFuzzy);
+          return FindDictionaryRowByName(filteredRows, cleanName, allowFuzzy, labelPaths);
         }
       }
       catch { }
@@ -527,13 +535,26 @@ public static class AgentContextQueryService
         throw new InvalidOperationException($"Access denied or form service '{resolvedDesc.ServicePath}' not available.");
       }
 
-      var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
       var values = await GetExistingFormValuesAsync(formInst, recordId.Value, ct);
+      var (_, children) = await formInst.GetElementsMetadataAsync(ct);
 
       var existingLines = new List<Dictionary<string, object?>>();
-      var lineChild = children.FirstOrDefault(c => !c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType));
-      if (lineChild?.ServiceType != null &&
-          ModuleCatalog.Instance.CreateServiceInstance(lineChild.ServiceType, db, app) is IGridService childGrid)
+      var childGrid = AgentFeatureRegistry.ResolveEditableChildLineGrid(children, db, app)?.ChildGrid;
+      if (childGrid == null)
+      {
+        foreach (var c in children)
+        {
+          if (!c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType) &&
+              ModuleCatalog.Instance.CreateServiceInstance(c.ServiceType, db, app) is IGridService cg &&
+              AgentFeatureRegistry.CanViewFeature(cg.Feature, app))
+          {
+            childGrid = cg;
+            break;
+          }
+        }
+      }
+
+      if (childGrid != null)
       {
         var page = await childGrid.GetDataAsync(new GridRequest { ParentId = recordId.Value, Page = 0, PageSize = 200, IsDataOnly = true }, ct);
         foreach (var rawRow in page.Rows)

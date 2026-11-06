@@ -48,10 +48,10 @@ export interface AgentChatMessage {
 
 function stripProposalBlocks(raw: string): string {
   return raw
+    .replace(/```(?:json|xml)?\s*<air_proposal>[\s\S]*?(?:<\/air_proposal>\s*```|<\/air_proposal>|$)/gi, '')
     .replace(/<air_proposal>[\s\S]*?(?:<\/air_proposal>|$)/gi, '')
-    .replace(/```(?:json|xml)?\s*<air_proposal>[\s\S]*$/gi, '')
+    .replace(/```(?:json|xml)?\s*<air_memory>[\s\S]*?(?:<\/air_memory>\s*```|<\/air_memory>|$)/gi, '')
     .replace(/<air_memory>[\s\S]*?(?:<\/air_memory>|$)/gi, '')
-    .replace(/```(?:json|xml)?\s*<air_memory>[\s\S]*$/gi, '')
     .trim();
 }
 

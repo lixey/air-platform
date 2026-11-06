@@ -123,6 +123,7 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
         [style.top.px]="b.top + b.height"
         [title]="texts.of('AgentTitle')"
         [attr.aria-label]="texts.of('AgentTitle')"
+        [attr.inert]="overlay.hasModal() ? '' : null"
         (click)="toggleAgent()"
       >
         <i class="flex items-center justify-center text-mark" [icon]="'bot'"></i>

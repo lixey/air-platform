@@ -1,5 +1,6 @@
 namespace Platform.Api.Tests.Internals;
 
+[ModuleSchema("Test")]
 internal sealed class ApiTestDbContext(DbContextOptions<ApiTestDbContext> options, ITenantContext tenant)
   : PlatformDbContext(options, tenant)
 {

@@ -1,64 +1,59 @@
-# Development Workflow, Formatting & Git Standards
+# Робочий процес, порти розробки, шлюз якості та правила Git
 
 ---
 
-## 1. Port Allocation (Developer IDE vs AI Agent)
+## 1. Розподіл портів (IDE розробника проти ШІ-агента)
 
-To prevent port collisions when both the developer (in Rider / WebStorm) and the AI agent run servers simultaneously, each workspace uses dedicated ports:
+Щоб сесії розробника в JetBrains Rider / WebStorm та сервери, які запускає ШІ-агент для перевірки змін, ніколи не конфліктували за порти, кожен проєкт має дві виділені пари портів:
 
-| Workspace                   | Target             | Developer IDE Ports | AI Agent Ports  |
-| :-------------------------- | :----------------- | :------------------ | :-------------- |
-| **`air-platform` (`demo`)** | Backend / Frontend | `5091` / `4300`     | `5191` / `4400` |
-| **`my-port`**               | Backend / Frontend | `5095` / `4305`     | `5195` / `4405` |
+| Репозиторій                 | Призначення       | Порти IDE (Rider / WebStorm) | Виділені порти Агента (`make agent-up`) |
+| :-------------------------- | :---------------- | :--------------------------- | :-------------------------------------- |
+| **`air-platform` (`demo`)** | Бекенд / Фронтенд | `5091` / `4300`              | `5191` / `4400`                         |
+| **`my-port`**               | Бекенд / Фронтенд | `5095` / `4305`              | `5195` / `4405`                         |
+| **`ak-bcc`**                | Бекенд / Фронтенд | `5096` / `4306`              | `5196` / `4406`                         |
 
-- Start or restart agent servers via `make agent-restart` (and stop via `make agent-down`).
-
----
-
-## 2. Code Formatting & `GlobalUsings.cs`
-
-Every project (`*.csproj`) maintains a `GlobalUsings.cs` file with all platform, third-party, and module namespaces used across the project.
-`<GenerateDocumentationFile>true</GenerateDocumentationFile>` is enabled in `Directory.Build.props` so `IDE0005` detects unused or duplicate `using` statements during CLI formatting.
-
-Before every commit, run:
-
-```bash
-make format
-```
-
-This executes:
-
-1. `dotnet format` matching `.editorconfig` rules (including removing unused/duplicate `using` directives and sorting `using`s).
-2. `npx prettier --write` across TypeScript, HTML, CSS, and JSON files in the web workspace.
+- Запуск та перезапуск агентських серверів: `make agent-up`, `make agent-restart`.
+- Зупинка агентських серверів: `make agent-down`.
 
 ---
 
-## 3. JetBrains MCP Integration
+## 2. Основні команди `Makefile`
 
-When Rider and WebStorm are open with MCP enabled:
-
-- Verify readiness via `make mcp-check`.
-- Prefer JetBrains MCP tools for file inspection, symbol search, refactoring, and live IDE diagnostics (`get_file_problems`).
+| Команда                | Що виконує                                                                                                                                                                                                                                                              |
+| :--------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`make contracts`**   | Запускає `Air.UiContracts` та експортує `contracts.ts`, `endpoints.ts` і `ui-texts.json` у `air-ui/src/core/generated/`.                                                                                                                                                |
+| **`make format`**      | Запускає `dotnet format` (включно з видаленням невикористаних `using` за правилом `IDE0005`) та `prettier --write` для TypeScript/HTML/CSS/JSON.                                                                                                                        |
+| **`make check-arch`**  | Автоматично перевіряє дотримання архітектурних правил: «1 тип = 1 файл», папки `Contracts/` та `Internals/`, суфікси `*Extensions.cs`, відсутність `*.Internals` у `GlobalUsings.cs`, відповідність `namespace` фізичному шляху та брендову нейтральність `Platform.*`. |
+| **`make check-paths`** | Перевіряє відсутність абсолютних машинозалежних шляхів у відстежуваних файлах.                                                                                                                                                                                          |
+| **`make check-ts`**    | Перевіряє компіляцію TypeScript (`ngc --noEmit` зі `"strict": true`) та unit-тести `air-ui` (`vitest`) у `air-platform`, а також у сусідніх `my-port` та `ak-bcc`.                                                                                                      |
+| **`make gate`**        | Єдиний обов'язковий шлюз якості перед комітом: послідовно виконує `format-check`, `check-paths`, `check-arch`, `check-ts`, `build` та `test`.                                                                                                                           |
+| **`make audit`**       | Запускає незалежний архітектурний аудит поточного `git diff` через **Claude Opus 5.5 (High)**.                                                                                                                                                                          |
 
 ---
 
-## 4. Git Commit & Hygiene Rules
+## 3. Стандарти коду та `GlobalUsings.cs`
 
-1. **Zero Absolute Paths**:
-   - Never commit absolute machine or user home directory paths in any file.
-   - Enforced automatically by `.githooks/pre-commit` and `make check-paths`.
-2. **Commit Message Format**:
-   - All commit messages must be in **English** and start with a lowercase type prefix:
-     ```text
-     <type>: <imperative summary in up to 80 chars>
-     ```
-   - Allowed `<type>` values:
-     - `add`: new feature, capability, or file
-     - `upd`: change or refinement to existing behavior or structure
-     - `del`: removal of code, files, or features
-     - `fix`: bug fix
-     - `style`: formatting-only change
-     - `chore`: build, dependencies, tooling, or documentation
-   - Optional bullet lines (`- ...`) after a blank line when details add clarity.
-   - Never add `Co-Authored-By`, `Signed-off-by`, or tool attribution lines.
-   - Enforced automatically by `.githooks/commit-msg`.
+1. **1 тип = 1 файл:** Кожен `class`, `record`, `struct`, `interface` або `enum` має жити у власному `.cs` файлі, названому за іменем типу (для generic-перевантажень використовується суфікс `OfT`, наприклад `PlatformModuleOfT.cs`).
+2. **Сувора структура папок:**
+   - Усі DTO, запити та моделі контрактів (`*Dto`, `*Request`, `*Model`) — у папці `Contracts/`.
+   - Усі `internal` класи — у папці `Internals/` (множина). Заборонено додавати `*.Internals` у `GlobalUsings.cs`.
+   - Усі статичні класи з методами розширення (`this ...`) — із суфіксом `Extensions` (`*Extensions.cs`).
+3. **Правило `PascalCase` для `Handle`:** Усі внутрішні ідентифікатори `Handle` (модулі, фічі, кольори, валюти, мови, фільтри) пишуться строго в `PascalCase` (`^[A-Z][a-zA-Z0-9]*$`, наприклад `App`, `Org`, `Ecom`, `Uah`, `Usd`). Для зовнішніх стандартів (ISO `UAH`, культура `uk-UA`) використовується поле `Code`.
+4. **Проста англійська лексика:** Використовуйте прості, загальновживані англійські слова в назвах методів і класів (`RemoveUserAsync`, `ClearAsync` замість рідкісних слів на кшталт `EvictUserAsync`) і ніколи не жертвуйте читабельністю коду заради економії кількох рядків.
+
+---
+
+## 4. Правила Git-комітів
+
+1. **Формат першого рядка:**
+   ```text
+   <prefix>: <стислий опис>
+   ```
+   Дозволені префікси `<prefix>`: `add:`, `upd:`, `del:`, `fix:`, `style:`, `chore:`.
+2. **Мова комітів:**
+   - У репозиторіях `air-platform` та `my-port` повідомлення комітів пишуться **англійською мовою (`en-US`)**.
+   - У репозиторії `ak-bcc` повідомлення комітів пишуться **українською мовою (`uk-UA`)** з англійським префіксом (наприклад: `add: додано ізоляцію схем модулів`).
+3. **Чистота історії:**
+   - Не змішуйте механічні перейменування/форматування (`upd:` із першим рядком тіла `mechanical`) та логічні зміни в одному коміті.
+   - При зміні публічних контрактів платформи оновлюйте споживачів у `my-port` та `ak-bcc` і додавайте рядок `breaking: <що змінилося>, <хто зачеплений>, <як оновити>`.
+   - Жодних markdown-блоків (` ``` `), нерозривних пробілів або рядків `Co-Authored-By` у повідомленнях комітів.

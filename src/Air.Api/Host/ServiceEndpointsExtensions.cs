@@ -228,10 +228,7 @@ public static class ServiceEndpointsExtensions
     }
 
     return userContext.Can(feat.View) ||
-           userContext.Can(feat.MenuView) ||
-           userContext.Can(feat.Edit) ||
-           userContext.Can(feat.All) ||
-           userContext.Can("*");
+           userContext.Can(feat.Edit);
   }
 
   public static bool CanEdit(Feature? feat, IUserContext? userContext)
@@ -316,10 +313,12 @@ public static class ServiceEndpointsExtensions
       }
     }
 
-    var targetKey = feat?.Edit?.Key;
-    return targetKey != null
-      ? userContext.Can(targetKey) || userContext.Can(feat!.All) || userContext.Can("*")
-      : userContext.Can("*");
+    if (feat != null && !string.IsNullOrEmpty(feat.Module))
+    {
+      return feat.IsReadOnly ? CanView(feat, userContext) : CanEdit(feat, userContext);
+    }
+
+    return userContext.Can("*");
   }
 
   public static async Task<IResult> InvokeServiceMethodAsync(MethodInfo method, object target, object?[] args)

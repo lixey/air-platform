@@ -4,9 +4,11 @@ import { BtnComponent } from '../btn/btn.component';
 import { SearchBoxComponent } from '../controls/search-box.component';
 import type { ReportColumnDto, ReportFilterItemDto, ReportTableDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
-import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { GridService } from '../grid/grid.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayService } from '../overlay/overlay.service';
+import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
 
 @Component({
@@ -102,7 +104,7 @@ import { UI_COLORS } from '../theme/ui-color';
                   (keydown.space)="clickable ? onRowSpace(row, $event) : null"
                 >
                   @for (col of t.columns; track col.key) {
-                    <td [class]="bodyCellClass(t, col, row)">
+                    <td [class]="bodyCellClass(t, col, row, idx)">
                       @if (col.kind === 'badge') {
                         @let cellText = formatCell(col, row);
                         @if (cellText) {
@@ -146,7 +148,9 @@ import { UI_COLORS } from '../theme/ui-color';
 export class ReportTableComponent {
   protected readonly texts = inject(TextsService);
   private readonly locale = inject(LocaleService).current;
+  private readonly zone = inject(LocaleService).zone;
   private readonly overlay = inject(OverlayService);
+  private readonly mutations = inject(ScreenMutations, { optional: true });
   private readonly injector = inject(Injector);
 
   readonly table = input.required<ReportTableDto>();
@@ -259,9 +263,9 @@ export class ReportTableComponent {
     const cursor = clickable ? ' cursor-pointer' : '';
     const rowHue = asUiColor(row['rowColor'] as string | undefined);
     if (rowHue) {
-      return `hue-${rowHue} bg-(--hue-soft)/35 hover:bg-(--hue-soft)/55${cursor}`;
+      return `group/row hue-${rowHue} bg-(--hue-cell) hover:bg-(--hue-cell-hover)${cursor}`;
     }
-    return `${idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'}${cursor}`;
+    return `group/row ${idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'}${cursor}`;
   }
 
   protected canOpenRow(row: Record<string, unknown>): boolean {
@@ -279,7 +283,7 @@ export class ReportTableComponent {
       return;
     }
     const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
-    this.overlay.open(
+    const ref = this.overlay.open(
       {
         key: target.service,
         presentation: 'drawer',
@@ -289,6 +293,15 @@ export class ReportTableComponent {
       anchor,
       this.injector,
     );
+    if (this.mutations) {
+      this.mutations.track(ref, target.service, () => true);
+    } else {
+      ref.closed.subscribe(result => {
+        if (result !== undefined) {
+          GridService.reloadServices([target.service]);
+        }
+      });
+    }
   }
 
   private openTargetOf(row: Record<string, unknown>): { service: string; id: number } | null {
@@ -320,14 +333,20 @@ export class ReportTableComponent {
     return `${pad} border-r border-line whitespace-nowrap ${align} ${cursor} ${sticky}`;
   }
 
-  protected bodyCellClass(t: ReportTableDto, col: ReportColumnDto, row: Record<string, unknown>): string {
+  protected bodyCellClass(t: ReportTableDto, col: ReportColumnDto, row: Record<string, unknown>, idx = 0): string {
     const align = this.alignClass(col, true);
     const pad = t.compact || t.columns.length > 10 ? 'px-2 text-xs h-8' : 'px-3 h-9';
+    const rowHue = asUiColor(row['rowColor'] as string | undefined);
+    const stickyBg = rowHue
+      ? 'bg-(--hue-cell) group-hover/row:bg-(--hue-cell-hover)'
+      : idx % 2 === 0
+        ? 'bg-row-stripe group-hover/row:bg-row-hover'
+        : 'bg-surface group-hover/row:bg-row-hover';
     const sticky =
       col.sticky === 'left'
-        ? 'sticky left-0 z-10 bg-inherit'
+        ? `sticky left-0 z-10 ${stickyBg}`
         : col.sticky === 'right'
-          ? 'sticky right-0 z-10 bg-inherit border-l border-line font-medium'
+          ? `sticky right-0 z-10 ${stickyBg} border-l border-line font-medium`
           : '';
     const cellColor =
       (row[`${col.key}Color`] as string | undefined) ??
@@ -358,10 +377,13 @@ export class ReportTableComponent {
     if (raw === null || raw === undefined || raw === '') {
       return '';
     }
-    if (typeof raw === 'string' && (col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime')) {
+    if (typeof raw === 'string' && (col.kind === 'text' || col.kind === 'badge')) {
       return raw;
     }
     const loc = this.currentLocale();
+    if (col.kind === 'date' || col.kind === 'datetime') {
+      return formatCellDate(raw, col.kind, loc, this.zone());
+    }
     const decimals = col.decimals ?? (col.kind === 'percent' ? 1 : 0);
     if (col.kind === 'money') {
       const currency = (row[`${col.key}Currency`] as string | undefined) ?? (row['currency'] as string | undefined) ?? col.currency;

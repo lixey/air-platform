@@ -11,14 +11,21 @@ public sealed class McpExecutionBridge
   public McpCallContext? Active => CurrentContext.Value;
 
   private static string BuildSessionKey(long? tenantId, long? userId, string sessionId) =>
-    $"{tenantId ?? 1}:{userId ?? 0}:{sessionId}";
+    $"{tenantId ?? 0}:{userId ?? 0}:{sessionId}";
 
   public McpCallContext? GetContext(string? sessionId, long? tenantId = null, long? userId = null)
   {
     var active = CurrentContext.Value;
     if (string.IsNullOrWhiteSpace(sessionId))
     {
-      return active;
+      if (active is not null &&
+          (!tenantId.HasValue || active.TenantId == tenantId.Value) &&
+          (!userId.HasValue || active.UserId == userId.Value))
+      {
+        return active;
+      }
+
+      return null;
     }
 
     if (active is not null &&
@@ -31,8 +38,9 @@ public sealed class McpExecutionBridge
 
     var effectiveTenantId = tenantId ?? active?.TenantId;
     var effectiveUserId = userId ?? active?.UserId;
-    if (effectiveTenantId.HasValue &&
-        _sessions.TryGetValue(BuildSessionKey(effectiveTenantId.Value, effectiveUserId, sessionId), out var scopedCtx))
+    if (_sessions.TryGetValue(BuildSessionKey(effectiveTenantId, effectiveUserId, sessionId), out var scopedCtx) &&
+        (!tenantId.HasValue || scopedCtx.TenantId == tenantId.Value) &&
+        (!userId.HasValue || scopedCtx.UserId == userId.Value))
     {
       return scopedCtx;
     }
@@ -41,6 +49,12 @@ public sealed class McpExecutionBridge
     foreach (var (_, candidate) in _sessions)
     {
       if (!string.Equals(candidate.SessionId, sessionId, StringComparison.OrdinalIgnoreCase))
+      {
+        continue;
+      }
+
+      if (tenantId.HasValue && candidate.TenantId != tenantId.Value ||
+          userId.HasValue && candidate.UserId != userId.Value)
       {
         continue;
       }
@@ -59,11 +73,10 @@ public sealed class McpExecutionBridge
   public IDisposable BeginTurn(long? tenantId, long? userId, IReadOnlySet<string>? rights, string? sessionId)
   {
     var prev = CurrentContext.Value;
-    var resolvedTenantId = tenantId ?? 1;
-    var ctx = new McpCallContext(resolvedTenantId, userId, rights, sessionId);
+    var ctx = new McpCallContext(tenantId, userId, rights, sessionId);
     CurrentContext.Value = ctx;
     var sessionKey = !string.IsNullOrWhiteSpace(sessionId)
-      ? BuildSessionKey(resolvedTenantId, userId, sessionId)
+      ? BuildSessionKey(tenantId, userId, sessionId)
       : null;
     if (sessionKey is not null)
     {

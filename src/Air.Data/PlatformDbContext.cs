@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 using Platform.Data.Internals;
 
@@ -203,6 +204,19 @@ public abstract class PlatformDbContext : DbContext
       {
         modelBuilder.Entity(clrType).Property(nameof(IHasVersion.Ver)).IsConcurrencyToken();
       }
+
+      foreach (var key in entityType.GetForeignKeys())
+      {
+        if (((IConventionForeignKey)key).GetDeleteBehaviorConfigurationSource() == ConfigurationSource.Explicit)
+        {
+          continue;
+        }
+
+        key.DeleteBehavior = (typeof(BaseAppAuthAssignment).IsAssignableFrom(clrType) || typeof(BaseAppAuthSession).IsAssignableFrom(clrType)) &&
+                             key.Properties.Any(p => p.Name == nameof(BaseAppAuthAssignment.UserId))
+          ? DeleteBehavior.Cascade
+          : DeleteBehavior.Restrict;
+      }
     }
   }
 
@@ -232,25 +246,59 @@ public abstract class PlatformDbContext : DbContext
       return res;
     }
 
-    var standaloneRun = new MutationRunScope(static () => { });
-    var standalonePending = CaptureRunFlushStates(standaloneRun);
-    if (standaloneRun.JournalEntries.Count == 0)
+    if (_suppressAllAudit || !ChangeTracker.Entries().Any(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
     {
       return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     if (Database.CurrentTransaction == null && Database.IsRelational())
     {
-      return Database.CreateExecutionStrategy().Execute(() =>
+      var res = Database.CreateExecutionStrategy().Execute(() =>
       {
+        var standaloneRun = new MutationRunScope(static () => { });
+        var standalonePending = CaptureRunFlushStates(standaloneRun);
+        var trackedStates = CaptureTrackedStates();
         using var tx = Database.BeginTransaction();
-        var res = SaveStandaloneWithJournal(acceptAllChangesOnSuccess, standaloneRun, standalonePending);
-        tx.Commit();
-        return res;
+        try
+        {
+          var count = SaveStandaloneWithJournal(standaloneRun, standalonePending);
+          tx.Commit();
+          if (!acceptAllChangesOnSuccess)
+          {
+            RestoreTrackedStates(trackedStates);
+          }
+
+          return count;
+        }
+        catch
+        {
+          RestoreTrackedStates(trackedStates);
+          throw;
+        }
       });
+      return res;
     }
 
-    return SaveStandaloneWithJournal(acceptAllChangesOnSuccess, standaloneRun, standalonePending);
+    {
+      var standaloneRun = new MutationRunScope(static () => { });
+      var standalonePending = CaptureRunFlushStates(standaloneRun);
+      var trackedStates = CaptureTrackedStates();
+      try
+      {
+        var res = SaveStandaloneWithJournal(standaloneRun, standalonePending);
+        if (!acceptAllChangesOnSuccess)
+        {
+          RestoreTrackedStates(trackedStates);
+        }
+
+        return res;
+      }
+      catch
+      {
+        RestoreTrackedStates(trackedStates);
+        throw;
+      }
+    }
   }
 
   public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
@@ -268,25 +316,59 @@ public abstract class PlatformDbContext : DbContext
       return res;
     }
 
-    var standaloneRun = new MutationRunScope(static () => { });
-    var standalonePending = CaptureRunFlushStates(standaloneRun);
-    if (standaloneRun.JournalEntries.Count == 0)
+    if (_suppressAllAudit || !ChangeTracker.Entries().Any(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
     {
       return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     if (Database.CurrentTransaction == null && Database.IsRelational())
     {
-      return await Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+      var res = await Database.CreateExecutionStrategy().ExecuteAsync(async () =>
       {
+        var standaloneRun = new MutationRunScope(static () => { });
+        var standalonePending = CaptureRunFlushStates(standaloneRun);
+        var trackedStates = CaptureTrackedStates();
         await using var tx = await Database.BeginTransactionAsync(cancellationToken);
-        var res = await SaveStandaloneWithJournalAsync(acceptAllChangesOnSuccess, standaloneRun, standalonePending, cancellationToken);
-        await tx.CommitAsync(cancellationToken);
-        return res;
+        try
+        {
+          var count = await SaveStandaloneWithJournalAsync(standaloneRun, standalonePending, cancellationToken);
+          await tx.CommitAsync(cancellationToken);
+          if (!acceptAllChangesOnSuccess)
+          {
+            RestoreTrackedStates(trackedStates);
+          }
+
+          return count;
+        }
+        catch
+        {
+          RestoreTrackedStates(trackedStates);
+          throw;
+        }
       });
+      return res;
     }
 
-    return await SaveStandaloneWithJournalAsync(acceptAllChangesOnSuccess, standaloneRun, standalonePending, cancellationToken);
+    {
+      var standaloneRun = new MutationRunScope(static () => { });
+      var standalonePending = CaptureRunFlushStates(standaloneRun);
+      var trackedStates = CaptureTrackedStates();
+      try
+      {
+        var res = await SaveStandaloneWithJournalAsync(standaloneRun, standalonePending, cancellationToken);
+        if (!acceptAllChangesOnSuccess)
+        {
+          RestoreTrackedStates(trackedStates);
+        }
+
+        return res;
+      }
+      catch
+      {
+        RestoreTrackedStates(trackedStates);
+        throw;
+      }
+    }
   }
 
   public async Task FlushMutationJournalAsync(CancellationToken cancellationToken = default)
@@ -312,36 +394,53 @@ public abstract class PlatformDbContext : DbContext
   }
 
   private int SaveStandaloneWithJournal(
-    bool acceptAllChangesOnSuccess,
     MutationRunScope run,
     List<MutationRunEntryState> pending)
   {
-    var result = base.SaveChanges(acceptAllChangesOnSuccess);
+    var result = base.SaveChanges(acceptAllChangesOnSuccess: false);
     CompleteRunFlushStates(pending);
     var journalRows = BuildConsolidatedJournalRows(run);
+    ChangeTracker.AcceptAllChanges();
     if (journalRows.Count > 0)
     {
-      PersistJournalRows(acceptAllChangesOnSuccess, journalRows);
+      PersistJournalRows(acceptAllChangesOnSuccess: false, journalRows);
     }
 
     return result;
   }
 
   private async Task<int> SaveStandaloneWithJournalAsync(
-    bool acceptAllChangesOnSuccess,
     MutationRunScope run,
     List<MutationRunEntryState> pending,
     CancellationToken cancellationToken)
   {
-    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
     CompleteRunFlushStates(pending);
     var journalRows = BuildConsolidatedJournalRows(run);
+    ChangeTracker.AcceptAllChanges();
     if (journalRows.Count > 0)
     {
-      await PersistJournalRowsAsync(acceptAllChangesOnSuccess, journalRows, cancellationToken);
+      await PersistJournalRowsAsync(acceptAllChangesOnSuccess: false, journalRows, cancellationToken);
     }
 
     return result;
+  }
+
+  private List<(EntityEntry Entry, EntityState State)> CaptureTrackedStates() =>
+    ChangeTracker.Entries()
+      .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      .Select(e => (e, e.State))
+      .ToList();
+
+  private static void RestoreTrackedStates(List<(EntityEntry Entry, EntityState State)> trackedStates)
+  {
+    foreach (var (entry, state) in trackedStates)
+    {
+      if (entry.State != state)
+      {
+        entry.State = state;
+      }
+    }
   }
 
   private void PersistJournalRows(bool acceptAllChangesOnSuccess, List<Entities.AppPlatformChange> journalRows)
@@ -437,7 +536,22 @@ public abstract class PlatformDbContext : DbContext
 
         foreach (var p in entry.Properties)
         {
-          if (!p.IsModified || Equals(p.OriginalValue, p.CurrentValue) || excluded.Contains(p.Metadata.Name))
+          if (excluded.Contains(p.Metadata.Name))
+          {
+            continue;
+          }
+
+          if (Equals(p.OriginalValue, p.CurrentValue))
+          {
+            if (state.TouchedProperties.Contains(p.Metadata.Name))
+            {
+              state.LatestAfter[p.Metadata.Name] = p.CurrentValue;
+            }
+
+            continue;
+          }
+
+          if (!p.IsModified)
           {
             continue;
           }
@@ -556,6 +670,19 @@ public abstract class PlatformDbContext : DbContext
 
       if (state.IsAdded)
       {
+        if (state.Entry.State != EntityState.Detached)
+        {
+          var excluded = EntityAuditMetadata.For(state.ClrType).ExcludedProperties;
+          state.LatestAfter.Clear();
+          foreach (var p in state.Entry.Properties)
+          {
+            if (!excluded.Contains(p.Metadata.Name))
+            {
+              state.LatestAfter[p.Metadata.Name] = p.CurrentValue;
+            }
+          }
+        }
+
         row.After = System.Text.Json.JsonSerializer.Serialize(state.LatestAfter, AuditJsonOptions);
         rows.Add(row);
       }
@@ -600,9 +727,22 @@ public abstract class PlatformDbContext : DbContext
   }
 
   private bool _suppressDerivedAudit;
+  private bool _suppressAllAudit;
+
+  public IDisposable SuppressAuditScope()
+  {
+    var prev = _suppressAllAudit;
+    _suppressAllAudit = true;
+    return new NestedMutationScope(() => _suppressAllAudit = prev);
+  }
 
   public async Task RunDerivedRecalculationAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
   {
+    if (ChangeTracker.HasChanges())
+    {
+      await SaveChangesAsync(cancellationToken);
+    }
+
     var prev = _suppressDerivedAudit;
     _suppressDerivedAudit = true;
     try
@@ -621,7 +761,7 @@ public abstract class PlatformDbContext : DbContext
 
   private bool IsJournaled(EntityEntry entry)
   {
-    if (_suppressDerivedAudit && entry.State == EntityState.Modified)
+    if (_suppressAllAudit || _suppressDerivedAudit && entry.State == EntityState.Modified)
     {
       return false;
     }
@@ -706,8 +846,8 @@ public abstract class PlatformDbContext : DbContext
         if (entry.Entity is IInheritedByChildTenants existingInherited && tenantId.HasValue && !TenantContext.IsSystemScope)
         {
           var origInheritedTid = entry.Property(nameof(IInheritedByChildTenants.TenantId)).OriginalValue as long?;
-          if (origInheritedTid is { } ownerTid && ownerTid != tenantId.Value ||
-              entry.State == EntityState.Modified && existingInherited.TenantId is { } newTid && newTid != 0 && newTid != tenantId.Value)
+          if (origInheritedTid != tenantId.Value ||
+              entry.State == EntityState.Modified && existingInherited.TenantId != tenantId.Value)
           {
             throw new InvalidOperationException(
               $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant."

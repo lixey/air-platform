@@ -38,7 +38,7 @@ public abstract partial class GridService<TEntity, TRow>
       return BuildSelectScreen(servicePath, columns, request);
     }
 
-    var formOverlay = ResolveFormOverlay(columns);
+    var formOverlay = await ResolveFormOverlayAsync(columns, ct);
 
     var nav = GetNav(servicePath);
 
@@ -54,7 +54,7 @@ public abstract partial class GridService<TEntity, TRow>
       foreach (var (createFormType, createModel) in nav.Creates)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), createFormType, "Nav.AddCreate");
-        createModel.Overlay = ResolveFormOverlayForType(createFormType, createModel.Service!);
+        createModel.Overlay = await ResolveFormOverlayForTypeAsync(createFormType, createModel.Service!, ct);
         formOverlay ??= createModel.Overlay;
         navStart.Add(createModel);
       }
@@ -175,7 +175,7 @@ public abstract partial class GridService<TEntity, TRow>
       permittedActions.Select(a => ((NavElementModel)a.Model, a.IsInMenu)),
       L);
 
-    var canExport = User == null || !User.IsAuthenticated || User.Can(Feature.Export) || User.Can(Feature.All);
+    var canExport = User is { IsAuthenticated: true } && ServiceEndpointsExtensions.CanExport(Feature, User);
     if (canExport)
     {
       actionElements.Add(new GridNavActionModel
@@ -376,6 +376,12 @@ public abstract partial class GridService<TEntity, TRow>
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), refServiceType, $"AsReference on '{col.Path}'");
       }
 
+      if (col.Cell is GridCellPickerModel cellPicker && !string.IsNullOrEmpty(cellPicker.ReferenceService))
+      {
+        var pickerServiceType = col.PickerSourceType ?? ModuleCatalog.Instance.FindServiceType(cellPicker.ReferenceService);
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), pickerServiceType, $"PickedBy on '{col.Path}'");
+      }
+
       if (col.ExplicitRequired.HasValue)
       {
         col.IsRequired = col.ExplicitRequired.Value;
@@ -416,8 +422,15 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  protected virtual OverlayDto? ResolveFormOverlay(Columns columns)
+  protected virtual OverlayDto? ResolveFormOverlay(Columns columns) => null;
+
+  protected virtual async Task<OverlayDto?> ResolveFormOverlayAsync(Columns columns, CancellationToken ct = default)
   {
+    if (ResolveFormOverlay(columns) is { } customOverlay)
+    {
+      return customOverlay;
+    }
+
     var detectedFormService = ResolveFormServicePath(columns);
     if (detectedFormService is null)
     {
@@ -425,11 +438,16 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var formType = ResolveFormServiceType(columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
-    return ResolveFormOverlayForType(formType, detectedFormService);
+    return await ResolveFormOverlayForTypeAsync(formType, detectedFormService, ct);
   }
 
-  private OverlayDto ResolveFormOverlayForType(Type? formType, string formServicePath)
+  private async Task<OverlayDto> ResolveFormOverlayForTypeAsync(Type? formType, string formServicePath, CancellationToken ct = default)
   {
+    if (formType != null)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, nameof(ResolveFormOverlay));
+    }
+
     if (_cachedFormOverlays.TryGetValue(formServicePath, out var cachedOverlay))
     {
       return cachedOverlay;
@@ -441,7 +459,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService formInstance)
         {
-          var resolved = formInstance.Overlay(formServicePath);
+          var resolved = await formInstance.OverlayAsync(formServicePath, ct);
           _cachedFormOverlays[formServicePath] = resolved;
           return resolved;
         }
@@ -459,6 +477,11 @@ public abstract partial class GridService<TEntity, TRow>
 
   private GridNavStatusModel? BuildStatusNavElement(string servicePath, IRecordStatuses<TEntity> statusFlow)
   {
+    if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+    {
+      flowSvc.AttachPlatformApp(PlatformApp);
+    }
+
     var statusPath = StatusMoveNavBuilder.ResolveStatusPath(statusFlow.StatusMember);
 
     var statusMoves = statusFlow.Transitions

@@ -285,7 +285,8 @@ public static partial class AgentProposalBuilder
     IReadOnlyList<FormElementDto> elements,
     string? currencyLabel)
   {
-    if (formValues.TryGetValue("name", out var nameVal) && nameVal is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
+    var primaryTextPath = ResolvePrimaryTextFieldPath(elements);
+    if (formValues.TryGetValue(primaryTextPath, out var nameVal) && nameVal is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
     {
       return $"{desc.Label}: {nameStr}";
     }
@@ -313,10 +314,11 @@ public static partial class AgentProposalBuilder
     IReadOnlyList<FormElementDto> elements,
     Dictionary<string, List<Dictionary<string, object?>>> dictionaries)
   {
+    var primaryTextPath = ResolvePrimaryTextFieldPath(elements);
     var parts = new List<string>();
     foreach (var el in elements)
     {
-      if (el.Model is FormMoneyModel || el.Path.Equals("name", StringComparison.OrdinalIgnoreCase))
+      if (el.Model is FormMoneyModel || el.Path.Equals(primaryTextPath, StringComparison.OrdinalIgnoreCase))
       {
         continue;
       }

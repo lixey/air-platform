@@ -20,7 +20,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
-    User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
+    PlatformApp != null && (User is not { IsAuthenticated: true } || !ServiceEndpointsExtensions.CanEdit(Feature, User));
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
 
@@ -167,23 +167,28 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     var deleteMethod = GetType().GetMethod(nameof(Delete), BindingFlags.Public | BindingFlags.Instance)
       ?? GetType().GetMethod(nameof(DeleteAsync), BindingFlags.Public | BindingFlags.Instance);
 
+    if (User is not { IsAuthenticated: true })
+    {
+      return false;
+    }
+
     if (deleteMethod != null)
     {
       if (deleteMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true) is { } reqRight)
       {
         if (Feature.FeaturesByServiceType.TryGetValue(reqRight.Service, out var targetFeat))
         {
-          return User == null || User.Can(targetFeat.Action(reqRight.ActionName)) || User.Can(targetFeat.All);
+          return User.Can(targetFeat.Action(reqRight.ActionName)) || User.Can(targetFeat.All);
         }
       }
 
       if (deleteMethod.GetCustomAttribute<RequireActionAttribute>(inherit: true) is { } reqAction)
       {
-        return User == null || User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
+        return User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
       }
     }
 
-    return Feature.HasDelete && (User == null || User.Can(Feature.Delete) || User.Can(Feature.All));
+    return Feature.HasDelete && (User.Can(Feature.Delete) || User.Can(Feature.All));
   }
 
   public virtual Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
@@ -309,6 +314,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     var nav = new Nav(effectivePath, L);
     SetNav(nav);
+    foreach (var (createFormType, _) in nav.Creates)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), createFormType, "Nav.AddCreate");
+    }
+
+    foreach (var (pickerSourceType, pickerModel) in nav.PickerEntries)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), pickerSourceType, $"Nav.AddPicker '{pickerModel.Key}'");
+    }
+
     _cachedNav = (ParentService, ParentId, effectivePath, nav);
     return nav;
   }
@@ -321,8 +336,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     ParentService = request.ParentService;
     ParentId = request.ParentId;
     SelectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
-    var nav = new Nav(ServicePathResolver.Resolve(GetType()), L);
-    SetNav(nav);
+    var nav = GetNav(ServicePathResolver.Resolve(GetType()));
     var entry = nav.Actions.FirstOrDefault(a =>
       string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
       string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
@@ -340,6 +354,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     var cols = new Columns();
     SetColumns(cols);
     SetColumns((Columns<TRow>)cols);
+    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.FormServiceType, "AsOpenForm / UseForm");
+    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.CoverFileGridType, "AsCover");
+    foreach (var col in cols.List)
+    {
+      if (col.PickerSourceType != null)
+      {
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.PickerSourceType, $"PickedBy on '{col.Path}'");
+      }
+    }
+
     return cols;
   }
 
@@ -378,6 +402,43 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     if (Feature.IsReadOnly || IsReadOnly && (_preloadedParentId.HasValue || GetParent().BoundProperty == null))
     {
       return [];
+    }
+
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var nav = GetNav(servicePath);
+    if (nav.Creates.Count > 0)
+    {
+      return nav.Creates
+        .Select(c => new GridCreateDescriptor(
+          c.FormType,
+          c.Model.Service ?? ServicePathResolver.Resolve(c.FormType),
+          c.Model.Label ?? c.Model.Title ?? L["Add"],
+          c.Model.Color))
+        .ToList();
+    }
+
+    var columns = CreateColumns();
+    var formType = ResolveFormServiceType(columns);
+    var formPath = ResolveFormServicePath(columns);
+    if (formType != null && !string.IsNullOrEmpty(formPath))
+    {
+      return [new GridCreateDescriptor(formType, formPath, L[Feature.Label], UiColor.Orange)];
+    }
+
+    return [];
+  }
+
+  public virtual IReadOnlyList<GridCreateDescriptor> GetAgentForms()
+  {
+    if (Feature.IsReadOnly)
+    {
+      return [];
+    }
+
+    var creates = GetCreateForms();
+    if (creates.Count > 0)
+    {
+      return creates;
     }
 
     var servicePath = ServicePathResolver.Resolve(GetType());

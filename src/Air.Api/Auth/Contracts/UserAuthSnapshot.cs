@@ -20,7 +20,8 @@ public sealed record UserAuthSnapshot(
   long? HomeTenantId,
   IReadOnlyList<string> Permissions,
   bool Global = false,
-  IReadOnlyList<long>? AllowedTenantIds = null
+  IReadOnlyList<long>? AllowedTenantIds = null,
+  string? LanguageCode = null
 )
 {
   private FrozenSet<string>? _permissionSet;

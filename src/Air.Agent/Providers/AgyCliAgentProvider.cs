@@ -136,7 +136,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
         }
 
         psi.ArgumentList.Add("--add-dir");
-        psi.ArgumentList.Add(store.WorkspaceDirectory);
+        psi.ArgumentList.Add(psi.WorkingDirectory);
 
         if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
         {

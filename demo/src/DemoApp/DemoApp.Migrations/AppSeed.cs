@@ -16,6 +16,7 @@ public static class AppSeed
 
     await AppCodeRows.SyncAsync(db, tenants, cancellationToken);
     await AgentModelCatalog.EnsureSeededAsync(db, cancellationToken);
+    await AgentMemoryCatalog.EnsureSeededAsync(db, ct: cancellationToken);
     await AppIdentitySeed.RunAsync(db, tenants, cancellationToken, seedPassword);
     await AppVolumeSeed.RunAsync(db, userGroupsCount, usersCount, randomSeed, tenants, cancellationToken, seedPassword);
   }

@@ -136,6 +136,13 @@ public static class MutationRunner
           return reloaded;
         }
       }
+
+      if (typeof(TResult) == typeof(MutationResultDto))
+      {
+        return (TResult)(object)new MutationResultDto { Outcome = MutationOutcome.Committed };
+      }
+
+      throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
     }
 
     var created = await RunAsync(db, executeCreate, ct);

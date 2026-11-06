@@ -78,14 +78,16 @@ public abstract partial class GridService<TEntity, TRow>
       var value = column.ValueEvaluator != null
         ? column.ValueEvaluator(row)
         : ReadPathValue(row, column.Path);
+      var formattedByCustomFormatter = false;
       if (column.ValueFormatter != null && (!column.IsSubqueryExpression || value != null))
       {
         value = column.ValueFormatter(value);
+        formattedByCustomFormatter = true;
       }
 
       var allocatedRef = false;
 
-      if (column.Options is { Count: > 0 } options)
+      if (column.Options is { Count: > 0 } options && !formattedByCustomFormatter)
       {
         if (value is not null and not Reference)
         {
@@ -168,6 +170,7 @@ public abstract partial class GridService<TEntity, TRow>
         var formType = column.FormServiceResolver(row);
         if (formType is not null)
         {
+          ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, $"OpenForm on '{column.Path}'");
           shaped["form"] = ServicePathResolver.Resolve(formType);
         }
       }

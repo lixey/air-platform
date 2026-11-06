@@ -1,5 +1,6 @@
 namespace Platform.Data.Tests.Internals;
 
+[ModuleSchema("Test")]
 internal sealed class TestDbContext(DbContextOptions<TestDbContext> options, ITenantContext tenant)
   : PlatformDbContext(options, tenant)
 {

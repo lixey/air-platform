@@ -40,7 +40,7 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
         }
       }
 
-      await PlatformAppService.RevokeUserSessionsAsync(db, [.. c.Records.Select(u => u.Id)], "app-user-deleted", cancellationToken);
+      await PlatformAppService.RevokeUserSessionsAsync(db, [.. c.Records.Select(u => u.Id)], "app-user-deleted", cancellationToken, app);
     });
   }
 
@@ -74,7 +74,7 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
         user.IsActive = false;
       }
 
-      await PlatformAppService.RevokeUserSessionsAsync(db, [.. context.Records.Select(u => u.Id)], "app-user-deactivated", token);
+      await PlatformAppService.RevokeUserSessionsAsync(db, [.. context.Records.Select(u => u.Id)], "app-user-deactivated", token, app);
     }, cancellationToken);
 }
 

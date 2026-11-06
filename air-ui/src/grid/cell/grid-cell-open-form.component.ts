@@ -35,8 +35,18 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
 
   private readonly targetKey = computed<number | null>(() => {
     const row = this.cell().row;
+    if (this.grid?.isPicking()) {
+      const key = keyOf(row);
+      if (key === 0 && !this.cell().pinned) {
+        return 0;
+      }
+      return key !== null && key !== 0 ? key : null;
+    }
     const keyPath = this.model()?.keyPath;
-    if (keyPath && row && typeof row === 'object') {
+    if (keyPath) {
+      if (!row || typeof row !== 'object') {
+        return null;
+      }
       const val = valueAt(row as Record<string, unknown>, keyPath);
       if (typeof val === 'number' && val !== 0) {
         return val;
@@ -45,11 +55,9 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
         const id = (val as { id: number }).id;
         return id !== 0 ? id : null;
       }
+      return null;
     }
     const key = keyOf(row);
-    if (this.grid?.isPicking() && key === 0 && !this.cell().pinned) {
-      return 0;
-    }
     return key !== null && key !== 0 ? key : null;
   });
 

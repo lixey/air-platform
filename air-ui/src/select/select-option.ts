@@ -39,7 +39,7 @@ export function optionOfRow(row: Row, labelPaths: readonly string[] | null | und
 }
 
 /** A reference the server sent as the option that shows it. */
-export function optionOfReference(reference: Reference & { readonly title?: string }): SelectOption {
+export function optionOfReference(reference: Reference & { readonly title?: string | null }): SelectOption {
   return { id: reference.id, label: reference.name, ...(reference.title ? { title: reference.title } : {}) };
 }
 

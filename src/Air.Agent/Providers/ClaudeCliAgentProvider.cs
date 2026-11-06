@@ -193,7 +193,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
         psi.ArgumentList.Add("--effort");
         psi.ArgumentList.Add(effort);
         psi.ArgumentList.Add("--add-dir");
-        psi.ArgumentList.Add(store.WorkspaceDirectory);
+        psi.ArgumentList.Add(psi.WorkingDirectory);
 
         if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
         {
@@ -242,22 +242,24 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
             }
           }
         }
-        else if (type == "result" &&
-                 fullAssistantText.Length == 0 &&
-                 root.TryGetProperty("result", out var resProp) &&
-                 resProp.ValueKind == JsonValueKind.String &&
-                 resProp.GetString() is { Length: > 0 } resText)
+        else if (type == "result")
         {
+          var resText = root.TryGetProperty("result", out var resProp) && resProp.ValueKind == JsonValueKind.String
+            ? resProp.GetString()
+            : null;
           if (root.TryGetProperty("is_error", out var errFlag) && errFlag.ValueKind == JsonValueKind.True)
           {
             emittedError = true;
-            pendingEvents.Add(new AgentStreamEventDto
+            if (!string.IsNullOrWhiteSpace(resText))
             {
-              Type = "error",
-              Text = resText
-            });
+              pendingEvents.Add(new AgentStreamEventDto
+              {
+                Type = "error",
+                Text = resText
+              });
+            }
           }
-          else
+          else if (fullAssistantText.Length == 0 && !string.IsNullOrEmpty(resText))
           {
             fullAssistantText.Append(resText);
             pendingEvents.Add(new AgentStreamEventDto

@@ -9,13 +9,14 @@ internal sealed class ModuleOwnershipConvention(Type contextType) : IModelFinali
     IConventionModelBuilder modelBuilder,
     IConventionContext<IConventionModelBuilder> context)
   {
+    var model = modelBuilder.Metadata;
     var currentModule = ModuleOwnershipExtensions.GetDeclaredModuleHandle(contextType);
     if (string.IsNullOrWhiteSpace(currentModule))
     {
+      ModuleOwnershipExtensions.ValidateExternalEntitiesHaveModuleOwner(model, contextType);
       return;
     }
 
-    var model = modelBuilder.Metadata;
     var owners = ModuleOwnershipExtensions.InferTableOwners(model, contextType);
     if (owners.Count == 0)
     {

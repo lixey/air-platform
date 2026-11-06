@@ -52,6 +52,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> VisibleWhen(Expression<Func<TEntity, bool>> predicate)
   {
     dto.VisibleWhen = TranslateFilterNode(predicate.Body);
+    Func<TEntity, bool>? compiled = null;
+    dto.VisibleWhenPredicate = obj => obj is TEntity typed && (compiled ??= predicate.Compile())(typed);
     return this;
   }
   public FormElement<TEntity, TProp> DisabledWhen(FilterNode condition)
@@ -62,8 +64,8 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
   public FormElement<TEntity, TProp> DisabledWhen(Expression<Func<TEntity, bool>> predicate)
   {
     dto.DisabledWhen = TranslateFilterNode(predicate.Body);
-    var compiled = predicate.Compile();
-    dto.DisabledWhenPredicate = obj => obj is TEntity typed && compiled(typed);
+    Func<TEntity, bool>? compiled = null;
+    dto.DisabledWhenPredicate = obj => obj is TEntity typed && (compiled ??= predicate.Compile())(typed);
     return this;
   }
   public FormElement<TEntity, TProp> Focus(bool focus = true)
@@ -191,7 +193,7 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
 
   public IReadOnlySet<string> TreeKeys { get; private set; } = new HashSet<string>();
 
-  public FormElement<TEntity, TProp> AsRightsTree(Platform.Api.Modules.ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
+  public FormElement<TEntity, TProp> AsRightsTree(ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
   {
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
@@ -201,10 +203,10 @@ public class FormElement<TEntity, TProp>(FormElementDto dto)
       dto.Span = 12;
     }
 
-    catalog ??= Platform.Api.Modules.ModuleCatalog.Instance;
-    var nodes = Platform.App.Auth.RightsTree.Build(catalog, held);
+    catalog ??= ModuleCatalog.Instance;
+    var nodes = RightsTree.Build(catalog, held);
     dto.Model = new FormCheckboxTreeModel { Nodes = nodes };
-    TreeKeys = Platform.App.Auth.RightsTree.FlattenKeys(nodes);
+    TreeKeys = RightsTree.FlattenKeys(nodes);
     return this;
   }
 

@@ -5,6 +5,7 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
   internal Feature(Feature source) : base(source)
   {
     AccessTo = new TAccess { Feature = this };
+    AccessTo.RegisterRights();
   }
 
   public TAccess AccessTo { get; }

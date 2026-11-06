@@ -17,13 +17,30 @@ internal sealed class ResilientNullableDateTimeConverter : JsonConverter<DateTim
         return null;
       }
 
-      if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var dt))
+      if (DateTimeOffset.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
+      {
+        return DateTime.SpecifyKind(dto.DateTime, DateTimeKind.Unspecified);
+      }
+
+      if (DateTime.TryParse(str, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
       {
         return DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
       }
+
+      if (reader.TryGetDateTime(out var isoDt))
+      {
+        return DateTime.SpecifyKind(isoDt, DateTimeKind.Unspecified);
+      }
+
+      throw new JsonException($"Unable to convert \"{str}\" to {nameof(DateTime)}?.");
     }
 
-    return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Unspecified);
+    if (reader.TryGetDateTime(out var tokenDt))
+    {
+      return DateTime.SpecifyKind(tokenDt, DateTimeKind.Unspecified);
+    }
+
+    throw new JsonException($"Unable to convert {reader.TokenType} to {nameof(DateTime)}?.");
   }
   public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
   {

@@ -12,7 +12,8 @@ public abstract partial class FormService<TEntity>
     TEntity entity,
     IReadOnlyDictionary<string, object?>? originalValues,
     IReadOnlySet<string>? presentPaths,
-    CancellationToken ct)
+    CancellationToken ct,
+    IReadOnlySet<string>? disabledElementPaths = null)
   {
     var saveCtx = new FormSaveContext<TEntity>
     {
@@ -36,7 +37,7 @@ public abstract partial class FormService<TEntity>
       SaveContext = saveCtx
     };
 
-    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: true);
+    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: true, disabledElementPaths);
 
     foreach (var r in rules.Validators)
     {
@@ -44,7 +45,7 @@ public abstract partial class FormService<TEntity>
     }
 
     await ValidateUniqueElementsAsync(elements, entity, ruleCtx, ct);
-    await ValidateReferenceElementsAsync(elements, entity, originalValues, ruleCtx, ct);
+    await ValidateReferenceElementsAsync(elements, entity, originalValues, ruleCtx, ct, disabledElementPaths);
     return (saveCtx, ruleCtx);
   }
 
@@ -52,7 +53,8 @@ public abstract partial class FormService<TEntity>
     Elements elements,
     TEntity entity,
     RuleContext<TEntity> ruleCtx,
-    bool onlyAcceptingInput)
+    bool onlyAcceptingInput,
+    IReadOnlySet<string>? disabledElementPaths = null)
   {
     var efEntityType = db.Model.FindEntityType(typeof(TEntity));
 
@@ -63,8 +65,12 @@ public abstract partial class FormService<TEntity>
         continue;
       }
 
-      var isDisabledNow = IsElementDisabled(el, entity);
-      var acceptsInput = !isDisabledNow && !el.IsServerOwned && el.Model is not FormInfoModel;
+      var isHiddenNow = IsElementHidden(el, entity);
+      var isDisabledOnEffective = IsElementDisabledOnState(el, entity);
+      var isDisabledForInput = disabledElementPaths != null
+        ? disabledElementPaths.Contains(el.Path)
+        : isDisabledOnEffective;
+      var acceptsInput = !isDisabledForInput && !el.IsServerOwned && el.Model is not FormInfoModel;
       if (onlyAcceptingInput)
       {
         if (!acceptsInput)
@@ -74,7 +80,7 @@ public abstract partial class FormService<TEntity>
       }
       else
       {
-        if (acceptsInput || el.IsInputOnly || !el.IsRequired)
+        if (acceptsInput || el.IsInputOnly || !el.IsRequired || isHiddenNow || isDisabledOnEffective)
         {
           continue;
         }
@@ -90,7 +96,7 @@ public abstract partial class FormService<TEntity>
 
       var efProp = efEntityType != null && !el.IsInputOnly ? efEntityType.FindProperty(entityProp.Name) : null;
       var isFk = el.ValueKind == FormValueKind.Reference || !string.IsNullOrEmpty(el.ReferencePath) || (efProp?.IsForeignKey() ?? false);
-      var isRequiredNow = IsElementRequired(el);
+      var isRequiredNow = !isHiddenNow && !isDisabledOnEffective && IsElementRequired(el);
 
       if (isRequiredNow && !AnswersRequirement(val, isFk))
       {
@@ -261,8 +267,8 @@ public abstract partial class FormService<TEntity>
       else if (el.Model is FormCheckboxTreeModel { Nodes: { } treeNodes } && val is IEnumerable<string> treeKeys)
       {
         var keyList = treeKeys.ToList();
-        var allowedKeys = Platform.App.Auth.RightsTree.FlattenKeys(treeNodes);
-        var disabledKeys = Platform.App.Auth.RightsTree.FlattenDisabledKeys(treeNodes);
+        var allowedKeys = RightsTree.FlattenKeys(treeNodes);
+        var disabledKeys = RightsTree.FlattenDisabledKeys(treeNodes);
         var origTreeSet = ruleCtx.SaveContext.OriginalValues != null
           && ruleCtx.SaveContext.OriginalValues.TryGetValue(el.Path, out var origTreeVal)
           && origTreeVal is IEnumerable<string> origTreeEnum
@@ -281,7 +287,7 @@ public abstract partial class FormService<TEntity>
         }
         else
         {
-          var normalized = Platform.App.Auth.RightsTree.Normalize(treeNodes, keyList);
+          var normalized = RightsTree.Normalize(treeNodes, keyList);
           if (entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
           {
             entityProp.SetValue(entity, normalized);
@@ -295,21 +301,44 @@ public abstract partial class FormService<TEntity>
     }
   }
 
-  private static bool IsElementDisabled(FormElementDto el, TEntity? entity, TEntity? input = null)
+  private static bool IsElementDisabledOnState(FormElementDto el, TEntity? state)
   {
     if (el.IsDisabled)
     {
       return true;
     }
 
-    if (el.DisabledWhenPredicate != null)
+    if (state == null)
     {
-      return entity != null && el.DisabledWhenPredicate(entity) || input != null && el.DisabledWhenPredicate(input);
+      return false;
     }
 
-    return el.DisabledWhen != null &&
-           (EvaluateFilterNode(el.DisabledWhen, entity, input) ||
-            input != null && EvaluateFilterNode(el.DisabledWhen, input, entity));
+    if (el.DisabledWhenPredicate != null)
+    {
+      return el.DisabledWhenPredicate(state);
+    }
+
+    return el.DisabledWhen != null && EvaluateFilterNode(el.DisabledWhen, state, null);
+  }
+
+  private static bool IsElementHidden(FormElementDto el, TEntity? state)
+  {
+    if (el.IsHidden)
+    {
+      return true;
+    }
+
+    if (state == null)
+    {
+      return false;
+    }
+
+    if (el.VisibleWhenPredicate != null)
+    {
+      return !el.VisibleWhenPredicate(state);
+    }
+
+    return el.VisibleWhen != null && !EvaluateFilterNode(el.VisibleWhen, state, null);
   }
 
   private static bool IsElementRequired(FormElementDto el) =>
@@ -402,7 +431,7 @@ public abstract partial class FormService<TEntity>
         }
 
         var withinVal = PropertyAccessorCache.GetValue(entity, withinProp.Name);
-        if (withinVal is null)
+        if (withinVal is null && withinProp.PropertyType.IsValueType && Nullable.GetUnderlyingType(withinProp.PropertyType) == null)
         {
           skip = true;
           break;
@@ -443,12 +472,18 @@ public abstract partial class FormService<TEntity>
     TEntity entity,
     IReadOnlyDictionary<string, object?>? originalValues,
     RuleContext<TEntity> ruleCtx,
-    CancellationToken ct)
+    CancellationToken ct,
+    IReadOnlySet<string>? disabledElementPaths = null)
   {
     foreach (var el in elements.List)
     {
+      var isDisabledForInput = disabledElementPaths != null
+        ? el.IsDisabled || disabledElementPaths.Contains(el.Path)
+        : IsElementDisabledOnState(el, entity);
+
       if (el.ValueKind != FormValueKind.Reference && el.ValueKind != FormValueKind.List ||
-          IsElementDisabled(el, entity) ||
+          isDisabledForInput ||
+          IsElementHidden(el, entity) ||
           el.IsServerOwned ||
           string.IsNullOrEmpty(el.Path))
       {

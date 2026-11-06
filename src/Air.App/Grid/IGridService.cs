@@ -18,6 +18,8 @@ public interface IGridService : IPlatformService
   IReadOnlyList<string>? GetLabelNavigationPaths() => null;
   string? GetRecordLabel(object? entity) => null;
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
+  IReadOnlyList<GridCreateDescriptor> GetAgentForms() => GetCreateForms();
+  bool CanDelete() => false;
   bool AllowsMultiDelete => false;
   void RegisterMetadata() { }
   bool CanView(GridRequest request, IUserContext? user) => ServiceEndpointsExtensions.CanView(Feature, user);

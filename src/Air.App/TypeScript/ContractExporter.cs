@@ -151,7 +151,6 @@ public static class ContractExporter
     sb.AppendLine("}");
     sb.AppendLine();
     sb.AppendLine("export interface FormServiceEndpoints {");
-    sb.AppendLine("  delete: { request: FormRequest; answer: GridDeleteDto };");
     sb.AppendLine("  'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };");
     sb.AppendLine("  'get-data': { request: FormRequest | null; answer: ScreenDto };");
     sb.AppendLine("  save: { request: FormRequest; answer: FormDataDto };");
@@ -319,7 +318,8 @@ public static class ContractExporter
       return "number";
     }
 
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(DateOnly))
+    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) ||
+        underlying == typeof(DateOnly) || underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
     {
       return "string";
     }

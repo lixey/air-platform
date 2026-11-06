@@ -302,11 +302,14 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
 
   public GridColumn<TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
   {
+    var readsParent = ParentScopeValidator.DeclaresParentScope(typeof(TSource));
+    dto.PickerSourceType = typeof(TSource);
     dto.Cell = new GridCellPickerModel
     {
       ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TSource)),
       Method = Platform.Api.Modules.ServicePathResolver.ToKebabCase(method.Method.Name),
-      MinLength = minLength
+      MinLength = minLength,
+      ReadsParent = readsParent
     };
     return this;
   }

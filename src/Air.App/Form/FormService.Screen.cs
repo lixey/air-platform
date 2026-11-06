@@ -76,7 +76,7 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    LocalizeAndResolveSelectElements(elements);
+    await LocalizeAndResolveSelectElementsAsync(elements, ct);
     await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
     _lastElements = elements;
 
@@ -106,8 +106,8 @@ public abstract partial class FormService<TEntity>
     };
 
     var caption = RecordCaption(entity, id);
-    var filesChildren = elements.Children.Where(c => c.IsFiles).ToList();
-    var pageChildren = elements.Children.Where(c => !c.IsFiles).ToList();
+    var filesChildren = elements.Children.Where(c => c.IsFiles && IsChildPermitted(c)).ToList();
+    var pageChildren = elements.Children.Where(c => !c.IsFiles && IsChildPermitted(c)).ToList();
     var hasPages = pageChildren.Count > 0 && id.HasValue && id.Value > 0;
 
     if (filesChildren.Count > 0 && id.HasValue && id.Value > 0)
@@ -193,7 +193,7 @@ public abstract partial class FormService<TEntity>
     };
   }
 
-  private void LocalizeAndResolveSelectElements(Elements elements)
+  private async Task LocalizeAndResolveSelectElementsAsync(Elements elements, CancellationToken ct = default)
   {
     foreach (var child in elements.Children)
     {
@@ -304,7 +304,7 @@ public abstract partial class FormService<TEntity>
               var featType = targetServiceType ?? createFormType;
               if (Feature.FeaturesByServiceType.TryGetValue(featType, out var targetFeat))
               {
-                if (targetFeat.IsReadOnly || User != null && User.IsAuthenticated && !User.Can(targetFeat.Edit) && !User.Can(targetFeat.All) && !User.Can("*"))
+                if (targetFeat.IsReadOnly || PlatformApp != null && (User is not { IsAuthenticated: true } || !ServiceEndpointsExtensions.CanEdit(targetFeat, User)))
                 {
                   canCreate = false;
                 }
@@ -317,7 +317,7 @@ public abstract partial class FormService<TEntity>
                 {
                   if (ModuleCatalog.Instance.CreateServiceInstance(createFormType, db, PlatformApp) is IFormService createFormInst)
                   {
-                    select.CreateOverlay = createFormInst.Overlay(createServicePath);
+                    select.CreateOverlay = await createFormInst.OverlayAsync(createServicePath, ct);
                   }
                 }
                 catch { }
@@ -331,7 +331,7 @@ public abstract partial class FormService<TEntity>
       else if (el.IsRightsTree && el.Model is FormCheckboxTreeModel treeModel)
       {
         var held = User is { IsAuthenticated: true } ? User.Permissions : null;
-        treeModel.Nodes = Platform.App.Auth.RightsTree.Build(ModuleCatalog.Instance, held);
+        treeModel.Nodes = RightsTree.Build(ModuleCatalog.Instance, held);
       }
     }
   }
@@ -636,12 +636,12 @@ public abstract partial class FormService<TEntity>
       return null;
     }
 
-    if (User is { IsAuthenticated: true } &&
-        !User.Can(Feature.History) &&
-        !User.Can(Feature.All) &&
-        !User.Can(changeFeature.View) &&
-        !User.Can(changeFeature.All) &&
-        !User.Can("*"))
+    var canSeeHistory = User is { IsAuthenticated: true } && (
+      User.Can(Feature.History) ||
+      User.Can(Feature.All) ||
+      User.Can("*") ||
+      ServiceEndpointsExtensions.CanView(changeFeature, User));
+    if (!canSeeHistory)
     {
       return null;
     }
@@ -662,6 +662,17 @@ public abstract partial class FormService<TEntity>
     };
   }
 
+  private bool IsChildPermitted(ChildGridBuilder child)
+  {
+    if (PlatformApp == null || child.ServiceType == null)
+    {
+      return true;
+    }
+
+    var childFeat = ModuleCatalog.Instance.FindFeature(child.ServiceType);
+    return childFeat == null || ServiceEndpointsExtensions.CanView(childFeat, User);
+  }
+
   private void ConfigureStatusFlowAndActions(
     string servicePath,
     IRecordStatuses<TEntity> statusFlow,
@@ -671,6 +682,11 @@ public abstract partial class FormService<TEntity>
     long? id,
     List<NavElementModel> actionStart)
   {
+    if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+    {
+      flowSvc.AttachPlatformApp(PlatformApp);
+    }
+
     if (entity != null && id.HasValue && id.Value > 0 && (!IsReadOnly || allowReadOnly))
     {
       var currentStatus = statusFlow.StatusMember.Compile()(entity);
@@ -716,6 +732,11 @@ public abstract partial class FormService<TEntity>
     var offers = new List<(string ActionKey, int ReasonIndex, Expression<Func<TEntity, bool>> Condition)>();
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
+      if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+      {
+        flowSvc.AttachPlatformApp(PlatformApp);
+      }
+
       foreach (var transition in statusFlow.Transitions)
       {
         var actionKey = $"status.{transition.Name.ToLowerInvariant()}";

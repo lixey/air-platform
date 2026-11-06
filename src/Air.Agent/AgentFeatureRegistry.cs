@@ -34,15 +34,21 @@ public static class AgentFeatureRegistry
         var inst = ModuleCatalog.Instance.CreateServiceInstance(feat.ServiceType, db, app);
         if (inst is IGridService grid)
         {
-          foreach (var desc in grid.GetCreateForms())
+          foreach (var desc in grid.GetAgentForms())
           {
+            if (ModuleCatalog.Instance.CreateServiceInstance(desc.FormServiceType, db, app) is IFormService descForm &&
+                (descForm.Feature.IsReadOnly || !CanEditFeature(descForm.Feature, app)))
+            {
+              continue;
+            }
+
             if (seen.Add(desc.ServicePath))
             {
               list.Add(desc);
             }
           }
         }
-        else if (inst is IFormService form)
+        else if (inst is IFormService form && !form.Feature.IsReadOnly)
         {
           if (seen.Add(form.Service))
           {
@@ -97,7 +103,8 @@ public static class AgentFeatureRegistry
             grid.Feature.AllowsAgent &&
             CanEditFeature(grid.Feature, app))
         {
-          foreach (var create in grid.GetCreateForms())
+          var agentForms = grid.GetAgentForms();
+          foreach (var create in agentForms)
           {
             var found = descriptors.FirstOrDefault(d => string.Equals(d.ServicePath, create.ServicePath, StringComparison.OrdinalIgnoreCase));
             if (found != null)
@@ -106,19 +113,20 @@ public static class AgentFeatureRegistry
             }
           }
 
-          return grid.GetCreateForms().FirstOrDefault();
+          return agentForms.FirstOrDefault();
         }
 
         if (typeof(IFormService).IsAssignableFrom(directType) &&
             ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IFormService form &&
             form.Feature.AllowsAgent &&
+            !form.Feature.IsReadOnly &&
             CanEditFeature(form.Feature, app))
         {
           if (form.Feature.ServiceType != null &&
               typeof(IGridService).IsAssignableFrom(form.Feature.ServiceType) &&
               ModuleCatalog.Instance.CreateServiceInstance(form.Feature.ServiceType, db, app) is IGridService ownerGrid)
           {
-            foreach (var create in ownerGrid.GetCreateForms())
+            foreach (var create in ownerGrid.GetAgentForms())
             {
               var found = descriptors.FirstOrDefault(d => string.Equals(d.ServicePath, create.ServicePath, StringComparison.OrdinalIgnoreCase));
               if (found != null)
@@ -206,7 +214,7 @@ public static class AgentFeatureRegistry
             }
           }
 
-          var creates = ownerGrid.GetCreateForms();
+          var creates = ownerGrid.GetAgentForms();
           if (creates.Count == 1)
           {
             var singleMatch = ResolveFormDescriptor(descriptors, creates[0].ServicePath, db, app);
@@ -249,7 +257,7 @@ public static class AgentFeatureRegistry
             (refGrid.Feature.AllowsAgent || element.AllowsCreate) &&
             CanEditFeature(refGrid.Feature, app))
         {
-          var gridCreate = refGrid.GetCreateForms().FirstOrDefault();
+          var gridCreate = refGrid.GetAgentForms().FirstOrDefault();
           if (gridCreate != null)
           {
             return agentForms.FirstOrDefault(f => string.Equals(f.ServicePath, gridCreate.ServicePath, StringComparison.OrdinalIgnoreCase))
@@ -272,12 +280,57 @@ public static class AgentFeatureRegistry
     {
       if (ModuleCatalog.Instance.CreateServiceInstance(childGridServiceType, db, app) is IGridService childGrid &&
           !childGrid.Feature.IsReadOnly &&
+          CanViewFeature(childGrid.Feature, app) &&
           CanEditFeature(childGrid.Feature, app))
       {
-        return childGrid.GetCreateForms().FirstOrDefault();
+        var createDesc = childGrid.GetCreateForms().FirstOrDefault();
+        if (createDesc != null &&
+            ModuleCatalog.Instance.CreateServiceInstance(createDesc.FormServiceType, db, app) is IFormService childForm &&
+            !childForm.Feature.IsReadOnly &&
+            CanEditFeature(childForm.Feature, app))
+        {
+          return createDesc;
+        }
       }
     }
     catch { }
+
+    return null;
+  }
+
+  public static (ChildGridBuilder Child, IGridService ChildGrid, GridCreateDescriptor ChildCreate, IFormService ChildForm)? ResolveEditableChildLineGrid(
+    IReadOnlyList<ChildGridBuilder> children,
+    PlatformDbContext db,
+    PlatformAppService app)
+  {
+    foreach (var c in children)
+    {
+      if (c.IsFiles || c.IsReadOnly || c.ServiceType == null || !typeof(IGridService).IsAssignableFrom(c.ServiceType))
+      {
+        continue;
+      }
+
+      try
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(c.ServiceType, db, app) is not IGridService childGrid ||
+            childGrid.Feature.IsReadOnly ||
+            !CanViewFeature(childGrid.Feature, app) ||
+            !CanEditFeature(childGrid.Feature, app))
+        {
+          continue;
+        }
+
+        var childCreate = childGrid.GetCreateForms().FirstOrDefault();
+        if (childCreate != null &&
+            ModuleCatalog.Instance.CreateServiceInstance(childCreate.FormServiceType, db, app) is IFormService childForm &&
+            !childForm.Feature.IsReadOnly &&
+            CanEditFeature(childForm.Feature, app))
+        {
+          return (c, childGrid, childCreate, childForm);
+        }
+      }
+      catch { }
+    }
 
     return null;
   }

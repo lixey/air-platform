@@ -35,32 +35,28 @@ public static class ModuleOwnershipExtensions
   }
 
   /// <summary>
-  /// Returns the module handle declared via <see cref="ModuleSchemaAttribute"/> directly on <paramref name="contextType"/>.
+  /// Returns the module handle declared via <see cref="ModuleSchemaAttribute"/> directly on <paramref name="contextType"/>
+  /// or on its declaring assembly.
   /// </summary>
   public static string? GetDeclaredModuleHandle(Type contextType)
   {
     ArgumentNullException.ThrowIfNull(contextType);
     return HandleCache.GetOrAdd(
       contextType,
-      static t => t.GetCustomAttribute<ModuleSchemaAttribute>(inherit: false)?.Handle);
+      static t => t.GetCustomAttribute<ModuleSchemaAttribute>(inherit: false)?.Handle
+        ?? t.Assembly.GetCustomAttribute<ModuleSchemaAttribute>()?.Handle);
   }
 
-  internal static IReadOnlyList<(Type ContextType, string Handle, Assembly Assembly, HashSet<Type> DeclaredDbSets)> ResolveLevels(Type contextType)
+  internal static IReadOnlyList<(Type ContextType, string Handle, Assembly Assembly)> ResolveLevels(Type contextType)
   {
-    var stack = new List<(Type ContextType, string Handle, Assembly Assembly, HashSet<Type> DeclaredDbSets)>();
+    var stack = new List<(Type ContextType, string Handle, Assembly Assembly)>();
     for (var current = contextType;
          current is not null && current != typeof(PlatformDbContext) && current != typeof(DbContext) && current != typeof(object);
          current = current.BaseType)
     {
-      if (current.GetCustomAttribute<ModuleSchemaAttribute>(inherit: false) is { } attr)
+      if (GetDeclaredModuleHandle(current) is { } handle && !string.IsNullOrWhiteSpace(handle))
       {
-        var dbSets = current
-          .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-          .Where(p => p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
-          .Select(p => p.PropertyType.GetGenericArguments()[0])
-          .ToHashSet();
-
-        stack.Add((current, attr.Handle, current.Assembly, dbSets));
+        stack.Add((current, handle, current.Assembly));
       }
     }
 
@@ -153,7 +149,7 @@ public static class ModuleOwnershipExtensions
 
   private static string ResolveEntityOwner(
     IReadOnlyEntityType entity,
-    IReadOnlyList<(Type ContextType, string Handle, Assembly Assembly, HashSet<Type> DeclaredDbSets)> levels,
+    IReadOnlyList<(Type ContextType, string Handle, Assembly Assembly)> levels,
     Dictionary<string, int> levelDepth)
   {
     var explicitOwner = FindExplicitOwner(entity);
@@ -203,21 +199,47 @@ public static class ModuleOwnershipExtensions
       return externalModuleHandle;
     }
 
-    foreach (var level in levels)
+    throw new InvalidOperationException(
+      $"Entity '{entity.DisplayName()}' (table '{entity.GetTableName()}') in assembly '{clrAssembly.GetName().Name}' has no inferred module owner in '{levels[^1].ContextType.Name}'. Apply [ModuleSchema] to the module's DbContext or assembly, or configure .HasModuleOwner(...).");
+  }
+
+  internal static void ValidateExternalEntitiesHaveModuleOwner(IReadOnlyModel model, Type contextType)
+  {
+    foreach (var entity in model.GetEntityTypes())
     {
-      if (level.DeclaredDbSets.Contains(rootType.ClrType) || level.DeclaredDbSets.Contains(entity.ClrType))
+      if (entity.GetTableName() is null || entity.IsOwned() || entity.HasSharedClrType)
       {
-        return level.Handle;
+        continue;
+      }
+
+      if (FindExplicitOwner(entity) is not null)
+      {
+        continue;
+      }
+
+      var clrAssembly = entity.GetRootType().ClrType.Assembly;
+      if (clrAssembly == typeof(PlatformDbContext).Assembly)
+      {
+        continue;
+      }
+
+      if (GetAssemblyModuleHandle(clrAssembly) is null)
+      {
+        throw new InvalidOperationException(
+          $"Entity '{entity.DisplayName()}' (table '{entity.GetTableName()}') in assembly '{clrAssembly.GetName().Name}' has no inferred module owner in '{contextType.Name}'. Apply [ModuleSchema] to the module's DbContext or assembly, or configure .HasModuleOwner(...).");
       }
     }
-
-    throw new InvalidOperationException(
-      $"Entity '{entity.DisplayName()}' (table '{entity.GetTableName()}') has no inferred module owner in '{levels[^1].ContextType.Name}'. Place it in a module's .Data assembly or configure .HasModuleOwner(...).");
   }
 
   private static string? GetAssemblyModuleHandle(Assembly assembly) =>
     AssemblyHandleCache.GetOrAdd(assembly, static asm =>
     {
+      if (asm.GetCustomAttribute<ModuleSchemaAttribute>()?.Handle is { } asmHandle &&
+          !string.IsNullOrWhiteSpace(asmHandle))
+      {
+        return asmHandle;
+      }
+
       Type[] types;
       try
       {

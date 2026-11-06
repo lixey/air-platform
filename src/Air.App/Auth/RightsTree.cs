@@ -2,6 +2,8 @@ namespace Platform.App.Auth;
 
 public static class RightsTree
 {
+  private static readonly ConcurrentDictionary<(string Module, string FeatureKey), IReadOnlyList<Right>> DiscoveredFeatureRightsCache = new();
+
   public static List<CheckboxTreeNodeDto> Build(ModuleCatalog catalog, IReadOnlySet<string>? held = null)
   {
     var L = Localizer.Instance;
@@ -51,7 +53,7 @@ public static class RightsTree
           rights.Add(Node(accessRight.Key, modL[labelKey]));
         }
 
-        foreach (var customRight in DiscoverFeatureActionRights(module, feat))
+        foreach (var customRight in GetOrDiscoverFeatureActionRights(catalog, module, feat))
         {
           if (rights.All(r => !string.Equals(r.Key, customRight.Key, StringComparison.OrdinalIgnoreCase)))
           {
@@ -89,25 +91,22 @@ public static class RightsTree
       };
   }
 
-  private static IEnumerable<Right> GetContainerRights(Feature feature)
-  {
-    if (feature.GetType().GetProperty("AccessTo")?.GetValue(feature) is not FeatureAccess access)
-    {
-      return [];
-    }
-
-    return access.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-      .Where(p => p.PropertyType == typeof(Right) && p.GetIndexParameters().Length == 0)
-      .OrderBy(p => p.MetadataToken)
-      .Select(p => (Right)p.GetValue(access)!);
-  }
+  private static IEnumerable<Right> GetContainerRights(Feature feature) =>
+    feature.Rights.Values
+      .Where(r => r.Action.StartsWith(FeatureAccess.AccessToPrefix, StringComparison.OrdinalIgnoreCase))
+      .OrderBy(r => r.Key, StringComparer.Ordinal);
 
   private static readonly HashSet<string> StandardActions = new(StringComparer.OrdinalIgnoreCase)
   {
     "View", "MenuView", "Edit", "Delete", "Export", "History", "*"
   };
 
-  private static IEnumerable<Right> DiscoverFeatureActionRights(IPlatformModule module, Feature feature)
+  private static IReadOnlyList<Right> GetOrDiscoverFeatureActionRights(ModuleCatalog catalog, IPlatformModule module, Feature feature) =>
+    DiscoveredFeatureRightsCache.GetOrAdd(
+      (module.Handle, feature.Key),
+      _ => DiscoverFeatureActionRights(catalog, module, feature).ToList());
+
+  private static IEnumerable<Right> DiscoverFeatureActionRights(ModuleCatalog catalog, IPlatformModule module, Feature feature)
   {
     var discovered = new List<Right>();
 
@@ -177,19 +176,25 @@ public static class RightsTree
         {
           try
           {
-            var ctor = flowType.GetConstructors().FirstOrDefault();
-            if (ctor != null)
+            if (catalog.CreateServiceInstance(flowType) is not object flowInstance)
             {
-              var args = ctor.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : null).ToArray();
-              if (ctor.Invoke(args) is object flowInstance &&
-                  statusFlowInterface.GetProperty("Transitions")?.GetValue(flowInstance) is System.Collections.IEnumerable transitions)
+              continue;
+            }
+
+            if (flowInstance is IPlatformService flowPlatformService &&
+                !string.IsNullOrEmpty(flowPlatformService.Feature.Module) &&
+                flowPlatformService.Feature != feature)
+            {
+              continue;
+            }
+
+            if (statusFlowInterface.GetProperty(nameof(Screens.IRecordStatuses<>.AllTransitions))?.GetValue(flowInstance) is System.Collections.IEnumerable transitions)
+            {
+              foreach (var tr in transitions)
               {
-                foreach (var tr in transitions)
+                if (tr is Screens.RecordTransition rt && !string.IsNullOrWhiteSpace(rt.Name))
                 {
-                  if (tr?.GetType().GetProperty("Name")?.GetValue(tr) is string trName && !string.IsNullOrWhiteSpace(trName))
-                  {
-                    discovered.Add(feature.Action(trName));
-                  }
+                  discovered.Add(feature.Action(rt.Name));
                 }
               }
             }

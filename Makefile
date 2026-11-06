@@ -1,4 +1,4 @@
-.PHONY: all help build test clean contracts export-contracts format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
+.PHONY: all help build test clean contracts export-contracts format format-check check-paths check-arch check-ts check-ts-apps gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
 
 VOLUME ?= default
 WEB := demo/web
@@ -36,6 +36,15 @@ check-paths: check-arch ## Verify zero absolute filesystem paths and architectur
 
 check-ts: ## Verify TypeScript and Angular template compilation for air-ui and demo
 	@cd $(WEB) && npx ngc -p apps/demo/tsconfig.app.json --noEmit
+
+check-ts-apps: check-ts ## Verify TypeScript compilation across sibling application workspaces
+	@for tsconfig in ../*/*-web/apps/*/tsconfig.app.json; do \
+		if [ -f "$$tsconfig" ]; then \
+			dir=$$(echo "$$tsconfig" | cut -d/ -f1-3); \
+			rel=$$(echo "$$tsconfig" | cut -d/ -f4-); \
+			(cd "$$dir" && npx ngc -p "$$rel" --noEmit) || exit 1; \
+		fi; \
+	done
 
 gate: format-check check-paths check-arch check-ts build test ## Run unified verification gate (format, paths, arch, ts, build, test)
 

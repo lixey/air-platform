@@ -45,10 +45,11 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
   public virtual Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
     AcquireLocksAsync(db, typeof(TLocked), keys, cancellationToken);
 
-  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key)
+  internal static long LockKeyOf(Type lockedType, IReadOnlyList<long> key, PlatformDbContext? db = null)
   {
+    var targetName = db?.Model.FindEntityType(lockedType)?.GetSchemaQualifiedTableName() ?? lockedType.Name;
     var numbers = string.Join(':', key.Select(n => n.ToString(CultureInfo.InvariantCulture)));
-    var prefix = $"air-lock:{lockedType.Name}:{numbers}";
+    var prefix = $"air-lock:{targetName}:{numbers}";
     return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(prefix)));
   }
 
@@ -64,7 +65,12 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
     var isSqlServer = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
     if (isPostgres || isSqlServer)
     {
-      var lockKeys = keyArrays.Select(k => LockKeyOf(lockedType, k)).Distinct().OrderBy(k => k).ToList();
+      var lockKeys = keyArrays.Select(k => LockKeyOf(lockedType, k, db)).Distinct().OrderBy(k => k).ToList();
+      if (isPostgres && lockKeys.Count > 0)
+      {
+        await db.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '15s'", ct);
+      }
+
       foreach (var lockKey in lockKeys)
       {
         if (isPostgres)

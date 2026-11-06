@@ -52,24 +52,14 @@ internal sealed class CacheProvider(HybridCache cache) : ICacheProvider
       return await factory(ct);
     }
 
-    var createdNull = false;
     var result = await cache.GetOrCreateAsync<T?>(
       key,
-      async token =>
-      {
-        var value = await factory(token);
-        if (value is null)
-        {
-          createdNull = true;
-        }
-
-        return value;
-      },
+      async token => await factory(token),
       CreateOptions(ttl),
       tags,
       ct);
 
-    if (createdNull && result is null)
+    if (result is null)
     {
       await cache.RemoveAsync(key, CancellationToken.None);
     }

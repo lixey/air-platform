@@ -19,30 +19,38 @@ public sealed class AppRoleGridService(AppDbContext db, AppService? app = null)
   protected override void SetHooks(Hooks hooks) =>
     hooks.BeforeDelete(async (c, cancellationToken) =>
     {
+      var roles = c.Records.Select(r => r.Id).ToList();
       foreach (var r in c.Records)
       {
-        if (await IsLastActiveAdminRoleAsync(r.Id, r.TenantId, cancellationToken))
+        if (!await PlatformAppService.CoversRoleGrantsAsync(db, app, User, r.Id, cancellationToken))
+        {
+          c.Refuse(L["You cannot modify a role with permissions you do not hold."], r.Id);
+          return;
+        }
+      }
+
+      var adminRoleIds = (await db.AppAuthGrant
+        .Where(g => roles.Contains(g.AuthRoleId) && g.Permission == "*")
+        .Select(g => g.AuthRoleId)
+        .Distinct()
+        .ToListAsync(cancellationToken))
+        .ToHashSet();
+
+      foreach (var r in c.Records.Where(r => adminRoleIds.Contains(r.Id)))
+      {
+        var tenantId = r.TenantId;
+        var hasRemainingActiveAdminRole = await db.AppAuthRole.AnyAsync(
+          other => !roles.Contains(other.Id) && other.TenantId == tenantId && other.IsActive &&
+                   db.AppAuthGrant.Any(g => g.AuthRoleId == other.Id && g.Permission == "*"),
+          cancellationToken);
+        if (!hasRemainingActiveAdminRole)
         {
           c.Refuse(L["The last administrator role cannot be deleted."], r.Id);
           return;
         }
       }
 
-      var roles = c.Records.Select(r => r.Id).ToList();
       db.RemoveRange(await db.AppAuthAssignment.Where(a => roles.Contains(a.AuthRoleId)).ToListAsync(cancellationToken));
       db.RemoveRange(await db.AppAuthGrant.Where(g => roles.Contains(g.AuthRoleId)).ToListAsync(cancellationToken));
     });
-
-  private async Task<bool> IsLastActiveAdminRoleAsync(long roleId, long? tenantId, CancellationToken cancellationToken)
-  {
-    if (!await db.AppAuthGrant.AnyAsync(g => g.AuthRoleId == roleId && g.Permission == "*", cancellationToken))
-    {
-      return false;
-    }
-
-    return !await db.AppAuthRole.AnyAsync(
-      r => r.Id != roleId && r.TenantId == tenantId && r.IsActive &&
-           db.AppAuthGrant.Any(g => g.AuthRoleId == r.Id && g.Permission == "*"),
-      cancellationToken);
-  }
 }

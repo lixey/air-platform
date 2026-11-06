@@ -9,6 +9,8 @@ export interface ChartHandle {
 }
 
 const LIGHT_HUES: Readonly<Record<string, string>> = {
+  primary: '#2563eb',
+  brand: '#2563eb',
   emerald: '#10b981',
   green: '#16a34a',
   teal: '#14b8a6',
@@ -27,9 +29,15 @@ const LIGHT_HUES: Readonly<Record<string, string>> = {
   yellow: '#eab308',
   lime: '#84cc16',
   slate: '#64748b',
+  gray: '#6b7280',
+  zinc: '#71717a',
+  neutral: '#737373',
+  stone: '#78716c',
 };
 
 const DARK_HUES: Readonly<Record<string, string>> = {
+  primary: '#60a5fa',
+  brand: '#60a5fa',
   emerald: '#34d399',
   green: '#4ade80',
   teal: '#2dd4bf',
@@ -48,6 +56,10 @@ const DARK_HUES: Readonly<Record<string, string>> = {
   yellow: '#facc15',
   lime: '#a3e635',
   slate: '#94a3b8',
+  gray: '#9ca3af',
+  zinc: '#a1a1aa',
+  neutral: '#a3a3a3',
+  stone: '#a8a29e',
 };
 
 export const DEFAULT_PALETTE_KEYS: readonly string[] = [
@@ -117,13 +129,17 @@ export class ChartService {
     let resizeObserver: ResizeObserver | null = null;
     let intersectionObserver: IntersectionObserver | null = null;
     let disposed = false;
+    let initializing = false;
     let lastOptions = initialOptions;
     let rafId = 0;
 
     const setup = async () => {
-      if (disposed || chartInstance || !container.isConnected) {
+      if (disposed || initializing || chartInstance || !container.isConnected) {
         return;
       }
+      initializing = true;
+      intersectionObserver?.disconnect();
+      intersectionObserver = null;
       try {
         const { echarts } = await this.ensureEcharts();
         if (disposed || chartInstance || !container.isConnected) {
@@ -147,6 +163,7 @@ export class ChartService {
         };
         initChart();
         if (this.isBrowser() && 'ResizeObserver' in window) {
+          resizeObserver?.disconnect();
           resizeObserver = new ResizeObserver(() => {
             if (disposed) {
               return;
@@ -166,6 +183,8 @@ export class ChartService {
         }
       } catch (err) {
         console.error('ECharts init error', err);
+      } finally {
+        initializing = false;
       }
     };
 
