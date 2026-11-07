@@ -1190,7 +1190,7 @@
     <value>AI Assistant</value>
   </data>
   <data name="AgentEmptyDescription" xml:space="preserve">
-    <value>Describe what you want to create or edit, or drop a photo/receipt (drag &amp; drop or press ⌘V).</value>
+    <value>Describe what you want to create or edit, or attach an image or document (drag &amp; drop or press ⌘V).</value>
   </data>
   <data name="AgentDropHint" xml:space="preserve">
     <value>Drop photo or document here</value>
@@ -1274,10 +1274,7 @@
     <value>{0} s</value>
   </data>
   <data name="AgentDuplicateFileWarning" xml:space="preserve">
-    <value>This receipt file is already attached to record {0}</value>
-  </data>
-  <data name="AgentDuplicateReceiptWarning" xml:space="preserve">
-    <value>A record with this date and amount already exists: {0}</value>
+    <value>This file is already attached to record {0}</value>
   </data>
   <data name="AgentDuplicateRecordWarning" xml:space="preserve">
     <value>A record with this date and amount already exists: {0}</value>

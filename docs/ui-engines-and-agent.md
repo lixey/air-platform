@@ -16,16 +16,16 @@
 ```csharp
 protected override void SetColumns(Columns columns)
 {
-  columns.UseForm<FinExpenseFormService>();
-  columns.StatusFlow<FinExpenseFlowService>();
+  columns.UseForm<EcomCustomerOrderFormService>();
+  columns.StatusFlow<EcomCustomerOrderFlowService>();
 
   columns.Add(x => x.Date).AsDate().Width(110);
-  columns.Add(x => x.AccountId)
-    .AsReference<FinAccountGridService>()
-    .Label(x => x.Account!.Name)
+  columns.Add(x => x.CounterpartyId)
+    .AsReference<OrgCounterpartyGridService>()
+    .Label(x => x.Counterparty!.Name)
     .Width(180);
   columns.Add(x => x.Amount).AsMoney().Sum().Width(130);
-  columns.Add(x => x.Note).Width(240);
+  columns.Add(x => x.Description).Width(240);
 }
 ```
 
@@ -36,7 +36,7 @@ protected override void SetColumns(Columns columns)
 - **Inline-редагування в таблиці:** `.Editable()` (або `.Editable(() => ...)`), а також `.PickedBy<TSource>(method)` для швидкого вибору значення в комірці через серверний пікер.
 - **Підсумки:** `.Sum()` (рахує загальну суму в БД) та `.SelectionSum(unit)` (рахує суму виділених галочками рядків у клієнті).
 - **Керування сортуванням і фільтрацією:** `.Sortable(false)`, `.Filterable(false)`, `.Hidden()`.
-- **Підказки легасі (`Title`):** `.Title(legacyUi, legacyDb)` формує спливаючу підказку при наведенні курсора.
+- **Підказки (`Title`):** `.Title(tooltip)` або двоскладова підказка джерела `.Title(uiSource, dbSource)` при наведенні курсора.
 
 ### 1.2. Навігація, дії та іменовані фільтри (`SetNav`, `SetQuery`)
 
@@ -50,7 +50,7 @@ protected override void SetColumns(Columns columns)
 ```csharp
 protected override void SetParent(Parent parent)
 {
-  parent.Bind<EcomOrderFormService, EcomOrder>(x => x.OrderId);
+  parent.Bind<EcomCustomerOrderFormService, EcomDoc>(x => x.DocId);
 }
 ```
 
@@ -70,18 +70,16 @@ protected override void SetElements(Elements elements)
   elements.AddRow(row =>
   {
     row.Add(x => x.Date).AsDate().Required();
-    row.Add(x => x.AccountId)
-      .AsReference<FinAccountGridService>()
-      .PatchOnSelect(s => s.Map(a => a.CurrencyId, x => x.CurrencyId))
+    row.Add(x => x.CounterpartyId)
+      .AsReference<OrgCounterpartyGridService>()
+      .PatchOnSelect(s => s.Map(c => c.CurrencyId, x => x.CurrencyId))
       .Required();
   });
 
-  elements.Add(x => x.ExtraComment)
-    .DisabledWhen(x => x.IsLocked)
-    .VisibleWhen(x => x.RequiresComment);
+  elements.Add(x => x.Description)
+    .DisabledWhen(x => x.StatusId == EcomDocStatus.Completed);
 
-  elements.AddChild<FinExpenseLineGridService>();
-  elements.AddChild<FinExpenseFileGridService>().AsFiles();
+  elements.AddChild<EcomCustomerOrderLineGridService>();
 }
 ```
 
@@ -157,7 +155,7 @@ protected override void Configure()
    - Реєстр `AgentFeatureRegistry` знаходить усі фічі з `.AllowAgent()`, до яких поточний користувач має право `CanView` / `CanEdit` (включно з формами над `ReadOnly`-таблицями та першою редагованою дочірньою таблицею рядків).
    - Невеликі довідники (`<= 50` записів) підвантажуються в контекст одразу, а великі (`> 50` записів) шукаються на льоту через серверний пошук.
 3. **Картки пропозицій `<air_proposal>` (`AgentProposalBuilder` / `AgentProposalExecutor`):**
-   - Коли користувач просить створити або змінити документ (чи розпізнати фото чека/накладної), ШІ повертає структурований блок `<air_proposal>`.
+   - Коли користувач просить створити або змінити запис (чи розпізнати прикріплене зображення або документ), ШІ повертає структурований блок `<air_proposal>`.
    - Бекенд проганяє його через `PrepareDraftAsync` цільової `FormService` (при редагуванні спочатку завантажує запис, щоб бачити edit-only поля), резолвить посилання за `ReferenceLabelPaths` і показує користувачу інтерактивну картку підтвердження в чаті.
    - Запис у БД відбувається **виключно після натискання кнопки підтвердження користувачем** через стандартний `FormService.SaveAsync`.
 4. **Сувора ізоляція (`TenantId`, `UserId`, `SessionId`):**

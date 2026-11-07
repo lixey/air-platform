@@ -38,6 +38,7 @@ public static class PlatformHost
     }
 
     var builder = WebApplication.CreateBuilder(args);
+    builder.Services.AddSingleton(options);
 
     foreach (var module in options.Modules)
     {

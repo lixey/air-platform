@@ -9,8 +9,8 @@ public static class AgentMemoryCatalog
     new()
     {
       Kind = AgentMemoryKinds.Rule,
-      Title = "Receipt & Invoice Line Extraction",
-      Content = "When reading attached receipt or invoice photos, extract every individual line item with its exact product/service name, quantity, unit price, and line total, and assign the most matching category from the available dictionaries.",
+      Title = "Document & Image Line Extraction",
+      Content = "When reading attached document or image files, extract every individual line item with its exact name, quantity, unit price, and line total, and match reference fields from the available dictionaries.",
       Priority = 200,
       IsPinned = true,
       IsActive = true
@@ -19,7 +19,7 @@ public static class AgentMemoryCatalog
     {
       Kind = AgentMemoryKinds.Rule,
       Title = "Proposal Confirmation Policy",
-      Content = "Never mutate database records without user confirmation. Always emit <air_proposal> cards so the user can review fields, line items, and any duplicate receipt warnings before confirming.",
+      Content = "Never mutate database records without user confirmation. Always emit <air_proposal> cards so the user can review fields, line items, and any duplicate record warnings before confirming.",
       Priority = 190,
       IsPinned = true,
       IsActive = true
@@ -27,8 +27,8 @@ public static class AgentMemoryCatalog
     new()
     {
       Kind = AgentMemoryKinds.Rule,
-      Title = "Counterparty & Dictionary Resolution",
-      Content = "Match counterparties, categories, accounts, and warehouses by their existing dictionary IDs whenever possible. Only propose creating a new counterparty or dictionary item when no matching entry exists.",
+      Title = "Reference & Dictionary Resolution",
+      Content = "Match reference fields by their existing dictionary IDs whenever possible. Only propose creating a new dictionary or reference item when no matching entry exists.",
       Priority = 180,
       IsPinned = true,
       IsActive = true
@@ -60,10 +60,25 @@ public static class AgentMemoryCatalog
       var changed = false;
       foreach (var seed in DefaultRows())
       {
-        if (!existing.Any(e => string.Equals(e.Title, seed.Title, StringComparison.OrdinalIgnoreCase)))
+        var match = existing.FirstOrDefault(e =>
+          string.Equals(e.Title, seed.Title, StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(e.Kind, seed.Kind, StringComparison.OrdinalIgnoreCase) &&
+           e.Priority == seed.Priority &&
+           e.UpdatedAt == null &&
+           e.Ver <= 1);
+        if (match is null)
         {
           db.AppAgentMemory.Add(seed);
           existing.Add(seed);
+          changed = true;
+        }
+        else if (match.UpdatedAt == null &&
+                 match.Ver <= 1 &&
+                 (!string.Equals(match.Title, seed.Title, StringComparison.Ordinal) ||
+                  !string.Equals(match.Content, seed.Content, StringComparison.Ordinal)))
+        {
+          match.Title = seed.Title;
+          match.Content = seed.Content;
           changed = true;
         }
       }

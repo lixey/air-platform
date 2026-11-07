@@ -170,7 +170,10 @@ public static partial class AgentProposalBuilder
       }
     }
 
-    var tagsMode = TryGetString(args, "tagsMode") ?? TryGetString(valuesSource, "tagsMode");
+    var multiSelectMode = TryGetString(args, "multiSelectMode")
+      ?? TryGetString(valuesSource, "multiSelectMode")
+      ?? TryGetString(args, "tagsMode")
+      ?? TryGetString(valuesSource, "tagsMode");
     var newReferences = new List<PendingNewReference>();
     var explicitlyProvided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -198,7 +201,7 @@ public static partial class AgentProposalBuilder
 
         if (hasProp && rawProp.ValueKind == JsonValueKind.Array)
         {
-          var ids = isEdit && string.Equals(tagsMode, "append", StringComparison.OrdinalIgnoreCase)
+          var ids = isEdit && string.Equals(multiSelectMode, "append", StringComparison.OrdinalIgnoreCase)
             ? ExtractLongList(formValues.GetValueOrDefault(el.Path))
             : new List<long>();
           var refFormDesc = !string.IsNullOrEmpty(select.ReferenceService)
@@ -287,7 +290,7 @@ public static partial class AgentProposalBuilder
             select.ReferenceLabelPaths);
         }
 
-        // Also check explicit new-reference alias like "newCounterpartyName"
+        // Also check explicit new-reference alias like "new<Field>Name"
         if (resolvedId == null && unresolvedName == null && el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 2)
         {
           var baseName = el.Path[..^2];

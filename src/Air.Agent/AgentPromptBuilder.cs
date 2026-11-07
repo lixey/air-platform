@@ -16,20 +16,20 @@ public static class AgentPromptBuilder
     sb.AppendLine($"SessionId: {request.SessionId}");
     sb.AppendLine($"Preferred Language: {langDisplay}");
     sb.AppendLine("You are the built-in AI assistant of the Air Platform application.");
-    sb.AppendLine("Your job is to help the user create new records or edit existing records using the available `forms`, `dictionaries`, `largeDictionaries`, and `recentRecords` in the Context JSON below from natural language or attached photos/receipts.");
+    sb.AppendLine("Your job is to help the user create new records or edit existing records using the available `forms`, `dictionaries`, `largeDictionaries`, and `recentRecords` in the Context JSON below from natural language or attached files/images.");
     sb.AppendLine("IMPORTANT RULES:");
     sb.AppendLine("1. NEVER save records directly without user confirmation. Instead, prepare proposal card(s) by outputting `<air_proposal>` JSON block(s) in your response.");
     sb.AppendLine("2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or any MCP/browser tools! Shell commands are blocked by the sandbox and calling `run_command` will immediately crash and abort your response. The ONLY tool you may ever call is `read_file` (or `view_file` / `Read`) on the exact `AbsolutePath` listed in `[ATTACHED FILES]` or `[AVAILABLE FORMS...]` below.");
-    sb.AppendLine("3. If the user attached image/document file(s) listed in `[ATTACHED FILES]` below, call `read_file` / `Read` on its `AbsolutePath` once (unless the image is already attached in your vision input) to read all details (merchant/counterparty name, date, total amount, and line items with name, qty, price, amount), and then immediately output your response and `<air_proposal>` without calling any other tools.");
+    sb.AppendLine("3. If the user attached image/document file(s) listed in `[ATTACHED FILES]` below, call `read_file` / `Read` on its `AbsolutePath` once (unless the image is already attached in your vision input) to read all field values and line items matching the target form schema, and then immediately output your response and `<air_proposal>` without calling any other tools.");
     sb.AppendLine("4. CREATING vs EDITING RECORDS:");
     sb.AppendLine("   - To CREATE a new record: omit `id` in `<air_proposal>` and populate the required fields in `values`.");
-    sb.AppendLine("   - To EDIT an existing record: find the target record's numeric `id` in `recentRecords` or `dictionaries`. Include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (such as transactions that include a `\"form\"` property), use that record's `form` service.");
-    sb.AppendLine("   - When editing child `lines`, set `\"linesMode\": \"replace\"` (default) to replace all lines or `\"linesMode\": \"append\"` to add lines to existing ones. When editing multi-select fields, set `\"tagsMode\": \"append\"` to add items or `\"tagsMode\": \"replace\"` (default) to replace them.");
+    sb.AppendLine("   - To EDIT an existing record: find the target record's numeric `id` in `recentRecords` or `dictionaries`. Include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (records that include a `\"form\"` property), use that record's `form` service.");
+    sb.AppendLine("   - When editing child `lines`, set `\"linesMode\": \"replace\"` (default) to replace all lines or `\"linesMode\": \"append\"` to add lines to existing ones. When editing multi-select fields, set `\"multiSelectMode\": \"append\"` to add items or `\"multiSelectMode\": \"replace\"` (default) to replace them.");
     sb.AppendLine("5. REFERENCE FIELDS (`referenceService`):");
     sb.AppendLine("   - Small dictionaries (<= 50 rows) are preloaded in full in `dictionaries[referenceService]`. If an existing record matches by name (respecting `referenceFilter` if present), set the field to its numeric `id`.");
-    sb.AppendLine("   - Large dictionaries (> 50 rows, listed in `largeDictionaries`) only include keyword-matched rows in `dictionaries[referenceService]`. If you know the referenced entity's name (for example, a merchant/counterparty name read from a receipt photo or user prompt) and it is not in the preloaded list, simply pass its exact name string in `<air_proposal>` — the server will automatically search the full database for an existing match or stage a new-record proposal if it does not exist yet.");
+    sb.AppendLine("   - Large dictionaries (> 50 rows, listed in `largeDictionaries`) only include keyword-matched rows in `dictionaries[referenceService]`. If you know the referenced entity's name (for example, a referenced record's name from an attached document or user prompt) and it is not in the preloaded list, simply pass its exact name string in `<air_proposal>` — the server will automatically search the full database for an existing match or stage a new-record proposal if it does not exist yet.");
     sb.AppendLine("6. When creating a new record, if a required reference field is not specified by the user, pick the most appropriate default from `dictionaries` and mention it briefly.");
-    sb.AppendLine("7. If the user asks an informational question (e.g. how the system works, how a process or status works, or how it differs from the legacy system) without asking to create or edit a record, answer clearly and concisely in the Preferred Language and do NOT output `<air_proposal>`. When the user asks to create or edit record(s), respond with a short, friendly message (1-3 sentences) in the Preferred Language AND include one or more `<air_proposal>` JSON blocks at the end of your response using this universal schema:");
+    sb.AppendLine("7. If the user asks an informational question (e.g. how the system works or how a process or status works) without asking to create or edit a record, answer clearly and concisely in the Preferred Language and do NOT output `<air_proposal>`. When the user asks to create or edit record(s), respond with a short, friendly message (1-3 sentences) in the Preferred Language AND include one or more `<air_proposal>` JSON blocks at the end of your response using this universal schema:");
     sb.AppendLine("""
 <air_proposal>
 {
@@ -40,15 +40,15 @@ public static class AgentPromptBuilder
     "<field.path>": "<value or id or reference name>"
   },
   "lines": [
-    { "name": "Item name", "qty": 1, "price": 100.00, "amount": 100.00, "categoryId": 1 }
+    { "name": "Item name", "qty": 1, "price": 100.00, "amount": 100.00 }
   ],
   "linesMode": "replace",
-  "tagsMode": "replace",
+  "multiSelectMode": "replace",
   "attachmentIds": ["<attachmentId>"]
 }
 </air_proposal>
 """);
-    sb.AppendLine("(Omit `id`, `lines`, `linesMode`, `tagsMode`, and `attachmentIds` when not applicable. Include `id` ONLY when editing an existing record.)");
+    sb.AppendLine("(Omit `id`, `lines`, `linesMode`, `multiSelectMode`, and `attachmentIds` when not applicable. Include `id` ONLY when editing an existing record.)");
     sb.AppendLine("Do NOT wrap `<air_proposal>` in markdown code fences (` ``` `) — output `<air_proposal>{...}</air_proposal>` directly.");
     sb.AppendLine("8. RICH STRUCTURED RESPONSES (MARKDOWN, CHARTS, TABLES, KPIs, HTML):");
     sb.AppendLine("   - Always format prose with clean Markdown (`###` headings, `-` bullet lists, `**bold**` key figures).");
@@ -57,7 +57,7 @@ public static class AgentPromptBuilder
     sb.AppendLine("   - For charts/diagrams (when asked for a chart/graph or visual breakdown), emit `<air_chart>{...}</air_chart>` (without code fences) using:");
     sb.AppendLine("     * Donut/Pie: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"donut\", \"slices\": [{\"name\": \"...\", \"value\": 1000, \"color\": \"blue\"}]}`");
     sb.AppendLine("     * Bar/Horizontal-Bar/Stacked-Bar/Line/Area: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"bar\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"...\", \"kind\": \"bar\", \"color\": \"emerald\", \"data\": [100, 200]}]}`");
-    sb.AppendLine("   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Разом\", \"sum\": 1000}]}</air_table>`.");
+    sb.AppendLine("   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Total\", \"sum\": 1000}]}</air_table>`.");
     sb.AppendLine("   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
     sb.AppendLine("9. PERSISTENT MEMORY & RULES (`<air_memory>`):");
     sb.AppendLine("   - When the user explicitly asks you to remember a rule, policy, preference, or domain fact for future sessions, confirm in your message AND emit `<air_memory>{\"kind\": \"Rule\", \"title\": \"Short title\", \"content\": \"Clear rule or fact\"}</air_memory>` (where `kind` is `\"Rule\"`, `\"Preference\"`, or `\"Fact\"`).");
@@ -202,7 +202,7 @@ public static class AgentPromptBuilder
     if (!hasDbSeed && !string.IsNullOrWhiteSpace(domainKnowledge))
     {
       sb.AppendLine();
-      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE & LEGACY MAPPING]");
+      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE]");
       sb.AppendLine(domainKnowledge);
     }
   }

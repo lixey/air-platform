@@ -1193,7 +1193,7 @@
     <value>AI Асистент</value>
   </data>
   <data name="AgentEmptyDescription" xml:space="preserve">
-    <value>Опишіть, що потрібно створити чи відредагувати, або прикріпіть фото/чек (перетягніть або натисніть ⌘V).</value>
+    <value>Опишіть, що потрібно створити чи відредагувати, або прикріпіть зображення чи документ (перетягніть або натисніть ⌘V).</value>
   </data>
   <data name="AgentDropHint" xml:space="preserve">
     <value>Перетягніть фото або документ сюди</value>
@@ -1277,10 +1277,7 @@
     <value>{0} с</value>
   </data>
   <data name="AgentDuplicateFileWarning" xml:space="preserve">
-    <value>Такий файл чека вже прикріплено до запису {0}</value>
-  </data>
-  <data name="AgentDuplicateReceiptWarning" xml:space="preserve">
-    <value>Запис із цією датою та сумою вже існує: {0}</value>
+    <value>Цей файл вже прикріплено до запису {0}</value>
   </data>
   <data name="AgentDuplicateRecordWarning" xml:space="preserve">
     <value>Запис із цією датою та сумою вже існує: {0}</value>

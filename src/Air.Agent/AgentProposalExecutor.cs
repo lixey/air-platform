@@ -351,7 +351,7 @@ public static class AgentProposalExecutor
                 lineDict["sortOrder"] = sortOrder;
               }
 
-              // Propagate newly committed parent reference IDs (e.g. categoryId) to child lines where unset
+              // Propagate newly committed parent reference IDs to child lines where unset
               foreach (var (k, v) in payload.Values)
               {
                 if (TryConvertToLong(v, out var parentRefId) && parentRefId > 0 &&

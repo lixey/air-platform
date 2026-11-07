@@ -6,6 +6,7 @@ internal static class MetadataEndpointsExtensions
   {
     var getMetadataHandler = async (
       ModuleCatalog catalog,
+      PlatformOptions platformOptions,
       HttpContext httpContext,
       IUserContext userContext,
       IAuthStore authStore,
@@ -80,7 +81,7 @@ internal static class MetadataEndpointsExtensions
             Service = tenants.Count > 1 ? "platform-tenant" : null,
             Method = tenants.Count > 1 ? "switch" : null
           } : null,
-          DefaultCurrency = "UAH"
+          DefaultCurrency = platformOptions.DefaultCurrency
         };
 
         foreach (var module in catalog.Modules)

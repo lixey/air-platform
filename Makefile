@@ -1,4 +1,4 @@
-.PHONY: all help build test clean contracts export-contracts format format-check check-paths check-arch check-ts check-ts-apps gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
+.PHONY: all help build test clean contracts export-contracts format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
 
 VOLUME ?= default
 WEB := demo/web
@@ -37,15 +37,6 @@ check-paths: check-arch ## Verify zero absolute filesystem paths and architectur
 check-ts: ## Verify TypeScript and Angular template compilation for air-ui and demo
 	@cd $(WEB) && npx ngc -p apps/demo/tsconfig.app.json --noEmit
 
-check-ts-apps: check-ts ## Verify TypeScript compilation across sibling application workspaces
-	@for tsconfig in ../*/*-web/apps/*/tsconfig.app.json; do \
-		if [ -f "$$tsconfig" ]; then \
-			dir=$$(echo "$$tsconfig" | cut -d/ -f1-3); \
-			rel=$$(echo "$$tsconfig" | cut -d/ -f4-); \
-			(cd "$$dir" && npx ngc -p "$$rel" --noEmit) || exit 1; \
-		fi; \
-	done
-
 gate: format-check check-paths check-arch check-ts build test ## Run unified verification gate (format, paths, arch, ts, build, test)
 
 audit: ## Run controlled code audit on Claude Opus 5.5 (High) via agy CLI with automatic fallback to claude CLI
@@ -70,7 +61,7 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 	 errs.extend([f"{cs}: extension method in non-Extensions file"] if re.search(r"static\s+[^\(\n]+\(\s*this\s+", txt) and not cs.endswith("Extensions.cs") else []) or \
 	 errs.extend([f"{cs}: internal type must be in Internals/"] if cs.startswith("src/") and re.search(r"^internal\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+", txt, re.M) and "/Internals/" not in cs else []) or \
 	 errs.extend([f"{cs}: contract type must be in Contracts/"] if cs.startswith("src/") and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b", txt, re.M) and "/Contracts/" not in cs else []) or \
-	 errs.extend([f"{cs}: forbidden domain hardcoding {m.group(0)}" for m in [re.search(r"\"(?:mccCode|DocStatus|counterpartyId|toAccountId)\"|privat24|--dangerously-skip-permissions|Password123", txt, re.I)] if (cs.startswith("src/") or "Password123" in txt) and m]) or \
+	 errs.extend([f"{cs}: forbidden domain hardcoding {m.group(0)}" for m in [re.search(r"\"(?:mccCode|DocStatus|counterpartyId|toAccountId)\"|--dangerously-skip-permissions|Password123", txt, re.I)] if (cs.startswith("src/") or "Password123" in txt) and m]) or \
 	 errs.extend([f"{cs}: [AllowAnonymous] is forbidden on GridService/FormService; use [WebhookEndpoint] with explicit auth"] if cs.endswith(("GridService.cs", "FormService.cs")) and re.search(r"\[\s*AllowAnonymous\b", txt) else []) or \
 	 errs.extend([f"{cs}: use GetParent()/GetHooks() instead of new Parent()/new Hooks()"] if cs.startswith("src/") and os.path.basename(cs) not in ("FormService.cs", "GridService.cs") and re.search(r"new\s+(?:Parent|Hooks)\s*\(\s*\)", txt) else []) or \
 	 errs.extend([f"{cs}: exceeds 1000 lines ({txt.count(chr(10)) + 1})"] if cs.startswith("src/") and txt.count(chr(10)) + 1 > 1000 else []) \
@@ -80,6 +71,8 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 	[errs.extend([f"{rx}: missing in .uk.resx: {sorted(b - u)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())) if os.path.exists(rx[:-5] + ".uk.resx") else set())] if b - u]) for rx in sorted(glob.glob("**/*.resx", recursive=True)) if not rx.endswith(".uk.resx")]; \
 	ui_keys = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*:", open("air-ui/src/ui-components.ts", encoding="utf-8").read(), re.M)); \
 	[errs.extend([f"{cs}: ComponentModel kind {(km.group(1) if km else m.group(1))} missing in air-ui/src/ui-components.ts" for m in [re.search(r"public\s+(?:sealed\s+)?class\s+([A-Za-z0-9_]+)Model\s*:\s*ComponentModel\b", txt)] if m for km in [re.search(r"override\s+string\s+Kind\s*=>\s*\"([^\"]+)\"", txt)] if (km.group(1) if km else m.group(1)) not in ui_keys]) for cs in sorted(glob.glob("src/Air.App/**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs for txt in [open(cs, encoding="utf-8").read()]]; \
+	ext_app_re = re.compile(r"\b(?:(?!Demo|Platform|Air|Base|Test|Mock|App|Org|Ecom|Module|Configure|Web|Ui|Dev|Create|Add|Get|Set|Map|Use|Host|Client|InMemory|Sample)[A-Z][a-z0-9]+(?:App|Org|Ecom|Fin|DbContext|Migrations|Transfer)|509[2-9]|519[2-9]|430[1-9]|440[1-9])\b"); \
+	[errs.extend([f"{f}: forbidden external application reference ({m.group(0)})"] if m else []) for f in sorted(set(glob.glob("src/**/*.*", recursive=True) + glob.glob("air-ui/src/**/*.*", recursive=True) + glob.glob("docs/**/*.*", recursive=True) + glob.glob("tests/**/*.*", recursive=True) + ["AGENTS.md", "Makefile"])) if os.path.isfile(f) and "/obj/" not in f and "/bin/" not in f for m in [ext_app_re.search(open(f, encoding="utf-8", errors="ignore").read())]]; \
 	print("\n".join(errs)) if errs else None; sys.exit(1 if errs else 0)'
 
 export-contracts: ## Export TypeScript contracts and localized UI texts

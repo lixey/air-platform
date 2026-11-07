@@ -9,6 +9,7 @@ public sealed class PlatformOptions
   public IReadOnlyList<IPlatformModule> Modules => _modules;
   public IReadOnlyList<Action<WebApplicationBuilder>> BuilderActions => _builderActions;
   public IReadOnlyList<Action<WebApplication>> AppActions => _appActions;
+  public string DefaultCurrency { get; set; } = "UAH";
 
   public PlatformOptions AddModule<TModule>() where TModule : IPlatformModule, new()
   {
