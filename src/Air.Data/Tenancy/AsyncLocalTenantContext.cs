@@ -58,6 +58,20 @@ public class AsyncLocalTenantContext : ITenantContext
     return new Scope(previous);
   }
 
+  public static IDisposable UseCorrelation(string? correlationId)
+  {
+    var previous = _box.Value;
+    _box.Value = new TenantBox
+    {
+      TenantId = previous?.TenantId,
+      IsSystemScope = previous?.IsSystemScope ?? (previous?.TenantId == null),
+      Rights = previous?.Rights,
+      UserId = previous?.UserId,
+      CorrelationId = correlationId
+    };
+    return new Scope(previous);
+  }
+
   private sealed class Scope(TenantBox? previous) : IDisposable
   {
     public void Dispose() => _box.Value = previous;

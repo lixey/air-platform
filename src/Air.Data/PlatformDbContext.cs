@@ -51,7 +51,7 @@ public abstract class PlatformDbContext : DbContext
     _activeMutationRun?.IsRollbackOnly = true;
   }
 
-  internal Guid? CurrentMutationRunId => _activeMutationRun?.RunId;
+  public Guid? CurrentMutationRunId => _activeMutationRun?.RunId;
 
   public IDisposable BeginMutationRun()
   {
@@ -412,9 +412,9 @@ public abstract class PlatformDbContext : DbContext
   )
   {
     var result = base.SaveChanges(acceptAllChangesOnSuccess: false);
+    ChangeTracker.AcceptAllChanges();
     CompleteRunFlushStates(pending);
     var journalRows = BuildConsolidatedJournalRows(run);
-    ChangeTracker.AcceptAllChanges();
     if (journalRows.Count > 0)
     {
       PersistJournalRows(acceptAllChangesOnSuccess: false, journalRows);
@@ -430,9 +430,9 @@ public abstract class PlatformDbContext : DbContext
   )
   {
     var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
+    ChangeTracker.AcceptAllChanges();
     CompleteRunFlushStates(pending);
     var journalRows = BuildConsolidatedJournalRows(run);
-    ChangeTracker.AcceptAllChanges();
     if (journalRows.Count > 0)
     {
       await PersistJournalRowsAsync(acceptAllChangesOnSuccess: false, journalRows, cancellationToken);
