@@ -1,0 +1,12 @@
+namespace Platform.App.Contracts;
+
+[UiContract]
+public sealed class AgentSyncRequest
+{
+  public string? SessionId { get; set; }
+  public string SourceId { get; set; } = string.Empty;
+  public List<string>? AttachmentIds { get; set; }
+  public string? Locale { get; set; }
+  public string? Provider { get; set; }
+  public string? Model { get; set; }
+}

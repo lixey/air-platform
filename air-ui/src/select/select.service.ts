@@ -21,15 +21,23 @@ import type { SelectSource } from './select-source';
 /** What the select needs of the grid inside its overlay: to search it, to move along it, to read its active row. */
 export interface SelectGridLink {
   setSearch(text: string): void;
+
   moveActive(delta: number): void;
+
   setActive(index: number): void;
+
   activeRow(): Readonly<Record<string, unknown>> | null;
+
   rowCount(): number;
+
   isLoading?(): boolean;
+
   /** The id of the grid's table, the list a search box controls; null before it is drawn. */
   tableId(): string | null;
+
   /** The id of the active row's active cell; null with none. */
   activeCellId(): string | null;
+
   /** The fitted content width of the grid's table, in pixels; 0 before it is measured. */
   tableWidth?(): number;
 }
@@ -119,7 +127,9 @@ export class SelectService {
     const term = this.searchText().trim().toLowerCase();
     const picked = this.draft();
     return options.filter(
-      option => (!this.isMultiple() || !isPicked(option, picked)) && (!term || option.label.toLowerCase().includes(term)),
+      option =>
+        (!this.isMultiple() || !isPicked(option, picked)) &&
+        (!term || option.label.toLowerCase().includes(term) || (option.subtitle?.toLowerCase().includes(term) ?? false)),
     );
   });
 
@@ -291,8 +301,10 @@ export class SelectService {
   /** The height the list wants: a fixed list's rows, up to the select's height; a sourced list the select's height. */
   private listHeight(): number {
     const options = this.model().options;
-    return options
-      ? Math.min(SELECT_LIST_HEIGHT, 2 * LIST_PADDING + options.length * (OPTION_MIN_HEIGHT + OPTION_GAP))
-      : SELECT_LIST_HEIGHT;
+    if (!options) {
+      return SELECT_LIST_HEIGHT;
+    }
+    const rowsHeight = options.reduce((sum, opt) => sum + (opt.subtitle ? OPTION_MIN_HEIGHT + 16 : OPTION_MIN_HEIGHT) + OPTION_GAP, 0);
+    return Math.min(SELECT_LIST_HEIGHT, 2 * LIST_PADDING + rowsHeight);
   }
 }

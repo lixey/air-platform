@@ -1300,6 +1300,39 @@
   <data name="AgentProposalSuperseded" xml:space="preserve">
     <value>Цю пропозицію замінено новішою версією нижче.</value>
   </data>
+  <data name="AgentActionsTitle" xml:space="preserve">
+    <value>Дії</value>
+  </data>
+  <data name="AgentAttachPhotoOption" xml:space="preserve">
+    <value>Прикріпити фото або скріншот</value>
+  </data>
+  <data name="AgentBatchSavedBadge" xml:space="preserve">
+    <value>ШІ-пакет #{0} · збережено {1}</value>
+  </data>
+  <data name="AgentHideSteps" xml:space="preserve">
+    <value>Згорнути кроки</value>
+  </data>
+  <data name="AgentShowSteps" xml:space="preserve">
+    <value>Показати кроки ({0})</value>
+  </data>
+  <data name="AgentStatusSyncing" xml:space="preserve">
+    <value>Синхронізація…</value>
+  </data>
+  <data name="AgentSyncPromptLabel" xml:space="preserve">
+    <value>Синхронізація: {0}</value>
+  </data>
+  <data name="ChangeAgentBatchBadge" xml:space="preserve">
+    <value>ШІ-пакет ({0}) · #{1}</value>
+  </data>
+  <data name="ChangeAgentSingleBadge" xml:space="preserve">
+    <value>ШІ · #{0}</value>
+  </data>
+  <data name="ChangePackBadge" xml:space="preserve">
+    <value>Пакет змін ({0})</value>
+  </data>
+  <data name="ChangeRelatedTitle" xml:space="preserve">
+    <value>Пов'язані зміни цього пакета ({0})</value>
+  </data>
   <data name="LegacyTitleFormat" xml:space="preserve">
     <value>Легасі UI: {0} | БД: {1}</value>
   </data>

@@ -50,6 +50,116 @@ public static class AgentEndpointsExtensions
     return (filteredProviders, dbModels);
   }
 
+  private static CultureInfo ApplyTurnCulture(HttpRequest request, string? locale)
+  {
+    var culture = !string.IsNullOrWhiteSpace(locale)
+      ? (locale.StartsWith("uk", StringComparison.OrdinalIgnoreCase) ||
+         locale.StartsWith("ua", StringComparison.OrdinalIgnoreCase)
+        ? CultureInfo.GetCultureInfo("uk-UA")
+        : locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+          ? CultureInfo.GetCultureInfo("en-US")
+          : PlatformEndpointsExtensions.ResolveRequestCulture(request))
+      : PlatformEndpointsExtensions.ResolveRequestCulture(request);
+    CultureInfo.CurrentCulture = culture;
+    CultureInfo.CurrentUICulture = culture;
+    return culture;
+  }
+
+  private static async Task<(IAgentProvider? Provider, string SelectedModel, string SelectedModelName)> ResolveTurnProviderAndModelAsync(
+    HttpContext ctx,
+    AgentStore store,
+    IAgentModelSynchronizer synchronizer,
+    AgentOptions options,
+    IEnumerable<IAgentProvider> providers,
+    string? requestedProvider,
+    string? requestedModel,
+    bool preferPhotoModel,
+    CancellationToken ct
+  )
+  {
+    var enabledProviders = providers
+      .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
+      .ToList();
+
+    var providerHandle = !string.IsNullOrWhiteSpace(requestedProvider) ? requestedProvider : options.DefaultProvider;
+    var selectedModel = requestedModel;
+    string? selectedModelName = null;
+
+    var db = ctx.RequestServices.GetService<PlatformDbContext>();
+    if (db is not null)
+    {
+      List<AppAgentModel> dbModels;
+      (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(
+        db,
+        store,
+        synchronizer,
+        options,
+        enabledProviders,
+        ct
+      );
+
+      AppAgentModel? PickProviderDefault() =>
+        (!string.IsNullOrWhiteSpace(requestedProvider)
+          ? dbModels.FirstOrDefault(m =>
+              m.IsDefault && string.Equals(m.ProviderHandle, requestedProvider, StringComparison.OrdinalIgnoreCase)
+            )
+            ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, requestedProvider, StringComparison.OrdinalIgnoreCase))
+          : null)
+        ?? dbModels.FirstOrDefault(m => m.IsDefault)
+        ?? dbModels.FirstOrDefault();
+
+      if (!string.IsNullOrWhiteSpace(selectedModel))
+      {
+        var matchedRow = (!string.IsNullOrWhiteSpace(requestedProvider)
+                           ? dbModels.FirstOrDefault(m =>
+                             string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals(m.ProviderHandle, requestedProvider, StringComparison.OrdinalIgnoreCase)
+                           )
+                           : null)
+                         ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase))
+                         ?? PickProviderDefault();
+        if (matchedRow is not null)
+        {
+          selectedModel = matchedRow.ModelId;
+          selectedModelName = matchedRow.Name;
+          providerHandle = matchedRow.ProviderHandle;
+        }
+      }
+      else if (preferPhotoModel)
+      {
+        var photoRow = (!string.IsNullOrWhiteSpace(requestedProvider)
+                         ? dbModels.FirstOrDefault(m =>
+                           m.IsForPhotos && string.Equals(m.ProviderHandle, requestedProvider, StringComparison.OrdinalIgnoreCase)
+                         )
+                         : null)
+                       ?? PickProviderDefault() switch
+                       {
+                         var def when string.IsNullOrWhiteSpace(requestedProvider) => dbModels.FirstOrDefault(m => m.IsForPhotos) ?? def,
+                         var def => def
+                       };
+        if (photoRow is not null)
+        {
+          selectedModel = photoRow.ModelId;
+          selectedModelName = photoRow.Name;
+          providerHandle = photoRow.ProviderHandle;
+        }
+      }
+      else if (PickProviderDefault() is { } defRow)
+      {
+        selectedModel = defRow.ModelId;
+        selectedModelName = defRow.Name;
+        providerHandle = defRow.ProviderHandle;
+      }
+    }
+
+    var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
+                   ?? enabledProviders.FirstOrDefault();
+
+    var finalModel = !string.IsNullOrWhiteSpace(selectedModel) ? selectedModel : options.DefaultModel;
+    var finalModelName = !string.IsNullOrWhiteSpace(selectedModelName) ? selectedModelName : finalModel;
+    return (provider, finalModel, finalModelName);
+  }
+
   private static Task<List<AppAgentModel>> QueryActiveProviderModelsAsync(PlatformDbContext db, CancellationToken ct) =>
     db.AppAgentModel
       .AsNoTracking()
@@ -145,6 +255,7 @@ public static class AgentEndpointsExtensions
         HttpContext ctx,
         AgentStore store,
         IEnumerable<IAgentProvider> providers,
+        IEnumerable<IAgentSyncProvider> syncProviders,
         IAgentModelSynchronizer synchronizer,
         AgentOptions options,
         CancellationToken ct
@@ -225,6 +336,23 @@ public static class AgentEndpointsExtensions
                            ?? activeProvider;
         }
 
+        var syncSources = new List<AgentSyncSourceDto>();
+        foreach (var sp in syncProviders)
+        {
+          try
+          {
+            var provided = await sp.GetSourcesAsync(ctx.RequestServices, ct);
+            if (provided.Count > 0)
+            {
+              syncSources.AddRange(provided);
+            }
+          }
+          catch
+          {
+            // Ignore sync source discovery errors in status endpoint
+          }
+        }
+
         return Results.Ok(
           new AgentStatusDto
           {
@@ -232,7 +360,8 @@ public static class AgentEndpointsExtensions
             DefaultModel = defaultModel,
             PhotoModel = photoModel,
             Providers = list,
-            Models = models
+            Models = models,
+            SyncSources = syncSources
           }
         );
       }
@@ -407,16 +536,7 @@ public static class AgentEndpointsExtensions
         CancellationToken ct
       ) =>
       {
-        var culture = !string.IsNullOrWhiteSpace(body.Locale)
-          ? (body.Locale.StartsWith("uk", StringComparison.OrdinalIgnoreCase) ||
-             body.Locale.StartsWith("ua", StringComparison.OrdinalIgnoreCase)
-            ? CultureInfo.GetCultureInfo("uk-UA")
-            : body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
-              ? CultureInfo.GetCultureInfo("en-US")
-              : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request))
-          : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
-        CultureInfo.CurrentCulture = culture;
-        CultureInfo.CurrentUICulture = culture;
+        var culture = ApplyTurnCulture(ctx.Request, body.Locale);
 
         if (!string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))
         {
@@ -427,134 +547,26 @@ public static class AgentEndpointsExtensions
         var owner = AgentStore.ResolveOwner(ctx.RequestServices);
         var sessionId = AgentStore.NormalizeSessionId(body.SessionId);
 
-        var enabledProviders = providers
-          .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
-          .ToList();
-
-        var providerHandle = body.Provider ?? options.DefaultProvider;
-
         var attachments = (body.AttachmentIds ?? [])
           .Select(id => store.GetAttachment(id, owner))
           .Where(a => a is not null)
           .Cast<AgentAttachmentDto>()
           .ToList();
 
-        var selectedModel = body.Model;
-        string? selectedModelName = null;
-        var db = ctx.RequestServices.GetService<PlatformDbContext>();
-        if (db is not null)
-        {
-          List<AppAgentModel> dbModels;
-          (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(
-            db,
-            store,
-            synchronizer,
-            options,
-            enabledProviders,
-            ct
-          );
-
-          if (!string.IsNullOrWhiteSpace(selectedModel))
-          {
-            var matchedRow = (!string.IsNullOrWhiteSpace(body.Provider)
-                               ? dbModels.FirstOrDefault(m =>
-                                 string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase) &&
-                                 string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase)
-                               )
-                               : null)
-                             ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
-            if (matchedRow is not null)
-            {
-              selectedModelName = matchedRow.Name;
-              providerHandle = matchedRow.ProviderHandle;
-            }
-            else
-            {
-              var fallbackDef = (!string.IsNullOrWhiteSpace(body.Provider)
-                                  ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(
-                                        m.ProviderHandle,
-                                        body.Provider,
-                                        StringComparison.OrdinalIgnoreCase
-                                      )
-                                    )
-                                    ?? dbModels.FirstOrDefault(m => string.Equals(
-                                        m.ProviderHandle,
-                                        body.Provider,
-                                        StringComparison.OrdinalIgnoreCase
-                                      )
-                                    )
-                                  : null)
-                                ?? dbModels.FirstOrDefault(m => m.IsDefault)
-                                ?? dbModels.FirstOrDefault();
-              if (fallbackDef is not null)
-              {
-                selectedModel = fallbackDef.ModelId;
-                selectedModelName = fallbackDef.Name;
-                providerHandle = fallbackDef.ProviderHandle;
-              }
-            }
-          }
-          else if (attachments.Count > 0)
-          {
-            var photoRow = (!string.IsNullOrWhiteSpace(body.Provider)
-                             ? dbModels.FirstOrDefault(m => m.IsForPhotos && string.Equals(
-                                   m.ProviderHandle,
-                                   body.Provider,
-                                   StringComparison.OrdinalIgnoreCase
-                                 )
-                               )
-                               ?? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(
-                                   m.ProviderHandle,
-                                   body.Provider,
-                                   StringComparison.OrdinalIgnoreCase
-                                 )
-                               )
-                               ?? dbModels.FirstOrDefault(m => string.Equals(
-                                   m.ProviderHandle,
-                                   body.Provider,
-                                   StringComparison.OrdinalIgnoreCase
-                                 )
-                               )
-                             : null)
-                           ?? dbModels.FirstOrDefault(m => m.IsForPhotos)
-                           ?? dbModels.FirstOrDefault(m => m.IsDefault)
-                           ?? dbModels.FirstOrDefault();
-            if (photoRow is not null)
-            {
-              selectedModel = photoRow.ModelId;
-              selectedModelName = photoRow.Name;
-              providerHandle = photoRow.ProviderHandle;
-            }
-          }
-          else
-          {
-            var defRow = (!string.IsNullOrWhiteSpace(body.Provider)
-                           ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(
-                                 m.ProviderHandle,
-                                 body.Provider,
-                                 StringComparison.OrdinalIgnoreCase
-                               )
-                             )
-                             ?? dbModels.FirstOrDefault(m => string.Equals(
-                                 m.ProviderHandle,
-                                 body.Provider,
-                                 StringComparison.OrdinalIgnoreCase
-                               )
-                             )
-                           : null)
-                         ?? dbModels.FirstOrDefault(m => m.IsDefault)
-                         ?? dbModels.FirstOrDefault();
-            if (defRow is not null)
-            {
-              selectedModel = defRow.ModelId;
-              selectedModelName = defRow.Name;
-              providerHandle = defRow.ProviderHandle;
-            }
-          }
-        }
-
-        var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
-                       ?? enabledProviders.FirstOrDefault();
+        var hasImageAttachment = attachments.Any(a =>
+          string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+        );
+        var (provider, selectedModel, selectedModelName) = await ResolveTurnProviderAndModelAsync(
+          ctx,
+          store,
+          synchronizer,
+          options,
+          providers,
+          body.Provider,
+          body.Model,
+          hasImageAttachment,
+          ct
+        );
 
         ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
         ctx.Response.Headers.CacheControl = "no-cache";
@@ -575,16 +587,6 @@ public static class AgentEndpointsExtensions
           return;
         }
 
-        if (string.IsNullOrWhiteSpace(selectedModelName))
-        {
-          if (string.IsNullOrWhiteSpace(selectedModel))
-          {
-            selectedModel = options.DefaultModel;
-          }
-
-          selectedModelName = selectedModel;
-        }
-
         var turnReq = new AgentTurnRequest
         {
           SessionId = sessionId,
@@ -593,7 +595,7 @@ public static class AgentEndpointsExtensions
           Attachments = attachments,
           Locale = culture.TwoLetterISOLanguageName,
           ProviderHandle = provider.Handle,
-          Model = selectedModel ?? string.Empty,
+          Model = selectedModel,
           ModelName = selectedModelName,
           Services = ctx.RequestServices
         };
@@ -605,6 +607,185 @@ public static class AgentEndpointsExtensions
           var json = JsonSerializer.Serialize(evt, JsonOptions);
           await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
           await ctx.Response.Body.FlushAsync(ct);
+        }
+      }
+    );
+
+    group.MapPost(
+      "/sync",
+      async (
+        AgentSyncRequest body,
+        HttpContext ctx,
+        AgentStore store,
+        AgentOptions options,
+        McpExecutionBridge bridge,
+        ITenantContext tenantContext,
+        IEnumerable<IAgentProvider> providers,
+        IEnumerable<IAgentSyncProvider> syncProviders,
+        IAgentModelSynchronizer synchronizer,
+        CancellationToken ct
+      ) =>
+      {
+        var culture = ApplyTurnCulture(ctx.Request, body.Locale);
+
+        if (string.IsNullOrWhiteSpace(body.SourceId) ||
+            !string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))
+        {
+          ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+          return;
+        }
+
+        IAgentSyncProvider? matchedSyncProvider = null;
+        foreach (var sp in syncProviders)
+        {
+          try
+          {
+            var allowedSources = await sp.GetSourcesAsync(ctx.RequestServices, ct);
+            if (allowedSources.Any(s => string.Equals(s.Id, body.SourceId, StringComparison.OrdinalIgnoreCase)))
+            {
+              matchedSyncProvider = sp;
+              break;
+            }
+          }
+          catch
+          {
+            // Ignore failing sync provider during source lookup
+          }
+        }
+
+        if (matchedSyncProvider is null)
+        {
+          ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+          return;
+        }
+
+        var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+        var sessionId = AgentStore.NormalizeSessionId(body.SessionId);
+        var attachments = (body.AttachmentIds ?? [])
+          .Select(id => store.GetAttachment(id, owner))
+          .Where(a => a is not null)
+          .Cast<AgentAttachmentDto>()
+          .ToList();
+
+        ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.Headers.Connection = "keep-alive";
+
+        var writeLock = new SemaphoreSlim(1, 1);
+
+        async Task WriteEventAsync(AgentStreamEventDto evt)
+        {
+          await writeLock.WaitAsync(ct);
+          try
+          {
+            var json = JsonSerializer.Serialize(evt, JsonOptions);
+            await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
+            await ctx.Response.Body.FlushAsync(ct);
+          }
+          finally
+          {
+            writeLock.Release();
+          }
+        }
+
+        AgentSyncResult syncResult;
+        try
+        {
+          syncResult = await matchedSyncProvider.ExecuteSyncAsync(
+            new AgentSyncExecutionContext
+            {
+              SessionId = sessionId,
+              SourceId = body.SourceId,
+              Attachments = attachments,
+              Locale = culture.TwoLetterISOLanguageName,
+              Services = ctx.RequestServices,
+              ReportStatusAsync = status => WriteEventAsync(new AgentStreamEventDto { Type = "status", Text = status })
+            },
+            ct
+          );
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          await WriteEventAsync(new AgentStreamEventDto { Type = "error", Text = ex.Message });
+          return;
+        }
+
+        if (syncResult.RefreshServices.Count > 0)
+        {
+          await WriteEventAsync(
+            new AgentStreamEventDto
+            {
+              Type = "refresh",
+              RefreshServices = [.. syncResult.RefreshServices]
+            }
+          );
+        }
+
+        if (!syncResult.RequiresAgentTurn)
+        {
+          if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
+          {
+            await WriteEventAsync(new AgentStreamEventDto { Type = "delta", Text = syncResult.SummaryMarkdown });
+          }
+
+          await WriteEventAsync(new AgentStreamEventDto { Type = "done", SessionId = sessionId });
+          return;
+        }
+
+        var (provider, selectedModel, selectedModelName) = await ResolveTurnProviderAndModelAsync(
+          ctx,
+          store,
+          synchronizer,
+          options,
+          providers,
+          body.Provider,
+          body.Model,
+          preferPhotoModel: false,
+          ct
+        );
+
+        if (provider is null)
+        {
+          if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
+          {
+            await WriteEventAsync(new AgentStreamEventDto { Type = "delta", Text = syncResult.SummaryMarkdown });
+          }
+
+          await WriteEventAsync(new AgentStreamEventDto { Type = "error", Text = Localizer.Instance["AgentErrorCliMissing"] });
+          return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
+        {
+          await WriteEventAsync(
+            new AgentStreamEventDto
+            {
+              Type = "delta",
+              Text = $"{syncResult.SummaryMarkdown.TrimEnd()}\n\n"
+            }
+          );
+        }
+
+        var turnReq = new AgentTurnRequest
+        {
+          SessionId = sessionId,
+          Owner = owner,
+          Message = !string.IsNullOrWhiteSpace(syncResult.AgentPrompt)
+            ? syncResult.AgentPrompt
+            : "Review the synchronization context.",
+          Locale = culture.TwoLetterISOLanguageName,
+          ProviderHandle = provider.Handle,
+          Model = selectedModel,
+          ModelName = selectedModelName,
+          SyncContext = syncResult.SyncContextJson,
+          Services = ctx.RequestServices
+        };
+
+        using var scope = bridge.BeginTurn(tenantContext.TenantId, tenantContext.UserId, tenantContext.Rights, sessionId);
+
+        await foreach (var evt in provider.StreamTurnAsync(turnReq, ct))
+        {
+          await WriteEventAsync(evt);
         }
       }
     );

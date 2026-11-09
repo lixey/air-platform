@@ -2,11 +2,159 @@
 
 export type UiFieldType = 'text' | 'number' | 'date' | 'datetime' | 'time' | 'checkbox';
 
-export type UiColor = 'primary' | 'brand' | 'slate' | 'gray' | 'zinc' | 'neutral' | 'stone' | 'red' | 'orange' | 'amber' | 'yellow' | 'lime' | 'green' | 'emerald' | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple' | 'fuchsia' | 'pink' | 'rose';
+export type UiColor =
+  | 'primary'
+  | 'brand'
+  | 'slate'
+  | 'gray'
+  | 'zinc'
+  | 'neutral'
+  | 'stone'
+  | 'red'
+  | 'orange'
+  | 'amber'
+  | 'yellow'
+  | 'lime'
+  | 'green'
+  | 'emerald'
+  | 'teal'
+  | 'cyan'
+  | 'sky'
+  | 'blue'
+  | 'indigo'
+  | 'violet'
+  | 'purple'
+  | 'fuchsia'
+  | 'pink'
+  | 'rose';
 
-export type UiIcon = 'alert' | 'apply' | 'arrow-bottom' | 'arrow-left' | 'arrow-right' | 'arrow-top' | 'ban' | 'bot' | 'box' | 'calendar' | 'cart' | 'chart' | 'checkmark' | 'chevron-bottom' | 'chevron-left' | 'chevron-right' | 'chevron-top' | 'chevrons-down' | 'chevrons-up' | 'chevrons-up-down' | 'circle' | 'circle-filled' | 'clock' | 'close' | 'columns' | 'compose' | 'copy' | 'desktop' | 'dots' | 'download' | 'edit' | 'ellipsis-horizontal' | 'ellipsis-vertical' | 'ellipsis-vertical-horizontal' | 'excel' | 'export' | 'external' | 'eye' | 'filter' | 'folder' | 'full' | 'fullscreen' | 'fullscreen-exit' | 'gear' | 'gift' | 'globe' | 'grip-vertical' | 'heart' | 'home' | 'import' | 'info' | 'internet' | 'kanban' | 'list-check' | 'location' | 'logout' | 'mail' | 'map' | 'mapPin' | 'maximize' | 'measure' | 'menu' | 'minimize' | 'minus' | 'moon' | 'move' | 'msg' | 'multiple' | 'options' | 'panelBottomClose' | 'panelBottomOpen' | 'panelRightClose' | 'panelRightOpen' | 'phone' | 'photo' | 'pin' | 'play' | 'plus' | 'print' | 'question' | 'refresh' | 'reload' | 'reply' | 'rows' | 'save' | 'search' | 'secondary' | 'secondaryBottom' | 'secondaryLeft' | 'secondaryRight' | 'secondaryTop' | 'settings' | 'shelving' | 'sidebar' | 'sidebar-left' | 'sidebar-right' | 'signin' | 'signout' | 'sort-arrows' | 'spinner' | 'star' | 'sun' | 'telephone' | 'trash' | 'user' | 'users';
+export type UiIcon =
+  | 'alert'
+  | 'apply'
+  | 'arrow-bottom'
+  | 'arrow-left'
+  | 'arrow-right'
+  | 'arrow-top'
+  | 'ban'
+  | 'bot'
+  | 'box'
+  | 'calendar'
+  | 'cart'
+  | 'chart'
+  | 'checkmark'
+  | 'chevron-bottom'
+  | 'chevron-left'
+  | 'chevron-right'
+  | 'chevron-top'
+  | 'chevrons-down'
+  | 'chevrons-up'
+  | 'chevrons-up-down'
+  | 'circle'
+  | 'circle-filled'
+  | 'clock'
+  | 'close'
+  | 'columns'
+  | 'compose'
+  | 'copy'
+  | 'desktop'
+  | 'dots'
+  | 'download'
+  | 'edit'
+  | 'ellipsis-horizontal'
+  | 'ellipsis-vertical'
+  | 'ellipsis-vertical-horizontal'
+  | 'excel'
+  | 'export'
+  | 'external'
+  | 'eye'
+  | 'filter'
+  | 'folder'
+  | 'full'
+  | 'fullscreen'
+  | 'fullscreen-exit'
+  | 'gear'
+  | 'gift'
+  | 'globe'
+  | 'grip-vertical'
+  | 'heart'
+  | 'home'
+  | 'import'
+  | 'info'
+  | 'internet'
+  | 'kanban'
+  | 'list-check'
+  | 'location'
+  | 'logout'
+  | 'mail'
+  | 'map'
+  | 'mapPin'
+  | 'maximize'
+  | 'measure'
+  | 'menu'
+  | 'minimize'
+  | 'minus'
+  | 'moon'
+  | 'move'
+  | 'msg'
+  | 'multiple'
+  | 'options'
+  | 'panelBottomClose'
+  | 'panelBottomOpen'
+  | 'panelRightClose'
+  | 'panelRightOpen'
+  | 'phone'
+  | 'photo'
+  | 'pin'
+  | 'play'
+  | 'plus'
+  | 'print'
+  | 'question'
+  | 'refresh'
+  | 'reload'
+  | 'reply'
+  | 'rows'
+  | 'save'
+  | 'search'
+  | 'secondary'
+  | 'secondaryBottom'
+  | 'secondaryLeft'
+  | 'secondaryRight'
+  | 'secondaryTop'
+  | 'settings'
+  | 'shelving'
+  | 'sidebar'
+  | 'sidebar-left'
+  | 'sidebar-right'
+  | 'signin'
+  | 'signout'
+  | 'sort-arrows'
+  | 'spinner'
+  | 'star'
+  | 'sun'
+  | 'telephone'
+  | 'trash'
+  | 'user'
+  | 'users';
 
-export type FilterOperator = 'equals' | 'notEquals' | 'greaterThan' | 'greaterThanOrEqual' | 'lessThan' | 'lessThanOrEqual' | 'in' | 'notIn' | 'isNull' | 'isNotNull' | 'contains' | 'notContains' | 'startsWith' | 'notStartsWith' | 'endsWith' | 'notEndsWith' | 'matches' | 'notMatches';
+export type FilterOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'greaterThan'
+  | 'greaterThanOrEqual'
+  | 'lessThan'
+  | 'lessThanOrEqual'
+  | 'in'
+  | 'notIn'
+  | 'isNull'
+  | 'isNotNull'
+  | 'contains'
+  | 'notContains'
+  | 'startsWith'
+  | 'notStartsWith'
+  | 'endsWith'
+  | 'notEndsWith'
+  | 'matches'
+  | 'notMatches';
 
 export type FilterLogic = 'and' | 'or';
 
@@ -36,7 +184,32 @@ export type FilesLook = 'tiles' | 'list';
 
 export type FileImages = 'keep' | 'lossless' | 'optimize';
 
-export type FileType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/svg+xml' | 'application/pdf' | 'text/plain' | 'text/csv' | 'text/markdown' | 'text/html' | 'application/json' | 'application/xml' | 'application/zip' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' | 'application/vnd.ms-excel' | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 'application/vnd.openxmlformats-officedocument.presentationml.presentation' | 'application/vnd.oasis.opendocument.text' | 'application/vnd.oasis.opendocument.spreadsheet' | 'audio/mpeg' | 'video/mp4' | 'video/quicktime' | 'video/webm' | 'video/3gpp';
+export type FileType =
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/gif'
+  | 'image/webp'
+  | 'image/svg+xml'
+  | 'application/pdf'
+  | 'text/plain'
+  | 'text/csv'
+  | 'text/markdown'
+  | 'text/html'
+  | 'application/json'
+  | 'application/xml'
+  | 'application/zip'
+  | 'application/msword'
+  | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  | 'application/vnd.ms-excel'
+  | 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  | 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  | 'application/vnd.oasis.opendocument.text'
+  | 'application/vnd.oasis.opendocument.spreadsheet'
+  | 'audio/mpeg'
+  | 'video/mp4'
+  | 'video/quicktime'
+  | 'video/webm'
+  | 'video/3gpp';
 
 export type FileCover = 'auto' | 'manual';
 
@@ -212,12 +385,7 @@ export interface NavElementKinds {
 
 export type NavElementModel = NavElementKinds[keyof NavElementKinds];
 
-export type PlatformKind =
-  | keyof PanelKinds
-  | keyof CellKinds
-  | keyof HeaderKinds
-  | keyof FormElementKinds
-  | keyof NavElementKinds;
+export type PlatformKind = keyof PanelKinds | keyof CellKinds | keyof HeaderKinds | keyof FormElementKinds | keyof NavElementKinds;
 
 export interface ActionInputDto {
   value: Record<string, unknown>;
@@ -234,6 +402,8 @@ export interface AgentAttachmentDto {
 export interface AgentBatchCommitResultDto {
   committed: AgentCommitResultDto[];
   refreshServices: string[];
+  runId?: string | null;
+  batchCode?: string | null;
 }
 
 export interface AgentBatchConfirmRequest {
@@ -256,6 +426,8 @@ export interface AgentCommitResultDto {
   formService: string;
   refreshServices: string[];
   alsoCommitted?: AgentCommitResultDto[] | null;
+  runId?: string | null;
+  batchCode?: string | null;
 }
 
 export interface AgentModelDto {
@@ -325,6 +497,7 @@ export interface AgentStatusDto {
   photoModel?: string | null;
   providers: AgentProviderDto[];
   models: AgentModelDto[];
+  syncSources: AgentSyncSourceDto[];
 }
 
 export interface AgentStreamEventDto {
@@ -335,6 +508,25 @@ export interface AgentStreamEventDto {
   modelId?: string | null;
   modelName?: string | null;
   supersededProposalIds?: string[] | null;
+  refreshServices?: string[] | null;
+}
+
+export interface AgentSyncRequest {
+  sessionId?: string | null;
+  sourceId: string;
+  attachmentIds?: string[] | null;
+  locale?: string | null;
+  provider?: string | null;
+  model?: string | null;
+}
+
+export interface AgentSyncSourceDto {
+  id: string;
+  label: string;
+  subtitle?: string | null;
+  icon?: string | null;
+  acceptsFile: boolean;
+  fileAccept?: string | null;
 }
 
 export interface AppMetadataDto {
@@ -363,7 +555,22 @@ export interface ChangeDiffModel {
   operationKey: string;
   operationColor: string;
   emptyLabel?: string | null;
+  sourceBadge?: string | null;
+  sourceBadgeColor?: string | null;
+  relatedTitle?: string | null;
   fields: ChangeDiffFieldDto[];
+  relatedChanges: ChangeDiffRelatedItemDto[];
+}
+
+export interface ChangeDiffRelatedItemDto {
+  id: number;
+  title: string;
+  operation: string;
+  operationColor: string;
+  formService?: string | null;
+  overlay?: OverlayDto | null;
+  recordId: number;
+  isCurrent: boolean;
 }
 
 export interface ChangePasswordRequest {
@@ -1681,4 +1888,3 @@ export interface UserProfileDto {
   permissions: string[];
   claims: Record<string, string>;
 }
-

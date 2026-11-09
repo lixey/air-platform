@@ -77,6 +77,7 @@ internal static class CliTurnRunner
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, providerHandle);
     var contextFilePath = AgentStore.GetContextFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
     var recordsFilePath = AgentStore.GetRecordsFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
+    var syncContextFilePath = AgentStore.GetSyncContextFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
     try
     {
       if (File.Exists(contextFilePath))
@@ -87,6 +88,11 @@ internal static class CliTurnRunner
       if (File.Exists(recordsFilePath))
       {
         File.Delete(recordsFilePath);
+      }
+
+      if (File.Exists(syncContextFilePath))
+      {
+        File.Delete(syncContextFilePath);
       }
     }
     catch { }
@@ -126,24 +132,18 @@ internal static class CliTurnRunner
         }
       }
 
-      effectiveRequest = new AgentTurnRequest
+      effectiveRequest = request with
       {
-        SessionId = request.SessionId,
-        Owner = request.Owner,
-        Message = request.Message,
-        Attachments = stagedAttachments,
-        Locale = request.Locale,
-        ProviderHandle = request.ProviderHandle,
-        Model = request.Model,
-        ModelName = request.ModelName,
-        Services = request.Services
+        Attachments = stagedAttachments
       };
     }
 
     string? contextJson = null;
     try
     {
-      var hasPhoto = effectiveRequest.Attachments.Count > 0;
+      var hasPhoto = effectiveRequest.Attachments.Any(a =>
+        string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+      );
       var includeReports = !hasPhoto;
       var ctxObj = await AirAgentRuntime.BuildContextAsync(
         effectiveRequest.Services,
@@ -200,10 +200,13 @@ internal static class CliTurnRunner
       process.StandardInput.Close();
       stderrTask = process.StandardError.ReadToEndAsync(ct);
 
+      var hasImageAttachment = request.Attachments.Any(a =>
+        string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+      );
       yield return new AgentStreamEventDto
       {
         Type = "status",
-        Text = request.Attachments.Count > 0 ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
+        Text = hasImageAttachment ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
         ModelId = selectedModel,
         ModelName = modelDisplayName
       };
@@ -309,6 +312,15 @@ internal static class CliTurnRunner
         try
         {
           File.Delete(recordsFilePath);
+        }
+        catch { }
+      }
+
+      if (File.Exists(syncContextFilePath))
+      {
+        try
+        {
+          File.Delete(syncContextFilePath);
         }
         catch { }
       }

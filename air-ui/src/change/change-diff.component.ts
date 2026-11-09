@@ -1,15 +1,17 @@
 import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { BadgeComponent } from '../badge/badge.component';
-import type { ChangeDiffModel, UiColor } from '../core/generated/contracts';
+import { BtnComponent } from '../btn/btn.component';
+import type { ChangeDiffModel, ChangeDiffRelatedItemDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import { OverlayService } from '../overlay/overlay.service';
 
 @Component({
   selector: 'ui-change-diff',
   standalone: true,
-  imports: [BadgeComponent],
+  imports: [BadgeComponent, BtnComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    class: 'block w-full p-3 bg-page overflow-y-auto',
+    class: 'flex flex-col gap-3 w-full p-3 bg-page overflow-y-auto',
   },
   template: `
     @if (model(); as m) {
@@ -21,9 +23,14 @@ import { TextsService } from '../core/texts.service';
               <div class="truncate text-xs text-muted">{{ m.subtitle }}</div>
             }
           </div>
-          @if (m.operation) {
-            <ui-badge [label]="m.operation" [color]="asColor(m.operationColor)" />
-          }
+          <div class="flex shrink-0 items-center gap-1.5">
+            @if (m.sourceBadge) {
+              <ui-badge [label]="m.sourceBadge" [color]="asColor(m.sourceBadgeColor)" />
+            }
+            @if (m.operation) {
+              <ui-badge [label]="m.operation" [color]="asColor(m.operationColor)" />
+            }
+          </div>
         </div>
 
         @if (m.fields.length > 0) {
@@ -51,15 +58,68 @@ import { TextsService } from '../core/texts.service';
           </div>
         }
       </div>
+
+      @if (m.relatedChanges.length > 1) {
+        <div class="w-full overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xs">
+          <div class="border-b border-line bg-surface-3 px-3 py-2 text-xs font-semibold text-ink">
+            {{ m.relatedTitle || texts.of('ChangeRelatedTitle', m.relatedChanges.length) }}
+          </div>
+          <div class="divide-y divide-line/60 px-3 py-1 text-xs">
+            @for (item of m.relatedChanges; track item.id) {
+              <div class="flex items-center justify-between gap-2 py-1.5" [class.font-semibold]="item.isCurrent">
+                <div class="min-w-0 flex-1 truncate text-ink" [title]="item.title">
+                  {{ item.title }}
+                </div>
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <ui-badge [label]="item.operation" [color]="asColor(item.operationColor)" />
+                  @if (item.formService && item.recordId > 0) {
+                    <ui-btn
+                      size="small"
+                      variant="ghost"
+                      color="blue"
+                      icon="external"
+                      [label]="texts.of('Open')"
+                      (click)="openRelatedRecord(item)"
+                    />
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
     }
   `,
 })
 export class ChangeDiffComponent {
   protected readonly texts = inject(TextsService);
+  private readonly overlay = inject(OverlayService);
 
   readonly model = input<ChangeDiffModel | null>();
 
   protected asColor(color: string | null | undefined): UiColor {
     return (color as UiColor) || 'slate';
+  }
+
+  protected openRelatedRecord(item: ChangeDiffRelatedItemDto): void {
+    if (!item.formService || item.recordId <= 0) {
+      return;
+    }
+
+    const baseOverlay = item.overlay ?? {
+      key: item.formService,
+      presentation: 'drawer' as const,
+      width: '720px',
+      closesOnEscape: true,
+    };
+
+    this.overlay.open({
+      ...baseOverlay,
+      screen: {
+        ...(baseOverlay.screen ?? {}),
+        service: item.formService,
+        params: { id: item.recordId },
+      },
+    });
   }
 }

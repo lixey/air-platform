@@ -28,7 +28,9 @@ public static class AgentProposalExecutor
       RecordLabel = primary.RecordLabel,
       FormService = primary.FormService,
       RefreshServices = batchResult.RefreshServices,
-      AlsoCommitted = others.Count > 0 ? others : null
+      AlsoCommitted = others.Count > 0 ? others : null,
+      RunId = batchResult.RunId,
+      BatchCode = batchResult.BatchCode
     };
   }
 
@@ -226,10 +228,20 @@ public static class AgentProposalExecutor
       }
 
       var sortedProposals = AgentStepGraphHelper.SortStagedProposalsTopologically(activePending, payloadsById);
+      var batchCode = Guid.NewGuid().ToString("N")[..6];
+      var committedStepCount = sortedProposals.Count;
+      var agentCorrelationId = committedStepCount > 1
+        ? $"agent-batch:{batchCode}:{committedStepCount}"
+        : $"agent:{batchCode}";
+      string? committedRunId = null;
+
+      using var correlationScope = AsyncLocalTenantContext.UseCorrelation(agentCorrelationId);
 
       var (stepOutcomes, allRefreshServices) = await db.RunMutationAsync(
         async mutationCt =>
         {
+          committedRunId = db.CurrentMutationRunId?.ToString();
+
           // Phase A: Verify initial optimistic concurrency versions before any step mutates database state
           var preVerifiedEdits = new HashSet<(Type EntityType, long RecordId)>();
           foreach (var stepProp in sortedProposals)
@@ -308,7 +320,9 @@ public static class AgentProposalExecutor
             RecordId = outcome.RecordId,
             RecordLabel = outcome.RecordLabel,
             FormService = outcome.FormServicePath,
-            RefreshServices = allRefreshServices
+            RefreshServices = allRefreshServices,
+            RunId = committedRunId,
+            BatchCode = batchCode
           }
         );
       }
@@ -316,7 +330,9 @@ public static class AgentProposalExecutor
       return new AgentBatchCommitResultDto
       {
         Committed = committedResults,
-        RefreshServices = allRefreshServices
+        RefreshServices = allRefreshServices,
+        RunId = committedRunId,
+        BatchCode = batchCode
       };
     }
     catch

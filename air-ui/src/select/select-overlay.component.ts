@@ -2,6 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
 import { TextsService } from '../core/texts.service';
 import { GridComponent } from '../grid/grid.component';
+import { UiIconDirective } from '../icon/ui-icon.directive';
 import { screenLoader } from '../screen/screen-loader';
 import { SelectBarComponent } from './select-bar.component';
 import { LIST_PADDING, OPTION, OPTION_GAP, OPTION_MIN_HEIGHT } from './select-list';
@@ -20,7 +21,7 @@ import { SelectService } from './select.service';
  */
 @Component({
   selector: 'ui-select-overlay',
-  imports: [SelectBarComponent, SelectPickedComponent, GridComponent, BtnComponent],
+  imports: [SelectBarComponent, SelectPickedComponent, GridComponent, BtnComponent, UiIconDirective],
   template: `
     <ui-select-bar />
     <div class="flex flex-1 min-h-0 overflow-hidden">
@@ -39,15 +40,23 @@ import { SelectService } from './select.service';
               type="button"
               role="option"
               tabindex="-1"
-              class="${OPTION}"
-              [style.min-height.px]="optionMinHeight"
+              [class]="option.subtitle ? optionClass + ' py-1.5' : optionClass"
+              [style.min-height.px]="option.subtitle ? optionMinHeight + 16 : optionMinHeight"
               [class.bg-row-active]="index === select.activeIndex()"
               [id]="select.listId + '-' + index"
               [attr.aria-selected]="isPicked(option)"
               [title]="option.title || option.label"
               (click)="select.pick(option)"
             >
-              <span class="truncate">{{ option.label }}</span>
+              @if (option.icon) {
+                <i class="flex h-4 w-4 shrink-0 items-center justify-center text-muted" [icon]="option.icon"></i>
+              }
+              <div class="min-w-0 flex-1 text-left">
+                <div class="truncate">{{ option.label }}</div>
+                @if (option.subtitle) {
+                  <div class="truncate text-xs text-muted">{{ option.subtitle }}</div>
+                }
+              </div>
             </button>
           } @empty {
             <p class="m-0 p-3 text-sm text-muted">{{ texts.of('NothingToPick') }}</p>
@@ -100,6 +109,7 @@ export class SelectOverlayComponent {
   });
 
   /** The numbers that draw a static list's rows, the ones `SelectService` sizes a short list by. */
+  protected readonly optionClass = OPTION;
   protected readonly listPadding = LIST_PADDING;
   protected readonly optionGap = OPTION_GAP;
   protected readonly optionMinHeight = OPTION_MIN_HEIGHT;

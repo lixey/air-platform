@@ -161,6 +161,11 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       {
         row["after"] = FormatCompactAuditJson(e.After, e.Before, onlyDiff);
       }
+
+      if (row.Values.ContainsKey("correlationId") && !string.IsNullOrEmpty(e.CorrelationId))
+      {
+        row["correlationId"] = FormatCorrelationLabel(e.CorrelationId, L);
+      }
     }
   }
 

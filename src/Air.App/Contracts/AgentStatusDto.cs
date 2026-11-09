@@ -11,4 +11,5 @@ public sealed class AgentStatusDto
 
   public List<AgentProviderDto> Providers { get; set; } = [];
   public List<AgentModelDto> Models { get; set; } = [];
+  public List<AgentSyncSourceDto> SyncSources { get; set; } = [];
 }

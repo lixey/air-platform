@@ -64,7 +64,7 @@ public sealed class AgentStore
 
   private static readonly HashSet<string> AllowedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
   {
-    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".pdf", ".txt", ".csv", ".json", ".xml", ".md"
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".pdf", ".txt", ".csv", ".json", ".xml", ".md", ".xlsx", ".xls"
   };
 
   private static readonly HashSet<string> BlockedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -511,6 +511,9 @@ public sealed class AgentStore
 
   public static string GetRecordsFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
     Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"records-{NormalizeSessionId(sessionId)}.json");
+
+  public static string GetSyncContextFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
+    Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"sync-context-{NormalizeSessionId(sessionId)}.json");
 
   private void CleanupStaleDiskFiles()
   {

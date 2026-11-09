@@ -1,10 +1,12 @@
-import type { PickedValue, Reference } from '../core/generated/contracts';
+import type { PickedValue, Reference, UiIcon } from '../core/generated/contracts';
 import { isRecord, valueAt } from '../core/json';
 
 /** One thing a select offers or holds: the id the filter uses, the label the user sees, and the row it came from. */
 export interface SelectOption extends PickedValue {
   readonly id: number;
   readonly label: string;
+  readonly subtitle?: string;
+  readonly icon?: UiIcon;
   readonly title?: string;
   readonly row?: unknown;
 }

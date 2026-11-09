@@ -10,5 +10,6 @@ public sealed record AgentTurnRequest
   public string? ProviderHandle { get; init; }
   public string? Model { get; init; }
   public string? ModelName { get; init; }
+  public string? SyncContext { get; init; }
   public IServiceProvider Services { get; init; } = null!;
 }

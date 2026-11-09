@@ -143,6 +143,27 @@ public static class AgentPromptBuilder
 
     AppendUnconfirmedSessionProposals(sb, request);
 
+    if (!string.IsNullOrWhiteSpace(request.SyncContext))
+    {
+      var syncBytes = Encoding.UTF8.GetByteCount(request.SyncContext);
+      var currentSyncPrefixBytes = Encoding.UTF8.GetByteCount(sb.ToString());
+      if (currentSyncPrefixBytes + syncBytes + 8192 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
+      {
+        sb.AppendLine();
+        sb.AppendLine("[SYNC CONTEXT JSON]");
+        sb.AppendLine(request.SyncContext);
+      }
+      else
+      {
+        var syncPath = AgentStore.GetSyncContextFilePath(workspaceDir, request.Owner, request.SessionId);
+        File.WriteAllText(syncPath, request.SyncContext, Encoding.UTF8);
+        sb.AppendLine();
+        sb.AppendLine($"[SYNC CONTEXT JSON — FULL CONTEXT SAVED IN \"{syncPath}\" (USE read_file IF NEEDED)]");
+        var syncBudgetBytes = Math.Min(24_000, Math.Max(4096, MaxInlinePromptBytes - currentSyncPrefixBytes - 8192));
+        sb.AppendLine(TruncateUtf8(request.SyncContext, syncBudgetBytes));
+      }
+    }
+
     sb.AppendLine();
     sb.AppendLine("[USER MESSAGE]");
     sb.AppendLine(

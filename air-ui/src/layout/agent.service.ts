@@ -19,6 +19,7 @@ import type {
   AgentProposalLineDto,
   AgentStatusDto,
   AgentStreamEventDto,
+  AgentSyncSourceDto,
 } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { browserZone } from '../core/time-zone';
@@ -45,6 +46,9 @@ export interface AgentChatMessage {
   readonly modelName?: string;
   readonly promptText?: string;
   readonly promptAttachments?: readonly AgentAttachment[];
+  readonly syncSource?: AgentSyncSourceDto;
+  readonly batchCode?: string | null;
+  readonly stepsCollapsed?: boolean;
 }
 
 function stripProposalBlocks(raw: string): string {
@@ -74,6 +78,7 @@ export class AgentService {
 
   readonly sessionId = signal<string>(Math.random().toString(36).slice(2, 12));
   readonly models = signal<readonly AgentModelDto[]>([]);
+  readonly syncSources = signal<readonly AgentSyncSourceDto[]>([]);
   readonly model = signal<string>('');
   readonly activeProvider = signal<string>('Agy');
   readonly userPickedModel = signal(false);
@@ -94,6 +99,7 @@ export class AgentService {
         this.statusLoaded = false;
         this.userPickedModel.set(false);
         this.models.set([]);
+        this.syncSources.set([]);
         this.model.set('');
         this.activeProvider.set('Agy');
         this.messages.set([]);
@@ -113,6 +119,7 @@ export class AgentService {
       if (status.models?.length) {
         this.models.set(status.models);
       }
+      this.syncSources.set(status.syncSources ?? []);
       const curModel = this.model();
       const curProvider = this.activeProvider();
       const hasCurrentPair =
@@ -162,8 +169,83 @@ export class AgentService {
     }
   }
 
+  async uploadSingleFile(file: File): Promise<AgentAttachment | null> {
+    this.isUploading.set(true);
+    try {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      return await firstValueFrom(this.http.post<AgentAttachment>('/api/agent/upload', form, shownByCaller()));
+    } catch (err) {
+      const msg =
+        err instanceof HttpErrorResponse && err.error?.title
+          ? String(err.error.title)
+          : err instanceof Error
+            ? err.message
+            : this.texts.of('AgentErrorUpload');
+      this.alert.error(msg);
+      return null;
+    } finally {
+      this.isUploading.set(false);
+    }
+  }
+
   removePendingAttachment(id: string): void {
     this.pendingAttachments.update(prev => prev.filter(a => a.id !== id));
+  }
+
+  toggleStepsCollapsed(messageId: string): void {
+    this.patchAssistant(messageId, m => ({ ...m, stepsCollapsed: !m.stepsCollapsed }));
+  }
+
+  async runSync(source: AgentSyncSourceDto, explicitAttachments?: readonly AgentAttachment[]): Promise<void> {
+    if (this.isStreaming()) {
+      return;
+    }
+
+    const attachments = explicitAttachments ?? [];
+    const promptLabel = this.texts.of('AgentSyncPromptLabel', source.label);
+    const userMsg: AgentChatMessage = {
+      id: `m-${++this.nextId}`,
+      role: 'user',
+      text: promptLabel,
+      attachments,
+      proposals: [],
+      createdAt: new Date(),
+      promptText: promptLabel,
+      promptAttachments: attachments,
+      syncSource: source,
+    };
+
+    const assistantMsgId = `m-${++this.nextId}`;
+    const modelsList = this.models();
+    const activeModelObj =
+      modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ?? modelsList.find(m => m.id === this.model());
+
+    const assistantMsg: AgentChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      text: '',
+      statusText: this.texts.of('AgentStatusSyncing'),
+      attachments: [],
+      proposals: [],
+      createdAt: new Date(),
+      durationMs: 0,
+      modelId: activeModelObj?.id || this.model(),
+      modelName: activeModelObj?.name || this.model(),
+      promptText: promptLabel,
+      promptAttachments: attachments,
+      syncSource: source,
+    };
+
+    this.messages.update(prev => [...prev, userMsg, assistantMsg]);
+    await this.streamSseEndpoint('/api/agent/sync', assistantMsgId, {
+      sessionId: this.sessionId(),
+      sourceId: source.id,
+      attachmentIds: attachments.map(a => a.id),
+      locale: this.locale.current(),
+      provider: activeModelObj?.provider || this.activeProvider(),
+      model: activeModelObj?.id || this.model(),
+    });
   }
 
   async send(rawText: string, explicitAttachments?: readonly AgentAttachment[]): Promise<void> {
@@ -190,10 +272,10 @@ export class AgentService {
     };
 
     const assistantMsgId = `m-${++this.nextId}`;
-    const startedAt = performance.now();
     const modelsList = this.models();
+    const hasImageAttachment = attachments.some(a => !a.contentType || a.contentType.startsWith('image/'));
     const activeModelObj =
-      attachments.length > 0 && !this.userPickedModel()
+      hasImageAttachment && !this.userPickedModel()
         ? (modelsList.find(m => m.isForPhotos) ??
           modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
           modelsList.find(m => m.id === this.model()))
@@ -203,7 +285,7 @@ export class AgentService {
       id: assistantMsgId,
       role: 'assistant',
       text: '',
-      statusText: attachments.length > 0 ? this.texts.of('AgentStatusReadingPhoto') : this.texts.of('AgentStatusAnalyzing'),
+      statusText: hasImageAttachment ? this.texts.of('AgentStatusReadingPhoto') : this.texts.of('AgentStatusAnalyzing'),
       attachments: [],
       proposals: [],
       createdAt: new Date(),
@@ -215,6 +297,18 @@ export class AgentService {
     };
 
     this.messages.update(prev => [...prev, userMsg, assistantMsg]);
+    await this.streamSseEndpoint('/api/agent/chat', assistantMsgId, {
+      sessionId: this.sessionId(),
+      message: effectivePrompt,
+      attachmentIds: attachments.map(a => a.id),
+      locale: this.locale.current(),
+      provider: activeModelObj?.provider || this.activeProvider(),
+      model: activeModelObj?.id || this.model(),
+    });
+  }
+
+  private async streamSseEndpoint(endpoint: string, assistantMsgId: string, requestBody: unknown): Promise<void> {
+    const startedAt = performance.now();
     this.isStreaming.set(true);
 
     const controller = new AbortController();
@@ -230,7 +324,7 @@ export class AgentService {
 
     try {
       const doFetch = () =>
-        fetch('/api/agent/chat', {
+        fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -238,14 +332,7 @@ export class AgentService {
             [PLATFORM_TIME_ZONE_HEADER]: browserZone(),
           },
           credentials: 'include',
-          body: JSON.stringify({
-            sessionId: this.sessionId(),
-            message: effectivePrompt,
-            attachmentIds: attachments.map(a => a.id),
-            locale: this.locale.current(),
-            provider: activeModelObj?.provider || this.activeProvider(),
-            model: activeModelObj?.id || this.model(),
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
 
@@ -307,6 +394,9 @@ export class AgentService {
                   proposals: m.proposals.map(p => (supSet.has(p.id) && p.status === 'pending' ? { ...p, status: 'superseded' } : p)),
                 })),
               );
+            } else if (evt.type === 'refresh') {
+              GridService.reloadServices(evt.refreshServices ?? undefined);
+              void this.ensureStatusLoaded(true);
             } else if (evt.type === 'proposal' && evt.proposal) {
               const incoming: AgentProposal = { ...evt.proposal, status: 'pending' };
               this.patchAssistant(assistantMsgId, m => {
@@ -410,7 +500,8 @@ export class AgentService {
       const prevUser = idx > 0 && list[idx - 1]?.role === 'user' ? list[idx - 1] : null;
       const promptText = target.promptText ?? prevUser?.text ?? '';
       const promptAttachments = target.promptAttachments ?? prevUser?.attachments ?? [];
-      if (!promptText && promptAttachments.length === 0) {
+      const syncSource = target.syncSource ?? prevUser?.syncSource;
+      if (!syncSource && !promptText && promptAttachments.length === 0) {
         return;
       }
 
@@ -419,13 +510,18 @@ export class AgentService {
         removeIds.add(prevUser.id);
       }
       this.messages.update(prev => prev.filter(m => !removeIds.has(m.id)));
-      await this.send(promptText, promptAttachments);
+      if (syncSource) {
+        await this.runSync(syncSource, promptAttachments);
+      } else {
+        await this.send(promptText, promptAttachments);
+      }
       return;
     }
 
     const promptText = target.text;
     const promptAttachments = target.attachments;
-    if (!promptText && promptAttachments.length === 0) {
+    const syncSource = target.syncSource;
+    if (!syncSource && !promptText && promptAttachments.length === 0) {
       return;
     }
 
@@ -435,7 +531,11 @@ export class AgentService {
       this.messages.update(prev => prev.filter(m => !removeIds.has(m.id)));
     }
 
-    await this.send(promptText, promptAttachments);
+    if (syncSource) {
+      await this.runSync(syncSource, promptAttachments);
+    } else {
+      await this.send(promptText, promptAttachments);
+    }
   }
 
   stop(): void {
@@ -457,6 +557,9 @@ export class AgentService {
         for (const extra of committed.alsoCommitted) {
           this.applyCommitResult(extra);
         }
+      }
+      if (committed.batchCode) {
+        this.patchAssistant(messageId, m => ({ ...m, batchCode: committed.batchCode }));
       }
 
       GridService.reloadServices(committed.refreshServices);
@@ -496,6 +599,11 @@ export class AgentService {
       for (const item of batchRes.committed) {
         this.applyCommitResult(item);
       }
+      this.patchAssistant(messageId, m => ({
+        ...m,
+        batchCode: batchRes.batchCode ?? m.batchCode ?? null,
+        stepsCollapsed: batchRes.committed.length >= 3,
+      }));
 
       GridService.reloadServices(batchRes.refreshServices);
     } catch (err) {

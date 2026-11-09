@@ -1297,6 +1297,39 @@
   <data name="AgentProposalSuperseded" xml:space="preserve">
     <value>This proposal was replaced by a newer version below.</value>
   </data>
+  <data name="AgentActionsTitle" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="AgentAttachPhotoOption" xml:space="preserve">
+    <value>Attach photo or screenshot</value>
+  </data>
+  <data name="AgentBatchSavedBadge" xml:space="preserve">
+    <value>AI batch #{0} · {1} saved</value>
+  </data>
+  <data name="AgentHideSteps" xml:space="preserve">
+    <value>Hide steps</value>
+  </data>
+  <data name="AgentShowSteps" xml:space="preserve">
+    <value>Show steps ({0})</value>
+  </data>
+  <data name="AgentStatusSyncing" xml:space="preserve">
+    <value>Synchronizing…</value>
+  </data>
+  <data name="AgentSyncPromptLabel" xml:space="preserve">
+    <value>Synchronization: {0}</value>
+  </data>
+  <data name="ChangeAgentBatchBadge" xml:space="preserve">
+    <value>AI batch ({0}) · #{1}</value>
+  </data>
+  <data name="ChangeAgentSingleBadge" xml:space="preserve">
+    <value>AI · #{0}</value>
+  </data>
+  <data name="ChangePackBadge" xml:space="preserve">
+    <value>Change batch ({0})</value>
+  </data>
+  <data name="ChangeRelatedTitle" xml:space="preserve">
+    <value>Linked changes in this batch ({0})</value>
+  </data>
   <data name="LegacyTitleFormat" xml:space="preserve">
     <value>Legacy UI: {0} | DB: {1}</value>
   </data>

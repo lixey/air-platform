@@ -22,4 +22,7 @@ public sealed class AgentStreamEventDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<string>? SupersededProposalIds { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<string>? RefreshServices { get; set; }
 }

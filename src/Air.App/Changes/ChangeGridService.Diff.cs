@@ -188,6 +188,14 @@ public abstract partial class ChangeGridService
       ]
     };
 
+    var (sourceBadge, sourceBadgeColor) = ResolveSourceBadge(change.CorrelationId, L);
+    var relatedChanges = await BuildRelatedChangesAsync(change, L, ct);
+    if (sourceBadge == null && relatedChanges.Count > 1)
+    {
+      sourceBadge = L["ChangePackBadge", relatedChanges.Count];
+      sourceBadgeColor = UiColor.Sky;
+    }
+
     var diffModel = new ChangeDiffModel
     {
       Id = change.Id,
@@ -197,7 +205,11 @@ public abstract partial class ChangeGridService
       OperationKey = change.Operation,
       OperationColor = opColor,
       EmptyLabel = L["ChangeDiffEmpty"],
-      Fields = fields
+      SourceBadge = sourceBadge,
+      SourceBadgeColor = sourceBadgeColor,
+      RelatedTitle = relatedChanges.Count > 1 ? L["ChangeRelatedTitle", relatedChanges.Count] : null,
+      Fields = fields,
+      RelatedChanges = relatedChanges.Count > 1 ? relatedChanges : []
     };
 
     var layout = PanelLayout.Column($"{servicePath}.diff")
@@ -408,5 +420,218 @@ public abstract partial class ChangeGridService
     {
       return Regex.Unescape(json);
     }
+  }
+
+  private static string FormatCorrelationLabel(string correlationId, Localizer loc)
+  {
+    if (TryParseAgentCorrelation(correlationId, out var code, out var batchCount))
+    {
+      return batchCount is > 1
+        ? loc["ChangeAgentBatchBadge", batchCount.Value, code]
+        : loc["ChangeAgentSingleBadge", code];
+    }
+
+    return correlationId;
+  }
+
+  private static (string? Badge, string? Color) ResolveSourceBadge(string? correlationId, Localizer loc)
+  {
+    if (string.IsNullOrWhiteSpace(correlationId) || !TryParseAgentCorrelation(correlationId, out var code, out var batchCount))
+    {
+      return (null, null);
+    }
+
+    return batchCount is > 1
+      ? (loc["ChangeAgentBatchBadge", batchCount.Value, code], UiColor.Violet)
+      : (loc["ChangeAgentSingleBadge", code], UiColor.Blue);
+  }
+
+  private static bool TryParseAgentCorrelation(string correlationId, out string code, out int? batchCount)
+  {
+    code = string.Empty;
+    batchCount = null;
+
+    if (correlationId.StartsWith("agent-batch:", StringComparison.OrdinalIgnoreCase))
+    {
+      var rest = correlationId["agent-batch:".Length..];
+      var sep = rest.IndexOf(':');
+      if (sep > 0)
+      {
+        code = rest[..sep];
+        if (int.TryParse(rest[(sep + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+        {
+          batchCount = parsed;
+        }
+      }
+      else
+      {
+        code = rest;
+      }
+
+      return !string.IsNullOrWhiteSpace(code);
+    }
+
+    if (correlationId.StartsWith("agent:", StringComparison.OrdinalIgnoreCase))
+    {
+      code = correlationId["agent:".Length..];
+      return !string.IsNullOrWhiteSpace(code);
+    }
+
+    return false;
+  }
+
+  private async Task<List<ChangeDiffRelatedItemDto>> BuildRelatedChangesAsync(
+    AppPlatformChange current,
+    Localizer loc,
+    CancellationToken ct
+  )
+  {
+    if (current.RunId == Guid.Empty)
+    {
+      return [];
+    }
+
+    var siblings = await db.AppPlatformChange
+      .AsNoTracking()
+      .Where(c => c.TenantId == current.TenantId && c.RunId == current.RunId)
+      .OrderBy(c => c.Id)
+      .Take(50)
+      .ToListAsync(ct);
+
+    if (siblings.Count <= 1)
+    {
+      return [];
+    }
+
+    var hasGlobalView = base.CanView(new GridRequest(), User);
+    var items = new List<ChangeDiffRelatedItemDto>(siblings.Count);
+
+    foreach (var sib in siblings)
+    {
+      var sibDb = GetDbContextForTable(sib.Table);
+      var sibEf = sibDb.Model.GetEntityTypes()
+        .FirstOrDefault(e => e.ClrType.Name == sib.Table || e.GetTableName() == sib.Table);
+      var sibClr = sibEf?.ClrType;
+      var sibFeat = ModuleCatalog.Instance.FindFeatureForEntity(sibClr, sib.Table);
+
+      if (!hasGlobalView && sib.Id != current.Id)
+      {
+        var canSeeSibling = sibFeat != null &&
+                            (ServiceEndpointsExtensions.CanView(sibFeat, User) ||
+                             sibFeat.HasHistory && User != null && (User.Can(sibFeat.History) || User.Can(sibFeat.All) || User.Can("*")));
+        if (!canSeeSibling)
+        {
+          continue;
+        }
+      }
+
+      var sibModL = sibFeat != null && !string.IsNullOrEmpty(sibFeat.Module)
+        ? Localizer.Instance.For(sibFeat.Module)
+        : loc;
+      var sibEntityLabel = sibFeat != null
+        ? sibModL.TextOr(sibFeat.Label, sibModL.TextOr(sibFeat.CleanName, sib.Table))
+        : loc[sib.Table];
+
+      var summary = TryExtractRecordSummary(sib.After ?? sib.Before);
+      var itemTitle = sib.RowId > 0
+        ? (!string.IsNullOrEmpty(summary) ? $"{sibEntityLabel} #{sib.RowId} · {summary}" : $"{sibEntityLabel} #{sib.RowId}")
+        : (!string.IsNullOrEmpty(summary) ? $"{sibEntityLabel} · {summary}" : sibEntityLabel);
+
+      var sibOpColor = sib.Operation switch
+      {
+        ChangeOperations.Added => UiColor.Green,
+        ChangeOperations.Modified => UiColor.Amber,
+        ChangeOperations.Deleted => UiColor.Red,
+        _ => UiColor.Slate
+      };
+
+      string? formService = null;
+      OverlayDto? overlay = null;
+      if (sib.Operation != ChangeOperations.Deleted &&
+          sib.RowId > 0 &&
+          sibFeat != null &&
+          ServiceEndpointsExtensions.CanView(sibFeat, User))
+      {
+        var formServiceType = ResolvePrimaryFormServiceType(sibFeat, sibClr);
+        if (formServiceType != null)
+        {
+          formService = ServicePathResolver.Resolve(formServiceType);
+          var sp = services ?? PlatformApp?.Services;
+          var formInst = sp?.GetService(formServiceType) as IFormService
+                         ?? ModuleCatalog.Instance.CreateServiceInstance(formServiceType, sibDb, PlatformApp, sp) as IFormService;
+          if (formInst != null)
+          {
+            overlay = await formInst.OverlayAsync(formService, ct);
+          }
+        }
+      }
+
+      items.Add(
+        new ChangeDiffRelatedItemDto
+        {
+          Id = sib.Id,
+          Title = itemTitle,
+          Operation = loc[sib.Operation],
+          OperationColor = sibOpColor,
+          FormService = formService,
+          Overlay = overlay,
+          RecordId = sib.RowId,
+          IsCurrent = sib.Id == current.Id
+        }
+      );
+    }
+
+    return items;
+  }
+
+  private static string? TryExtractRecordSummary(string? json)
+  {
+    if (string.IsNullOrWhiteSpace(json))
+    {
+      return null;
+    }
+
+    try
+    {
+      using var doc = JsonDocument.Parse(json);
+      if (doc.RootElement.ValueKind != JsonValueKind.Object)
+      {
+        return null;
+      }
+
+      foreach (var key in new[] { "Name", "Title", "Code", "Login", "Note" })
+      {
+        if (doc.RootElement.TryGetProperty(key, out var prop) &&
+            prop.ValueKind == JsonValueKind.String &&
+            prop.GetString() is { Length: > 0 } val)
+        {
+          var trimmed = val.Trim();
+          return trimmed.Length > 48 ? $"{trimmed[..45]}…" : trimmed;
+        }
+      }
+    }
+    catch { }
+
+    return null;
+  }
+
+  private static Type? ResolvePrimaryFormServiceType(Feature feat, Type? entityType)
+  {
+    if (feat.ServiceType != null && typeof(IFormService).IsAssignableFrom(feat.ServiceType))
+    {
+      return feat.ServiceType;
+    }
+
+    return ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+             typeof(IFormService).IsAssignableFrom(t) &&
+             entityType != null &&
+             ModuleCatalog.GetServiceEntityType(t) == entityType &&
+             string.Equals(t.Name, $"{feat.Name}FormService", StringComparison.OrdinalIgnoreCase)
+           )
+           ?? ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+             typeof(IFormService).IsAssignableFrom(t) &&
+             entityType != null &&
+             ModuleCatalog.GetServiceEntityType(t) == entityType
+           );
   }
 }

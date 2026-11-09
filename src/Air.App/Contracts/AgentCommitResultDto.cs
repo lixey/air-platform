@@ -11,4 +11,10 @@ public sealed class AgentCommitResultDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<AgentCommitResultDto>? AlsoCommitted { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? RunId { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? BatchCode { get; set; }
 }
