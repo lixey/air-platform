@@ -55,4 +55,16 @@ public sealed class AgentProposalDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? DuplicateFormService { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? StepKey { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public int? StepNumber { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<string>? DependsOn { get; set; }
+
+  [JsonIgnore]
+  public string? TurnId { get; set; }
 }

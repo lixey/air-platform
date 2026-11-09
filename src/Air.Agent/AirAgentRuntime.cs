@@ -15,6 +15,11 @@ public static class AirAgentRuntime
     bool includeRecentRecords = true) =>
     AgentContextQueryService.BuildContextAsync(services, userMessage, ct, includeReports, includeRecentRecords);
 
+  public static Task<object> BuildExtendedWorkspaceRecordsAsync(
+    IServiceProvider services,
+    CancellationToken ct = default) =>
+    AgentContextQueryService.BuildExtendedWorkspaceRecordsAsync(services, ct);
+
   public static Task<object?> QueryRecordsAsync(
     JsonElement args,
     IServiceProvider services,
@@ -33,4 +38,10 @@ public static class AirAgentRuntime
     IServiceProvider services,
     CancellationToken ct) =>
     AgentProposalExecutor.CommitProposalAsync(proposal, services, ct);
+
+  public static Task<AgentBatchCommitResultDto> CommitBatchAsync(
+    IReadOnlyList<string> proposalIds,
+    IServiceProvider services,
+    CancellationToken ct) =>
+    AgentProposalExecutor.CommitBatchAsync(proposalIds, services, ct);
 }

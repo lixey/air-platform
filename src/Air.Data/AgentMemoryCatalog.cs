@@ -28,7 +28,7 @@ public static class AgentMemoryCatalog
     {
       Kind = AgentMemoryKinds.Rule,
       Title = "Reference & Dictionary Resolution",
-      Content = "Match reference fields by their existing dictionary IDs whenever possible. Only propose creating a new dictionary or reference item when no matching entry exists.",
+      Content = "Match reference fields by their existing dictionary IDs whenever possible. Only propose creating a new dictionary or reference item when no matching entry exists, and link dependent multi-step proposals via \"key\" and \"$ref:<key>\" so they confirm atomically.",
       Priority = 180,
       IsPinned = true,
       IsActive = true

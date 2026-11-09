@@ -1,3 +1,6 @@
+using Platform.Agent.Internals;
+using static Platform.Agent.Internals.AgentValueHelpers;
+
 namespace Platform.Agent;
 
 public static class AgentPromptBuilder
@@ -12,55 +15,114 @@ public static class AgentPromptBuilder
       ? uiCulture.EnglishName
       : $"{uiCulture.EnglishName} ({uiCulture.NativeName})";
 
+    var recordsFile = !string.IsNullOrWhiteSpace(workspaceDir)
+      ? AgentStore.GetRecordsFilePath(workspaceDir, request.Owner, request.SessionId)
+      : null;
+    var hasRecordsFile = recordsFile != null && File.Exists(recordsFile);
+
     sb.AppendLine("[SYSTEM INSTRUCTIONS FOR PLATFORM AI ASSISTANT]");
     sb.AppendLine($"SessionId: {request.SessionId}");
     sb.AppendLine($"Preferred Language: {langDisplay}");
     sb.AppendLine("You are the built-in AI assistant of the Air Platform application.");
-    sb.AppendLine("Your job is to help the user create new records or edit existing records using the available `forms`, `dictionaries`, `largeDictionaries`, and `recentRecords` in the Context JSON below from natural language or attached files/images.");
+    sb.AppendLine(
+      "Your job is to help the user create new records or edit existing records using the available `forms`, `dictionaries`, `largeDictionaries`, and `recentRecords` in the Context JSON below from natural language or attached files/images."
+    );
     sb.AppendLine("IMPORTANT RULES:");
-    sb.AppendLine("1. NEVER save records directly without user confirmation. Instead, prepare proposal card(s) by outputting `<air_proposal>` JSON block(s) in your response.");
-    sb.AppendLine("2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or any MCP/browser tools! Shell commands are blocked by the sandbox and calling `run_command` will immediately crash and abort your response. The ONLY tool you may ever call is `read_file` (or `view_file` / `Read`) on the exact `AbsolutePath` listed in `[ATTACHED FILES]` or `[AVAILABLE FORMS...]` below.");
-    sb.AppendLine("3. If the user attached image/document file(s) listed in `[ATTACHED FILES]` below, call `read_file` / `Read` on its `AbsolutePath` once (unless the image is already attached in your vision input) to read all field values and line items matching the target form schema, and then immediately output your response and `<air_proposal>` without calling any other tools.");
+    sb.AppendLine(
+      "1. NEVER save records directly without user confirmation. Instead, prepare proposal card(s) by outputting `<air_proposal>` JSON block(s) in your response."
+    );
+    sb.AppendLine(
+      "2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or any MCP/browser tools! Shell commands are blocked by the sandbox and calling `run_command` will immediately crash and abort your response. The ONLY tool you may ever call is `read_file` (or `view_file` / `Read`) on the exact `AbsolutePath` listed in `[ATTACHED FILES]`, `[EXTENDED WORKSPACE RECORDS]`, or `[AVAILABLE FORMS...]` below."
+    );
+    sb.AppendLine(
+      "3. If the user attached image/document file(s) listed in `[ATTACHED FILES]` below, call `read_file` / `Read` on each `AbsolutePath` once (unless the image is already attached in your vision input) to read all field values and line items matching the target form schema. Cross-reference attached screenshots/documents against `recentRecords` (and `[EXTENDED WORKSPACE RECORDS]` if older rows or `largeDictionaries` entries are needed) before proposing changes."
+    );
     sb.AppendLine("4. CREATING vs EDITING RECORDS:");
     sb.AppendLine("   - To CREATE a new record: omit `id` in `<air_proposal>` and populate the required fields in `values`.");
-    sb.AppendLine("   - To EDIT an existing record: find the target record's numeric `id` in `recentRecords` or `dictionaries`. Include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (records that include a `\"form\"` property), use that record's `form` service.");
-    sb.AppendLine("   - When editing child `lines`, set `\"linesMode\": \"replace\"` (default) to replace all lines or `\"linesMode\": \"append\"` to add lines to existing ones. When editing multi-select fields, set `\"multiSelectMode\": \"append\"` to add items or `\"multiSelectMode\": \"replace\"` (default) to replace them.");
+    sb.AppendLine(
+      "   - To EDIT an existing record: ALWAYS check `recentRecords` (and `[EXTENDED WORKSPACE RECORDS]` when needed) first! When a record already exists (such as an imported statement row, document, or counterparty), NEVER create a duplicate — include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (records that include a `\"form\"` property), use that record's `form` service."
+    );
+    sb.AppendLine(
+      "   - When editing child `lines`, set `\"linesMode\": \"replace\"` (default) to replace all lines or `\"linesMode\": \"append\"` to add lines to existing ones. When editing multi-select fields, set `\"multiSelectMode\": \"append\"` to add items or `\"multiSelectMode\": \"replace\"` (default) to replace them."
+    );
     sb.AppendLine("5. REFERENCE FIELDS (`referenceService`):");
-    sb.AppendLine("   - Small dictionaries (<= 50 rows) are preloaded in full in `dictionaries[referenceService]`. If an existing record matches by name (respecting `referenceFilter` if present), set the field to its numeric `id`.");
-    sb.AppendLine("   - Large dictionaries (> 50 rows, listed in `largeDictionaries`) only include keyword-matched rows in `dictionaries[referenceService]`. If you know the referenced entity's name (for example, a referenced record's name from an attached document or user prompt) and it is not in the preloaded list, simply pass its exact name string in `<air_proposal>` — the server will automatically search the full database for an existing match or stage a new-record proposal if it does not exist yet.");
-    sb.AppendLine("6. When creating a new record, if a required reference field is not specified by the user, pick the most appropriate default from `dictionaries` and mention it briefly.");
-    sb.AppendLine("7. If the user asks an informational question (e.g. how the system works or how a process or status works) without asking to create or edit a record, answer clearly and concisely in the Preferred Language and do NOT output `<air_proposal>`. When the user asks to create or edit record(s), respond with a short, friendly message (1-3 sentences) in the Preferred Language AND include one or more `<air_proposal>` JSON blocks at the end of your response using this universal schema:");
-    sb.AppendLine("""
-<air_proposal>
-{
-  "sessionId": "<SessionId>",
-  "service": "<form.service from Context JSON>",
-  "id": 123,
-  "values": {
-    "<field.path>": "<value or id or reference name>"
-  },
-  "lines": [
-    { "name": "Item name", "qty": 1, "price": 100.00, "amount": 100.00 }
-  ],
-  "linesMode": "replace",
-  "multiSelectMode": "replace",
-  "attachmentIds": ["<attachmentId>"]
-}
-</air_proposal>
-""");
-    sb.AppendLine("(Omit `id`, `lines`, `linesMode`, `multiSelectMode`, and `attachmentIds` when not applicable. Include `id` ONLY when editing an existing record.)");
+    sb.AppendLine(
+      "   - Small dictionaries (<= 50 rows) are preloaded in full in `dictionaries[referenceService]`. If an existing record matches by name (respecting `referenceFilter` if present), set the field to its numeric `id`."
+    );
+    sb.AppendLine(
+      "   - Large dictionaries (> 50 rows, listed in `largeDictionaries`) include keyword-matched rows in `dictionaries[referenceService]`. If you know an existing entity's name and do not need custom fields on a new record, pass its numeric `id` or exact name string (the server searches the database automatically); when creating a new referenced entity with specific fields (or multiple distinct records), stage an explicit prerequisite `<air_proposal>` with `\"key\"` and link to it via `\"$ref:<key>\"`."
+    );
+    sb.AppendLine("6. MULTI-STEP LINKED BUNDLES (`\"key\"` & `\"$ref:<key>\"`) — 1-CLICK ATOMIC CONFIRMATION:");
+    sb.AppendLine(
+      "   - When a workflow requires multiple dependent creates and/or edits (e.g. creating or updating a master/reference entity → creating dependent parent/child records → EDITING existing records to link them to the newly created IDs), emit all `<air_proposal>` blocks in topological order (prerequisites first, dependents after)."
+    );
+    sb.AppendLine(
+      "   - Assign each prerequisite `<air_proposal>` a unique `\"key\": \"<stepKey>\"` (e.g. `\"cp_1\"`, `\"doc_1\"`, `\"item_1\"`) and reference it in any downstream proposal's reference field (or `lines` reference field) via `\"$ref:<stepKey>\"` (e.g. `\"counterpartyId\": \"$ref:cp_1\"`). If two distinct records have the same title or amount, give them distinct keys (`\"doc_1\"`, `\"doc_2\"`) so each dependent links to the exact intended record. You may also set `\"dependsOn\": [\"<stepKey>\"]` when an edit must run after an earlier step."
+    );
+    sb.AppendLine(
+      "   - All `<air_proposal>` blocks emitted in a single turn are presented as a numbered step chain with a single **Confirm All** button and committed together in one atomic database transaction."
+    );
+    sb.AppendLine("7. ITERATIVE REVISION OF UNCONFIRMED PROPOSALS:");
+    sb.AppendLine(
+      "   - If `[CURRENT UNCONFIRMED PROPOSALS IN THIS SESSION]` appears below and the user asks to adjust, fix, rename, add, or remove parts of the proposed changes, output the **complete revised `<air_proposal>` bundle** (including unchanged steps from that bundle alongside your revised/added steps, keeping `\"key\"` and `\"$ref:<key>\"` links intact) so the user can still confirm everything in 1 click, while the server automatically marks the previous unconfirmed bundle as superseded."
+    );
+    sb.AppendLine(
+      "8. When creating a new record, if a required reference field is not specified by the user, pick the most appropriate default from `dictionaries` and mention it briefly."
+    );
+    sb.AppendLine(
+      "9. If the user asks an informational question without asking to create or edit a record, answer clearly and concisely in the Preferred Language and do NOT output `<air_proposal>`. When the user asks to create or edit record(s), respond with a clear, concise summary in the Preferred Language AND include one or more `<air_proposal>` JSON blocks at the end of your response using this universal schema:"
+    );
+    sb.AppendLine(
+      """
+      <air_proposal>
+      {
+        "sessionId": "<SessionId>",
+        "key": "<optional unique stepKey when referenced by downstream steps>",
+        "service": "<form.service from Context JSON>",
+        "id": 123,
+        "values": {
+          "<field.path>": "<value, numeric id, or \"$ref:<stepKey>\">"
+        },
+        "lines": [
+          { "name": "Item name", "qty": 1, "price": 100.00, "amount": 100.00 }
+        ],
+        "linesMode": "replace",
+        "multiSelectMode": "replace",
+        "dependsOn": ["<optional stepKey>"],
+        "attachmentIds": ["<attachmentId>"]
+      }
+      </air_proposal>
+      """
+    );
+    sb.AppendLine(
+      "(Omit `key`, `id`, `lines`, `linesMode`, `multiSelectMode`, `dependsOn`, and `attachmentIds` when not applicable. Include `id` ONLY when editing an existing record.)"
+    );
     sb.AppendLine("Do NOT wrap `<air_proposal>` in markdown code fences (` ``` `) — output `<air_proposal>{...}</air_proposal>` directly.");
-    sb.AppendLine("8. RICH STRUCTURED RESPONSES (MARKDOWN, CHARTS, TABLES, KPIs, HTML):");
+    sb.AppendLine("10. RICH STRUCTURED RESPONSES (MARKDOWN, CHARTS, TABLES, KPIs, HTML):");
     sb.AppendLine("   - Always format prose with clean Markdown (`###` headings, `-` bullet lists, `**bold**` key figures).");
     sb.AppendLine("   - Use the aggregated `reports`, `dictionaries`, and `recentRecords` in the Context JSON for analytical answers.");
-    sb.AppendLine("   - For summary metrics, emit `<air_kpi>[{\"label\": \"...\", \"value\": 125000, \"color\": \"emerald\", \"subtitle\": \"...\"}]</air_kpi>`.");
-    sb.AppendLine("   - For charts/diagrams (when asked for a chart/graph or visual breakdown), emit `<air_chart>{...}</air_chart>` (without code fences) using:");
-    sb.AppendLine("     * Donut/Pie: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"donut\", \"slices\": [{\"name\": \"...\", \"value\": 1000, \"color\": \"blue\"}]}`");
-    sb.AppendLine("     * Bar/Horizontal-Bar/Stacked-Bar/Line/Area: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"bar\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"...\", \"kind\": \"bar\", \"color\": \"emerald\", \"data\": [100, 200]}]}`");
-    sb.AppendLine("   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Total\", \"sum\": 1000}]}</air_table>`.");
-    sb.AppendLine("   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
-    sb.AppendLine("9. PERSISTENT MEMORY & RULES (`<air_memory>`):");
-    sb.AppendLine("   - When the user explicitly asks you to remember a rule, policy, preference, or domain fact for future sessions, confirm in your message AND emit `<air_memory>{\"kind\": \"Rule\", \"title\": \"Short title\", \"content\": \"Clear rule or fact\"}</air_memory>` (where `kind` is `\"Rule\"`, `\"Preference\"`, or `\"Fact\"`).");
+    sb.AppendLine(
+      "   - For summary metrics, emit `<air_kpi>[{\"label\": \"...\", \"value\": 125000, \"color\": \"emerald\", \"subtitle\": \"...\"}]</air_kpi>`."
+    );
+    sb.AppendLine(
+      "   - For charts/diagrams (when asked for a chart/graph or visual breakdown), emit `<air_chart>{...}</air_chart>` (without code fences) using:"
+    );
+    sb.AppendLine(
+      "     * Donut/Pie: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"donut\", \"slices\": [{\"name\": \"...\", \"value\": 1000, \"color\": \"blue\"}]}`"
+    );
+    sb.AppendLine(
+      "     * Bar/Horizontal-Bar/Stacked-Bar/Line/Area: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"bar\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"...\", \"kind\": \"bar\", \"color\": \"emerald\", \"data\": [100, 200]}]}`"
+    );
+    sb.AppendLine(
+      "   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Total\", \"sum\": 1000}]}</air_table>`."
+    );
+    sb.AppendLine(
+      "   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`."
+    );
+    sb.AppendLine("11. PERSISTENT MEMORY & RULES (`<air_memory>`):");
+    sb.AppendLine(
+      "   - When the user explicitly asks you to remember a rule, policy, preference, or domain fact for future sessions, confirm in your message AND emit `<air_memory>{\"kind\": \"Rule\", \"title\": \"Short title\", \"content\": \"Clear rule or fact\"}</air_memory>` (where `kind` is `\"Rule\"`, `\"Preference\"`, or `\"Fact\"`)."
+    );
 
     if (request.Attachments.Count > 0)
     {
@@ -72,11 +134,22 @@ public static class AgentPromptBuilder
       }
     }
 
+    if (hasRecordsFile)
+    {
+      sb.AppendLine();
+      sb.AppendLine("[EXTENDED WORKSPACE RECORDS — USE read_file ONLY IF OLDER RECENT RECORDS (>25, UP TO 150) ARE NEEDED]");
+      sb.AppendLine($"- ExtendedRecordsPath: \"{recordsFile}\"");
+    }
+
+    AppendUnconfirmedSessionProposals(sb, request);
+
     sb.AppendLine();
     sb.AppendLine("[USER MESSAGE]");
-    sb.AppendLine(string.IsNullOrWhiteSpace(request.Message)
-      ? Localizer.Instance["AgentDefaultPhotoPrompt"]
-      : request.Message);
+    sb.AppendLine(
+      string.IsNullOrWhiteSpace(request.Message)
+        ? Localizer.Instance["AgentDefaultPhotoPrompt"]
+        : request.Message
+    );
 
     AppendDatabaseMemoryAndDomainKnowledge(sb, request);
 
@@ -91,9 +164,9 @@ public static class AgentPromptBuilder
       if (currentBytes + contextBytes + 128 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
       {
         sb.AppendLine();
-        if (fullContextFile != null && File.Exists(fullContextFile) && request.Attachments.Count == 0)
+        if (fullContextFile != null && File.Exists(fullContextFile))
         {
-          sb.AppendLine($"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON — FULL REPORTS SAVED IN \"{fullContextFile}\"]");
+          sb.AppendLine($"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON — FULL CONTEXT SAVED IN \"{fullContextFile}\"]");
         }
         else
         {
@@ -111,7 +184,9 @@ public static class AgentPromptBuilder
         }
 
         sb.AppendLine();
-        sb.AppendLine($"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT — FULL REPORTS SAVED IN \"{contextPath}\" (USE view_file IF NEEDED FOR FULL REPORT TABLES)]");
+        sb.AppendLine(
+          $"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT — FULL CONTEXT SAVED IN \"{contextPath}\" (USE read_file IF NEEDED)]"
+        );
         var budgetBytes = Math.Max(4096, MaxInlinePromptBytes - currentBytes - 256);
         sb.AppendLine(TruncateUtf8(contextJson, budgetBytes));
       }
@@ -207,6 +282,64 @@ public static class AgentPromptBuilder
     }
   }
 
+  private static void AppendUnconfirmedSessionProposals(StringBuilder sb, AgentTurnRequest request)
+  {
+    var store = request.Services?.GetService<AgentStore>();
+    if (store is null)
+    {
+      return;
+    }
+
+    var pending = store.GetSessionProposals(request.SessionId, request.Owner)
+      .Where(p => p.Status == "pending")
+      .ToList();
+    if (pending.Count == 0)
+    {
+      return;
+    }
+
+    var summaryItems = new List<object>(pending.Count);
+    foreach (var prop in pending)
+    {
+      Dictionary<string, object?>? values = null;
+      try
+      {
+        var payload = prop.Payload.Deserialize<StagedProposalPayload>(WebJson);
+        if (payload != null)
+        {
+          values = payload.ExplicitFields.Count > 0
+            ? payload.ExplicitFields
+              .Where(k => payload.Values.ContainsKey(k))
+              .ToDictionary(k => k, k => payload.Values[k], StringComparer.OrdinalIgnoreCase)
+            : payload.Values;
+
+          foreach (var nr in payload.NewReferences.Where(r => r.LineIndex == null && !string.IsNullOrEmpty(r.StepKey)))
+          {
+            values ??= new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            values[nr.FieldPath] = $"$ref:{nr.StepKey}";
+          }
+        }
+      }
+      catch { }
+
+      summaryItems.Add(
+        new
+        {
+          step = prop.StepNumber,
+          key = prop.StepKey,
+          service = prop.Service,
+          id = prop.RecordId,
+          title = prop.Title,
+          values
+        }
+      );
+    }
+
+    sb.AppendLine();
+    sb.AppendLine("[CURRENT UNCONFIRMED PROPOSALS IN THIS SESSION — IF USER ASKS TO REVISE/ADJUST THEM, EMIT THE COMPLETE UPDATED BUNDLE]");
+    sb.AppendLine(JsonSerializer.Serialize(summaryItems, WebJson));
+  }
+
   private static string TruncateUtf8(string text, int maxBytes)
   {
     if (Encoding.UTF8.GetByteCount(text) <= maxBytes)
@@ -227,7 +360,8 @@ public static class AgentPromptBuilder
   public static async Task StageInlineProposalsAsync(
     string text,
     AgentTurnRequest request,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     const string startTag = "<air_proposal>";
     const string endTag = "</air_proposal>";
@@ -271,55 +405,60 @@ public static class AgentPromptBuilder
       }
     }
 
-    if (elements.Count > 1)
+    if (elements.Count > 0)
     {
-      elements =
-      [
-        .. elements.OrderBy(el =>
+      elements = AgentStepGraphHelper.SortInlineProposalsTopologically(elements);
+
+      var turnId = Guid.NewGuid().ToString("N")[..10];
+      var store = request.Services?.GetService<AgentStore>();
+      var sessionId = AgentStore.NormalizeSessionId(request.SessionId);
+      var stagedInTurn = new List<AgentProposalDto>();
+
+      foreach (var el in elements)
+      {
+        try
         {
-          string? name = null;
-          if (el.TryGetProperty("values", out var v) && v.ValueKind == JsonValueKind.Object)
-          {
-            foreach (var key in new[] { "name", "title", "code", "label", "fullName", "number" })
-            {
-              if (v.TryGetProperty(key, out var n) && n.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(n.GetString()))
-              {
-                name = n.GetString();
-                break;
-              }
-            }
-
-            name ??= v.EnumerateObject()
-              .Where(p => p.Value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(p.Value.GetString()))
-              .Select(p => p.Value.GetString())
-              .FirstOrDefault() ?? string.Empty;
-          }
-
-          if (string.IsNullOrWhiteSpace(name))
-          {
-            return 1;
-          }
-
-          var isReferencedByOther = elements.Any(other =>
-            !other.Equals(el) &&
-            other.TryGetProperty("values", out var ov) && ov.ValueKind == JsonValueKind.Object &&
-            ov.EnumerateObject().Any(p =>
-              p.Value.ValueKind == JsonValueKind.String &&
-              string.Equals(p.Value.GetString()?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)));
-          return isReferencedByOther ? 0 : 1;
-        })
-      ];
-    }
-
-    foreach (var el in elements)
-    {
-      try
-      {
-        await AgentProposalBuilder.StageProposalAsync(el, request.Services, ct, fallbackAttIds);
+          var staged = await AgentProposalBuilder.StageProposalAsync(
+            el,
+            request.Services!,
+            ct,
+            fallbackAttIds,
+            turnId
+          );
+          stagedInTurn.Add(staged);
+        }
+        catch
+        {
+          // Ignore staging errors for invalid inline blocks
+        }
       }
-      catch
+
+      if (store != null && stagedInTurn.Count > 0)
       {
-        // Ignore staging errors for invalid inline blocks
+        var editedRecords = new List<(string Service, long RecordId)>();
+        var createdNames = new List<(string Service, string Name)>();
+
+        foreach (var p in stagedInTurn)
+        {
+          var normSvc = AgentFeatureRegistry.NormalizeServiceKey(p.Service);
+          if (p.RecordId is > 0)
+          {
+            editedRecords.Add((normSvc, p.RecordId.Value));
+          }
+          else if (AgentStepGraphHelper.GetProposalShortLabel(p) is { Length: > 0 } shortLabel)
+          {
+            createdNames.Add((normSvc, shortLabel));
+          }
+        }
+
+        store.SupersedeOverlappingTurnProposals(
+          sessionId,
+          request.Owner,
+          turnId,
+          editedRecords,
+          createdNames
+        );
+        store.FinalizeTurnProposals(sessionId, request.Owner, turnId);
       }
     }
 
@@ -329,7 +468,8 @@ public static class AgentPromptBuilder
   public static async Task SaveInlineMemoriesAsync(
     string text,
     AgentTurnRequest request,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     const string startTag = "<air_memory>";
     const string endTag = "</air_memory>";
@@ -353,7 +493,8 @@ public static class AgentPromptBuilder
 
     var memoryFeature = ModuleCatalog.Instance.AllFeatures.FirstOrDefault(f =>
       f.ServiceType != null &&
-      IsEntityServiceFor(f.ServiceType, typeof(AppAgentMemory)));
+      IsEntityServiceFor(f.ServiceType, typeof(AppAgentMemory))
+    );
     if (memoryFeature is null || !AgentFeatureRegistry.CanEditFeature(memoryFeature, app))
     {
       return;
@@ -446,16 +587,18 @@ public static class AgentPromptBuilder
         }
         else
         {
-          db.AppAgentMemory.Add(new AppAgentMemory
-          {
-            TenantId = tenantId,
-            Kind = kind,
-            Title = title,
-            Content = content,
-            Priority = kind == AgentMemoryKinds.Rule ? 200 : 100,
-            IsPinned = false,
-            IsActive = true
-          });
+          db.AppAgentMemory.Add(
+            new AppAgentMemory
+            {
+              TenantId = tenantId,
+              Kind = kind,
+              Title = title,
+              Content = content,
+              Priority = kind == AgentMemoryKinds.Rule ? 200 : 100,
+              IsPinned = false,
+              IsActive = true
+            }
+          );
         }
 
         hasChanges = true;

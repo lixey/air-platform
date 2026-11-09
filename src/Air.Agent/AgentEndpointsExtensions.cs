@@ -285,6 +285,11 @@ public static class AgentEndpointsExtensions
         return Results.NotFound(new { title = Localizer.Instance["AgentProposalNotFound"] });
       }
 
+      if (proposal.Status == "superseded")
+      {
+        return Results.UnprocessableEntity(new { title = Localizer.Instance["AgentProposalSuperseded"] });
+      }
+
       if (proposal.Status == "committed" && proposal.CommittedRecordId.HasValue)
       {
         return Results.Ok(new AgentCommitResultDto
@@ -300,6 +305,29 @@ public static class AgentEndpointsExtensions
       try
       {
         var result = await AirAgentRuntime.CommitProposalAsync(proposal, ctx.RequestServices, ct);
+        return Results.Ok(result);
+      }
+      catch (Exception ex)
+      {
+        return Results.UnprocessableEntity(new
+        {
+          title = ex.Message
+        });
+      }
+    });
+
+    group.MapPost("/proposals/confirm-batch", async (
+      AgentBatchConfirmRequest body,
+      HttpContext ctx,
+      CancellationToken ct) =>
+    {
+      var culture = PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
+      CultureInfo.CurrentCulture = culture;
+      CultureInfo.CurrentUICulture = culture;
+
+      try
+      {
+        var result = await AirAgentRuntime.CommitBatchAsync(body.ProposalIds, ctx.RequestServices, ct);
         return Results.Ok(result);
       }
       catch (Exception ex)

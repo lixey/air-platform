@@ -229,12 +229,24 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
             }
 
             @for (proposal of msg.proposals; track proposal.id) {
-              <div class="w-full overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xs">
+              <div
+                class="w-full overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xs transition-opacity"
+                [class.opacity-60]="proposal.status === 'superseded'"
+              >
                 <div class="flex items-center justify-between gap-2 border-b border-line bg-surface-3 px-3 py-2">
                   <div class="min-w-0 flex-1">
-                    <div class="truncate text-sm font-semibold text-ink">{{ proposal.title }}</div>
+                    <div class="flex min-w-0 items-center gap-1.5">
+                      @if (proposal.stepNumber) {
+                        <span
+                          class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-surface px-1.5 text-[11px] font-bold tabular-nums text-mark ring-1 ring-line"
+                        >
+                          {{ proposal.stepNumber }}
+                        </span>
+                      }
+                      <div class="truncate text-sm font-semibold text-ink">{{ proposal.title }}</div>
+                    </div>
                     @if (proposal.subtitle) {
-                      <div class="truncate text-xs text-muted">{{ proposal.subtitle }}</div>
+                      <div class="truncate text-xs text-muted" [class.pl-6]="!!proposal.stepNumber">{{ proposal.subtitle }}</div>
                     }
                   </div>
                   @if (proposal.badge) {
@@ -242,7 +254,7 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                   }
                 </div>
 
-                @if (proposal.duplicateWarning && proposal.status !== 'committed') {
+                @if (proposal.duplicateWarning && proposal.status !== 'committed' && proposal.status !== 'superseded') {
                   <div
                     class="flex items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
                   >
@@ -327,6 +339,11 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                       [label]="texts.of('Open')"
                       (click)="openCommitted(proposal)"
                     />
+                  } @else if (proposal.status === 'superseded') {
+                    <div class="flex items-center gap-1.5 text-xs text-muted">
+                      <i class="flex h-3.5 w-3.5 items-center justify-center" [icon]="'reload'"></i>
+                      <span>{{ texts.of('AgentSupersededBadge') }}</span>
+                    </div>
                   } @else {
                     <span class="text-xs text-muted">{{ texts.of('AgentCheckBeforeSave') }}</span>
                     <ui-btn
@@ -336,11 +353,41 @@ function fitPromptToText(area: HTMLTextAreaElement): void {
                       icon="checkmark"
                       [label]="texts.of('AgentConfirm')"
                       [loading]="proposal.status === 'confirming'"
+                      [disabled]="isBatchConfirming(msg)"
                       (click)="agent.confirmProposal(msg.id, proposal.id)"
                     />
                   }
                 </div>
               </div>
+            }
+
+            @if (msg.proposals.length >= 2 && !isAllSuperseded(msg)) {
+              @if (isAllCommitted(msg)) {
+                <div
+                  class="flex w-full items-center justify-between gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs font-semibold text-green-700 dark:text-green-300"
+                >
+                  <div class="flex items-center gap-1.5">
+                    <i class="flex h-4 w-4 items-center justify-center" [icon]="'checkmark'"></i>
+                    <span>{{ texts.of('AgentAllSaved', msg.proposals.length) }}</span>
+                  </div>
+                </div>
+              } @else if (pendingOrConfirmingCount(msg) >= 2) {
+                <div class="flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 shadow-xs">
+                  <span class="text-xs font-medium text-ink">
+                    {{ texts.of('AgentLinkedSteps', actionableCount(msg)) }}
+                  </span>
+                  <ui-btn
+                    size="small"
+                    variant="solid"
+                    color="green"
+                    icon="checkmark"
+                    [label]="texts.of('AgentConfirmAll', pendingOrConfirmingCount(msg))"
+                    [loading]="isBatchConfirming(msg)"
+                    [disabled]="agent.isStreaming()"
+                    (click)="agent.confirmBatch(msg.id)"
+                  />
+                </div>
+              }
             }
 
             @if (!msg.statusText && (msg.text || msg.proposals.length > 0)) {
@@ -757,5 +804,26 @@ export class LayoutAgentComponent {
 
   protected asColor(color: string | null | undefined): UiColor {
     return (color as UiColor) || 'slate';
+  }
+
+  protected actionableCount(msg: AgentChatMessage): number {
+    return msg.proposals.filter(p => p.status !== 'superseded').length;
+  }
+
+  protected pendingOrConfirmingCount(msg: AgentChatMessage): number {
+    return msg.proposals.filter(p => p.status === 'pending' || p.status === 'confirming').length;
+  }
+
+  protected isBatchConfirming(msg: AgentChatMessage): boolean {
+    return msg.proposals.filter(p => p.status === 'confirming').length >= 2;
+  }
+
+  protected isAllCommitted(msg: AgentChatMessage): boolean {
+    const active = msg.proposals.filter(p => p.status !== 'superseded');
+    return active.length >= 2 && active.every(p => p.status === 'committed');
+  }
+
+  protected isAllSuperseded(msg: AgentChatMessage): boolean {
+    return msg.proposals.length > 0 && msg.proposals.every(p => p.status === 'superseded');
   }
 }

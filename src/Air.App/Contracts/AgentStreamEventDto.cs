@@ -19,4 +19,7 @@ public sealed class AgentStreamEventDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? ModelName { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<string>? SupersededProposalIds { get; set; }
 }

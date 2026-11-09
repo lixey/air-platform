@@ -1,8 +1,11 @@
+using Platform.Agent.Internals;
+
 namespace Platform.Agent;
 
 public sealed class AgentStore
 {
   private sealed record OwnedAttachment(AgentAttachmentDto Dto, AgentOwnerScope Owner, DateTimeOffset LastAccessUtc);
+
   private sealed record OwnedProposal(AgentProposalDto Dto, AgentOwnerScope Owner, DateTimeOffset LastAccessUtc);
 
   private sealed class SessionState(AgentOwnerScope owner)
@@ -12,6 +15,8 @@ public sealed class AgentStore
     public ConcurrentDictionary<string, string> ConversationIds { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<AgentProposalDto> Proposals { get; } = [];
     public ConcurrentQueue<AgentProposalDto> PendingProposals { get; } = new();
+    public ConcurrentQueue<string> SupersededProposalIds { get; } = new();
+    public Dictionary<string, int> TurnStepCounters { get; } = new(StringComparer.OrdinalIgnoreCase);
   }
 
   private readonly AgentOptions _options;
@@ -121,7 +126,8 @@ public sealed class AgentStore
     string fileName,
     string contentType,
     Stream content,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     CleanupExpiredIfNeeded();
 
@@ -215,10 +221,156 @@ public sealed class AgentStore
     session.LastAccessUtc = now;
     lock (session.Proposals)
     {
+      if (!string.IsNullOrWhiteSpace(proposal.TurnId) && proposal.StepNumber is null)
+      {
+        if (session.TurnStepCounters.Count > 64 && !session.TurnStepCounters.ContainsKey(proposal.TurnId))
+        {
+          session.TurnStepCounters.Clear();
+        }
+
+        var nextStep = session.TurnStepCounters.GetValueOrDefault(proposal.TurnId) + 1;
+        session.TurnStepCounters[proposal.TurnId] = nextStep;
+        proposal.StepNumber = nextStep;
+      }
+
       session.Proposals.Add(proposal);
     }
 
     session.PendingProposals.Enqueue(proposal);
+  }
+
+  public void FinalizeTurnProposals(string sessionId, AgentOwnerScope owner, string turnId)
+  {
+    var sKey = SessionKey(owner, sessionId);
+    if (!_sessions.TryGetValue(sKey, out var session) || !MatchesOwner(session.Owner, owner))
+    {
+      return;
+    }
+
+    lock (session.Proposals)
+    {
+      var turnList = session.Proposals
+        .Where(p => string.Equals(p.TurnId, turnId, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+      if (turnList.Count == 1)
+      {
+        turnList[0].StepNumber = null;
+      }
+    }
+  }
+
+  public IReadOnlyList<string> SupersedeOverlappingTurnProposals(
+    string sessionId,
+    AgentOwnerScope owner,
+    string newTurnId,
+    IReadOnlyCollection<(string Service, long RecordId)> editedRecords,
+    IReadOnlyCollection<(string Service, string Name)> createdNames
+  )
+  {
+    var sKey = SessionKey(owner, sessionId);
+    if (!_sessions.TryGetValue(sKey, out var session) || !MatchesOwner(session.Owner, owner))
+    {
+      return [];
+    }
+
+    var superseded = new List<string>();
+    lock (session.Proposals)
+    {
+      var pendingOld = session.Proposals
+        .Where(p => p.Status == "pending" && !string.Equals(p.TurnId, newTurnId, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+      if (pendingOld.Count == 0)
+      {
+        return [];
+      }
+
+      static bool MatchesCandidate(
+        AgentProposalDto p,
+        IReadOnlyCollection<(string Service, long RecordId)> edits,
+        IReadOnlyCollection<(string Service, string Name)> creates
+      )
+      {
+        var normSvc = AgentFeatureRegistry.NormalizeServiceKey(p.Service);
+        if (p.RecordId is > 0 && edits.Any(e =>
+              e.RecordId == p.RecordId.Value && (string.IsNullOrEmpty(e.Service) || string.Equals(
+                e.Service,
+                normSvc,
+                StringComparison.OrdinalIgnoreCase
+              ))
+            ))
+        {
+          return true;
+        }
+
+        if (p.RecordId is null)
+        {
+          var shortLabel = AgentStepGraphHelper.GetProposalShortLabel(p);
+          if (creates.Any(c =>
+                (string.IsNullOrEmpty(c.Service) || string.Equals(c.Service, normSvc, StringComparison.OrdinalIgnoreCase)) &&
+                string.Equals(shortLabel, c.Name, StringComparison.OrdinalIgnoreCase)
+              ))
+          {
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      var matchedTurnIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      var matchedDirectIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+      foreach (var old in pendingOld)
+      {
+        if (MatchesCandidate(old, editedRecords, createdNames))
+        {
+          if (!string.IsNullOrEmpty(old.TurnId))
+          {
+            matchedTurnIds.Add(old.TurnId);
+          }
+          else
+          {
+            matchedDirectIds.Add(old.Id);
+          }
+        }
+      }
+
+      foreach (var old in pendingOld)
+      {
+        if (!string.IsNullOrEmpty(old.TurnId) && matchedTurnIds.Contains(old.TurnId) ||
+            matchedDirectIds.Contains(old.Id))
+        {
+          lock (old)
+          {
+            if (old.Status == "pending")
+            {
+              old.Status = "superseded";
+              superseded.Add(old.Id);
+              session.SupersededProposalIds.Enqueue(old.Id);
+            }
+          }
+        }
+      }
+    }
+
+    return superseded;
+  }
+
+  public IReadOnlyList<string> DrainSupersededProposalIds(string sessionId, AgentOwnerScope owner)
+  {
+    var sKey = SessionKey(owner, sessionId);
+    if (!_sessions.TryGetValue(sKey, out var session) || !MatchesOwner(session.Owner, owner))
+    {
+      return [];
+    }
+
+    var list = new List<string>();
+    while (session.SupersededProposalIds.TryDequeue(out var id))
+    {
+      list.Add(id);
+    }
+
+    return list;
   }
 
   public AgentProposalDto? GetProposal(string proposalId, AgentOwnerScope owner)
@@ -356,6 +508,9 @@ public sealed class AgentStore
 
   public static string GetContextFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
     Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"context-{NormalizeSessionId(sessionId)}.json");
+
+  public static string GetRecordsFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
+    Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"records-{NormalizeSessionId(sessionId)}.json");
 
   private void CleanupStaleDiskFiles()
   {

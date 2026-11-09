@@ -1279,6 +1279,24 @@
   <data name="AgentDuplicateRecordWarning" xml:space="preserve">
     <value>A record with this date and amount already exists: {0}</value>
   </data>
+  <data name="AgentConfirmAll" xml:space="preserve">
+    <value>Confirm all ({0})</value>
+  </data>
+  <data name="AgentLinkedSteps" xml:space="preserve">
+    <value>Linked changes ({0})</value>
+  </data>
+  <data name="AgentAllSaved" xml:space="preserve">
+    <value>All changes saved ({0})</value>
+  </data>
+  <data name="AgentStepBadge" xml:space="preserve">
+    <value>Step {0}</value>
+  </data>
+  <data name="AgentSupersededBadge" xml:space="preserve">
+    <value>Updated below</value>
+  </data>
+  <data name="AgentProposalSuperseded" xml:space="preserve">
+    <value>This proposal was replaced by a newer version below.</value>
+  </data>
   <data name="LegacyTitleFormat" xml:space="preserve">
     <value>Legacy UI: {0} | DB: {1}</value>
   </data>

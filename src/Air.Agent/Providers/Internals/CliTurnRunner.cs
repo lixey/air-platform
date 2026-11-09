@@ -75,11 +75,17 @@ internal static class CliTurnRunner
     var sessionWorkspaceDir = store.GetSessionWorkspaceDirectory(request.Owner, request.SessionId);
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, providerHandle);
     var contextFilePath = AgentStore.GetContextFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
+    var recordsFilePath = AgentStore.GetRecordsFilePath(store.WorkspaceDirectory, request.Owner, request.SessionId);
     try
     {
       if (File.Exists(contextFilePath))
       {
         File.Delete(contextFilePath);
+      }
+
+      if (File.Exists(recordsFilePath))
+      {
+        File.Delete(recordsFilePath);
       }
     }
     catch { }
@@ -136,10 +142,9 @@ internal static class CliTurnRunner
     {
       var hasPhoto = effectiveRequest.Attachments.Count > 0;
       var includeReports = !hasPhoto;
-      var includeRecentRecords = !hasPhoto || effectiveRequest.Message.Contains('#') || Regex.IsMatch(effectiveRequest.Message, @"\bid\s*\d+", RegexOptions.IgnoreCase);
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(effectiveRequest.Services, effectiveRequest.Message, ct, includeReports, includeRecentRecords);
+      var ctxObj = await AirAgentRuntime.BuildContextAsync(effectiveRequest.Services, effectiveRequest.Message, ct, includeReports, includeRecentRecords: true);
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-      if (includeReports && Encoding.UTF8.GetByteCount(contextJson) > 98_000)
+      if (Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {
         await File.WriteAllTextAsync(contextFilePath, contextJson, Encoding.UTF8, ct);
         if (ctxObj is IDictionary<string, object?> ctxDict && ctxDict.Remove("reports"))
@@ -147,6 +152,9 @@ internal static class CliTurnRunner
           contextJson = JsonSerializer.Serialize(ctxDict, PromptJsonOptions);
         }
       }
+
+      var extendedRecordsObj = await AirAgentRuntime.BuildExtendedWorkspaceRecordsAsync(effectiveRequest.Services, ct);
+      await File.WriteAllTextAsync(recordsFilePath, JsonSerializer.Serialize(extendedRecordsObj, PromptJsonOptions), Encoding.UTF8, ct);
     }
     catch
     {
@@ -232,6 +240,16 @@ internal static class CliTurnRunner
           yield return evt;
         }
 
+        var midTurnSuperseded = store.DrainSupersededProposalIds(request.SessionId, request.Owner);
+        if (midTurnSuperseded.Count > 0)
+        {
+          yield return new AgentStreamEventDto
+          {
+            Type = "supersede",
+            SupersededProposalIds = [.. midTurnSuperseded]
+          };
+        }
+
         foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
         {
           emittedProposals++;
@@ -277,6 +295,15 @@ internal static class CliTurnRunner
         catch { }
       }
 
+      if (File.Exists(recordsFilePath))
+      {
+        try
+        {
+          File.Delete(recordsFilePath);
+        }
+        catch { }
+      }
+
       foreach (var stagedPath in stagedAttachmentPaths)
       {
         try
@@ -292,6 +319,16 @@ internal static class CliTurnRunner
 
     var completeText = fullAssistantText.ToString();
     await AgentPromptBuilder.StageInlineProposalsAsync(completeText, request, ct);
+
+    var supersededIds = store.DrainSupersededProposalIds(request.SessionId, request.Owner);
+    if (supersededIds.Count > 0)
+    {
+      yield return new AgentStreamEventDto
+      {
+        Type = "supersede",
+        SupersededProposalIds = [.. supersededIds]
+      };
+    }
 
     foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
     {

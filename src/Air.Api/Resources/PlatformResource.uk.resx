@@ -1282,6 +1282,24 @@
   <data name="AgentDuplicateRecordWarning" xml:space="preserve">
     <value>Запис із цією датою та сумою вже існує: {0}</value>
   </data>
+  <data name="AgentConfirmAll" xml:space="preserve">
+    <value>Підтвердити всі ({0})</value>
+  </data>
+  <data name="AgentLinkedSteps" xml:space="preserve">
+    <value>Пов'язані зміни ({0})</value>
+  </data>
+  <data name="AgentAllSaved" xml:space="preserve">
+    <value>Усі зміни збережено ({0})</value>
+  </data>
+  <data name="AgentStepBadge" xml:space="preserve">
+    <value>Крок {0}</value>
+  </data>
+  <data name="AgentSupersededBadge" xml:space="preserve">
+    <value>Оновлено нижче</value>
+  </data>
+  <data name="AgentProposalSuperseded" xml:space="preserve">
+    <value>Цю пропозицію замінено новішою версією нижче.</value>
+  </data>
   <data name="LegacyTitleFormat" xml:space="preserve">
     <value>Легасі UI: {0} | БД: {1}</value>
   </data>

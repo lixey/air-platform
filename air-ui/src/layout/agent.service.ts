@@ -11,6 +11,7 @@ import { PLATFORM_CLIENT_HEADER, PLATFORM_TIME_ZONE_HEADER } from '../app/auth/c
 import { LocaleService } from '../app/locale.service';
 import type {
   AgentAttachmentDto,
+  AgentBatchCommitResultDto,
   AgentCommitResultDto,
   AgentModelDto,
   AgentProposalDto,
@@ -298,6 +299,14 @@ export class AgentService {
                 blocks,
                 statusText: null,
               }));
+            } else if (evt.type === 'supersede' && evt.supersededProposalIds?.length) {
+              const supSet = new Set(evt.supersededProposalIds);
+              this.messages.update(list =>
+                list.map(m => ({
+                  ...m,
+                  proposals: m.proposals.map(p => (supSet.has(p.id) && p.status === 'pending' ? { ...p, status: 'superseded' } : p)),
+                })),
+              );
             } else if (evt.type === 'proposal' && evt.proposal) {
               const incoming: AgentProposal = { ...evt.proposal, status: 'pending' };
               this.patchAssistant(assistantMsgId, m => {
@@ -460,6 +469,47 @@ export class AgentService {
             ? err.message
             : this.texts.of('AgentErrorSave');
       this.alert.error(msg);
+    }
+  }
+
+  async confirmBatch(messageId: string): Promise<void> {
+    const msg = this.messages().find(m => m.id === messageId);
+    if (!msg) {
+      return;
+    }
+
+    const pendingIds = msg.proposals.filter(p => p.status === 'pending').map(p => p.id);
+    if (pendingIds.length === 0) {
+      return;
+    }
+
+    const idSet = new Set(pendingIds);
+    this.patchAssistant(messageId, m => ({
+      ...m,
+      proposals: m.proposals.map(p => (idSet.has(p.id) ? { ...p, status: 'confirming' } : p)),
+    }));
+
+    try {
+      const batchRes = await firstValueFrom(
+        this.http.post<AgentBatchCommitResultDto>('/api/agent/proposals/confirm-batch', { proposalIds: pendingIds }, shownByCaller()),
+      );
+      for (const item of batchRes.committed) {
+        this.applyCommitResult(item);
+      }
+
+      GridService.reloadServices(batchRes.refreshServices);
+    } catch (err) {
+      this.patchAssistant(messageId, m => ({
+        ...m,
+        proposals: m.proposals.map(p => (idSet.has(p.id) && p.status === 'confirming' ? { ...p, status: 'pending' } : p)),
+      }));
+      const errText =
+        err instanceof HttpErrorResponse && err.error?.title
+          ? String(err.error.title)
+          : err instanceof Error
+            ? err.message
+            : this.texts.of('AgentErrorSave');
+      this.alert.error(errText);
     }
   }
 

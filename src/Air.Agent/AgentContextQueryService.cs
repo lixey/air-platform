@@ -9,7 +9,8 @@ public static class AgentContextQueryService
     string? userMessage = null,
     CancellationToken ct = default,
     bool includeReports = true,
-    bool includeRecentRecords = true)
+    bool includeRecentRecords = true
+  )
   {
     var db = services.GetService<PlatformDbContext>();
     var app = services.GetService<PlatformAppService>();
@@ -54,18 +55,20 @@ public static class AgentContextQueryService
         defaultValues.TryGetValue(el.Path, out var defaultVal);
         var refFilterMap = ExtractEqualityFilterMap(select?.ReferenceFilter);
 
-        editableFields.Add(new
-        {
-          path = el.Path,
-          label = el.Label,
-          type = el.Type,
-          required = el.IsRequired ? true : (bool?)null,
-          multiple = (select?.IsMultiple == true || el.ValueKind == FormValueKind.List) ? true : (bool?)null,
-          referenceService = select?.ReferenceService,
-          referenceFilter = refFilterMap.Count > 0 ? refFilterMap : null,
-          options = select?.Options?.Select(o => new { id = o.Id, name = o.Name }).ToList(),
-          defaultValue = defaultVal
-        });
+        editableFields.Add(
+          new
+          {
+            path = el.Path,
+            label = el.Label,
+            type = el.Type,
+            required = el.IsRequired ? true : (bool?)null,
+            multiple = (select?.IsMultiple == true || el.ValueKind == FormValueKind.List) ? true : (bool?)null,
+            referenceService = select?.ReferenceService,
+            referenceFilter = refFilterMap.Count > 0 ? refFilterMap : null,
+            options = select?.Options?.Select(o => new { id = o.Id, name = o.Name }).ToList(),
+            defaultValue = defaultVal
+          }
+        );
       }
 
       object? lineSchema = null;
@@ -84,15 +87,17 @@ public static class AgentContextQueryService
           }
 
           childDefaults.TryGetValue(cel.Path, out var cDefVal);
-          childFields.Add(new
-          {
-            path = cel.Path,
-            label = cel.Label,
-            type = cel.Type,
-            required = cel.IsRequired ? true : (bool?)null,
-            referenceService = cSelect?.ReferenceService,
-            defaultValue = cDefVal
-          });
+          childFields.Add(
+            new
+            {
+              path = cel.Path,
+              label = cel.Label,
+              type = cel.Type,
+              required = cel.IsRequired ? true : (bool?)null,
+              referenceService = cSelect?.ReferenceService,
+              defaultValue = cDefVal
+            }
+          );
         }
 
         lineSchema = new
@@ -105,15 +110,17 @@ public static class AgentContextQueryService
         };
       }
 
-      forms.Add(new
-      {
-        service = desc.ServicePath,
-        label = desc.Label,
-        title = formInst.GetTitle(),
-        acceptsFiles = children.Any(c => c.IsFiles) ? true : (bool?)null,
-        fields = editableFields,
-        lines = lineSchema
-      });
+      forms.Add(
+        new
+        {
+          service = desc.ServicePath,
+          label = desc.Label,
+          title = formInst.GetTitle(),
+          acceptsFiles = children.Any(c => c.IsFiles) ? true : (bool?)null,
+          fields = editableFields,
+          lines = lineSchema
+        }
+      );
     }
 
     var searchTokens = ExtractSearchTokens(userMessage);
@@ -123,10 +130,18 @@ public static class AgentContextQueryService
       searchTokens,
       db,
       app,
-      ct);
+      ct
+    );
 
     var recentRecords = includeRecentRecords
-      ? await LoadRecentRecordsAsync(dictionaries.Keys, userMessage, searchTokens, db, app, ct)
+      ? await LoadRecentRecordsAsync(
+        dictionaries.Keys,
+        userMessage,
+        searchTokens,
+        db,
+        app,
+        ct
+      )
       : [];
     var reports = includeReports ? await LoadReportsSummaryAsync(db, app, ct) : [];
 
@@ -154,6 +169,75 @@ public static class AgentContextQueryService
     return contextResult;
   }
 
+  public static async Task<object> BuildExtendedWorkspaceRecordsAsync(
+    IServiceProvider services,
+    CancellationToken ct = default
+  )
+  {
+    var db = services.GetService<PlatformDbContext>();
+    var app = services.GetService<PlatformAppService>();
+    var options = services.GetService<AgentOptions>() ?? new AgentOptions();
+    var today = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+
+    if (db == null || app == null)
+    {
+      return new
+      {
+        today,
+        recentRecords = new Dictionary<string, object>()
+      };
+    }
+
+    var recentRecords = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+    foreach (var feat in ModuleCatalog.Instance.AllFeatures)
+    {
+      if (!feat.AllowsAgent ||
+          !AgentFeatureRegistry.CanEditFeature(feat, app) ||
+          !AgentFeatureRegistry.CanViewFeature(feat, app) ||
+          feat.ServiceType == null ||
+          !typeof(IGridService).IsAssignableFrom(feat.ServiceType))
+      {
+        continue;
+      }
+
+      var gridPath = ServicePathResolver.Resolve(feat.ServiceType);
+      if (recentRecords.ContainsKey(gridPath))
+      {
+        continue;
+      }
+
+      try
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(feat.ServiceType, db, app) is IGridService grid)
+        {
+          var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 150 }, ct);
+          if (page.Total <= options.MaxFullDictionarySize && page.Rows.Count <= options.MaxFullDictionarySize)
+          {
+            continue;
+          }
+
+          var rows = new List<Dictionary<string, object?>>(page.Rows.Count);
+          foreach (var rawRow in page.Rows)
+          {
+            if (CleanGridRow(rawRow, stripZeroMoney: true) is { } clean)
+            {
+              rows.Add(clean);
+            }
+          }
+
+          recentRecords[gridPath] = rows;
+        }
+      }
+      catch { }
+    }
+
+    return new
+    {
+      today,
+      recentRecords
+    };
+  }
+
   public static async Task<(
     Dictionary<string, List<Dictionary<string, object?>>> Dictionaries,
     Dictionary<string, object> LargeDictionaries)> LoadSmartDictionariesAsync(
@@ -162,7 +246,8 @@ public static class AgentContextQueryService
     IReadOnlyList<string> searchTokens,
     PlatformDbContext db,
     PlatformAppService app,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     var dictionaries = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
     var largeDictionaries = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
@@ -205,12 +290,15 @@ public static class AgentContextQueryService
 
           foreach (var token in searchTokens.Take(5))
           {
-            var searchPage = await grid.GetDataAsync(new ListRequest
-            {
-              Page = 0,
-              PageSize = 15,
-              Search = token
-            }, ct);
+            var searchPage = await grid.GetDataAsync(
+              new ListRequest
+              {
+                Page = 0,
+                PageSize = 15,
+                Search = token
+              },
+              ct
+            );
 
             foreach (var rawRow in searchPage.Rows)
             {
@@ -238,7 +326,8 @@ public static class AgentContextQueryService
           {
             total = probePage.Total,
             loadedMatches = matchedRows.Count,
-            note = "Large dictionary (>50 records): pass the exact name in <air_proposal> and the server will automatically find the existing record in DB or propose creating it if not found."
+            note =
+              "Large dictionary (>50 records): pass the exact name in <air_proposal> and the server will automatically find the existing record in DB or propose creating it if not found."
           };
         }
       }
@@ -257,7 +346,8 @@ public static class AgentContextQueryService
     PlatformDbContext db,
     PlatformAppService app,
     CancellationToken ct,
-    IReadOnlyList<string>? labelPaths = null)
+    IReadOnlyList<string>? labelPaths = null
+  )
   {
     var cleanName = searchName.Trim();
     if (string.IsNullOrEmpty(cleanName))
@@ -288,12 +378,15 @@ public static class AgentContextQueryService
             AgentFeatureRegistry.CanViewFeature(grid.Feature, app))
         {
           labelPaths ??= grid.GetReferenceLabelPaths();
-          var searchPage = await grid.GetDataAsync(new ListRequest
-          {
-            Page = 0,
-            PageSize = 25,
-            Search = cleanName
-          }, ct);
+          var searchPage = await grid.GetDataAsync(
+            new ListRequest
+            {
+              Page = 0,
+              PageSize = 25,
+              Search = cleanName
+            },
+            ct
+          );
 
           foreach (var rawRow in searchPage.Rows)
           {
@@ -321,7 +414,8 @@ public static class AgentContextQueryService
     Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
     PlatformDbContext db,
     PlatformAppService app,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     if (id <= 0 || string.IsNullOrWhiteSpace(referenceService))
     {
@@ -368,7 +462,8 @@ public static class AgentContextQueryService
     IReadOnlyList<string> searchTokens,
     PlatformDbContext db,
     PlatformAppService app,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     var dictSet = new HashSet<string>(existingDictionaryKeys, StringComparer.OrdinalIgnoreCase);
     var result = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
@@ -414,7 +509,7 @@ public static class AgentContextQueryService
             catch { }
           }
 
-          var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 15 }, ct);
+          var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 25 }, ct);
           foreach (var rawRow in page.Rows)
           {
             if (CleanGridRow(rawRow, stripZeroMoney: true) is { } clean &&
@@ -424,17 +519,20 @@ public static class AgentContextQueryService
             }
           }
 
-          // Also search by keywords if total > 15 so older records mentioned by name are found
-          if (page.Total > 15 && searchTokens.Count > 0)
+          // Also search by keywords if total > 25 so older records mentioned by name are found
+          if (page.Total > 25 && searchTokens.Count > 0)
           {
             foreach (var token in searchTokens.Take(3))
             {
-              var searchPage = await grid.GetDataAsync(new ListRequest
-              {
-                Page = 0,
-                PageSize = 10,
-                Search = token
-              }, ct);
+              var searchPage = await grid.GetDataAsync(
+                new ListRequest
+                {
+                  Page = 0,
+                  PageSize = 10,
+                  Search = token
+                },
+                ct
+              );
 
               foreach (var rawRow in searchPage.Rows)
               {
@@ -460,7 +558,8 @@ public static class AgentContextQueryService
   private static async Task<Dictionary<string, object>> LoadReportsSummaryAsync(
     PlatformDbContext db,
     PlatformAppService app,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
@@ -510,7 +609,8 @@ public static class AgentContextQueryService
   public static async Task<object?> QueryRecordsAsync(
     JsonElement args,
     IServiceProvider services,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     var db = services.GetRequiredService<PlatformDbContext>();
     var app = services.GetRequiredService<PlatformAppService>();
@@ -527,7 +627,15 @@ public static class AgentContextQueryService
     {
       var baseDesc = targetDesc ?? descriptors.FirstOrDefault()
         ?? throw new InvalidOperationException("No agent-enabled forms are registered.");
-      var resolvedDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(descriptors, baseDesc, requestedService, recordId.Value, db, app, ct);
+      var resolvedDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(
+        descriptors,
+        baseDesc,
+        requestedService,
+        recordId.Value,
+        db,
+        app,
+        ct
+      );
       if (ModuleCatalog.Instance.CreateServiceInstance(resolvedDesc.FormServiceType, db, app) is not IFormService formInst ||
           !formInst.Feature.AllowsAgent ||
           !AgentFeatureRegistry.CanViewFeature(formInst.Feature, app))
@@ -556,7 +664,10 @@ public static class AgentContextQueryService
 
       if (childGrid != null)
       {
-        var page = await childGrid.GetDataAsync(new GridRequest { ParentId = recordId.Value, Page = 0, PageSize = 200, IsDataOnly = true }, ct);
+        var page = await childGrid.GetDataAsync(
+          new GridRequest { ParentId = recordId.Value, Page = 0, PageSize = 200, IsDataOnly = true },
+          ct
+        );
         foreach (var rawRow in page.Rows)
         {
           if (CleanGridRow(rawRow) is { } cleaned)
@@ -612,12 +723,15 @@ public static class AgentContextQueryService
       throw new InvalidOperationException($"Grid service for '{requestedService}' was not found or access is denied.");
     }
 
-    var searchPage = await gridInst.GetDataAsync(new ListRequest
-    {
-      Page = 0,
-      PageSize = limit,
-      Search = search
-    }, ct);
+    var searchPage = await gridInst.GetDataAsync(
+      new ListRequest
+      {
+        Page = 0,
+        PageSize = limit,
+        Search = search
+      },
+      ct
+    );
 
     var rows = searchPage.Rows
       .Select(r => CleanGridRow(r, stripZeroMoney: true))
@@ -636,12 +750,14 @@ public static class AgentContextQueryService
   public static async Task<Dictionary<string, object?>> GetExistingFormValuesAsync(
     IFormService formInst,
     long recordId,
-    CancellationToken ct) =>
+    CancellationToken ct
+  ) =>
     (await formInst.PrepareDraftAsync(recordId, ct: ct)).Values;
 
   public static async Task<Dictionary<string, object?>> GetDefaultFormValuesAsync(
     IFormService formInst,
-    CancellationToken ct) =>
+    CancellationToken ct
+  ) =>
     (await formInst.PrepareDraftAsync(recordId: null, ct: ct)).Values;
 
   private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
@@ -649,7 +765,8 @@ public static class AgentContextQueryService
     "додай", "додати", "створи", "створити", "зміни", "змінити", "відредагуй", "редагуй",
     "запис", "записи", "суму", "сума", "розбери", "прикріплене", "фото", "скріншот", "підготуй",
     "на", "в", "у", "за", "від", "до", "та", "і", "й", "або", "що", "це", "як", "по", "із", "зі",
-    "add", "create", "edit", "update", "change", "record", "amount", "for", "from", "to", "in", "on", "at", "the", "and", "with", "parse", "attached", "photo", "image"
+    "add", "create", "edit", "update", "change", "record", "amount", "for", "from", "to", "in", "on", "at", "the", "and", "with", "parse",
+    "attached", "photo", "image"
   };
 
   private static IReadOnlyList<string> ExtractSearchTokens(string? message)
