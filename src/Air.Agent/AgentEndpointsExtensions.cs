@@ -23,7 +23,8 @@ public static class AgentEndpointsExtensions
     IAgentModelSynchronizer synchronizer,
     AgentOptions options,
     List<IAgentProvider> enabledProviders,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     await store.EnsureCatalogsSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
 
@@ -103,7 +104,8 @@ public static class AgentEndpointsExtensions
         else
         {
           AgentModelCatalog.EnsureSeededAsync(db).GetAwaiter().GetResult();
-          AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
+          AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter()
+            .GetResult();
         }
 
         if (!db.AppAgentModel.Any() &&
@@ -127,381 +129,484 @@ public static class AgentEndpointsExtensions
 
     var group = app.MapGroup("/api/agent")
       .AddEndpointFilter(async (ctx, next) =>
-      {
-        if (ctx.HttpContext.User.Identity?.IsAuthenticated != true)
         {
-          return Results.Unauthorized();
+          if (ctx.HttpContext.User.Identity?.IsAuthenticated != true)
+          {
+            return Results.Unauthorized();
+          }
+
+          return await next(ctx);
+        }
+      );
+
+    group.MapGet(
+      "/status",
+      async (
+        HttpContext ctx,
+        AgentStore store,
+        IEnumerable<IAgentProvider> providers,
+        IAgentModelSynchronizer synchronizer,
+        AgentOptions options,
+        CancellationToken ct
+      ) =>
+      {
+        var enabledProviders = providers
+          .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
+          .ToList();
+
+        var db = ctx.RequestServices.GetService<PlatformDbContext>();
+        List<AgentModelDto> models = [];
+        var defaultModel = options.DefaultModel;
+        string? photoModel = null;
+
+        if (db is not null)
+        {
+          List<AppAgentModel> dbModels;
+          (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(
+            db,
+            store,
+            synchronizer,
+            options,
+            enabledProviders,
+            ct
+          );
+
+          var availableHandles = enabledProviders
+            .Where(p => p.IsAvailable)
+            .Select(p => p.Handle)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+          if (availableHandles.Count > 0)
+          {
+            dbModels = dbModels
+              .Where(m => availableHandles.Contains(m.ProviderHandle))
+              .ToList();
+          }
+
+          var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
+          models = dbModels.Select(m => new AgentModelDto
+          {
+            Id = m.ModelId,
+            Name = multiProvider ? $"{m.Name} [{m.ProviderHandle}]" : m.Name,
+            Provider = m.ProviderHandle,
+            IsDefault = m.IsDefault,
+            IsForPhotos = m.IsForPhotos
+          }
+          ).ToList();
+
+          var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
+          defaultModel = defRow?.ModelId ?? options.DefaultModel;
+          var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos) ?? defRow;
+          photoModel = photoRow?.ModelId;
         }
 
-        return await next(ctx);
-      });
-
-    group.MapGet("/status", async (
-      HttpContext ctx,
-      AgentStore store,
-      IEnumerable<IAgentProvider> providers,
-      IAgentModelSynchronizer synchronizer,
-      AgentOptions options,
-      CancellationToken ct) =>
-    {
-      var enabledProviders = providers
-        .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
-        .ToList();
-
-      var db = ctx.RequestServices.GetService<PlatformDbContext>();
-      List<AgentModelDto> models = [];
-      var defaultModel = options.DefaultModel;
-      string? photoModel = null;
-
-      if (db is not null)
-      {
-        List<AppAgentModel> dbModels;
-        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, store, synchronizer, options, enabledProviders, ct);
-
-        var availableHandles = enabledProviders
-          .Where(p => p.IsAvailable)
-          .Select(p => p.Handle)
-          .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        if (availableHandles.Count > 0)
+        var list = enabledProviders.Select(p => new AgentProviderDto
         {
-          dbModels = dbModels
-            .Where(m => availableHandles.Contains(m.ProviderHandle))
-            .ToList();
+          Handle = p.Handle,
+          Name = p.Name,
+          IsAvailable = p.IsAvailable
+        }
+        ).ToList();
+
+        var activeProvider = enabledProviders.FirstOrDefault(p =>
+                               string.Equals(p.Handle, options.DefaultProvider, StringComparison.OrdinalIgnoreCase) && p.IsAvailable
+                             )
+                             ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
+                             ?? enabledProviders.FirstOrDefault();
+
+        if (models.FirstOrDefault(m => m.IsDefault) is { } defModelDto)
+        {
+          activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(
+                               p.Handle,
+                               defModelDto.Provider,
+                               StringComparison.OrdinalIgnoreCase
+                             )
+                           )
+                           ?? activeProvider;
         }
 
-        var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
-        models = dbModels.Select(m => new AgentModelDto
+        return Results.Ok(
+          new AgentStatusDto
+          {
+            ActiveProvider = activeProvider?.Handle ?? options.DefaultProvider,
+            DefaultModel = defaultModel,
+            PhotoModel = photoModel,
+            Providers = list,
+            Models = models
+          }
+        );
+      }
+    );
+
+    group.MapPost(
+      "/upload",
+      async (HttpContext ctx, AgentStore store, CancellationToken ct) =>
+      {
+        var req = ctx.Request;
+        var culture = PlatformEndpointsExtensions.ResolveRequestCulture(req);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+
+        if (!req.HasFormContentType)
         {
-          Id = m.ModelId,
-          Name = multiProvider ? $"{m.Name} [{m.ProviderHandle}]" : m.Name,
-          Provider = m.ProviderHandle,
-          IsDefault = m.IsDefault,
-          IsForPhotos = m.IsForPhotos
-        }).ToList();
+          return Results.BadRequest(new { title = Localizer.Instance["RequestInvalid"] });
+        }
 
-        var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
-        defaultModel = defRow?.ModelId ?? options.DefaultModel;
-        var photoRow = dbModels.FirstOrDefault(m => m.IsForPhotos) ?? defRow;
-        photoModel = photoRow?.ModelId;
+        var form = await req.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null || file.Length == 0)
+        {
+          return Results.BadRequest(new { title = Localizer.Instance["FileCountRefused"] });
+        }
+
+        var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+        try
+        {
+          await using var stream = file.OpenReadStream();
+          var saved = await store.SaveAttachmentAsync(
+            owner,
+            file.FileName,
+            file.ContentType,
+            stream,
+            ct
+          );
+          return Results.Ok(saved);
+        }
+        catch (InvalidOperationException ex)
+        {
+          return Results.BadRequest(new { title = ex.Message });
+        }
       }
+    );
 
-      var list = enabledProviders.Select(p => new AgentProviderDto
-      {
-        Handle = p.Handle,
-        Name = p.Name,
-        IsAvailable = p.IsAvailable
-      }).ToList();
-
-      var activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, options.DefaultProvider, StringComparison.OrdinalIgnoreCase) && p.IsAvailable)
-        ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
-        ?? enabledProviders.FirstOrDefault();
-
-      if (models.FirstOrDefault(m => m.IsDefault) is { } defModelDto)
-      {
-        activeProvider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, defModelDto.Provider, StringComparison.OrdinalIgnoreCase))
-          ?? activeProvider;
-      }
-
-      return Results.Ok(new AgentStatusDto
-      {
-        ActiveProvider = activeProvider?.Handle ?? options.DefaultProvider,
-        DefaultModel = defaultModel,
-        PhotoModel = photoModel,
-        Providers = list,
-        Models = models
-      });
-    });
-
-    group.MapPost("/upload", async (HttpContext ctx, AgentStore store, CancellationToken ct) =>
-    {
-      var req = ctx.Request;
-      var culture = PlatformEndpointsExtensions.ResolveRequestCulture(req);
-      CultureInfo.CurrentCulture = culture;
-      CultureInfo.CurrentUICulture = culture;
-
-      if (!req.HasFormContentType)
-      {
-        return Results.BadRequest(new { title = Localizer.Instance["RequestInvalid"] });
-      }
-
-      var form = await req.ReadFormAsync(ct);
-      var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
-      if (file is null || file.Length == 0)
-      {
-        return Results.BadRequest(new { title = Localizer.Instance["FileCountRefused"] });
-      }
-
-      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      try
-      {
-        await using var stream = file.OpenReadStream();
-        var saved = await store.SaveAttachmentAsync(owner, file.FileName, file.ContentType, stream, ct);
-        return Results.Ok(saved);
-      }
-      catch (InvalidOperationException ex)
-      {
-        return Results.BadRequest(new { title = ex.Message });
-      }
-    });
-
-    group.MapGet("/attachments/{id}", (string id, HttpContext ctx, AgentStore store) =>
-    {
-      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      var att = store.GetAttachment(id, owner);
-      if (att is null || !File.Exists(att.LocalPath))
-      {
-        return Results.NotFound();
-      }
-
-      return Results.File(att.LocalPath, att.ContentType, att.FileName);
-    });
-
-    group.MapPost("/reset", (AgentResetRequest req, HttpContext ctx, AgentStore store) =>
-    {
-      if (AgentStore.IsValidSessionId(req.SessionId))
+    group.MapGet(
+      "/attachments/{id}",
+      (string id, HttpContext ctx, AgentStore store) =>
       {
         var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-        store.ResetSession(req.SessionId!, owner);
-      }
-
-      return Results.Ok(new { ok = true });
-    });
-
-    group.MapPost("/proposals/{id}/confirm", async (
-      string id,
-      HttpContext ctx,
-      AgentStore store,
-      CancellationToken ct) =>
-    {
-      var culture = PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
-      CultureInfo.CurrentCulture = culture;
-      CultureInfo.CurrentUICulture = culture;
-
-      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      var proposal = store.GetProposal(id, owner);
-      if (proposal is null)
-      {
-        return Results.NotFound(new { title = Localizer.Instance["AgentProposalNotFound"] });
-      }
-
-      if (proposal.Status == "superseded")
-      {
-        return Results.UnprocessableEntity(new { title = Localizer.Instance["AgentProposalSuperseded"] });
-      }
-
-      if (proposal.Status == "committed" && proposal.CommittedRecordId.HasValue)
-      {
-        return Results.Ok(new AgentCommitResultDto
+        var att = store.GetAttachment(id, owner);
+        if (att is null || !File.Exists(att.LocalPath))
         {
-          ProposalId = proposal.Id,
-          RecordId = proposal.CommittedRecordId.Value,
-          RecordLabel = proposal.CommittedLabel ?? $"#{proposal.CommittedRecordId.Value}",
-          FormService = proposal.FormService ?? proposal.Service,
-          RefreshServices = []
-        });
-      }
+          return Results.NotFound();
+        }
 
-      try
-      {
-        var result = await AirAgentRuntime.CommitProposalAsync(proposal, ctx.RequestServices, ct);
-        return Results.Ok(result);
+        return Results.File(att.LocalPath, att.ContentType, att.FileName);
       }
-      catch (Exception ex)
+    );
+
+    group.MapPost(
+      "/reset",
+      (AgentResetRequest req, HttpContext ctx, AgentStore store) =>
       {
-        return Results.UnprocessableEntity(new
+        if (AgentStore.IsValidSessionId(req.SessionId))
         {
-          title = ex.Message
-        });
-      }
-    });
+          var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+          store.ResetSession(req.SessionId!, owner);
+        }
 
-    group.MapPost("/proposals/confirm-batch", async (
-      AgentBatchConfirmRequest body,
-      HttpContext ctx,
-      CancellationToken ct) =>
-    {
-      var culture = PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
-      CultureInfo.CurrentCulture = culture;
-      CultureInfo.CurrentUICulture = culture;
-
-      try
-      {
-        var result = await AirAgentRuntime.CommitBatchAsync(body.ProposalIds, ctx.RequestServices, ct);
-        return Results.Ok(result);
+        return Results.Ok(new { ok = true });
       }
-      catch (Exception ex)
+    );
+
+    group.MapPost(
+      "/proposals/{id}/confirm",
+      async (
+        string id,
+        HttpContext ctx,
+        AgentStore store,
+        CancellationToken ct
+      ) =>
       {
-        return Results.UnprocessableEntity(new
+        var culture = PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+
+        var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+        var proposal = store.GetProposal(id, owner);
+        if (proposal is null)
         {
-          title = ex.Message
-        });
-      }
-    });
+          return Results.NotFound(new { title = Localizer.Instance["AgentProposalNotFound"] });
+        }
 
-    group.MapPost("/chat", async (
-      AgentChatRequest body,
-      HttpContext ctx,
-      AgentStore store,
-      AgentOptions options,
-      McpExecutionBridge bridge,
-      ITenantContext tenantContext,
-      IEnumerable<IAgentProvider> providers,
-      IAgentModelSynchronizer synchronizer,
-      CancellationToken ct) =>
-    {
-      var culture = !string.IsNullOrWhiteSpace(body.Locale)
-        ? (body.Locale.StartsWith("uk", StringComparison.OrdinalIgnoreCase) || body.Locale.StartsWith("ua", StringComparison.OrdinalIgnoreCase)
-          ? CultureInfo.GetCultureInfo("uk-UA")
-          : body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
-            ? CultureInfo.GetCultureInfo("en-US")
-            : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request))
-        : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
-      CultureInfo.CurrentCulture = culture;
-      CultureInfo.CurrentUICulture = culture;
-
-      if (!string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))
-      {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        return;
-      }
-
-      var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      var sessionId = AgentStore.NormalizeSessionId(body.SessionId);
-
-      var enabledProviders = providers
-        .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
-        .ToList();
-
-      var providerHandle = body.Provider ?? options.DefaultProvider;
-
-      var attachments = (body.AttachmentIds ?? [])
-        .Select(id => store.GetAttachment(id, owner))
-        .Where(a => a is not null)
-        .Cast<AgentAttachmentDto>()
-        .ToList();
-
-      var selectedModel = body.Model;
-      string? selectedModelName = null;
-      var db = ctx.RequestServices.GetService<PlatformDbContext>();
-      if (db is not null)
-      {
-        List<AppAgentModel> dbModels;
-        (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(db, store, synchronizer, options, enabledProviders, ct);
-
-        if (!string.IsNullOrWhiteSpace(selectedModel))
+        if (proposal.Status == "superseded")
         {
-          var matchedRow = (!string.IsNullOrWhiteSpace(body.Provider)
-              ? dbModels.FirstOrDefault(m =>
-                string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-              : null)
-            ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
-          if (matchedRow is not null)
+          return Results.UnprocessableEntity(new { title = Localizer.Instance["AgentProposalSuperseded"] });
+        }
+
+        if (proposal.Status == "committed" && proposal.CommittedRecordId.HasValue)
+        {
+          return Results.Ok(
+            new AgentCommitResultDto
+            {
+              ProposalId = proposal.Id,
+              RecordId = proposal.CommittedRecordId.Value,
+              RecordLabel = proposal.CommittedLabel ?? $"#{proposal.CommittedRecordId.Value}",
+              FormService = proposal.FormService ?? proposal.Service,
+              RefreshServices = []
+            }
+          );
+        }
+
+        try
+        {
+          var result = await AirAgentRuntime.CommitProposalAsync(proposal, ctx.RequestServices, ct);
+          return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+          return Results.UnprocessableEntity(
+            new
+            {
+              title = ex.Message
+            }
+          );
+        }
+      }
+    );
+
+    group.MapPost(
+      "/proposals/confirm-batch",
+      async (
+        AgentBatchConfirmRequest body,
+        HttpContext ctx,
+        CancellationToken ct
+      ) =>
+      {
+        var culture = PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+
+        try
+        {
+          var result = await AirAgentRuntime.CommitBatchAsync(body.ProposalIds, ctx.RequestServices, ct);
+          return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+          return Results.UnprocessableEntity(
+            new
+            {
+              title = ex.Message
+            }
+          );
+        }
+      }
+    );
+
+    group.MapPost(
+      "/chat",
+      async (
+        AgentChatRequest body,
+        HttpContext ctx,
+        AgentStore store,
+        AgentOptions options,
+        McpExecutionBridge bridge,
+        ITenantContext tenantContext,
+        IEnumerable<IAgentProvider> providers,
+        IAgentModelSynchronizer synchronizer,
+        CancellationToken ct
+      ) =>
+      {
+        var culture = !string.IsNullOrWhiteSpace(body.Locale)
+          ? (body.Locale.StartsWith("uk", StringComparison.OrdinalIgnoreCase) ||
+             body.Locale.StartsWith("ua", StringComparison.OrdinalIgnoreCase)
+            ? CultureInfo.GetCultureInfo("uk-UA")
+            : body.Locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+              ? CultureInfo.GetCultureInfo("en-US")
+              : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request))
+          : PlatformEndpointsExtensions.ResolveRequestCulture(ctx.Request);
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+
+        if (!string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))
+        {
+          ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+          return;
+        }
+
+        var owner = AgentStore.ResolveOwner(ctx.RequestServices);
+        var sessionId = AgentStore.NormalizeSessionId(body.SessionId);
+
+        var enabledProviders = providers
+          .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
+          .ToList();
+
+        var providerHandle = body.Provider ?? options.DefaultProvider;
+
+        var attachments = (body.AttachmentIds ?? [])
+          .Select(id => store.GetAttachment(id, owner))
+          .Where(a => a is not null)
+          .Cast<AgentAttachmentDto>()
+          .ToList();
+
+        var selectedModel = body.Model;
+        string? selectedModelName = null;
+        var db = ctx.RequestServices.GetService<PlatformDbContext>();
+        if (db is not null)
+        {
+          List<AppAgentModel> dbModels;
+          (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(
+            db,
+            store,
+            synchronizer,
+            options,
+            enabledProviders,
+            ct
+          );
+
+          if (!string.IsNullOrWhiteSpace(selectedModel))
           {
-            selectedModelName = matchedRow.Name;
-            providerHandle = matchedRow.ProviderHandle;
+            var matchedRow = (!string.IsNullOrWhiteSpace(body.Provider)
+                               ? dbModels.FirstOrDefault(m =>
+                                 string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase) &&
+                                 string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase)
+                               )
+                               : null)
+                             ?? dbModels.FirstOrDefault(m => string.Equals(m.ModelId, selectedModel, StringComparison.OrdinalIgnoreCase));
+            if (matchedRow is not null)
+            {
+              selectedModelName = matchedRow.Name;
+              providerHandle = matchedRow.ProviderHandle;
+            }
+            else
+            {
+              var fallbackDef = (!string.IsNullOrWhiteSpace(body.Provider)
+                                  ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(
+                                        m.ProviderHandle,
+                                        body.Provider,
+                                        StringComparison.OrdinalIgnoreCase
+                                      )
+                                    )
+                                    ?? dbModels.FirstOrDefault(m => string.Equals(
+                                        m.ProviderHandle,
+                                        body.Provider,
+                                        StringComparison.OrdinalIgnoreCase
+                                      )
+                                    )
+                                  : null)
+                                ?? dbModels.FirstOrDefault(m => m.IsDefault)
+                                ?? dbModels.FirstOrDefault();
+              if (fallbackDef is not null)
+              {
+                selectedModel = fallbackDef.ModelId;
+                selectedModelName = fallbackDef.Name;
+                providerHandle = fallbackDef.ProviderHandle;
+              }
+            }
+          }
+          else if (attachments.Count > 0)
+          {
+            var photoRow = (!string.IsNullOrWhiteSpace(body.Provider)
+                             ? dbModels.FirstOrDefault(m => m.IsForPhotos && string.Equals(
+                                   m.ProviderHandle,
+                                   body.Provider,
+                                   StringComparison.OrdinalIgnoreCase
+                                 )
+                               )
+                               ?? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(
+                                   m.ProviderHandle,
+                                   body.Provider,
+                                   StringComparison.OrdinalIgnoreCase
+                                 )
+                               )
+                               ?? dbModels.FirstOrDefault(m => string.Equals(
+                                   m.ProviderHandle,
+                                   body.Provider,
+                                   StringComparison.OrdinalIgnoreCase
+                                 )
+                               )
+                             : null)
+                           ?? dbModels.FirstOrDefault(m => m.IsForPhotos)
+                           ?? dbModels.FirstOrDefault(m => m.IsDefault)
+                           ?? dbModels.FirstOrDefault();
+            if (photoRow is not null)
+            {
+              selectedModel = photoRow.ModelId;
+              selectedModelName = photoRow.Name;
+              providerHandle = photoRow.ProviderHandle;
+            }
           }
           else
           {
-            var fallbackDef = (!string.IsNullOrWhiteSpace(body.Provider)
-                ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-                  ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-                : null)
-              ?? dbModels.FirstOrDefault(m => m.IsDefault)
-              ?? dbModels.FirstOrDefault();
-            if (fallbackDef is not null)
+            var defRow = (!string.IsNullOrWhiteSpace(body.Provider)
+                           ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(
+                                 m.ProviderHandle,
+                                 body.Provider,
+                                 StringComparison.OrdinalIgnoreCase
+                               )
+                             )
+                             ?? dbModels.FirstOrDefault(m => string.Equals(
+                                 m.ProviderHandle,
+                                 body.Provider,
+                                 StringComparison.OrdinalIgnoreCase
+                               )
+                             )
+                           : null)
+                         ?? dbModels.FirstOrDefault(m => m.IsDefault)
+                         ?? dbModels.FirstOrDefault();
+            if (defRow is not null)
             {
-              selectedModel = fallbackDef.ModelId;
-              selectedModelName = fallbackDef.Name;
-              providerHandle = fallbackDef.ProviderHandle;
+              selectedModel = defRow.ModelId;
+              selectedModelName = defRow.Name;
+              providerHandle = defRow.ProviderHandle;
             }
           }
         }
-        else if (attachments.Count > 0)
+
+        var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
+                       ?? enabledProviders.FirstOrDefault();
+
+        ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
+        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.Headers.Connection = "keep-alive";
+
+        if (provider is null)
         {
-          var photoRow = (!string.IsNullOrWhiteSpace(body.Provider)
-              ? dbModels.FirstOrDefault(m => m.IsForPhotos && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-                ?? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-                ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-              : null)
-            ?? dbModels.FirstOrDefault(m => m.IsForPhotos)
-            ?? dbModels.FirstOrDefault(m => m.IsDefault)
-            ?? dbModels.FirstOrDefault();
-          if (photoRow is not null)
+          var errJson = JsonSerializer.Serialize(
+            new AgentStreamEventDto
+            {
+              Type = "error",
+              Text = Localizer.Instance["AgentErrorCliMissing"]
+            },
+            JsonOptions
+          );
+          await ctx.Response.WriteAsync($"data: {errJson}\n\n", ct);
+          await ctx.Response.Body.FlushAsync(ct);
+          return;
+        }
+
+        if (string.IsNullOrWhiteSpace(selectedModelName))
+        {
+          if (string.IsNullOrWhiteSpace(selectedModel))
           {
-            selectedModel = photoRow.ModelId;
-            selectedModelName = photoRow.Name;
-            providerHandle = photoRow.ProviderHandle;
+            selectedModel = options.DefaultModel;
           }
-        }
-        else
-        {
-          var defRow = (!string.IsNullOrWhiteSpace(body.Provider)
-              ? dbModels.FirstOrDefault(m => m.IsDefault && string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-                ?? dbModels.FirstOrDefault(m => string.Equals(m.ProviderHandle, body.Provider, StringComparison.OrdinalIgnoreCase))
-              : null)
-            ?? dbModels.FirstOrDefault(m => m.IsDefault)
-            ?? dbModels.FirstOrDefault();
-          if (defRow is not null)
-          {
-            selectedModel = defRow.ModelId;
-            selectedModelName = defRow.Name;
-            providerHandle = defRow.ProviderHandle;
-          }
-        }
-      }
 
-      var provider = enabledProviders.FirstOrDefault(p => string.Equals(p.Handle, providerHandle, StringComparison.OrdinalIgnoreCase))
-        ?? enabledProviders.FirstOrDefault();
-
-      ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
-      ctx.Response.Headers.CacheControl = "no-cache";
-      ctx.Response.Headers.Connection = "keep-alive";
-
-      if (provider is null)
-      {
-        var errJson = JsonSerializer.Serialize(new AgentStreamEventDto
-        {
-          Type = "error",
-          Text = Localizer.Instance["AgentErrorCliMissing"]
-        }, JsonOptions);
-        await ctx.Response.WriteAsync($"data: {errJson}\n\n", ct);
-        await ctx.Response.Body.FlushAsync(ct);
-        return;
-      }
-
-      if (string.IsNullOrWhiteSpace(selectedModelName))
-      {
-        if (string.IsNullOrWhiteSpace(selectedModel))
-        {
-          selectedModel = options.DefaultModel;
+          selectedModelName = selectedModel;
         }
 
-        selectedModelName = selectedModel;
+        var turnReq = new AgentTurnRequest
+        {
+          SessionId = sessionId,
+          Owner = owner,
+          Message = body.Message ?? string.Empty,
+          Attachments = attachments,
+          Locale = culture.TwoLetterISOLanguageName,
+          ProviderHandle = provider.Handle,
+          Model = selectedModel ?? string.Empty,
+          ModelName = selectedModelName,
+          Services = ctx.RequestServices
+        };
+
+        using var scope = bridge.BeginTurn(tenantContext.TenantId, tenantContext.UserId, tenantContext.Rights, sessionId);
+
+        await foreach (var evt in provider.StreamTurnAsync(turnReq, ct))
+        {
+          var json = JsonSerializer.Serialize(evt, JsonOptions);
+          await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
+          await ctx.Response.Body.FlushAsync(ct);
+        }
       }
-
-      var turnReq = new AgentTurnRequest
-      {
-        SessionId = sessionId,
-        Owner = owner,
-        Message = body.Message ?? string.Empty,
-        Attachments = attachments,
-        Locale = culture.TwoLetterISOLanguageName,
-        ProviderHandle = provider.Handle,
-        Model = selectedModel ?? string.Empty,
-        ModelName = selectedModelName,
-        Services = ctx.RequestServices
-      };
-
-      using var scope = bridge.BeginTurn(tenantContext.TenantId, tenantContext.UserId, tenantContext.Rights, sessionId);
-
-      await foreach (var evt in provider.StreamTurnAsync(turnReq, ct))
-      {
-        var json = JsonSerializer.Serialize(evt, JsonOptions);
-        await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-        await ctx.Response.Body.FlushAsync(ct);
-      }
-    });
+    );
   }
 }

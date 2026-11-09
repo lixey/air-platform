@@ -59,7 +59,8 @@ internal static class CliTurnRunner
     string modelDisplayName,
     Action<ProcessStartInfo, string, string?> configureStartInfo,
     Func<JsonElement, StringBuilder, List<AgentStreamEventDto>, (bool ShouldBreak, bool EmittedError)> handleJsonLine,
-    [EnumeratorCancellation] CancellationToken ct)
+    [EnumeratorCancellation] CancellationToken ct
+  )
   {
     var L = Localizer.Instance;
     if (executablePath is null)
@@ -106,16 +107,18 @@ internal static class CliTurnRunner
             stagedAttachmentPaths.Add(stagedPath);
           }
 
-          stagedAttachments.Add(new AgentAttachmentDto
-          {
-            Id = att.Id,
-            FileName = att.FileName,
-            ContentType = att.ContentType,
-            Size = att.Size,
-            PreviewUrl = att.PreviewUrl,
-            LocalPath = stagedPath,
-            Sha256 = att.Sha256
-          });
+          stagedAttachments.Add(
+            new AgentAttachmentDto
+            {
+              Id = att.Id,
+              FileName = att.FileName,
+              ContentType = att.ContentType,
+              Size = att.Size,
+              PreviewUrl = att.PreviewUrl,
+              LocalPath = stagedPath,
+              Sha256 = att.Sha256
+            }
+          );
         }
         else
         {
@@ -142,7 +145,13 @@ internal static class CliTurnRunner
     {
       var hasPhoto = effectiveRequest.Attachments.Count > 0;
       var includeReports = !hasPhoto;
-      var ctxObj = await AirAgentRuntime.BuildContextAsync(effectiveRequest.Services, effectiveRequest.Message, ct, includeReports, includeRecentRecords: true);
+      var ctxObj = await AirAgentRuntime.BuildContextAsync(
+        effectiveRequest.Services,
+        effectiveRequest.Message,
+        ct,
+        includeReports,
+        includeRecentRecords: true
+      );
       contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
       if (Encoding.UTF8.GetByteCount(contextJson) > 98_000)
       {

@@ -43,7 +43,8 @@ public class AsyncLocalTenantContext : ITenantContext
     long? tenantId,
     IReadOnlySet<string>? rights = null,
     long? userId = null,
-    string? correlationId = null)
+    string? correlationId = null
+  )
   {
     var previous = _box.Value;
     _box.Value = new TenantBox

@@ -4,7 +4,8 @@ namespace Platform.App.Changes;
 /// The change journal (AppPlatformChange) of the tenant: a grid an application routes with a sealed
 /// service of its own and a read-only feature.
 /// </summary>
-public abstract partial class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null, PlatformAppService? app = null) : GridService<AppPlatformChange>(db, app)
+public abstract partial class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null, PlatformAppService? app = null)
+  : GridService<AppPlatformChange>(db, app)
 {
   protected override bool IsReadOnly => true;
 
@@ -106,7 +107,15 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       .Item("deleted", "Deleted", r => r.Operation == ChangeOperations.Deleted).Color(UiColor.Red);
 
     query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
-    query.SearchBy(r => r.Id, r => r.RowId, r => r.Table, r => r.Operation, r => r.Before, r => r.After, r => r.CorrelationId);
+    query.SearchBy(
+      r => r.Id,
+      r => r.RowId,
+      r => r.Table,
+      r => r.Operation,
+      r => r.Before,
+      r => r.After,
+      r => r.CorrelationId
+    );
     query.Compute(FillChangesAsync);
   }
 

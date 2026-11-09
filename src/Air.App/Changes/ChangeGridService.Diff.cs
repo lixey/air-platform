@@ -27,12 +27,25 @@ public abstract partial class ChangeGridService
     if (change == null)
     {
       var emptyLayout = PanelLayout.Column($"{servicePath}.diff")
-        .Panel("bar", p => p.Model(new NavModel
-        {
-          Key = $"{servicePath}.diff.nav",
-          Start = [new NavCloseModel { Key = "form-close", Label = L["Close"], Icon = UiIcon.Close, Color = UiColor.Slate, Variant = ButtonVariant.Soft }],
-          End = [new NavCloseModel { Key = "close", Icon = UiIcon.Close, Color = UiColor.Slate, Variant = ButtonVariant.Ghost, Title = L["Close"] }]
-        }).Auto().Pinned().Rigid())
+        .Panel(
+          "bar",
+          p => p.Model(
+            new NavModel
+            {
+              Key = $"{servicePath}.diff.nav",
+              Start =
+              [
+                new NavCloseModel
+                  { Key = "form-close", Label = L["Close"], Icon = UiIcon.Close, Color = UiColor.Slate, Variant = ButtonVariant.Soft }
+              ],
+              End =
+              [
+                new NavCloseModel
+                  { Key = "close", Icon = UiIcon.Close, Color = UiColor.Slate, Variant = ButtonVariant.Ghost, Title = L["Close"] }
+              ]
+            }
+          ).Auto().Pinned().Rigid()
+        )
         .Build();
       return new ScreenDto { Layout = emptyLayout, OverlayWidth = PanelSize.Px(560) };
     }
@@ -96,8 +109,22 @@ public abstract partial class ChangeGridService
       beforeDict.TryGetValue(key, out var beforeElem);
       afterDict.TryGetValue(key, out var afterElem);
 
-      var formattedBefore = await FormatAuditPropertyValueAsync(targetDb, efEntity, modL, key, beforeElem, ct);
-      var formattedAfter = await FormatAuditPropertyValueAsync(targetDb, efEntity, modL, key, afterElem, ct);
+      var formattedBefore = await FormatAuditPropertyValueAsync(
+        targetDb,
+        efEntity,
+        modL,
+        key,
+        beforeElem,
+        ct
+      );
+      var formattedAfter = await FormatAuditPropertyValueAsync(
+        targetDb,
+        efEntity,
+        modL,
+        key,
+        afterElem,
+        ct
+      );
 
       if (change.Operation == ChangeOperations.Added && string.IsNullOrEmpty(formattedAfter))
       {
@@ -113,14 +140,16 @@ public abstract partial class ChangeGridService
       var isChanged = change.Operation == ChangeOperations.Modified &&
                       !string.Equals(formattedBefore, formattedAfter, StringComparison.Ordinal);
 
-      fields.Add(new ChangeDiffFieldDto
-      {
-        Key = key,
-        Label = label,
-        Before = formattedBefore,
-        After = formattedAfter,
-        IsChanged = isChanged
-      });
+      fields.Add(
+        new ChangeDiffFieldDto
+        {
+          Key = key,
+          Label = label,
+          Before = formattedBefore,
+          After = formattedAfter,
+          IsChanged = isChanged
+        }
+      );
     }
 
     var navModel = new NavModel
@@ -228,7 +257,8 @@ public abstract partial class ChangeGridService
     Localizer modL,
     string propName,
     JsonElement elem,
-    CancellationToken ct)
+    CancellationToken ct
+  )
   {
     if (elem.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
     {

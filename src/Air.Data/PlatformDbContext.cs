@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
-
 using Platform.Data.Internals;
 
 namespace Platform.Data;
@@ -39,7 +38,7 @@ public abstract class PlatformDbContext : DbContext
   public DbSet<Entities.AppPlatformChange> AppPlatformChange => Set<Entities.AppPlatformChange>();
 
   public long RequiredTenantId => TenantContext.TenantId
-    ?? throw new InvalidOperationException("Operation requires an active tenant, but none was resolved.");
+                                  ?? throw new InvalidOperationException("Operation requires an active tenant, but none was resolved.");
 
   private MutationRunScope? _activeMutationRun;
 
@@ -62,56 +61,63 @@ public abstract class PlatformDbContext : DbContext
       parentRun.Depth++;
       var nestedDisposed = 0;
       return new NestedMutationScope(() =>
-      {
-        if (Interlocked.Exchange(ref nestedDisposed, 1) == 0 &&
-            ReferenceEquals(_activeMutationRun, parentRun) &&
-            --parentRun.Depth <= 0)
         {
-          _activeMutationRun = null;
+          if (Interlocked.Exchange(ref nestedDisposed, 1) == 0 &&
+              ReferenceEquals(_activeMutationRun, parentRun) &&
+              --parentRun.Depth <= 0)
+          {
+            _activeMutationRun = null;
+          }
         }
-      });
+      );
     }
 
     MutationRunScope? scope = null;
     var rootDisposed = 0;
     scope = new MutationRunScope(() =>
-    {
-      if (Interlocked.Exchange(ref rootDisposed, 1) == 0 &&
-          scope is not null &&
-          ReferenceEquals(_activeMutationRun, scope) &&
-          --scope.Depth <= 0)
       {
-        _activeMutationRun = null;
+        if (Interlocked.Exchange(ref rootDisposed, 1) == 0 &&
+            scope is not null &&
+            ReferenceEquals(_activeMutationRun, scope) &&
+            --scope.Depth <= 0)
+        {
+          _activeMutationRun = null;
+        }
       }
-    });
+    );
     _activeMutationRun = scope;
     return scope;
   }
 
-  private static readonly ConcurrentDictionary<(Type ContextType, Type BaseType), Func<PlatformDbContext, object?>?> BaseSetAccessors = new();
+  private static readonly ConcurrentDictionary<(Type ContextType, Type BaseType), Func<PlatformDbContext, object?>?> BaseSetAccessors =
+    new();
 
   public IQueryable<TBase>? SetOfBase<TBase>() where TBase : class
   {
-    var accessor = BaseSetAccessors.GetOrAdd((GetType(), typeof(TBase)), key =>
-    {
-      var clrType = Model.GetEntityTypes()
-        .Select(t => t.ClrType)
-        .FirstOrDefault(t => !t.IsAbstract && key.BaseType.IsAssignableFrom(t));
-      if (clrType is null)
+    var accessor = BaseSetAccessors.GetOrAdd(
+      (GetType(), typeof(TBase)),
+      key =>
       {
-        return null;
-      }
+        var clrType = Model.GetEntityTypes()
+          .Select(t => t.ClrType)
+          .FirstOrDefault(t => !t.IsAbstract && key.BaseType.IsAssignableFrom(t));
+        if (clrType is null)
+        {
+          return null;
+        }
 
-      var ctxParam = Expression.Parameter(typeof(PlatformDbContext), "ctx");
-      var call = Expression.Call(ctxParam, nameof(Set), [clrType]);
-      return Expression.Lambda<Func<PlatformDbContext, object?>>(call, ctxParam).Compile();
-    });
+        var ctxParam = Expression.Parameter(typeof(PlatformDbContext), "ctx");
+        var call = Expression.Call(ctxParam, nameof(Set), [clrType]);
+        return Expression.Lambda<Func<PlatformDbContext, object?>>(call, ctxParam).Compile();
+      }
+    );
     return (IQueryable<TBase>?)accessor?.Invoke(this);
   }
 
   public async Task<Dictionary<long, string>> LoadUserNamesAsync(
     IReadOnlyCollection<long> userIds,
-    CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default
+  )
   {
     var result = new Dictionary<long, string>();
     if (userIds.Count == 0 || SetOfBase<BaseAppUser>() is not { } userQuery)
@@ -161,7 +167,8 @@ public abstract class PlatformDbContext : DbContext
           nameof(EF.Property),
           [typeof(long)],
           parameter,
-          Expression.Constant(nameof(IHasTenant.TenantId)));
+          Expression.Constant(nameof(IHasTenant.TenantId))
+        );
 
         var tenantIdExpr = Expression.Property(Expression.Constant(this), nameof(TenantContext));
         var isSystemScopeExpr = Expression.Property(tenantIdExpr, nameof(ITenantContext.IsSystemScope));
@@ -184,7 +191,8 @@ public abstract class PlatformDbContext : DbContext
           nameof(EF.Property),
           [typeof(long?)],
           parameter,
-          Expression.Constant(nameof(IInheritedByChildTenants.TenantId)));
+          Expression.Constant(nameof(IInheritedByChildTenants.TenantId))
+        );
 
         var tenantIdExpr = Expression.Property(Expression.Constant(this), nameof(TenantContext));
         var isSystemScopeExpr = Expression.Property(tenantIdExpr, nameof(ITenantContext.IsSystemScope));
@@ -212,10 +220,11 @@ public abstract class PlatformDbContext : DbContext
           continue;
         }
 
-        key.DeleteBehavior = (typeof(BaseAppAuthAssignment).IsAssignableFrom(clrType) || typeof(BaseAppAuthSession).IsAssignableFrom(clrType)) &&
-                             key.Properties.Any(p => p.Name == nameof(BaseAppAuthAssignment.UserId))
-          ? DeleteBehavior.Cascade
-          : DeleteBehavior.Restrict;
+        key.DeleteBehavior =
+          (typeof(BaseAppAuthAssignment).IsAssignableFrom(clrType) || typeof(BaseAppAuthSession).IsAssignableFrom(clrType)) &&
+          key.Properties.Any(p => p.Name == nameof(BaseAppAuthAssignment.UserId))
+            ? DeleteBehavior.Cascade
+            : DeleteBehavior.Restrict;
       }
     }
   }
@@ -246,7 +255,8 @@ public abstract class PlatformDbContext : DbContext
       return res;
     }
 
-    if (_suppressAllAudit || !ChangeTracker.Entries().Any(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+    if (_suppressAllAudit || !ChangeTracker.Entries()
+          .Any(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
     {
       return base.SaveChanges(acceptAllChangesOnSuccess);
     }
@@ -254,28 +264,29 @@ public abstract class PlatformDbContext : DbContext
     if (Database.CurrentTransaction == null && Database.IsRelational())
     {
       var res = Database.CreateExecutionStrategy().Execute(() =>
-      {
-        var standaloneRun = new MutationRunScope(static () => { });
-        var standalonePending = CaptureRunFlushStates(standaloneRun);
-        var trackedStates = CaptureTrackedStates();
-        using var tx = Database.BeginTransaction();
-        try
         {
-          var count = SaveStandaloneWithJournal(standaloneRun, standalonePending);
-          tx.Commit();
-          if (!acceptAllChangesOnSuccess)
+          var standaloneRun = new MutationRunScope(static () => { });
+          var standalonePending = CaptureRunFlushStates(standaloneRun);
+          var trackedStates = CaptureTrackedStates();
+          using var tx = Database.BeginTransaction();
+          try
+          {
+            var count = SaveStandaloneWithJournal(standaloneRun, standalonePending);
+            tx.Commit();
+            if (!acceptAllChangesOnSuccess)
+            {
+              RestoreTrackedStates(trackedStates);
+            }
+
+            return count;
+          }
+          catch
           {
             RestoreTrackedStates(trackedStates);
+            throw;
           }
-
-          return count;
         }
-        catch
-        {
-          RestoreTrackedStates(trackedStates);
-          throw;
-        }
-      });
+      );
       return res;
     }
 
@@ -316,7 +327,8 @@ public abstract class PlatformDbContext : DbContext
       return res;
     }
 
-    if (_suppressAllAudit || !ChangeTracker.Entries().Any(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+    if (_suppressAllAudit || !ChangeTracker.Entries()
+          .Any(e => IsJournaled(e) && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
     {
       return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
@@ -324,28 +336,29 @@ public abstract class PlatformDbContext : DbContext
     if (Database.CurrentTransaction == null && Database.IsRelational())
     {
       var res = await Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-      {
-        var standaloneRun = new MutationRunScope(static () => { });
-        var standalonePending = CaptureRunFlushStates(standaloneRun);
-        var trackedStates = CaptureTrackedStates();
-        await using var tx = await Database.BeginTransactionAsync(cancellationToken);
-        try
         {
-          var count = await SaveStandaloneWithJournalAsync(standaloneRun, standalonePending, cancellationToken);
-          await tx.CommitAsync(cancellationToken);
-          if (!acceptAllChangesOnSuccess)
+          var standaloneRun = new MutationRunScope(static () => { });
+          var standalonePending = CaptureRunFlushStates(standaloneRun);
+          var trackedStates = CaptureTrackedStates();
+          await using var tx = await Database.BeginTransactionAsync(cancellationToken);
+          try
+          {
+            var count = await SaveStandaloneWithJournalAsync(standaloneRun, standalonePending, cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            if (!acceptAllChangesOnSuccess)
+            {
+              RestoreTrackedStates(trackedStates);
+            }
+
+            return count;
+          }
+          catch
           {
             RestoreTrackedStates(trackedStates);
+            throw;
           }
-
-          return count;
         }
-        catch
-        {
-          RestoreTrackedStates(trackedStates);
-          throw;
-        }
-      });
+      );
       return res;
     }
 
@@ -395,7 +408,8 @@ public abstract class PlatformDbContext : DbContext
 
   private int SaveStandaloneWithJournal(
     MutationRunScope run,
-    List<MutationRunEntryState> pending)
+    List<MutationRunEntryState> pending
+  )
   {
     var result = base.SaveChanges(acceptAllChangesOnSuccess: false);
     CompleteRunFlushStates(pending);
@@ -412,7 +426,8 @@ public abstract class PlatformDbContext : DbContext
   private async Task<int> SaveStandaloneWithJournalAsync(
     MutationRunScope run,
     List<MutationRunEntryState> pending,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken
+  )
   {
     var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
     CompleteRunFlushStates(pending);
@@ -459,7 +474,8 @@ public abstract class PlatformDbContext : DbContext
   private async Task PersistJournalRowsAsync(
     bool acceptAllChangesOnSuccess,
     List<Entities.AppPlatformChange> journalRows,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken
+  )
   {
     try
     {
@@ -696,7 +712,9 @@ public abstract class PlatformDbContext : DbContext
         var changedProps = state.TouchedProperties
           .Where(prop => !Equals(state.FirstBefore.GetValueOrDefault(prop), state.LatestAfter.GetValueOrDefault(prop)))
           .ToList();
-        if (!changedProps.Any(prop => prop is not (nameof(IHasTimestamps.UpdatedAt) or nameof(IHasTimestamps.CreatedAt) or nameof(IHasVersion.Ver))))
+        if (!changedProps.Any(prop =>
+              prop is not (nameof(IHasTimestamps.UpdatedAt) or nameof(IHasTimestamps.CreatedAt) or nameof(IHasVersion.Ver))
+            ))
         {
           continue;
         }
@@ -776,7 +794,8 @@ public abstract class PlatformDbContext : DbContext
            entry.Properties.Any(p => p.IsModified &&
                                      !Equals(p.OriginalValue, p.CurrentValue) &&
                                      p.Metadata.Name != nameof(IHasVersion.Ver) &&
-                                     !auditMeta.ExcludedProperties.Contains(p.Metadata.Name));
+                                     !auditMeta.ExcludedProperties.Contains(p.Metadata.Name)
+           );
   }
 
   private bool ChangesNoAuditOnly(EntityEntry entry)
@@ -837,9 +856,7 @@ public abstract class PlatformDbContext : DbContext
           var origTid = entry.Property(nameof(IHasTenant.TenantId)).OriginalValue as long? ?? existingTenant.TenantId;
           if (origTid != 0 && origTid != tenantId.Value || existingTenant.TenantId != 0 && existingTenant.TenantId != tenantId.Value)
           {
-            throw new InvalidOperationException(
-              $"Cannot modify or delete {entry.Metadata.ClrType.Name} belonging to another tenant."
-            );
+            throw new InvalidOperationException($"Cannot modify or delete {entry.Metadata.ClrType.Name} belonging to another tenant.");
           }
         }
 
@@ -873,9 +890,7 @@ public abstract class PlatformDbContext : DbContext
           }
           else if (tenantId.HasValue && tenantEntity.TenantId != tenantId.Value)
           {
-            throw new InvalidOperationException(
-              $"Cannot insert {entry.Metadata.ClrType.Name} belonging to another tenant."
-            );
+            throw new InvalidOperationException($"Cannot insert {entry.Metadata.ClrType.Name} belonging to another tenant.");
           }
         }
 
@@ -889,9 +904,7 @@ public abstract class PlatformDbContext : DbContext
             }
             else if (inherited.TenantId != tenantId.Value)
             {
-              throw new InvalidOperationException(
-                $"Cannot insert inherited {entry.Metadata.ClrType.Name} belonging to another tenant."
-              );
+              throw new InvalidOperationException($"Cannot insert inherited {entry.Metadata.ClrType.Name} belonging to another tenant.");
             }
           }
           else if (inherited.TenantId == 0)
@@ -970,9 +983,12 @@ public abstract class PlatformDbContext : DbContext
 
   private sealed class LocalDateTimeConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
     v => DateTime.SpecifyKind(v, DateTimeKind.Unspecified),
-    v => DateTime.SpecifyKind(v, DateTimeKind.Unspecified));
+    v => DateTime.SpecifyKind(v, DateTimeKind.Unspecified)
+  );
 
-  private sealed class UtcOffsetConverter() : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimeOffset, DateTimeOffset>(
-    v => v.ToUniversalTime(),
-    v => v.ToUniversalTime());
+  private sealed class UtcOffsetConverter()
+    : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimeOffset, DateTimeOffset>(
+      v => v.ToUniversalTime(),
+      v => v.ToUniversalTime()
+    );
 }
