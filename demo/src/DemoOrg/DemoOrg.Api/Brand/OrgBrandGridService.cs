@@ -19,7 +19,7 @@ public sealed class OrgBrandGridService(OrgDbContext db, OrgService? org = null)
   protected override void SetHooks(Hooks hooks)
   {
     var inUse = L["The brand is used by products and cannot be deleted."];
-    hooks.ValidateDelete(async (c, cancellationToken) =>
+    hooks.BeforeDelete(async (c, cancellationToken) =>
     {
       var selected = c.Records.Select(r => r.Id).ToList();
       var used = await db.OrgProduct.Where(product => selected.Contains(product.BrandId))

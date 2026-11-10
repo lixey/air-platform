@@ -19,7 +19,7 @@ public sealed class OrgDeliveryTypeGridService(OrgDbContext db, OrgService? org 
   protected override void SetHooks(Hooks hooks)
   {
     var inUse = L["The delivery type is used by customers and cannot be deleted."];
-    hooks.ValidateDelete(async (c, cancellationToken) =>
+    hooks.BeforeDelete(async (c, cancellationToken) =>
     {
       var selected = c.Records.Select(r => (long?)r.Id).ToList();
       var used = await db.OrgCustomer.Where(customer => selected.Contains(customer.DeliveryTypeId))

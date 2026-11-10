@@ -26,7 +26,7 @@ public abstract class EcomDocGridService(EcomDbContext db, EcomService? ecom = n
   }
 
   protected override void SetHooks(Hooks hooks) =>
-    hooks.ValidateDelete((c, cancellationToken) => EcomDocActions.RefuseDeleteAsync(
+    hooks.BeforeDelete((c, cancellationToken) => EcomDocActions.RefuseDeleteAsync(
         db,
         c,
         Type,

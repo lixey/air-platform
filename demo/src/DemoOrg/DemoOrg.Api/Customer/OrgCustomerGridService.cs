@@ -29,7 +29,7 @@ public sealed class OrgCustomerGridService(OrgDbContext db, OrgService? org = nu
   protected override void SetHooks(Hooks hooks)
   {
     var inUse = L["The customer has a counterparty and cannot be deleted."];
-    hooks.ValidateDelete(async (c, cancellationToken) =>
+    hooks.BeforeDelete(async (c, cancellationToken) =>
     {
       var selected = c.Records.Select(r => (long?)r.Id).ToList();
       var used = await db.OrgCounterparty.Where(counterparty => selected.Contains(counterparty.CustomerId))

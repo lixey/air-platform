@@ -19,7 +19,7 @@ public sealed class OrgProductCategoryGridService(OrgDbContext db, OrgService? o
   protected override void SetHooks(Hooks hooks)
   {
     var inUse = L["The product category is used by products and cannot be deleted."];
-    hooks.ValidateDelete(async (c, cancellationToken) =>
+    hooks.BeforeDelete(async (c, cancellationToken) =>
     {
       var selected = c.Records.Select(r => (long?)r.Id).ToList();
       var used = await db.OrgProduct.Where(product => selected.Contains(product.CategoryId))
