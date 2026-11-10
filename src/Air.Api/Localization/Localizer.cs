@@ -297,7 +297,7 @@ public sealed class Localizer : ILocalizer
     }
   }
 
-  public string of(string key) => this[key];
+  public string Of(string key) => this[key];
 
   public string this[string key, params object[] args]
   {
