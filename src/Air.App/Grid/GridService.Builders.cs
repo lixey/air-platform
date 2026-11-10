@@ -586,7 +586,7 @@ public abstract partial class GridService<TEntity, TRow>
     private readonly Localizer _l = localizer ?? Localizer.Instance;
     internal List<NavActionEntry> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
-    internal List<(Type SourceType, GridNavPickerModel Model)> PickerEntries { get; } = [];
+    internal List<(Type SourceType, MethodInfo Method, GridNavPickerModel Model)> PickerEntries { get; } = [];
     internal List<NavElementModel> CustomStart { get; } = [];
     internal List<(Type FormType, GridNavAddModel Model)> Creates { get; } = [];
 
@@ -614,41 +614,22 @@ public abstract partial class GridService<TEntity, TRow>
       Delegate method,
       Action<ButtonBuilder>? look = null,
       string? confirm = null,
-      bool needsSelection = true)
-    {
-      var b = new ButtonBuilder();
-      look?.Invoke(b);
-      var rawLabel = b.LabelText ?? method.Method.Name;
-      var action = new GridNavActionModel
-      {
-        Service = servicePath,
-        Key = method.Method.Name.ToLowerInvariant(),
-        Method = method.Method.Name,
-        Label = _l[rawLabel],
-        Title = b.TitleText != null ? _l[b.TitleText] : null,
-        Icon = b.IconHandle,
-        Color = b.ColorHandle ?? UiColor.Blue,
-        Variant = b.VariantHandle ?? ButtonVariant.Soft,
-        NeedsSelection = needsSelection,
-        IsSingle = b.IsSingle,
-        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = UiColor.Red } : null
-      };
-      var entry = new NavActionEntry
-      {
-        Model = action,
-        IsInMenu = b.IsInMenu,
-        Method = method
-      };
-      Actions.Add(entry);
-      return new NavActionBuilder(entry, this);
-    }
+      bool needsSelection = true) =>
+      new(CreateActionEntry(method, look, confirm, needsSelection), this);
 
     public NavActionBuilder<TRequest> AddAction<TRequest>(
       Delegate method,
       Action<ButtonBuilder>? look = null,
       string? confirm = null,
       bool needsSelection = true)
-      where TRequest : class, new()
+      where TRequest : class, new() =>
+      new(CreateActionEntry(method, look, confirm, needsSelection), this);
+
+    private NavActionEntry CreateActionEntry(
+      Delegate method,
+      Action<ButtonBuilder>? look,
+      string? confirm,
+      bool needsSelection)
     {
       var b = new ButtonBuilder();
       look?.Invoke(b);
@@ -674,7 +655,7 @@ public abstract partial class GridService<TEntity, TRow>
         Method = method
       };
       Actions.Add(entry);
-      return new NavActionBuilder<TRequest>(entry, this);
+      return entry;
     }
 
     public void AvailableWhen(
@@ -715,7 +696,7 @@ public abstract partial class GridService<TEntity, TRow>
         ReadsParent = readsParent
       };
       Pickers.Add(picker);
-      PickerEntries.Add((typeof(TSource), picker));
+      PickerEntries.Add((typeof(TSource), method.Method, picker));
       return new NavPickerBuilder(picker);
     }
   }

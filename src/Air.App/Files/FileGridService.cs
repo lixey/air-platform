@@ -304,9 +304,9 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   }
 
   private bool CanReadFileMetadata() =>
-    Feature.Rights.Any(r => r.Key.EndsWith(".FileMetadata", StringComparison.OrdinalIgnoreCase)) &&
+    Feature.TryGetRight("FileMetadata", out var right) &&
     User is { IsAuthenticated: true } &&
-    (User.Can(Feature.Action("FileMetadata")) ||
+    (User.Can(right) ||
      User.Can(Feature.All) ||
      User.Can("*"));
 

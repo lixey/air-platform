@@ -255,10 +255,9 @@ public class PlatformAppService(
   /// </summary>
   public bool CanOpen(Type screen)
   {
-    var feat = Feature.FeaturesByServiceType.TryGetValue(screen, out var f)
-      ? f
-      : ModuleCatalog.Instance.FindFeature(ServicePathResolver.Resolve(screen));
-    return feat == null || Host.ServiceEndpointsExtensions.CanView(feat, User);
+    var feat = ModuleCatalog.Instance.FindFeature(screen)
+      ?? ModuleCatalog.Instance.FindFeature(ServicePathResolver.Resolve(screen));
+    return feat != null && Host.ServiceEndpointsExtensions.CanView(feat, User);
   }
 
   /// <summary>

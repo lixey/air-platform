@@ -60,6 +60,7 @@ public sealed class AppAgentModelGridService(
       needsSelection: true);
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public async Task<GridActionDto> RefreshModels(GridRequest request, CancellationToken ct = default)
   {
     ParentService = request.ParentService;
@@ -78,6 +79,7 @@ public sealed class AppAgentModelGridService(
     return new GridActionDto { Outcome = MutationOutcome.Committed };
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public async Task<GridActionDto> SetAsDefault(GridRequest request, CancellationToken ct = default)
   {
     var targetId = request.SelectedIds?.FirstOrDefault() ?? request.Id;
@@ -90,6 +92,7 @@ public sealed class AppAgentModelGridService(
     return new GridActionDto { Outcome = ok ? MutationOutcome.Committed : MutationOutcome.Refused };
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public async Task<GridActionDto> SetForPhotos(GridRequest request, CancellationToken ct = default)
   {
     var targetId = request.SelectedIds?.FirstOrDefault() ?? request.Id;
@@ -102,6 +105,7 @@ public sealed class AppAgentModelGridService(
     return new GridActionDto { Outcome = ok ? MutationOutcome.Committed : MutationOutcome.Refused };
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default) =>
     ExecuteBatchAsync(request, async (context, token) =>
     {

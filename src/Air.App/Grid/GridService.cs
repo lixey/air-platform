@@ -16,12 +16,13 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   protected virtual void SetUserRestrictions(UserRestrictions restrictions) { }
 
-  public virtual Feature Feature => new("", GetType().Name.Replace("GridService", "").ToLowerInvariant(), GetType());
+  public abstract Feature Feature { get; }
 
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
-    PlatformApp != null && (User is not { IsAuthenticated: true } || !ServiceEndpointsExtensions.CanEdit(Feature, User));
+    User is not { IsAuthenticated: true } ||
+    !ServiceEndpointsExtensions.CanEdit(Feature, User);
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
 
@@ -177,15 +178,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     {
       if (deleteMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true) is { } reqRight)
       {
-        if (Feature.FeaturesByServiceType.TryGetValue(reqRight.Service, out var targetFeat))
-        {
-          return User.Can(targetFeat.Action(reqRight.ActionName)) || User.Can(targetFeat.All);
-        }
+        var targetFeat = ModuleCatalog.Instance.FindFeature(reqRight.Service);
+        return targetFeat != null &&
+               (targetFeat.TryGetRight(reqRight.ActionName, out var right) && User.Can(right) ||
+                User.Can(targetFeat.All));
       }
 
       if (deleteMethod.GetCustomAttribute<RequireActionAttribute>(inherit: true) is { } reqAction)
       {
-        return User.Can(Feature.Action(reqAction.ActionName)) || User.Can(Feature.All);
+        return Feature.TryGetRight(reqAction.ActionName, out var right) && User.Can(right) ||
+               User.Can(Feature.All);
       }
     }
 
@@ -320,7 +322,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), createFormType, "Nav.AddCreate");
     }
 
-    foreach (var (pickerSourceType, pickerModel) in nav.PickerEntries)
+    foreach (var (pickerSourceType, _, pickerModel) in nav.PickerEntries)
     {
       ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), pickerSourceType, $"Nav.AddPicker '{pickerModel.Key}'");
     }
@@ -350,6 +352,39 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public void RegisterMetadata() => CreateColumns();
 
+  void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
+  {
+    _ = GetParent();
+    var cols = CreateColumns();
+    foreach (var col in cols.List)
+    {
+      if (col.PickerTargetMethod != null && !ServiceEndpointsExtensions.IsCallableServiceAction(col.PickerTargetMethod))
+      {
+        throw new InvalidOperationException(
+          $"Grid picker method '{GetType().FullName}.{col.PickerTargetMethod.Name}' registered via PickedBy on '{col.Path}' must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
+      }
+    }
+
+    var nav = GetNav();
+    foreach (var entry in nav.Actions)
+    {
+      if (!ServiceEndpointsExtensions.IsCallableServiceAction(entry.Method.Method))
+      {
+        throw new InvalidOperationException(
+          $"Grid action method '{GetType().FullName}.{entry.Method.Method.Name}' registered via Nav.AddAction must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
+      }
+    }
+
+    foreach (var (_, pickerMethod, _) in nav.PickerEntries)
+    {
+      if (!ServiceEndpointsExtensions.IsCallableServiceAction(pickerMethod))
+      {
+        throw new InvalidOperationException(
+          $"Grid picker method '{GetType().FullName}.{pickerMethod.Name}' registered via Nav.AddPicker must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
+      }
+    }
+  }
+
   private Columns CreateColumns()
   {
     var cols = new Columns();
@@ -357,11 +392,21 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     SetColumns((Columns<TRow>)cols);
     ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.FormServiceType, "AsOpenForm / UseForm");
     ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.CoverFileGridType, "AsCover");
+    if (cols.StatusFlow != null)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.StatusFlow.GetType(), "UseStatusOf");
+    }
+
     foreach (var col in cols.List)
     {
       if (col.PickerSourceType != null)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.PickerSourceType, $"PickedBy on '{col.Path}'");
+      }
+
+      if (col.ReferenceServiceType != null)
+      {
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.ReferenceServiceType, $"AsReference on '{col.Path}'");
       }
     }
 
@@ -405,28 +450,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return [];
     }
 
-    var servicePath = ServicePathResolver.Resolve(GetType());
-    var nav = GetNav(servicePath);
-    if (nav.Creates.Count > 0)
-    {
-      return nav.Creates
-        .Select(c => new GridCreateDescriptor(
-          c.FormType,
-          c.Model.Service ?? ServicePathResolver.Resolve(c.FormType),
-          c.Model.Label ?? c.Model.Title ?? L["Add"],
-          c.Model.Color))
-        .ToList();
-    }
-
-    var columns = CreateColumns();
-    var formType = ResolveFormServiceType(columns);
-    var formPath = ResolveFormServicePath(columns);
-    if (formType != null && !string.IsNullOrEmpty(formPath))
-    {
-      return [new GridCreateDescriptor(formType, formPath, L[Feature.Label], UiColor.Orange)];
-    }
-
-    return [];
+    return ResolveDeclaredCreateForms();
   }
 
   public virtual IReadOnlyList<GridCreateDescriptor> GetAgentForms()
@@ -436,12 +460,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return [];
     }
 
-    var creates = GetCreateForms();
-    if (creates.Count > 0)
-    {
-      return creates;
-    }
+    var forms = GetCreateForms();
+    return forms.Count > 0 ? forms : ResolveDeclaredCreateForms();
+  }
 
+  private IReadOnlyList<GridCreateDescriptor> ResolveDeclaredCreateForms()
+  {
     var servicePath = ServicePathResolver.Resolve(GetType());
     var nav = GetNav(servicePath);
     if (nav.Creates.Count > 0)

@@ -7,7 +7,7 @@ namespace Platform.Api.Auth;
 /// </summary>
 public static class SessionTokenService
 {
-  private static byte[] _secretKey = DeriveDefaultKey();
+  private static byte[] SecretKey { get => field ??= DeriveDefaultKey(); set; }
 
   public static void ConfigureSecret(string? secret)
   {
@@ -19,12 +19,12 @@ public static class SessionTokenService
         throw new InvalidOperationException("Auth:TokenSecret must be at least 32 characters long.");
       }
 
-      _secretKey = SHA256.HashData(Encoding.UTF8.GetBytes(trimmed));
+      SecretKey = SHA256.HashData(Encoding.UTF8.GetBytes(trimmed));
     }
   }
 
   internal static byte[] DeriveSubKey(string purpose) =>
-    HMACSHA256.HashData(_secretKey, Encoding.UTF8.GetBytes(purpose));
+    HMACSHA256.HashData(SecretKey, Encoding.UTF8.GetBytes(purpose));
 
   private static byte[] DeriveDefaultKey()
   {
@@ -154,7 +154,7 @@ public static class SessionTokenService
 
   private static string Sign(string payload)
   {
-    using var hmac = new HMACSHA256(_secretKey);
+    using var hmac = new HMACSHA256(SecretKey);
     var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
     return Convert.ToHexString(hash).ToLowerInvariant();
   }

@@ -7,4 +7,6 @@ public interface IPlatformService
 {
   Feature Feature { get; }
   void AttachPlatformApp(PlatformAppService app) { }
+  IEnumerable<string> GetDeclaredActions() => [];
+  void ValidateConfiguration(ModuleCatalog catalog) { }
 }

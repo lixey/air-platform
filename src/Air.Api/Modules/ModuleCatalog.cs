@@ -2,102 +2,168 @@ namespace Platform.Api.Modules;
 
 public sealed class ModuleCatalog
 {
+  private static readonly ConcurrentDictionary<Type, Type?> ServiceDbContextCache = new();
+  private static readonly IServiceProvider EmptyServiceProvider = new ServiceCollection().BuildServiceProvider();
+
   public static ModuleCatalog Instance { get; set; } = new();
 
+  private readonly Lock _sync = new();
   private readonly Dictionary<string, Feature> _featuresByPath = new(StringComparer.OrdinalIgnoreCase);
+  private readonly Dictionary<string, Feature> _featuresByKey = new(StringComparer.OrdinalIgnoreCase);
+  private readonly Dictionary<Type, Feature> _featuresByServiceType = [];
   private readonly Dictionary<string, Type> _servicesByPath = new(StringComparer.OrdinalIgnoreCase);
   private readonly List<IPlatformModule> _modules = [];
   private readonly List<Type> _dbContextTypes = [];
 
-  public ModuleCatalog()
-  {
-    Instance = this;
-  }
-
   public IReadOnlyList<IPlatformModule> Modules => _modules;
   public IReadOnlyList<Type> DbContextTypes => _dbContextTypes;
-  public IEnumerable<Feature> AllFeatures => _featuresByPath.Values.Distinct();
+  public IEnumerable<Feature> AllFeatures => _featuresByKey.Values;
   public IEnumerable<Type> AllServiceTypes => _servicesByPath.Values.Distinct();
 
   public void Register(IPlatformModule module)
   {
-    _modules.Add(module);
-
-    foreach (var feat in module.Features)
+    ArgumentNullException.ThrowIfNull(module);
+    lock (_sync)
     {
-      RegisterFeature(feat);
+      if (_modules.Any(m => m.GetType() == module.GetType()))
+      {
+        return;
+      }
+
+      CodeRows.EnsurePascalCaseHandle(module.Handle, $"Module '{module.GetType().Name}'");
+      if (_modules.Any(m => string.Equals(m.Handle, module.Handle, StringComparison.OrdinalIgnoreCase)))
+      {
+        throw new InvalidOperationException(
+          $"Duplicate module handle '{module.Handle}' registered by '{module.GetType().Name}'.");
+      }
+
+      _modules.Add(module);
+
+      var moduleFeatures = new List<Feature>();
+      foreach (var feat in module.Features)
+      {
+        RegisterFeature(feat);
+        moduleFeatures.Add(feat);
+      }
+
+      foreach (var node in Flatten(module.Menu.Nodes))
+      {
+        if (node.Feature is not null)
+        {
+          RegisterFeature(node.Feature);
+          if (!moduleFeatures.Contains(node.Feature))
+          {
+            moduleFeatures.Add(node.Feature);
+          }
+        }
+      }
+
+      var assemblyTypes = module.GetType().Assembly.GetTypes();
+      foreach (var t in assemblyTypes)
+      {
+        if (t is { IsClass: true, IsAbstract: false } && GetServiceDbContextType(t) is { IsAbstract: false } ctxType && !_dbContextTypes.Contains(ctxType))
+        {
+          _dbContextTypes.Add(ctxType);
+        }
+      }
+
+      var knownHandles = _modules.Select(m => m.Handle).ToArray();
+      var serviceTypes = GetModuleServiceTypes(module, knownHandles);
+
+      foreach (var st in serviceTypes)
+      {
+        var path = ServicePathResolver.Resolve(st, knownHandles);
+        if (_servicesByPath.TryGetValue(path, out var existingService) && existingService != st)
+        {
+          throw new InvalidOperationException(
+            $"Duplicate canonical service route '{path}': both '{existingService.FullName}' and '{st.FullName}' map to the same path.");
+        }
+
+        _servicesByPath[path] = st;
+
+        if (CreateServiceInstance(st) is IPlatformService ps)
+        {
+          var svcFeat = ps.Feature;
+          if (svcFeat is not null)
+          {
+            _featuresByServiceType[st] = svcFeat;
+            DiscoverAndRegisterServiceActions(st, ps, svcFeat);
+          }
+        }
+      }
+
+      foreach (var feat in moduleFeatures)
+      {
+        feat.Freeze();
+      }
+    }
+  }
+
+  private static void DiscoverAndRegisterServiceActions(Type serviceType, IPlatformService serviceInstance, Feature feature)
+  {
+    foreach (var method in serviceType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+    {
+      if (method.GetCustomAttribute<RequireActionAttribute>(inherit: true) is { FallbackToView: false } reqAct &&
+          !Right.StandardActions.Contains(reqAct.ActionName) &&
+          !feature.HasAction(reqAct.ActionName))
+      {
+        if (feature.IsFrozen)
+        {
+          throw new InvalidOperationException(
+            $"Service '{serviceType.FullName}' cannot add custom action '{reqAct.ActionName}' to already-frozen feature '{feature.Key}'. Declare the right on '{feature.Key}' in its owning module.");
+        }
+
+        feature.Action(reqAct.ActionName);
+      }
     }
 
-    foreach (var node in Flatten(module.Menu.Nodes))
+    foreach (var declared in serviceInstance.GetDeclaredActions())
     {
-      if (node.Feature is not null)
+      if (!string.IsNullOrWhiteSpace(declared) &&
+          !Right.StandardActions.Contains(declared) &&
+          !feature.HasAction(declared))
       {
-        RegisterFeature(node.Feature);
-      }
-    }
+        if (feature.IsFrozen)
+        {
+          throw new InvalidOperationException(
+            $"Service '{serviceType.FullName}' cannot add flow/custom action '{declared}' to already-frozen feature '{feature.Key}'. Declare the right on '{feature.Key}' in its owning module.");
+        }
 
-    var serviceTypes = module.GetType().Assembly.GetTypes()
-      .Where(t => t is { IsClass: true, IsAbstract: false } &&
-                  (typeof(IPlatformService).IsAssignableFrom(t) || t.Name.EndsWith("GridService") || t.Name.EndsWith("FormService") || t.Name.EndsWith("Service")));
-    foreach (var st in serviceTypes)
-    {
-      if (GetServiceDbContextType(st) is { IsAbstract: false } ctxType && !_dbContextTypes.Contains(ctxType))
-      {
-        _dbContextTypes.Add(ctxType);
-      }
-
-      var path = ServicePathResolver.Resolve(st);
-      _servicesByPath[path] = st;
-      _servicesByPath[path.Replace('/', '-')] = st;
-      _servicesByPath[path.Replace("-", "")] = st;
-      _servicesByPath[path.Replace("-", "").Replace('/', '-')] = st;
-      _servicesByPath[st.Name] = st;
-
-      var clean = st.Name;
-      if (clean.EndsWith("Service", StringComparison.OrdinalIgnoreCase))
-      {
-        clean = clean[..^"Service".Length];
-      }
-
-      _servicesByPath[clean] = st;
-
-      if (path.EndsWith("-grid", StringComparison.OrdinalIgnoreCase))
-      {
-        var noGrid = path[..^"-grid".Length];
-        _servicesByPath[noGrid] = st;
-        _servicesByPath[noGrid.Replace('/', '-')] = st;
-        _servicesByPath[noGrid.Replace("-", "")] = st;
-      }
-      else if (path.EndsWith("-form", StringComparison.OrdinalIgnoreCase))
-      {
-        var noForm = path[..^"-form".Length];
-        _servicesByPath[noForm + "form"] = st;
-        _servicesByPath[(noForm + "form").Replace('/', '-')] = st;
-        _servicesByPath[(noForm + "form").Replace("-", "")] = st;
+        feature.Action(declared);
       }
     }
   }
 
   private void RegisterFeature(Feature feat)
   {
+    ArgumentNullException.ThrowIfNull(feat);
+    if (_featuresByKey.TryGetValue(feat.Key, out var existingByKey) && !ReferenceEquals(existingByKey, feat))
+    {
+      throw new InvalidOperationException($"Duplicate feature key '{feat.Key}'.");
+    }
+
+    if (_featuresByPath.TryGetValue(feat.Path, out var existingByPath) && !ReferenceEquals(existingByPath, feat))
+    {
+      throw new InvalidOperationException(
+        $"Duplicate feature path '{feat.Path}' between '{existingByPath.Key}' and '{feat.Key}'.");
+    }
+
+    _featuresByKey[feat.Key] = feat;
     _featuresByPath[feat.Path] = feat;
-    _featuresByPath[feat.Path.Replace('/', '-')] = feat;
-    _featuresByPath[feat.Path.Replace("-", "")] = feat;
-    _featuresByPath[feat.Path.Replace("-", "").Replace('/', '-')] = feat;
-    _featuresByPath[feat.Name] = feat;
-    _featuresByPath[feat.CleanName] = feat;
+
     if (feat.ServiceType != null)
     {
+      _featuresByServiceType[feat.ServiceType] = feat;
       var servicePath = ServicePathResolver.Resolve(feat.ServiceType);
       _featuresByPath[servicePath] = feat;
-      _featuresByPath[servicePath.Replace('/', '-')] = feat;
-      _featuresByPath[servicePath.Replace("-", "")] = feat;
-      _featuresByPath[servicePath.Replace("-", "").Replace('/', '-')] = feat;
+
+      if (_servicesByPath.TryGetValue(feat.Path, out var existingSvc) && existingSvc != feat.ServiceType)
+      {
+        throw new InvalidOperationException(
+          $"Duplicate feature service route '{feat.Path}': '{existingSvc.FullName}' conflicts with '{feat.ServiceType.FullName}'.");
+      }
+
       _servicesByPath[feat.Path] = feat.ServiceType;
-      _servicesByPath[feat.Path.Replace('/', '-')] = feat.ServiceType;
-      _servicesByPath[feat.Path.Replace("-", "")] = feat.ServiceType;
-      _servicesByPath[feat.Path.Replace("-", "").Replace('/', '-')] = feat.ServiceType;
-      _servicesByPath[feat.Name] = feat.ServiceType;
     }
   }
 
@@ -108,20 +174,19 @@ public sealed class ModuleCatalog
       return null;
     }
 
-    var feat = _featuresByPath.GetValueOrDefault(path)
-      ?? _featuresByPath.GetValueOrDefault(path.Replace('/', '-'))
-      ?? _featuresByPath.GetValueOrDefault(path.Replace('-', '/'))
-      ?? _featuresByPath.GetValueOrDefault(path.Replace("-", ""));
-    if (feat is null && FindServiceType(path) is { } serviceType)
+    var normalized = path.Trim('/');
+    if (_featuresByPath.TryGetValue(normalized, out var feat))
     {
-      Feature.FeaturesByServiceType.TryGetValue(serviceType, out feat);
+      return feat;
     }
 
-    return feat;
+    return FindServiceType(normalized) is { } serviceType
+      ? FindFeature(serviceType)
+      : null;
   }
 
   public Feature? FindFeature(Type? serviceType) =>
-    serviceType != null && Feature.FeaturesByServiceType.TryGetValue(serviceType, out var feat)
+    serviceType != null && _featuresByServiceType.TryGetValue(serviceType, out var feat)
       ? feat
       : null;
 
@@ -137,7 +202,7 @@ public sealed class ModuleCatalog
         }
       }
 
-      foreach (var kv in Feature.FeaturesByServiceType)
+      foreach (var kv in _featuresByServiceType)
       {
         if (GetServiceEntityType(kv.Key) == entityType)
         {
@@ -149,7 +214,7 @@ public sealed class ModuleCatalog
     if (!string.IsNullOrWhiteSpace(tableName))
     {
       return AllFeatures.FirstOrDefault(f =>
-        string.Equals(f.CleanName, tableName, StringComparison.OrdinalIgnoreCase));
+        string.Equals(f.Handle, tableName, StringComparison.OrdinalIgnoreCase));
     }
 
     return null;
@@ -173,8 +238,6 @@ public sealed class ModuleCatalog
 
     return null;
   }
-
-  private static readonly ConcurrentDictionary<Type, Type?> ServiceDbContextCache = new();
 
   public static Type? GetServiceDbContextType(Type? serviceType) =>
     serviceType is null
@@ -213,13 +276,8 @@ public sealed class ModuleCatalog
       return null;
     }
 
-    return _servicesByPath.GetValueOrDefault(path)
-      ?? _servicesByPath.GetValueOrDefault(path.Replace('/', '-'))
-      ?? _servicesByPath.GetValueOrDefault(path.Replace('-', '/'))
-      ?? _servicesByPath.GetValueOrDefault(path.Replace("-", ""));
+    return _servicesByPath.GetValueOrDefault(path.Trim('/'));
   }
-
-  private static readonly IServiceProvider EmptyServiceProvider = new ServiceCollection().BuildServiceProvider();
 
   public object? CreateServiceInstance(Type serviceType, params object?[] availableServices) =>
     CreateServiceInstanceCore(serviceType, availableServices, []);
@@ -326,6 +384,33 @@ public sealed class ModuleCatalog
     {
       visited.Remove(serviceType);
     }
+  }
+
+  internal static IReadOnlyList<Type> GetModuleServiceTypes(IPlatformModule module, IEnumerable<string>? additionalHandles = null)
+  {
+    var assemblyTypes = module.GetType().Assembly.GetTypes();
+    var moduleCountInAssembly = assemblyTypes.Count(t =>
+      t is { IsClass: true, IsAbstract: false } && typeof(IPlatformModule).IsAssignableFrom(t));
+
+    var allServices = assemblyTypes
+      .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IPlatformService).IsAssignableFrom(t));
+
+    if (moduleCountInAssembly <= 1)
+    {
+      return [.. allServices];
+    }
+
+    var prefix = $"{ServicePathResolver.ToKebabCase(module.Handle)}/";
+    var handles = (additionalHandles ?? []).Append(module.Handle).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    var declaredServiceTypes = module.Features
+      .Concat(Flatten(module.Menu.Nodes).Select(n => n.Feature).OfType<Feature>())
+      .Select(f => f.ServiceType)
+      .OfType<Type>()
+      .ToHashSet();
+
+    return [.. allServices.Where(t =>
+      declaredServiceTypes.Contains(t) ||
+      ServicePathResolver.Resolve(t, handles).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))];
   }
 
   public static IEnumerable<ModuleMenuNode> Flatten(IEnumerable<ModuleMenuNode> nodes)

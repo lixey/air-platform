@@ -22,6 +22,18 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
     return this;
   }
 
+  public new Feature<TAccess> WithoutExport()
+  {
+    base.WithoutExport();
+    return this;
+  }
+
+  public new Feature<TAccess> WithoutHistory()
+  {
+    base.WithoutHistory();
+    return this;
+  }
+
   public new Feature<TAccess> AllowAgent(bool allow = true)
   {
     base.AllowAgent(allow);

@@ -2,8 +2,6 @@ namespace Platform.App.Auth;
 
 public static class RightsTree
 {
-  private static readonly ConcurrentDictionary<(string Module, string FeatureKey), IReadOnlyList<Right>> DiscoveredFeatureRightsCache = new();
-
   public static List<CheckboxTreeNodeDto> Build(ModuleCatalog catalog, IReadOnlySet<string>? held = null)
   {
     var L = Localizer.Instance;
@@ -36,7 +34,11 @@ public static class RightsTree
         }
 
         rights.Add(Node(feat.MenuView.Key, L["Menu view"]));
-        rights.Add(Node(feat.Export.Key, L["Export"]));
+        if (feat.HasExport)
+        {
+          rights.Add(Node(feat.Export.Key, L["Export"]));
+        }
+
         if (feat.HasHistory)
         {
           rights.Add(Node(feat.History.Key, L["History"]));
@@ -44,30 +46,24 @@ public static class RightsTree
 
         foreach (var accessRight in GetContainerRights(feat))
         {
-          var labelKey = System.Text.RegularExpressions.Regex.Replace(accessRight.Action, "([a-z])([A-Z])", "$1 $2");
-          if (labelKey.Length > 1)
-          {
-            labelKey = labelKey[0] + labelKey[1..].ToLowerInvariant();
-          }
-
-          rights.Add(Node(accessRight.Key, modL[labelKey]));
+          rights.Add(Node(accessRight.Key, modL[FormatSentenceCase(accessRight.Action)]));
         }
 
-        foreach (var customRight in GetOrDiscoverFeatureActionRights(catalog, module, feat))
+        foreach (var customRight in GetCustomActionRights(feat))
         {
           if (rights.All(r => !string.Equals(r.Key, customRight.Key, StringComparison.OrdinalIgnoreCase)))
           {
-            var labelKey = System.Text.RegularExpressions.Regex.Replace(customRight.Action, "([a-z])([A-Z])", "$1 $2");
-            rights.Add(Node(customRight.Key, modL.TextOr(customRight.Action, modL[labelKey])));
+            var spaced = Grid.Columns.PathToLabel(customRight.Action);
+            rights.Add(Node(customRight.Key, modL.TextOr(customRight.Action, modL[spaced])));
           }
         }
 
-        var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? modL[feat.Name] : modL[feat.CleanName];
+        var featureLabel = !string.IsNullOrWhiteSpace(feat.Name) ? modL[feat.Name] : modL[feat.Handle];
         featureNodes.Add(Node(
           feat.All.Key,
           featureLabel,
           rights,
-          feat.CleanName
+          feat.Handle
         ));
       }
 
@@ -96,115 +92,18 @@ public static class RightsTree
       .Where(r => r.Action.StartsWith(FeatureAccess.AccessToPrefix, StringComparison.OrdinalIgnoreCase))
       .OrderBy(r => r.Key, StringComparer.Ordinal);
 
-  private static readonly HashSet<string> StandardActions = new(StringComparer.OrdinalIgnoreCase)
+  private static IEnumerable<Right> GetCustomActionRights(Feature feature) =>
+    feature.Rights.Values
+      .Where(r => !Right.StandardActions.Contains(r.Action) &&
+                  !r.Action.StartsWith(FeatureAccess.AccessToPrefix, StringComparison.OrdinalIgnoreCase))
+      .OrderBy(r => r.Key, StringComparer.Ordinal);
+
+  private static string FormatSentenceCase(string pascalName)
   {
-    "View", "MenuView", "Edit", "Delete", "Export", "History", "*"
-  };
-
-  private static IReadOnlyList<Right> GetOrDiscoverFeatureActionRights(ModuleCatalog catalog, IPlatformModule module, Feature feature) =>
-    DiscoveredFeatureRightsCache.GetOrAdd(
-      (module.Handle, feature.Key),
-      _ => DiscoverFeatureActionRights(catalog, module, feature).ToList());
-
-  private static IEnumerable<Right> DiscoverFeatureActionRights(ModuleCatalog catalog, IPlatformModule module, Feature feature)
-  {
-    var discovered = new List<Right>();
-
-    foreach (var r in feature.Rights.Values)
-    {
-      if (!StandardActions.Contains(r.Action) &&
-          !r.Action.StartsWith(FeatureAccess.AccessToPrefix, StringComparison.OrdinalIgnoreCase))
-      {
-        discovered.Add(r);
-      }
-    }
-
-    var assembly = module.GetType().Assembly;
-    Type[] moduleTypes;
-    try
-    {
-      moduleTypes = assembly.GetTypes();
-    }
-    catch
-    {
-      return discovered;
-    }
-
-    var prefix = module.Handle + feature.CleanName;
-    var relatedServices = moduleTypes
-      .Where(t => t is { IsClass: true, IsAbstract: false } &&
-                  (t == feature.ServiceType ||
-                   Feature.FeaturesByServiceType.TryGetValue(t, out var mapped) && mapped == feature ||
-                   t.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && t.Name.EndsWith("Service", StringComparison.OrdinalIgnoreCase)))
-      .ToList();
-
-    var entityTypes = new HashSet<Type>();
-    foreach (var st in relatedServices)
-    {
-      foreach (var method in st.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-      {
-        if (method.GetCustomAttribute<RequireActionAttribute>(inherit: true) is { } reqAct &&
-            !StandardActions.Contains(reqAct.ActionName))
-        {
-          discovered.Add(feature.Action(reqAct.ActionName));
-        }
-      }
-
-      var cur = st.BaseType;
-      while (cur != null && cur != typeof(object))
-      {
-        if (cur.IsGenericType)
-        {
-          var def = cur.GetGenericTypeDefinition();
-          if (def == typeof(Grid.GridService<,>) || def == typeof(Form.FormService<>))
-          {
-            entityTypes.Add(cur.GetGenericArguments()[0]);
-            break;
-          }
-        }
-
-        cur = cur.BaseType;
-      }
-    }
-
-    if (entityTypes.Count > 0)
-    {
-      foreach (var entityType in entityTypes)
-      {
-        var statusFlowInterface = typeof(Screens.IRecordStatuses<>).MakeGenericType(entityType);
-        foreach (var flowType in moduleTypes.Where(t => t is { IsClass: true, IsAbstract: false } && statusFlowInterface.IsAssignableFrom(t)))
-        {
-          try
-          {
-            if (catalog.CreateServiceInstance(flowType) is not object flowInstance)
-            {
-              continue;
-            }
-
-            if (flowInstance is IPlatformService flowPlatformService &&
-                !string.IsNullOrEmpty(flowPlatformService.Feature.Module) &&
-                flowPlatformService.Feature != feature)
-            {
-              continue;
-            }
-
-            if (statusFlowInterface.GetProperty(nameof(Screens.IRecordStatuses<>.AllTransitions))?.GetValue(flowInstance) is System.Collections.IEnumerable transitions)
-            {
-              foreach (var tr in transitions)
-              {
-                if (tr is Screens.RecordTransition rt && !string.IsNullOrWhiteSpace(rt.Name))
-                {
-                  discovered.Add(feature.Action(rt.Name));
-                }
-              }
-            }
-          }
-          catch { }
-        }
-      }
-    }
-
-    return discovered;
+    var spaced = Grid.Columns.PathToLabel(pascalName);
+    return spaced.Length > 1
+      ? string.Concat(spaced.AsSpan(0, 1), spaced[1..].ToLowerInvariant())
+      : spaced;
   }
 
   public static HashSet<string> FlattenKeys(IEnumerable<CheckboxTreeNodeDto> nodes)

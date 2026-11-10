@@ -1,6 +1,6 @@
 namespace Platform.App.Tests.Internals;
 
-internal sealed class TestInvoiceGridService(AppTestDbContext db, PlatformAppService app) : GridService<TestInvoice>(db, app)
+internal sealed class TestInvoiceGridService(AppTestDbContext db, PlatformAppService? app = null) : GridService<TestInvoice>(db, app)
 {
   public override Feature Feature => TestAppModule.Invoices;
   protected override void SetQuery(Query query) => query.Where(i => !i.IsHidden);

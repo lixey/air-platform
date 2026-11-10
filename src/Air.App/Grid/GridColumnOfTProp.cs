@@ -304,6 +304,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
   {
     var readsParent = ParentScopeValidator.DeclaresParentScope(typeof(TSource));
     dto.PickerSourceType = typeof(TSource);
+    dto.PickerTargetMethod = method.Method;
     dto.Cell = new GridCellPickerModel
     {
       ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TSource)),
@@ -320,6 +321,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
+    dto.ReferenceServiceType = typeof(TGridService);
     dto.ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TGridService));
     ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
@@ -337,6 +339,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
+    dto.ReferenceServiceType = typeof(TGridService);
     dto.ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TGridService));
     if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
     {
@@ -367,7 +370,7 @@ public class GridColumn<TProp>(GridColumnDto dto, Columns owner)
     dto.ReferenceFilter = CombineFilter(dto.ReferenceFilter, rule);
     if (!string.IsNullOrEmpty(dto.ReferenceService))
     {
-      ReferenceLookupAllowlist.RegisterFilterField(ModuleCatalog.Instance.FindServiceType(dto.ReferenceService), path);
+      ReferenceLookupAllowlist.RegisterFilterField(dto.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(dto.ReferenceService), path);
     }
 
     return this;

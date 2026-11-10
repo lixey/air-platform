@@ -4,26 +4,6 @@ namespace Platform.Api.Host;
 
 public static class ServiceEndpointsExtensions
 {
-  private static readonly HashSet<string> ExcludedBaseTypeNames = new(StringComparer.Ordinal)
-  {
-    nameof(Object),
-    nameof(IPlatformService),
-    nameof(PlatformService),
-    nameof(PlatformAppService),
-    "IGridService",
-    "GridService`1",
-    "GridService`2",
-    "IFormService",
-    "FormService`1",
-    "FormService`2",
-    "IReportService",
-    "ReportService",
-    "IScreenService",
-    "ScreenService",
-    "StatusFlowService",
-    "StatusFlowService`1"
-  };
-
   internal static void TryBindModuleDbScope(PathString requestPath, ModuleCatalog catalog, IServiceProvider services)
   {
     var rawPath = requestPath.Value;
@@ -53,10 +33,8 @@ public static class ServiceEndpointsExtensions
       ? string.Join('/', parts[..^2])
       : string.Join('/', parts[..^1]);
 
-    var serviceType = catalog.FindFeature(serviceName)?.ServiceType
-      ?? catalog.FindServiceType(serviceName)
-      ?? catalog.FindFeature(parts[0] + "/" + parts[1])?.ServiceType
-      ?? catalog.FindServiceType(parts[0] + "/" + parts[1]);
+    var serviceType = catalog.FindServiceType(serviceName)
+      ?? catalog.FindFeature(serviceName)?.ServiceType;
 
     if (serviceType is not null)
     {
@@ -104,19 +82,13 @@ public static class ServiceEndpointsExtensions
         }
 
         var exactFeat = catalog.FindFeature(serviceName);
-        var serviceType = exactFeat?.ServiceType
-          ?? catalog.FindServiceType(serviceName)
-          ?? (parts.Length >= 2 ? catalog.FindFeature(parts[0] + "/" + parts[1])?.ServiceType : null)
-          ?? (parts.Length >= 2 ? catalog.FindServiceType(parts[0] + "/" + parts[1]) : null);
-
-        var feat = exactFeat
-          ?? (serviceType != null && Feature.FeaturesByServiceType.TryGetValue(serviceType, out var sf) ? sf : null)
-          ?? (parts.Length >= 2 ? catalog.FindFeature(parts[0] + "/" + parts[1]) : null);
-
+        var serviceType = catalog.FindServiceType(serviceName) ?? exactFeat?.ServiceType;
         if (serviceType is null)
         {
           return Results.NotFound($"Service '{serviceName}' not found.");
         }
+
+        var feat = catalog.FindFeature(serviceType) ?? exactFeat;
 
         services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
 
@@ -204,7 +176,7 @@ public static class ServiceEndpointsExtensions
     {
       parsedId = qId;
     }
-    else if (rawBody is { ValueKind: JsonValueKind.Object } rb && rb.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number && idProp.TryGetInt64(out var bodyId))
+    else if (rawBody is { ValueKind: JsonValueKind.Object } rb && TryReadBodyId(rb, out var bodyId))
     {
       parsedId = bodyId;
     }
@@ -243,13 +215,41 @@ public static class ServiceEndpointsExtensions
       }
       else if (pType.IsClass && pType != typeof(string))
       {
-        args[i] = rawBody.HasValue
-          ? JsonSerializer.Deserialize(rawBody.Value.GetRawText(), pType, PlatformJsonOptions.DefaultOptions) ?? Activator.CreateInstance(pType)
-          : Activator.CreateInstance(pType);
+        args[i] = DeserializeOrCreateRequest(pType, rawBody);
       }
     }
 
     return await InvokeServiceMethodAsync(actionMethod, serviceInstance, args);
+  }
+
+  private static bool TryReadBodyId(JsonElement body, out long id)
+  {
+    foreach (var prop in body.EnumerateObject())
+    {
+      if (string.Equals(prop.Name, "id", StringComparison.OrdinalIgnoreCase) &&
+          prop.Value.ValueKind == JsonValueKind.Number &&
+          prop.Value.TryGetInt64(out id))
+      {
+        return true;
+      }
+    }
+
+    id = 0;
+    return false;
+  }
+
+  private static object? DeserializeOrCreateRequest(Type requestType, JsonElement? rawBody)
+  {
+    var json = rawBody.HasValue ? rawBody.Value.GetRawText() : "{}";
+    var deserialized = JsonSerializer.Deserialize(json, requestType, PlatformJsonOptions.DefaultOptions);
+    if (deserialized is not null)
+    {
+      return deserialized;
+    }
+
+    return requestType.GetConstructor(Type.EmptyTypes) is not null
+      ? Activator.CreateInstance(requestType)
+      : null;
   }
 
   public static bool HasJsonBody(HttpRequest httpRequest) =>
@@ -259,14 +259,11 @@ public static class ServiceEndpointsExtensions
 
   public static bool CanView(Feature? feat, IUserContext? userContext)
   {
-    if (userContext is null or { IsAuthenticated: false })
+    if (userContext is null or { IsAuthenticated: false } ||
+        feat == null ||
+        string.IsNullOrEmpty(feat.Module))
     {
       return false;
-    }
-
-    if (feat == null || string.IsNullOrEmpty(feat.Module))
-    {
-      return true;
     }
 
     return userContext.Can(feat.View) ||
@@ -275,14 +272,12 @@ public static class ServiceEndpointsExtensions
 
   public static bool CanEdit(Feature? feat, IUserContext? userContext)
   {
-    if (userContext is null or { IsAuthenticated: false } || feat is { IsReadOnly: true })
+    if (userContext is null or { IsAuthenticated: false } ||
+        feat == null ||
+        string.IsNullOrEmpty(feat.Module) ||
+        feat.IsReadOnly)
     {
       return false;
-    }
-
-    if (feat == null || string.IsNullOrEmpty(feat.Module))
-    {
-      return true;
     }
 
     return userContext.Can(feat.Edit) ||
@@ -292,24 +287,17 @@ public static class ServiceEndpointsExtensions
 
   public static bool CanExport(Feature? feat, IUserContext? userContext)
   {
-    if (userContext is null or { IsAuthenticated: false })
+    if (userContext is null or { IsAuthenticated: false } ||
+        feat == null ||
+        string.IsNullOrEmpty(feat.Module) ||
+        !feat.HasExport)
     {
       return false;
     }
 
-    if (feat == null || string.IsNullOrEmpty(feat.Module))
-    {
-      return true;
-    }
-
-    if (feat.HasAction("Export"))
-    {
-      return userContext.Can(feat.Export) ||
-             userContext.Can(feat.All) ||
-             userContext.Can("*");
-    }
-
-    return CanView(feat, userContext);
+    return userContext.Can(feat.Export) ||
+           userContext.Can(feat.All) ||
+           userContext.Can("*");
   }
 
   public static bool IsCustomActionPermitted(MethodInfo actionMethod, Feature? feat, IUserContext? userContext)
@@ -328,8 +316,24 @@ public static class ServiceEndpointsExtensions
     var reqAttr = actionMethod.GetCustomAttribute<RequireRightAttribute>(inherit: true);
     if (reqAttr != null)
     {
-      return Feature.FeaturesByServiceType.TryGetValue(reqAttr.Service, out var targetFeat) &&
-             (userContext.Can(targetFeat.Action(reqAttr.ActionName)) ||
+      var targetFeat = ModuleCatalog.Instance.FindFeature(reqAttr.Service);
+      if (targetFeat == null)
+      {
+        return false;
+      }
+
+      if (string.Equals(reqAttr.ActionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase))
+      {
+        return CanView(targetFeat, userContext);
+      }
+
+      if (string.Equals(reqAttr.ActionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase))
+      {
+        return CanEdit(targetFeat, userContext);
+      }
+
+      return targetFeat.TryGetRight(reqAttr.ActionName, out var targetRight) &&
+             (userContext.Can(targetRight) ||
               userContext.Can(targetFeat.All) ||
               userContext.Can("*"));
     }
@@ -337,30 +341,35 @@ public static class ServiceEndpointsExtensions
     var reqAction = actionMethod.GetCustomAttribute<RequireActionAttribute>(inherit: true);
     if (reqAction != null)
     {
+      if (feat == null || string.IsNullOrEmpty(feat.Module))
+      {
+        return false;
+      }
+
       if (string.Equals(reqAction.ActionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase))
       {
         return CanView(feat, userContext);
       }
 
-      if (reqAction.FallbackToView && (feat == null || !feat.HasAction(reqAction.ActionName)))
+      if (string.Equals(reqAction.ActionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase))
+      {
+        return CanEdit(feat, userContext);
+      }
+
+      if (reqAction.FallbackToView && !feat.HasAction(reqAction.ActionName))
       {
         return CanView(feat, userContext);
       }
 
-      if (feat != null)
-      {
-        return userContext.Can(feat.Action(reqAction.ActionName)) ||
-               userContext.Can(feat.All) ||
-               userContext.Can("*");
-      }
+      return feat.TryGetRight(reqAction.ActionName, out var actionRight) &&
+             (userContext.Can(actionRight) ||
+              userContext.Can(feat.All) ||
+              userContext.Can("*"));
     }
 
-    if (feat != null && !string.IsNullOrEmpty(feat.Module))
-    {
-      return feat.IsReadOnly ? CanView(feat, userContext) : CanEdit(feat, userContext);
-    }
-
-    return userContext.Can("*");
+    return feat is { IsReadOnly: true }
+      ? CanView(feat, userContext)
+      : CanEdit(feat, userContext);
   }
 
   public static async Task<IResult> InvokeServiceMethodAsync(MethodInfo method, object target, object?[] args)
@@ -402,43 +411,13 @@ public static class ServiceEndpointsExtensions
     return PlatformEndpointsExtensions.ToMutationResult(resultTask ?? new MutationResultDto { Outcome = MutationOutcome.Committed });
   }
 
-  public static bool IsCallableServiceAction(MethodInfo m)
-  {
-    if (m.IsSpecialName || m.IsGenericMethodDefinition || m.DeclaringType == null)
-    {
-      return false;
-    }
-
-    if (m.GetCustomAttribute<ServiceActionAttribute>(inherit: true) != null ||
-        m.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null ||
-        m.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
-        m.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null ||
-        m.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null)
-    {
-      return true;
-    }
-
-    if (ExcludedBaseTypeNames.Contains(m.DeclaringType.Name) ||
-        m.DeclaringType.Namespace?.StartsWith("Platform.", StringComparison.Ordinal) == true)
-    {
-      return false;
-    }
-
-    var ret = m.ReturnType;
-    if (typeof(IResult).IsAssignableFrom(ret))
-    {
-      return true;
-    }
-
-    if (ret.IsGenericType && ret.GetGenericTypeDefinition() == typeof(Task<>))
-    {
-      var inner = ret.GetGenericArguments()[0];
-      if (typeof(IResult).IsAssignableFrom(inner) || typeof(MutationResultDto).IsAssignableFrom(inner))
-      {
-        return true;
-      }
-    }
-
-    return false;
-  }
+  public static bool IsCallableServiceAction(MethodInfo m) =>
+    !m.IsSpecialName &&
+    !m.IsGenericMethodDefinition &&
+    m.DeclaringType != null &&
+    (m.GetCustomAttribute<ServiceActionAttribute>(inherit: true) != null ||
+     m.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null ||
+     m.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
+     m.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null ||
+     m.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null);
 }

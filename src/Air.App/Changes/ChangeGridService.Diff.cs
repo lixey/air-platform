@@ -60,7 +60,7 @@ public abstract partial class ChangeGridService
       : L;
 
     var entityLabel = targetFeat != null
-      ? modL.TextOr(targetFeat.Label, modL.TextOr(targetFeat.CleanName, change.Table))
+      ? modL.TextOr(targetFeat.Label, modL.TextOr(targetFeat.Handle, change.Table))
       : L[change.Table];
     var title = $"{entityLabel} #{change.RowId}";
 
@@ -529,7 +529,7 @@ public abstract partial class ChangeGridService
         ? Localizer.Instance.For(sibFeat.Module)
         : loc;
       var sibEntityLabel = sibFeat != null
-        ? sibModL.TextOr(sibFeat.Label, sibModL.TextOr(sibFeat.CleanName, sib.Table))
+        ? sibModL.TextOr(sibFeat.Label, sibModL.TextOr(sibFeat.Handle, sib.Table))
         : loc[sib.Table];
 
       var summary = TryExtractRecordSummary(sib.After ?? sib.Before);
@@ -626,7 +626,8 @@ public abstract partial class ChangeGridService
              typeof(IFormService).IsAssignableFrom(t) &&
              entityType != null &&
              ModuleCatalog.GetServiceEntityType(t) == entityType &&
-             string.Equals(t.Name, $"{feat.Name}FormService", StringComparison.OrdinalIgnoreCase)
+             (string.Equals(t.Name, $"{feat.Module}{feat.Handle}FormService", StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(t.Name, $"{feat.Handle}FormService", StringComparison.OrdinalIgnoreCase))
            )
            ?? ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
              typeof(IFormService).IsAssignableFrom(t) &&

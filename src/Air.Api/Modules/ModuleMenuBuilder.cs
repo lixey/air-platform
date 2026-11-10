@@ -6,10 +6,11 @@ public sealed class ModuleMenuBuilder
 
   public ModuleMenuBuilder Route(Feature feature, string? title = null, string? icon = null, string? tooltip = null)
   {
+    ArgumentNullException.ThrowIfNull(feature);
     _nodes.Add(new ModuleMenuNode
     {
       Feature = feature,
-      Handle = feature.CleanName,
+      Handle = feature.Handle,
       Title = title ?? feature.Name,
       Tooltip = tooltip ?? feature.Title,
       Icon = icon
@@ -17,16 +18,10 @@ public sealed class ModuleMenuBuilder
     return this;
   }
 
-  public ModuleMenuBuilder Item(string module, string name, string title, string? icon = null, Type? serviceType = null)
-  {
-    var feature = new Feature(module, name, serviceType);
-    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = feature.CleanName, Title = title, Icon = icon });
-    return this;
-  }
-
   public ModuleMenuBuilder Hidden(Feature feature)
   {
-    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = feature.CleanName, Title = feature.Name, IsHidden = true });
+    ArgumentNullException.ThrowIfNull(feature);
+    _nodes.Add(new ModuleMenuNode { Feature = feature, Handle = feature.Handle, Title = feature.Name, IsHidden = true });
     return this;
   }
 
@@ -38,6 +33,8 @@ public sealed class ModuleMenuBuilder
 
   public ModuleMenuBuilder Group(string handle, string title, Action<ModuleMenuBuilder> configure)
   {
+    CodeRows.EnsurePascalCaseHandle(handle, "ModuleMenuGroup");
+    ArgumentNullException.ThrowIfNull(configure);
     var builder = new ModuleMenuBuilder();
     configure(builder);
     _nodes.Add(new ModuleMenuNode { Handle = handle, Title = title, Children = builder._nodes });

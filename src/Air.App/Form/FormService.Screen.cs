@@ -300,15 +300,11 @@ public abstract partial class FormService<TEntity>
 
             if (createFormType != null && typeof(IFormService).IsAssignableFrom(createFormType))
             {
-              var canCreate = true;
-              var featType = targetServiceType ?? createFormType;
-              if (Feature.FeaturesByServiceType.TryGetValue(featType, out var targetFeat))
-              {
-                if (targetFeat.IsReadOnly || PlatformApp != null && (User is not { IsAuthenticated: true } || !ServiceEndpointsExtensions.CanEdit(targetFeat, User)))
-                {
-                  canCreate = false;
-                }
-              }
+              var targetFeat = ModuleCatalog.Instance.FindFeature(createFormType)
+                ?? (targetServiceType != null ? ModuleCatalog.Instance.FindFeature(targetServiceType) : null);
+              var canCreate = targetFeat is { IsReadOnly: false } &&
+                              User is { IsAuthenticated: true } &&
+                              ServiceEndpointsExtensions.CanEdit(targetFeat, User);
 
               if (canCreate)
               {
@@ -664,13 +660,13 @@ public abstract partial class FormService<TEntity>
 
   private bool IsChildPermitted(ChildGridBuilder child)
   {
-    if (PlatformApp == null || child.ServiceType == null)
+    if (child.ServiceType == null)
     {
-      return true;
+      return false;
     }
 
     var childFeat = ModuleCatalog.Instance.FindFeature(child.ServiceType);
-    return childFeat == null || ServiceEndpointsExtensions.CanView(childFeat, User);
+    return childFeat != null && ServiceEndpointsExtensions.CanView(childFeat, User);
   }
 
   private void ConfigureStatusFlowAndActions(

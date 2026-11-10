@@ -2,9 +2,15 @@ namespace Platform.Api.Modules;
 
 public abstract class ModuleDefinition<TSelf> : ModuleDefinition where TSelf : ModuleDefinition<TSelf>
 {
-  private static readonly ModuleAttribute ModuleAttr =
+  private static readonly ModuleAttribute ModuleAttr = ValidateModuleAttribute(
     typeof(TSelf).GetCustomAttribute<ModuleAttribute>()
-    ?? throw new InvalidOperationException($"'{typeof(TSelf).Name}' must declare [Module(handle)].");
+    ?? throw new InvalidOperationException($"'{typeof(TSelf).Name}' must declare [Module(handle)]."));
+
+  private static ModuleAttribute ValidateModuleAttribute(ModuleAttribute attr)
+  {
+    CodeRows.EnsurePascalCaseHandle(attr.Handle, $"Module '{typeof(TSelf).Name}'");
+    return attr;
+  }
 
   private static readonly Lazy<IReadOnlyList<Feature>> LazyFeatures = new(() =>
   {
@@ -31,10 +37,10 @@ public abstract class ModuleDefinition<TSelf> : ModuleDefinition where TSelf : M
   public static string ModuleHandle => ModuleAttr.Handle;
   public static Right All => new($"{ModuleHandle}.*", "*", null, isPattern: true);
 
-  public sealed override string GetHandle() => ModuleAttr.Handle;
-  public sealed override string GetName() => ModuleAttr.Name ?? (ModuleAttr.Handle.Length > 0 ? char.ToUpperInvariant(ModuleAttr.Handle[0]) + ModuleAttr.Handle[1..] : ModuleAttr.Handle);
-  public sealed override string GetIcon() => ModuleAttr.Icon ?? "folder";
-  public sealed override IReadOnlyList<Feature> GetFeatures() => LazyFeatures.Value;
+  public sealed override string Handle => ModuleAttr.Handle;
+  public sealed override string Name => ModuleAttr.Name ?? (ModuleAttr.Handle.Length > 0 ? char.ToUpperInvariant(ModuleAttr.Handle[0]) + ModuleAttr.Handle[1..] : ModuleAttr.Handle);
+  public sealed override string Icon => ModuleAttr.Icon ?? "folder";
+  public sealed override IReadOnlyList<Feature> Features => LazyFeatures.Value;
 
   protected static Feature Feature<TService>([CallerMemberName] string name = "") =>
     new(ModuleHandle, name, typeof(TService));

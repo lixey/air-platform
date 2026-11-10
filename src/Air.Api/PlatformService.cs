@@ -11,9 +11,7 @@ public abstract class PlatformService(PlatformAppService? app = null) : IPlatfor
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
   protected ILocalizer L => Localizer.Instance;
 
-  public virtual Feature Feature => Feature.FeaturesByServiceType.TryGetValue(GetType(), out var f)
-    ? f
-    : new Feature("", GetType().Name.Replace("Service", "").ToLowerInvariant(), GetType());
+  public abstract Feature Feature { get; }
 
   public virtual void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 }

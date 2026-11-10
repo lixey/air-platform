@@ -37,6 +37,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     {
       var reportService = (IReportService)services.GetRequiredService(serviceType);
       feat ??= reportService.Feature;
+      if (services.GetService<PlatformAppService>() is { } appInstance)
+      {
+        reportService.AttachPlatformApp(appInstance);
+      }
+
       if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
       {
         var userContext = services.GetService<IUserContext>();
@@ -68,6 +73,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     {
       var screenService = (IScreenService)services.GetRequiredService(serviceType);
       feat ??= screenService.Feature;
+      if (services.GetService<PlatformAppService>() is { } appInstance)
+      {
+        screenService.AttachPlatformApp(appInstance);
+      }
+
       if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
       {
         var userContext = services.GetService<IUserContext>();

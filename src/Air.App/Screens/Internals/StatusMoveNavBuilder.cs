@@ -19,10 +19,11 @@ internal static class StatusMoveNavBuilder
 
   public static bool CanMove(Feature feature, IUserContext? user, string transitionName) =>
     user is { IsAuthenticated: true } &&
-    (string.IsNullOrEmpty(feature.Module) ||
-     user.Can(feature.Action(transitionName)) ||
-     user.Can(feature.Edit) ||
-     user.Can(feature.All));
+    !string.IsNullOrEmpty(feature.Module) &&
+    (feature.TryGetRight(transitionName, out var right) && user.Can(right) ||
+     !feature.IsReadOnly && user.Can(feature.Edit) ||
+     user.Can(feature.All) ||
+     user.Can("*"));
 
   public static List<FormElementDto> LocalizeElements(IReadOnlyList<FormElementDto> elements, Localizer l) =>
     [.. elements.Select(e =>

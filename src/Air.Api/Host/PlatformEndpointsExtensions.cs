@@ -9,6 +9,10 @@ public static class PlatformEndpointsExtensions
 
   public static RouteGroupBuilder MapPlatformApiEndpoints(this WebApplication app)
   {
+    var catalog = app.Services.GetRequiredService<ModuleCatalog>();
+    ModuleCatalog.Instance = catalog;
+    PlatformValidator.Validate(catalog, app.Services);
+
     var api = app.MapGroup("/api");
     api.MapAuthEndpoints();
     api.MapFileEndpoints();

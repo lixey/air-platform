@@ -48,6 +48,7 @@ public sealed class AppAgentMemoryGridService(AppDbContext db, AppService? app =
       needsSelection: true);
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public Task<GridActionDto> TogglePinned(GridRequest request, CancellationToken ct = default) =>
     ExecuteBatchAsync(request, (context, _) =>
     {
@@ -60,6 +61,7 @@ public sealed class AppAgentMemoryGridService(AppDbContext db, AppService? app =
       return Task.CompletedTask;
     }, ct);
 
+  [RequireAction(EndpointAction.Edit)]
   public Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default) =>
     ExecuteBatchAsync(request, (context, _) =>
     {

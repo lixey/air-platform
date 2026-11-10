@@ -54,6 +54,7 @@ public sealed class AppAgentProviderGridService(AppDbContext db, AppService? app
       needsSelection: true);
   }
 
+  [RequireAction(EndpointAction.Edit)]
   public async Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default)
   {
     var res = await ExecuteBatchAsync(request, async (context, token) =>

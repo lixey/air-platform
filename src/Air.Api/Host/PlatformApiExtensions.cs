@@ -47,42 +47,47 @@ public static class PlatformApiExtensions
       ?? builder.Configuration["Platform:Security:Jwt:Secret"]
       ?? Environment.GetEnvironmentVariable("AIR_TOKEN_SECRET");
     SessionTokenService.ConfigureSecret(tokenSecret);
-    builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
-    builder.Services.AddHttpContextAccessor();
-    builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
-    builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
-    builder.Services.AddHybridCache();
-    builder.Services.TryAddSingleton<ICacheProvider, Caching.Internals.CacheProvider>();
-    builder.Services.TryAddSingleton<IUserAuthCache, Auth.Internals.UserAuthCache>();
-    builder.Services.TryAddSingleton<Auth.Internals.LoginRateLimiter>();
-    builder.Services.TryAddSingleton<Mutations.Internals.IdempotencyStore>();
-    builder.Services.TryAddSingleton<FileLinks>();
-    var filesPath = builder.Configuration["Files:Path"];
-    if (string.IsNullOrWhiteSpace(filesPath))
-    {
-      filesPath = Path.Combine(builder.Environment.ContentRootPath, "air_files");
-    }
-    else if (!Path.IsPathRooted(filesPath))
-    {
-      filesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, filesPath));
-    }
 
-    builder.Services.TryAddSingleton<IFileStorage>(_ => new LocalFileStorage(filesPath));
-    builder.Services.TryAddSingleton<IFileStores>(sp => new DefaultFileStores(sp.GetRequiredService<IFileStorage>()));
-    builder.Services.TryAddScoped<IUserContext, UserContext>();
-    builder.Services.TryAddScoped<PlatformAppService>();
-    builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
+    if (builder.Services.All(d => d.ServiceType != typeof(PlatformApiCoreMarker)))
+    {
+      builder.Services.AddSingleton<PlatformApiCoreMarker>();
+      builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
+      builder.Services.AddHttpContextAccessor();
+      builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
+      builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
+      builder.Services.AddHybridCache();
+      builder.Services.TryAddSingleton<ICacheProvider, Caching.Internals.CacheProvider>();
+      builder.Services.TryAddSingleton<IUserAuthCache, Auth.Internals.UserAuthCache>();
+      builder.Services.TryAddSingleton<Auth.Internals.LoginRateLimiter>();
+      builder.Services.TryAddSingleton<Mutations.Internals.IdempotencyStore>();
+      builder.Services.TryAddSingleton<FileLinks>();
+      var filesPath = builder.Configuration["Files:Path"];
+      if (string.IsNullOrWhiteSpace(filesPath))
+      {
+        filesPath = Path.Combine(builder.Environment.ContentRootPath, "air_files");
+      }
+      else if (!Path.IsPathRooted(filesPath))
+      {
+        filesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, filesPath));
+      }
+
+      builder.Services.TryAddSingleton<IFileStorage>(_ => new LocalFileStorage(filesPath));
+      builder.Services.TryAddSingleton<IFileStores>(sp => new DefaultFileStores(sp.GetRequiredService<IFileStorage>()));
+      builder.Services.TryAddScoped<IUserContext, UserContext>();
+      builder.Services.TryAddScoped<PlatformAppService>();
+      builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
+    }
 
     builder.Services.AddSingleton<IPlatformModule>(module);
     builder.Services.TryAddSingleton(sp =>
     {
       var catalog = new ModuleCatalog();
+      ModuleCatalog.Instance = catalog;
       foreach (var m in sp.GetServices<IPlatformModule>())
       {
         catalog.Register(m);
       }
 
-      ModuleCatalog.Instance = catalog;
       return catalog;
     });
 
@@ -188,8 +193,6 @@ public static class PlatformApiExtensions
 
   public static RouteGroupBuilder MapPlatformApi(this WebApplication app)
   {
-    var catalog = app.Services.GetRequiredService<ModuleCatalog>();
-    ModuleCatalog.Instance = catalog;
     app.UsePlatformAuth();
     return app.MapPlatformApiEndpoints();
   }

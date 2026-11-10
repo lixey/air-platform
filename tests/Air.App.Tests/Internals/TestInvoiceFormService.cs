@@ -1,6 +1,6 @@
 namespace Platform.App.Tests.Internals;
 
-internal sealed class TestInvoiceFormService(AppTestDbContext db, PlatformAppService app) : FormService<TestInvoice>(db, app)
+internal sealed class TestInvoiceFormService(AppTestDbContext db, PlatformAppService? app = null) : FormService<TestInvoice>(db, app)
 {
   public override Feature Feature => TestAppModule.Invoices;
   protected override void SetQuery(Query query) => query.From(db.Invoices).Where(i => !i.IsHidden);

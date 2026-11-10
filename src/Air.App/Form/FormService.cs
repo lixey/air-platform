@@ -205,7 +205,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
-  public virtual Feature Feature => new("", GetType().Name.Replace("FormService", "").ToLowerInvariant(), GetType());
+  public abstract Feature Feature { get; }
 
   protected virtual string Title => !string.IsNullOrEmpty(Feature.Label) ? Feature.Label : (!string.IsNullOrEmpty(Feature.Name) ? Feature.Name : typeof(TEntity).Name);
 
@@ -213,7 +213,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
-    PlatformApp != null && (User is not { IsAuthenticated: true } || !ServiceEndpointsExtensions.CanEdit(Feature, User));
+    User is not { IsAuthenticated: true } ||
+    !ServiceEndpointsExtensions.CanEdit(Feature, User);
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
   private object? _preloadedParent;
@@ -556,38 +557,20 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     public FormNavActionBuilder AddAction(
       Delegate method,
       Action<Grid.GridService<TEntity, TEntity>.ButtonBuilder>? look = null,
-      string? confirm = null)
-    {
-      var b = new Grid.GridService<TEntity, TEntity>.ButtonBuilder();
-      look?.Invoke(b);
-      var rawLabel = b.LabelText ?? method.Method.Name;
-      var action = new FormNavActionModel
-      {
-        Service = servicePath,
-        Key = method.Method.Name.ToLowerInvariant(),
-        Method = method.Method.Name,
-        Label = _l[rawLabel],
-        Title = b.TitleText != null ? _l[b.TitleText] : null,
-        Icon = b.IconHandle,
-        Color = b.ColorHandle ?? UiColor.Blue,
-        Variant = b.VariantHandle ?? ButtonVariant.Soft,
-        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = b.ColorHandle ?? UiColor.Red } : null
-      };
-      var entry = new FormNavActionEntry
-      {
-        Model = action,
-        IsInMenu = b.IsInMenu,
-        Method = method
-      };
-      Actions.Add(entry);
-      return new FormNavActionBuilder(entry, this);
-    }
+      string? confirm = null) =>
+      new(CreateActionEntry(method, look, confirm), this);
 
     public FormNavActionBuilder<TRequest> AddAction<TRequest>(
       Delegate method,
       Action<Grid.GridService<TEntity, TEntity>.ButtonBuilder>? look = null,
       string? confirm = null)
-      where TRequest : class, new()
+      where TRequest : class, new() =>
+      new(CreateActionEntry(method, look, confirm), this);
+
+    private FormNavActionEntry CreateActionEntry(
+      Delegate method,
+      Action<Grid.GridService<TEntity, TEntity>.ButtonBuilder>? look,
+      string? confirm)
     {
       var b = new Grid.GridService<TEntity, TEntity>.ButtonBuilder();
       look?.Invoke(b);
@@ -611,7 +594,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
         Method = method
       };
       Actions.Add(entry);
-      return new FormNavActionBuilder<TRequest>(entry, this);
+      return entry;
     }
 
     public void AvailableWhen(
@@ -709,6 +692,52 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected virtual void SetRules(Rules rules) { }
   protected virtual void SetHooks(Hooks hooks) { }
+
+  void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
+  {
+    _ = GetParent();
+
+    var probe = new Elements();
+    SetElements(probe);
+    if (probe.RecordLabelGridType != null)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), probe.RecordLabelGridType, "UseRecordLabelOf");
+    }
+
+    if (probe.StatusFlow != null)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), probe.StatusFlow.GetType(), "UseStatusOf");
+    }
+
+    foreach (var child in probe.Children)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), child.ServiceType, $"AddChild '{child.DeclaredKey}'");
+    }
+
+    foreach (var el in probe.List)
+    {
+      if (el.ReferenceServiceType != null)
+      {
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), el.ReferenceServiceType, $"AsReference on '{el.Path}'");
+      }
+
+      if (el.CreateFormServiceType != null)
+      {
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), el.CreateFormServiceType, $"AllowCreate on '{el.Path}'");
+      }
+    }
+
+    var nav = new Nav(Service, L);
+    SetNav(nav);
+    foreach (var entry in nav.Actions)
+    {
+      if (!ServiceEndpointsExtensions.IsCallableServiceAction(entry.Method.Method))
+      {
+        throw new InvalidOperationException(
+          $"Form action method '{GetType().FullName}.{entry.Method.Method.Name}' registered via Nav.AddAction must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
+      }
+    }
+  }
 
   public string Service => ServicePathResolver.Resolve(GetType());
 

@@ -53,7 +53,7 @@ internal static class MetadataEndpointsExtensions
         var currentTenant = tenants.FirstOrDefault(t => t.Id == activeTenantId) ?? tenants.FirstOrDefault();
         var hasTenantMenu = catalog.Modules
           .SelectMany(m => ModuleCatalog.Flatten(m.Menu.Nodes))
-          .Any(n => !n.IsHidden && n.Feature?.CleanName.Equals("tenant", StringComparison.OrdinalIgnoreCase) == true);
+          .Any(n => !n.IsHidden && n.Feature?.Handle.Equals("Tenant", StringComparison.OrdinalIgnoreCase) == true);
         var showTenantSwitcher = currentTenant != null && (tenants.Count > 1 || hasTenantMenu);
 
         var metadata = new AppMetadataDto
@@ -123,20 +123,7 @@ internal static class MetadataEndpointsExtensions
             metadata.Routes.Add(new MenuItemDto
             {
               Path = feat.Path,
-              Handle = feat.CleanName,
-              Name = featL[feat.Name],
-              Title = feat.Title != null ? featL[feat.Title] : null,
-              Screen = screen
-            });
-          }
-
-          var flatPath = feat.Path.Replace("-", "", StringComparison.Ordinal);
-          if (!string.Equals(flatPath, feat.Path, StringComparison.OrdinalIgnoreCase) && metadata.Routes.All(r => r.Path != flatPath))
-          {
-            metadata.Routes.Add(new MenuItemDto
-            {
-              Path = flatPath,
-              Handle = feat.CleanName,
+              Handle = feat.Handle,
               Name = featL[feat.Name],
               Title = feat.Title != null ? featL[feat.Title] : null,
               Screen = screen
@@ -147,7 +134,6 @@ internal static class MetadataEndpointsExtensions
         return Results.Ok(metadata);
       });
 
-    api.MapGet("/metadata", getMetadataHandler);
     api.MapPost("/metadata/get-data", getMetadataHandler);
   }
 

@@ -4,8 +4,19 @@ public sealed class Right
 {
   public const int MaxKeyLength = 200;
 
+  public static readonly IReadOnlySet<string> StandardActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+  {
+    "View", "MenuView", "Edit", "Delete", "Export", "History", "*"
+  };
+
   internal Right(string key, string action, Feature? feature, bool isPattern = false)
   {
+    ArgumentException.ThrowIfNullOrWhiteSpace(key);
+    if (key.Length > MaxKeyLength)
+    {
+      throw new InvalidOperationException($"Right key '{key}' exceeds maximum length {MaxKeyLength}.");
+    }
+
     Key = key;
     Action = action;
     Feature = feature;

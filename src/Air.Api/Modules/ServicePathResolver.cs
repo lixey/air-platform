@@ -3,12 +3,28 @@ namespace Platform.Api.Modules;
 public static class ServicePathResolver
 {
   private static readonly ConcurrentDictionary<Assembly, string[]> AssemblyPrefixes = new();
-  private static readonly ConcurrentDictionary<(Type ServiceType, int ModuleCount), string> ResolvedPaths = new();
+  private static readonly ConcurrentDictionary<Type, string> ResolvedWithModule = new();
 
-  public static string Resolve(Type serviceType) =>
-    ResolvedPaths.GetOrAdd((serviceType, ModuleCatalog.Instance.Modules.Count), static key => ResolveCore(key.ServiceType));
+  public static string Resolve(Type serviceType) => Resolve(serviceType, null);
 
-  private static string ResolveCore(Type serviceType)
+  internal static string Resolve(Type serviceType, IEnumerable<string>? additionalHandles)
+  {
+    ArgumentNullException.ThrowIfNull(serviceType);
+    if (ResolvedWithModule.TryGetValue(serviceType, out var cached))
+    {
+      return cached;
+    }
+
+    var resolved = ResolveCore(serviceType, additionalHandles);
+    if (resolved.Contains('/'))
+    {
+      ResolvedWithModule[serviceType] = resolved;
+    }
+
+    return resolved;
+  }
+
+  private static string ResolveCore(Type serviceType, IEnumerable<string>? additionalHandles)
   {
     var name = serviceType.Name;
     if (name.EndsWith("Service", StringComparison.OrdinalIgnoreCase))
@@ -36,8 +52,10 @@ public static class ServicePathResolver
     var prefixes = ModuleCatalog.Instance.Modules
       .Select(m => m.Handle)
       .Concat(assemblyHandles)
+      .Concat(additionalHandles ?? [])
       .Where(p => !string.IsNullOrWhiteSpace(p))
-      .Distinct(StringComparer.OrdinalIgnoreCase);
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .OrderByDescending(p => p.Length);
 
     foreach (var prefix in prefixes)
     {
@@ -46,7 +64,7 @@ public static class ServicePathResolver
           char.IsUpper(name[prefix.Length]))
       {
         var rest = name[prefix.Length..];
-        return $"{prefix.ToLowerInvariant()}/{ToKebabCase(rest)}";
+        return $"{ToKebabCase(prefix)}/{ToKebabCase(rest)}";
       }
     }
 

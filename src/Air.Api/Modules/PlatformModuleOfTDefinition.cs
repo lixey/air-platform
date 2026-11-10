@@ -5,7 +5,8 @@ public abstract class PlatformModule<TDefinition> : PlatformModule
 {
   private readonly TDefinition _definition = new();
 
-  public override string Handle => _definition.GetHandle();
-  public override string Name => _definition.GetName();
-  public override IReadOnlyList<Feature> Features => _definition.GetFeatures();
+  public override string Handle => _definition.Handle;
+  public override string Name => _definition.Name;
+  public override string Icon => _definition.Icon;
+  public override IReadOnlyList<Feature> Features => _definition.Features;
 }

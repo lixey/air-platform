@@ -457,7 +457,6 @@ internal static class AuthEndpointsExtensions
     };
 
     api.MapPost("/platform-language/switch", switchLanguageHandler);
-    api.MapPost("/PlatformLanguageService/Switch", switchLanguageHandler);
 
     var switchTenantHandler = async (SwitchRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
     {
@@ -528,7 +527,6 @@ internal static class AuthEndpointsExtensions
     };
 
     api.MapPost("/platform-tenant/switch", switchTenantHandler);
-    api.MapPost("/PlatformTenantService/Switch", switchTenantHandler);
   }
 
   private static bool HasClientHeader(HttpRequest request) =>

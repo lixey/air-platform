@@ -2,7 +2,7 @@ using Platform.App.Internals;
 
 namespace Platform.App.Flow;
 
-public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : IRecordStatuses<TEntity>
+public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformAppService? app = null) : IRecordStatuses<TEntity>, IPlatformService
   where TEntity : class, IEntity, new()
 {
   public sealed class Flow : Flow<TEntity>;
@@ -107,9 +107,65 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
   private Expression<Func<TEntity, long>>? _statusMember;
   private Func<TEntity, long>? _statusReader;
   private Action<TEntity, long>? _statusSetter;
+  private long? _initialStatusId;
   private bool _isDeclared;
 
-  public virtual Feature Feature => new("", GetType().Name.Replace("FlowService", "").ToLowerInvariant(), GetType());
+  public abstract Feature Feature { get; }
+
+  IEnumerable<string> IPlatformService.GetDeclaredActions()
+  {
+    EnsureDeclared();
+    return _publicTransitions
+      .Select(t => t.Name)
+      .Where(n => !string.IsNullOrWhiteSpace(n));
+  }
+
+  void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
+  {
+    EnsureDeclared();
+    if (_statusMember == null)
+    {
+      throw new InvalidOperationException(
+        $"Status flow '{GetType().FullName}' must declare a status property via flow.State(...).");
+    }
+
+    var seenStatusIds = new HashSet<long>();
+    foreach (var status in _statuses)
+    {
+      if (!seenStatusIds.Add(status.Id))
+      {
+        throw new InvalidOperationException(
+          $"Status flow '{GetType().FullName}' declares duplicate status ID '{status.Id}'.");
+      }
+    }
+
+    if (seenStatusIds.Count > 0)
+    {
+      if (_initialStatusId.HasValue && !seenStatusIds.Contains(_initialStatusId.Value))
+      {
+        throw new InvalidOperationException(
+          $"Status flow '{GetType().FullName}' sets initial status ID '{_initialStatusId.Value}' which is not declared in flow.Status(...).");
+      }
+
+      foreach (var transition in _transitionsByName.Values)
+      {
+        if (!seenStatusIds.Contains(transition.To))
+        {
+          throw new InvalidOperationException(
+            $"Transition '{transition.Name}' in '{GetType().FullName}' targets undeclared status ID '{transition.To}'.");
+        }
+
+        foreach (var fromId in transition.From)
+        {
+          if (!seenStatusIds.Contains(fromId))
+          {
+            throw new InvalidOperationException(
+              $"Transition '{transition.Name}' in '{GetType().FullName}' references undeclared source status ID '{fromId}'.");
+          }
+        }
+      }
+    }
+  }
 
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
@@ -802,6 +858,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
     }
 
     _followers.AddRange(flow.FollowerTypes);
+    _initialStatusId = flow.InitialStatusId;
     if (flow.InitialStatusId.HasValue)
     {
       Initial = _statuses.FirstOrDefault(s => s.Id == flow.InitialStatusId.Value);

@@ -2,6 +2,8 @@ namespace Platform.App.Tests.Internals;
 
 internal sealed class TestInvoiceStatusFlow(AppTestDbContext db) : StatusFlowService<TestInvoice>(db)
 {
+  public override Feature Feature => TestAppModule.Invoices;
+
   protected override void SetFlow(Flow flow)
   {
     flow.State(x => x.Status);

@@ -16,7 +16,7 @@ internal static class ScreenBuilderHelpers
 
   public static string ResolveFieldLabel(Localizer l, Feature? feature, string? path, string fallbackLabel) =>
     feature != null && !string.IsNullOrEmpty(path)
-      ? l.TextOr($"{feature.CleanName}.{path}",
+      ? l.TextOr($"{feature.Handle}.{path}",
           l.TextOr($"{feature.Label}.{path}",
             l.TextOr($"{feature.Name}.{path}", l[fallbackLabel])))
       : l[fallbackLabel];
@@ -48,20 +48,21 @@ internal static class ScreenBuilderHelpers
       return false;
     }
 
-    var hasExplicitAttr = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
-                          methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null;
-    if (hasExplicitAttr)
-    {
-      return ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, feature, user);
-    }
-
     if (isScreenReadOnly && !isAllowedInReadOnly)
     {
-      return false;
+      var reqRight = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true);
+      var reqAction = methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true);
+      var hasDedicatedRight = reqRight != null ||
+                              reqAction != null &&
+                              !string.Equals(reqAction.ActionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase) &&
+                              !string.Equals(reqAction.ActionName, nameof(EndpointAction.Delete), StringComparison.OrdinalIgnoreCase);
+      if (!hasDedicatedRight)
+      {
+        return false;
+      }
     }
 
-    return ServiceEndpointsExtensions.CanEdit(feature, user) ||
-           isAllowedInReadOnly && ServiceEndpointsExtensions.CanView(feature, user);
+    return ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, feature, user);
   }
 
   public static FormAskModel BuildActionAsk(
