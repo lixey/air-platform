@@ -54,7 +54,7 @@ public sealed class AppAgentMemoryGridService(AppDbContext db, AppService? app =
       foreach (var rec in context.Records)
       {
         rec.IsPinned = !rec.IsPinned;
-        rec.UpdatedAt = DateTimeOffset.UtcNow;
+        rec.UpdatedAt = Time.UtcNow;
       }
 
       return Task.CompletedTask;
@@ -66,7 +66,7 @@ public sealed class AppAgentMemoryGridService(AppDbContext db, AppService? app =
       foreach (var rec in context.Records)
       {
         rec.IsActive = !rec.IsActive;
-        rec.UpdatedAt = DateTimeOffset.UtcNow;
+        rec.UpdatedAt = Time.UtcNow;
       }
 
       return Task.CompletedTask;

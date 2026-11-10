@@ -96,6 +96,7 @@ public abstract class StatusFlowService<TEntity>(PlatformDbContext db, PlatformA
   protected PlatformDbContext Db => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
 
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 

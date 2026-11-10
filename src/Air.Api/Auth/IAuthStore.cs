@@ -17,5 +17,7 @@ public interface IAuthStore
   Task RevokeUserSessionsAsync(long userId, long? exceptSessionId, string reason, CancellationToken ct = default) => Task.CompletedTask;
   Task<string?> ResolveLanguageCodeAsync(long? languageId, CancellationToken ct = default) =>
     Task.FromResult<string?>(null);
+  Task<string?> ResolveTimeZoneAsync(string? userTimeZone, long? tenantId, CancellationToken ct = default) =>
+    Task.FromResult(userTimeZone);
   Task SaveChangesAsync(CancellationToken ct = default);
 }

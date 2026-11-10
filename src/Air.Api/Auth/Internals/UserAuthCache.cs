@@ -65,13 +65,14 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
         }
 
         var languageCode = await store.ResolveLanguageCodeAsync(user.LanguageId, token);
+        var resolvedTimeZone = await store.ResolveTimeZoneAsync(user.TimeZone, effectiveTenantId ?? securityInfo.HomeTenantId, token);
 
         return new UserAuthSnapshot(
           user.Id,
           user.Login,
           user.Name ?? user.Login,
           user.Email ?? string.Empty,
-          user.TimeZone ?? string.Empty,
+          resolvedTimeZone ?? string.Empty,
           user.IsActive,
           user.IsRoot,
           user.TokenVersion,

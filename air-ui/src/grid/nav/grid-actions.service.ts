@@ -5,7 +5,7 @@ import { AlertService } from '../../app/alert/alert.service';
 import { shownByCaller } from '../../app/alert/error-alert.interceptor';
 import { withIdempotencyKey } from '../../app/auth/credentials.interceptor';
 import { Api } from '../../core/api';
-import { fetchFile, saveFile } from '../../core/download';
+import { fetchFile, SAVE_FILE } from '../../core/download';
 import type {
   FormAskModel,
   GridActionDto,
@@ -18,6 +18,7 @@ import type {
 import type { IsCurrent } from '../../core/lifetime';
 import { classifyMutationFailure, refusalDetailOf, refusalOf } from '../../core/mutation-failure';
 import { TextsService } from '../../core/texts.service';
+import { newUuid } from '../../core/uuid';
 import { AskService, ownMessages } from '../../overlay/ask.service';
 import { ConfirmationService } from '../../overlay/confirmation.service';
 import { ScreenMutations, type ScreenOperation } from '../../screen/screen-mutations';
@@ -82,6 +83,7 @@ export class GridActionsService {
   private readonly alert = inject(AlertService);
   private readonly mutations = inject(ScreenMutations, { optional: true });
   private readonly texts = inject(TextsService);
+  private readonly saveFile = inject(SAVE_FILE);
   private readonly destroyRef = inject(DestroyRef);
 
   /** The methods of the actions under way. */
@@ -107,7 +109,7 @@ export class GridActionsService {
     }
 
     const kept = this.uncertainPick;
-    const key = kept?.method === picker.method && kept.pickedId === pickedId ? kept.key : crypto.randomUUID();
+    const key = kept?.method === picker.method && kept.pickedId === pickedId ? kept.key : newUuid();
     // Any other answer, or a pick of another row, drops the key kept
     this.uncertainPick = null;
     const mutation = gridNavMutation(this.grid, this.destroyRef);
@@ -296,7 +298,7 @@ export class GridActionsService {
         action,
         isCurrent,
         send: call => fetchFile(this.http, call.url, call.body, action.label ?? action.method, shownByCaller()),
-        apply: file => saveFile(file),
+        apply: file => this.saveFile(file),
         fail: error => this.report(error),
       }),
     );

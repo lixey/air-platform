@@ -42,6 +42,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   public PlatformDbContext DbContext => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
   protected TEntity? CurrentEntity { get; private set; }
 
   public sealed class Elements : Elements<TEntity>

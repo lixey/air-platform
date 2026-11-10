@@ -35,7 +35,7 @@ public sealed class AppAgentMemoryFormService(AppDbContext db, AppService? app =
     hooks.BeforeSave((c, _) =>
     {
       CodeRows.EnsurePascalCaseHandle(c.Entity.Kind, nameof(AppAgentMemory));
-      c.Entity.UpdatedAt = DateTimeOffset.UtcNow;
+      c.Entity.UpdatedAt = Time.UtcNow;
       return Task.CompletedTask;
     });
   }

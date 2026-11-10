@@ -11,6 +11,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
   protected virtual void SetUserRestrictions(UserRestrictions restrictions) { }

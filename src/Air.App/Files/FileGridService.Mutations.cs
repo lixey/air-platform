@@ -257,7 +257,7 @@ public abstract partial class FileGridService<TFile>
         Sha256 = sha256,
         Metadata = normalizedMetadata,
         UploadedById = User?.UserId,
-        CreatedAt = DateTimeOffset.UtcNow,
+        CreatedAt = Time.UtcNow,
         SortOrder = 0
       };
 

@@ -2,11 +2,11 @@ namespace DemoEcom.Documents;
 
 public static class EcomDocDefaults
 {
-  public static Task NewAsync(EcomDoc doc, long typeId, CancellationToken cancellationToken)
+  public static Task NewAsync(EcomDoc doc, long typeId, DateOnly today, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(doc);
     doc.DocTypeId = typeId;
-    doc.Date = DateOnly.FromDateTime(DateTime.UtcNow);
+    doc.Date = today;
     return Task.CompletedTask;
   }
 

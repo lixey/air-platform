@@ -40,7 +40,7 @@ public sealed class EcomSupplierInvoiceGridService(
   [RequireRight<EcomSupplierReturnGridService>(EndpointAction.Edit)]
   public async Task<GridActionDto> CreateSupplierReturn(GridRequest request, CancellationToken cancellationToken)
   {
-    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    var date = Time.Today;
     return await ExecuteBatchAsync(
       request,
       (c, token) => EcomDocActions.EnterAsync<EcomSupplierReturnFormService>(
@@ -59,7 +59,7 @@ public sealed class EcomSupplierInvoiceGridService(
   [RequireRight<EcomOutgoingPaymentGridService>(EndpointAction.Edit)]
   public async Task<GridActionDto> CreateOutgoingPayment(GridRequest request, CancellationToken cancellationToken)
   {
-    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    var date = Time.Today;
     return await ExecuteBatchAsync(
       request,
       (c, token) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(

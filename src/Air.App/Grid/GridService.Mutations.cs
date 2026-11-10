@@ -843,8 +843,8 @@ public abstract partial class GridService<TEntity, TRow>
     var fileStream = new FileStream(tempFilePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
     var label = L.TryGetString(Feature.Name, out var l) ? l : (string.IsNullOrEmpty(Feature.Name) ? typeof(TEntity).Name : Feature.Name);
     var cleanName = Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
-    var fileName = $"{cleanName}_{DateTime.UtcNow:yyyyMMdd_HHmm}.xlsx";
     TimeZones.TryFind(User?.TimeZone, out var exportTimeZone);
+    var fileName = $"{cleanName}_{TimeZoneInfo.ConvertTime(Time.UtcNow, exportTimeZone):yyyyMMdd_HHmm}.xlsx";
     await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => col.MemberType ?? PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
     fileStream.Position = 0;
     return Results.File(fileStream, GridExcelWriter.ContentType, fileName);

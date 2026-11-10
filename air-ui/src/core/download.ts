@@ -1,4 +1,5 @@
 import { HttpClient, type HttpContext, HttpErrorResponse } from '@angular/common/http';
+import { InjectionToken } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { wallOf } from './time-zone';
 
@@ -77,6 +78,9 @@ export function saveFile(file: DownloadedFile, doc: Document = document): void {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(href));
 }
+
+/** Injectable browser file-saver function for components and tests. */
+export const SAVE_FILE = new InjectionToken<typeof saveFile>('SAVE_FILE', { factory: () => saveFile });
 
 async function withProblem(error: HttpErrorResponse): Promise<HttpErrorResponse> {
   let problem: unknown = null;

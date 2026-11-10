@@ -136,5 +136,36 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     return trimmed.Length >= 2 ? trimmed[..2].ToLowerInvariant() : trimmed.ToLowerInvariant();
   }
 
+  public async Task<string?> ResolveTimeZoneAsync(string? userTimeZone, long? tenantId, CancellationToken ct = default)
+  {
+    if (!string.IsNullOrWhiteSpace(userTimeZone))
+    {
+      return userTimeZone.Trim();
+    }
+
+    var currentId = tenantId;
+    var visited = new HashSet<long>();
+    while (currentId is > 0 && visited.Add(currentId.Value))
+    {
+      var row = await db.Set<TTenant>().IgnoreQueryFilters().AsNoTracking()
+        .Where(t => t.Id == currentId.Value)
+        .Select(t => new { t.ParentId, t.TimeZone })
+        .FirstOrDefaultAsync(ct);
+      if (row == null)
+      {
+        break;
+      }
+
+      if (!string.IsNullOrWhiteSpace(row.TimeZone))
+      {
+        return row.TimeZone.Trim();
+      }
+
+      currentId = row.ParentId;
+    }
+
+    return null;
+  }
+
   public Task SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
 }

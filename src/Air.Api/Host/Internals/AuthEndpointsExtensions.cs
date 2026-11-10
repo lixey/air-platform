@@ -60,7 +60,8 @@ internal static class AuthEndpointsExtensions
 
       var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
       var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
-      return Results.Ok(BuildUserProfileDto(user, securityInfo, isUk));
+      var activeTenantId = ctx.RequestServices.GetService<ITenantContext>()?.TenantId;
+      return Results.Ok(await BuildUserProfileDtoAsync(user, securityInfo, isUk, activeTenantId, authStore, ct));
     });
 
     api.MapPost("/auth/login", async (LoginRequest? req, HttpContext ctx, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
@@ -138,7 +139,7 @@ internal static class AuthEndpointsExtensions
         });
       }
 
-      return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
+      return Results.Ok(await BuildSessionDtoAsync(user, securityInfo, isUk, tenantId, authStore, ct));
     });
 
     api.MapPost("/auth/change-password", async (ChangePasswordRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
@@ -236,7 +237,7 @@ internal static class AuthEndpointsExtensions
         }
 
         var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
-        return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
+        return Results.Ok(await BuildSessionDtoAsync(user, securityInfo, isUk, session.TenantId, authStore, ct));
       }));
 
     api.MapPost("/auth/refresh", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
@@ -361,7 +362,7 @@ internal static class AuthEndpointsExtensions
       IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
 
       var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
-      return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
+      return Results.Ok(await BuildSessionDtoAsync(user, securityInfo, isUk, session.TenantId, authStore, ct));
     });
 
     api.MapPost("/auth/logout", async (HttpContext ctx, IUserContext userContext, IAuthStore authStore, CancellationToken ct) =>
@@ -433,7 +434,8 @@ internal static class AuthEndpointsExtensions
           }
 
           var securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
-          return Results.Ok(BuildUserProfileDto(user, securityInfo, isUk));
+          var activeTenantId = ctx.RequestServices.GetService<ITenantContext>()?.TenantId;
+          return Results.Ok(await BuildUserProfileDtoAsync(user, securityInfo, isUk, activeTenantId, authStore, ct));
         }
       }
 
@@ -513,7 +515,7 @@ internal static class AuthEndpointsExtensions
 
       IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
       var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
-      return Results.Ok(BuildSessionDto(user, securityInfo, isUk));
+      return Results.Ok(await BuildSessionDtoAsync(user, securityInfo, isUk, req.Id, authStore, ct));
     };
 
     api.MapPost("/platform-tenant/switch", switchTenantHandler);
@@ -578,23 +580,39 @@ internal static class AuthEndpointsExtensions
     });
   }
 
-  private static UserProfileDto BuildUserProfileDto(BaseAppUser user, SecurityInfo securityInfo, bool isUk) =>
-    new()
+  private static async Task<UserProfileDto> BuildUserProfileDtoAsync(
+    BaseAppUser user,
+    SecurityInfo securityInfo,
+    bool isUk,
+    long? tenantId,
+    IAuthStore authStore,
+    CancellationToken ct)
+  {
+    var effectiveTenantId = tenantId ?? (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId;
+    var resolvedTimeZone = await authStore.ResolveTimeZoneAsync(user.TimeZone, effectiveTenantId, ct);
+    return new UserProfileDto
     {
       Id = user.Id,
       Login = user.Login,
       Name = user.Name ?? user.Login,
       Email = user.Email ?? "",
       Language = isUk ? "uk" : "en",
-      TimeZone = user.TimeZone ?? "UTC",
+      TimeZone = !string.IsNullOrEmpty(resolvedTimeZone) ? resolvedTimeZone : "UTC",
       MustChangePassword = user.MustChangePassword,
       Permissions = securityInfo.Permissions.ToList()
     };
+  }
 
-  private static SessionDto BuildSessionDto(BaseAppUser user, SecurityInfo securityInfo, bool isUk) =>
+  private static async Task<SessionDto> BuildSessionDtoAsync(
+    BaseAppUser user,
+    SecurityInfo securityInfo,
+    bool isUk,
+    long? tenantId,
+    IAuthStore authStore,
+    CancellationToken ct) =>
     new()
     {
-      User = BuildUserProfileDto(user, securityInfo, isUk),
+      User = await BuildUserProfileDtoAsync(user, securityInfo, isUk, tenantId, authStore, ct),
       ExpiresIn = 1800
     };
 }

@@ -24,7 +24,7 @@ export const IDEMPOTENCY_KEY = new HttpContextToken<string | null>(() => null);
 /**
  * The options of a request posted under the idempotency key `key`: `options` with the key set on their context, or
  * those of `shownByCaller()` when none are given, since a create's caller shows its own failure. The caller makes the
- * key once per create, `crypto.randomUUID()`, and keeps it while the create's outcome is unknown.
+ * key once per create, `newUuid()`, and keeps it while the create's outcome is unknown.
  */
 export function withIdempotencyKey(key: string, options?: { context: HttpContext }): { context: HttpContext } {
   const keyed = options ?? shownByCaller();

@@ -43,7 +43,7 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
   protected override void SetHooks(Hooks hooks)
   {
     hooks.AfterLoad((c, cancellationToken) =>
-      c.IsNew ? EcomDocDefaults.NewAsync(c.Entity, Type, cancellationToken) : Task.CompletedTask);
+      c.IsNew ? EcomDocDefaults.NewAsync(c.Entity, Type, Time.Today, cancellationToken) : Task.CompletedTask);
     hooks.BeforeSave((c, cancellationToken) =>
     {
       if (c.Entity.DocTypeId == 0)

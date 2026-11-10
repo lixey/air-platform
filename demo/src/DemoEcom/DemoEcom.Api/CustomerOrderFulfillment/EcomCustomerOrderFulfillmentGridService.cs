@@ -52,7 +52,7 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
   [RequireRight<EcomPurchaseOrderGridService>(EndpointAction.Edit)]
   public async Task<GridActionDto> CreatePurchaseOrder(GridRequest request, CancellationToken cancellationToken)
   {
-    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    var date = Time.Today;
     return await ExecuteBatchAsync(
       request,
       (c, token) => EcomDocActions.PurchaseAsync(

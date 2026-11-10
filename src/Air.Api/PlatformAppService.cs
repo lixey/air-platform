@@ -1,3 +1,5 @@
+using Platform.Api.Internals;
+
 namespace Platform.Api;
 
 /// <summary>
@@ -29,8 +31,13 @@ public class PlatformAppService(
   /// <summary>Distributed user and session authentication cache.</summary>
   public IUserAuthCache? AuthCache => Services.GetService<IUserAuthCache>();
 
-  /// <summary>Time provider for the current request or system default.</summary>
-  public TimeProvider Time => Services.GetService<TimeProvider>() ?? TimeProvider.System;
+  /// <summary>Default UTC-scoped system time provider when no ambient request service is attached.</summary>
+  public static TimeProvider UtcTime { get; } = new ScopedTimeProvider(TimeProvider.System, TimeZoneInfo.Utc);
+
+  /// <summary>Time provider scoped to the active user/tenant time zone (or UTC when unconfigured).</summary>
+  public TimeProvider Time => field ??= new ScopedTimeProvider(
+    Services.GetService<TimeProvider>() ?? TimeProvider.System,
+    TimeZones.TryFind(User.TimeZone, out var zone) ? zone : TimeZoneInfo.Utc);
 
   /// <summary>Direct string translation indexer.</summary>
   public string this[string name] => L[name];

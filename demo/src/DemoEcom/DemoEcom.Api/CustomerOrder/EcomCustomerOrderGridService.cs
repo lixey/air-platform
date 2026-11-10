@@ -45,7 +45,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
   [RequireRight<EcomSalesInvoiceGridService>(EndpointAction.Edit)]
   public Task<GridActionDto> CreateSalesInvoice(GridRequest request, CancellationToken cancellationToken)
   {
-    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    var date = Time.Today;
     return ExecuteBatchAsync(
       request,
       (context, ct) => EcomDocActions.EnterAsync<EcomSalesInvoiceFormService>(
@@ -64,7 +64,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
   [RequireRight<EcomIncomingPaymentGridService>(EndpointAction.Edit)]
   public Task<GridActionDto> CreateIncomingPayment(GridRequest request, CancellationToken cancellationToken)
   {
-    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    var date = Time.Today;
     return ExecuteBatchAsync(
       request,
       (context, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(

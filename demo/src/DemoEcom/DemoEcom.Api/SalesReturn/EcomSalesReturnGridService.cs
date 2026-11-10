@@ -37,7 +37,7 @@ public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturn
   [RequireRight<EcomOutgoingPaymentGridService>(EndpointAction.Edit)]
   public async Task<GridActionDto> CreateOutgoingPayment(GridRequest request, CancellationToken cancellationToken)
   {
-    var date = DateOnly.FromDateTime(DateTime.UtcNow);
+    var date = Time.Today;
     return await ExecuteBatchAsync(
       request,
       (c, token) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(

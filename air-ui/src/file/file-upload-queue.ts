@@ -9,6 +9,7 @@ import type { FileGridServiceEndpoints, FileMetadataDto, FileUploadLimitsDto } f
 import { type IsCurrent, Lifetime } from '../core/lifetime';
 import { classifyMutationFailure, type MutationFailure, refusalOf } from '../core/mutation-failure';
 import { TextsService, type UiTextKey } from '../core/texts.service';
+import { newUuid } from '../core/uuid';
 import type { GridRowKey } from '../grid/grid-row';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
@@ -433,7 +434,7 @@ export class FileUploadQueue {
       file: posted,
       metadata: facts?.metadata ?? null,
       thumbnail: await thumbnailOf(posted, target.thumbnailMaxBytes),
-      key: crypto.randomUUID(),
+      key: newUuid(),
     };
   }
 

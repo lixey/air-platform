@@ -23,6 +23,7 @@ import { Lifetime } from '../core/lifetime';
 import { classifyMutationFailure, refusalDetailOf } from '../core/mutation-failure';
 import { problemOf } from '../core/problem';
 import { TextsService } from '../core/texts.service';
+import { newUuid } from '../core/uuid';
 import type { Unavailable } from '../nav/nav-availability';
 import { AskService } from '../overlay/ask.service';
 import { ConfirmationService } from '../overlay/confirmation.service';
@@ -751,7 +752,7 @@ export class FormService {
     this.operation = operation;
     const submitted = this.buildSubmission();
     // A create travels under a key kept until its answer settles it
-    const key = wasNew ? (this.keptCreate()?.key ?? crypto.randomUUID()) : null;
+    const key = wasNew ? (this.keptCreate()?.key ?? newUuid()) : null;
     if (key !== null) {
       this.keptCreate.set({ key, submission: submitted });
     }

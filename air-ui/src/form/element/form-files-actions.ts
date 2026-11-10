@@ -1,7 +1,7 @@
 import { computed, DestroyRef, DOCUMENT, inject, Injector, linkedSignal, signal } from '@angular/core';
 import { AlertService } from '../../app/alert/alert.service';
 import { LocaleService } from '../../app/locale.service';
-import { saveFile, stampedName } from '../../core/download';
+import { SAVE_FILE, stampedName } from '../../core/download';
 import type { FormFilesModel, GridActionDto, GridDeleteDto } from '../../core/generated/contracts';
 import type { IsCurrent } from '../../core/lifetime';
 import { TextsService } from '../../core/texts.service';
@@ -40,6 +40,7 @@ export class FormFilesActions {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly document = inject(DOCUMENT);
+  private readonly saveFile = inject(SAVE_FILE);
   private readonly timeZone = inject(LocaleService).zone;
 
   private readonly _deleting = signal<GridRowKey | null>(null);
@@ -140,7 +141,7 @@ export class FormFilesActions {
     }
     const outcome = await postFileAction(this.opener, 'download-all', null, {}, busy => this._isDownloadingAll.set(busy));
     if (outcome && outcome !== 'failed') {
-      saveFile({ blob: outcome.answer.blob, name: stampedName(outcome.answer.name, new Date(), this.timeZone()) }, this.document);
+      this.saveFile({ blob: outcome.answer.blob, name: stampedName(outcome.answer.name, new Date(), this.timeZone()) }, this.document);
     }
   }
 
