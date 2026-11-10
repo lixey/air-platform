@@ -158,12 +158,16 @@ function normalizeTable(raw: Record<string, unknown>): ReportTableDto | null {
     }
     const obj = (c ?? {}) as Record<string, unknown>;
     const kRaw = String(obj['kind'] ?? obj['type'] ?? (idx === 0 ? 'text' : 'number')).toLowerCase();
-    const kind: ReportColumnDto['kind'] = kRaw === 'money' || kRaw === 'number' || kRaw === 'percent' ? kRaw : 'text';
+    const kind: ReportColumnDto['kind'] =
+      kRaw === 'money' || kRaw === 'number' || kRaw === 'percent' || kRaw === 'badge' || kRaw === 'date' || kRaw === 'datetime'
+        ? kRaw
+        : 'text';
     return {
       key: String(obj['key'] ?? obj['field'] ?? `c${idx}`),
       label: String(obj['label'] ?? obj['title'] ?? obj['name'] ?? obj['key'] ?? ''),
       kind,
       currency: typeof obj['currency'] === 'string' ? obj['currency'] : null,
+      decimals: typeof obj['decimals'] === 'number' ? obj['decimals'] : null,
       width: typeof obj['width'] === 'number' ? obj['width'] : null,
     };
   });

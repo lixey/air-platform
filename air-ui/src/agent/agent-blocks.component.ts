@@ -10,6 +10,8 @@ import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
 import { singlePanelLayout } from '../panels/single-panel-layout';
+import { openReportRow, openTargetOfRow } from '../report/report-row-open';
+import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
 import { renderMarkdownToSafeHtml, sanitizeAgentHtml } from './agent-markdown';
 
@@ -174,10 +176,25 @@ export class AgentChartBlockComponent {
             </thead>
             <tbody>
               @for (row of t.rows; track $index; let idx = $index) {
-                <tr [class]="idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'">
+                <tr
+                  [class]="rowClass(idx, row)"
+                  [attr.tabindex]="isRowClickable(row) ? 0 : null"
+                  (click)="openRow(row, $event)"
+                  (keydown.enter)="openRow(row, $event)"
+                  (keydown.space)="onRowSpace(row, $event)"
+                >
                   @for (col of t.columns; track col.key) {
                     <td [class]="bodyCellClass(col, row)">
-                      {{ formatCell(col, row) }}
+                      @if (col.kind === 'badge') {
+                        @let cellText = formatCell(col, row);
+                        @if (cellText) {
+                          <span [class]="badgePillClass(col, row)">
+                            {{ cellText }}
+                          </span>
+                        }
+                      } @else {
+                        {{ formatCell(col, row) }}
+                      }
                     </td>
                   }
                 </tr>
@@ -208,6 +225,7 @@ export class AgentTableBlockComponent {
   private readonly zone = inject(LocaleService).zone;
   private readonly overlay = inject(OverlayService);
   private readonly injector = inject(Injector);
+  private readonly mutations = inject(ScreenMutations, { optional: true });
   protected readonly texts = inject(TextsService);
 
   readonly table = input.required<ReportTableDto>();
@@ -231,6 +249,33 @@ export class AgentTableBlockComponent {
       null,
       this.injector,
     );
+  }
+
+  protected isRowClickable(row: Record<string, unknown>): boolean {
+    return openTargetOfRow(row) !== null;
+  }
+
+  protected rowClass(idx: number, row: Record<string, unknown>): string {
+    const base = idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover';
+    return this.isRowClickable(row) ? `${base} cursor-pointer` : base;
+  }
+
+  protected onRowSpace(row: Record<string, unknown>, event: Event): void {
+    if (!this.isRowClickable(row)) {
+      return;
+    }
+    event.preventDefault();
+    this.openRow(row, event);
+  }
+
+  protected openRow(row: Record<string, unknown>, event: Event): void {
+    openReportRow(row, event, this.overlay, this.injector, this.mutations);
+  }
+
+  protected badgePillClass(col: ReportColumnDto, row: Record<string, unknown>): string {
+    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (row['color'] as string | undefined);
+    const hue = asUiColor(cellColor) ?? 'slate';
+    return `inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold hue-${hue} bg-(--btn-ground) text-(--btn-ink) border border-(--btn-edge)`;
   }
 
   protected formatCell(col: ReportColumnDto, row: Record<string, unknown>): string {
@@ -264,23 +309,25 @@ export class AgentTableBlockComponent {
   }
 
   protected headerCellClass(col: ReportColumnDto): string {
-    const align = col.kind === 'text' ? 'text-left' : 'text-right';
+    const isLeft = col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime';
+    const align = isLeft ? 'text-left' : 'text-right';
     return `h-8 px-2.5 border-r border-line whitespace-nowrap last:border-r-0 ${align}`;
   }
 
   protected bodyCellClass(col: ReportColumnDto, row: Record<string, unknown>): string {
-    const align = col.kind === 'text' ? 'text-left font-medium' : 'text-right tabular-nums';
-    const cellColor =
-      (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
+    const isLeft = col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime';
+    const align =
+      col.kind === 'text' || col.kind === 'badge' ? 'text-left font-medium' : isLeft ? 'text-left tabular-nums' : 'text-right tabular-nums';
+    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (!isLeft ? (row['color'] as string | undefined) : undefined);
     const hue = asUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `h-8 px-2.5 border-r border-b border-line whitespace-nowrap last:border-r-0 ${align} ${colorCls}`;
   }
 
   protected footerCellClass(col: ReportColumnDto, row: Record<string, unknown>): string {
-    const align = col.kind === 'text' ? 'text-left' : 'text-right tabular-nums';
-    const cellColor =
-      (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
+    const isLeft = col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime';
+    const align = isLeft ? 'text-left' : 'text-right tabular-nums';
+    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (!isLeft ? (row['color'] as string | undefined) : undefined);
     const hue = asUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `h-8 px-2.5 border-r border-t border-line whitespace-nowrap last:border-r-0 ${align} ${colorCls}`;

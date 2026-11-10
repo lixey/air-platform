@@ -114,7 +114,7 @@ public static class AgentPromptBuilder
       "     * Bar/Horizontal-Bar/Stacked-Bar/Line/Area: `{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"bar\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"...\", \"kind\": \"bar\", \"color\": \"emerald\", \"data\": [100, 200]}]}`"
     );
     sb.AppendLine(
-      "   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\"}], \"rows\": [{\"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Total\", \"sum\": 1000}]}</air_table>`."
+      "   - For tables, either use a standard Markdown pipe table (`| Col | Value |`) OR emit `<air_table>{\"title\": \"...\", \"columns\": [{\"key\": \"date\", \"label\": \"...\", \"kind\": \"date\"}, {\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}, {\"key\": \"sum\", \"label\": \"...\", \"kind\": \"money\", \"decimals\": 2}], \"rows\": [{\"date\": \"2026-11-01\", \"name\": \"...\", \"sum\": 1000}], \"bottomRows\": [{\"name\": \"Total\", \"sum\": 1000}]}</air_table>` (`kind`: `text`, `date`, `datetime`, `badge`, `money`, `number`, `percent`)."
     );
     sb.AppendLine(
       "   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`."

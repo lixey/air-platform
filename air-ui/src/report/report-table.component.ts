@@ -5,11 +5,11 @@ import { SearchBoxComponent } from '../controls/search-box.component';
 import type { ReportColumnDto, ReportFilterItemDto, ReportTableDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
-import { GridService } from '../grid/grid.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayService } from '../overlay/overlay.service';
 import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
+import { openReportRow, openTargetOfRow } from './report-row-open';
 
 @Component({
   selector: 'ui-report-table',
@@ -269,7 +269,7 @@ export class ReportTableComponent {
   }
 
   protected canOpenRow(row: Record<string, unknown>): boolean {
-    return this.openTargetOf(row) !== null;
+    return openTargetOfRow(row) !== null;
   }
 
   protected onRowSpace(row: Record<string, unknown>, event: Event): void {
@@ -278,40 +278,7 @@ export class ReportTableComponent {
   }
 
   protected openRow(row: Record<string, unknown>, event: Event): void {
-    const target = this.openTargetOf(row);
-    if (!target) {
-      return;
-    }
-    const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
-    const ref = this.overlay.open(
-      {
-        key: target.service,
-        presentation: 'drawer',
-        closesOnEscape: true,
-        screen: { service: target.service, params: { id: target.id } },
-      },
-      anchor,
-      this.injector,
-    );
-    if (this.mutations) {
-      this.mutations.track(ref, target.service, () => true);
-    } else {
-      ref.closed.subscribe(result => {
-        if (result !== undefined) {
-          GridService.reloadServices([target.service]);
-        }
-      });
-    }
-  }
-
-  private openTargetOf(row: Record<string, unknown>): { service: string; id: number } | null {
-    const service = row['openForm'];
-    const rawId = row['openId'];
-    if (typeof service !== 'string' || !service || rawId === null || rawId === undefined) {
-      return null;
-    }
-    const id = typeof rawId === 'number' ? rawId : Number(rawId);
-    return Number.isFinite(id) && id > 0 ? { service, id } : null;
+    openReportRow(row, event, this.overlay, this.injector, this.mutations);
   }
 
   protected badgePillClass(col: ReportColumnDto, row: Record<string, unknown>): string {
