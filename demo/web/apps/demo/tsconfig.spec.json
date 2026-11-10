@@ -4,5 +4,5 @@
     "outDir": "../../dist/out-tsc",
     "types": ["node"]
   },
-  "include": ["src/**/*.spec.ts", "src/**/*.d.ts"]
+  "include": ["src/**/*.spec.ts", "src/**/*.d.ts", "../../libs/air-ui/src/**/*.spec.ts", "../../libs/air-ui/tests/**/*.ts"]
 }

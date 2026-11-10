@@ -36,4 +36,9 @@ Thumbs.db
 demo/.local/
 demo/src/Demo.Api/appsettings.Development.json
 **/air_files/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+demo/web/skills/
 tmp_*.md

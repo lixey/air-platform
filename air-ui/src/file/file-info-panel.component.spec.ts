@@ -239,12 +239,11 @@ describe('FileInfoPanelComponent', () => {
     expect(factsOf(one('[data-file-metadata]'))).toEqual({ Camera: 'Apple iPhone 15' });
   });
 
-  it('shows the Info being read, and a failed one with Try again', async () => {
+  it('marks the panel busy while Info is read, and shows a failed one with Try again', async () => {
     info.mockRejectedValueOnce(new Error('offline'));
     const reading = mount(photo);
-    expect(one('p').textContent).toBe('Loading…');
     expect(host().getAttribute('aria-busy')).toBe('true');
-    expect(boxesOf(host())).toEqual(['h3', 'p']);
+    expect(boxesOf(host())).toEqual(['h3']);
     await reading;
 
     expect(host().hasAttribute('aria-busy')).toBe(false);

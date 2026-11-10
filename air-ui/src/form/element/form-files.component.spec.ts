@@ -11,7 +11,7 @@ import { userProfile } from '../../../tests/user-profile';
 import { AlertService } from '../../app/alert/alert.service';
 import { AuthService } from '../../app/auth/auth.service';
 import type { CloseApproval } from '../../core/close-decision';
-import * as download from '../../core/download';
+import { SAVE_FILE, type saveFile } from '../../core/download';
 import { provideDynamicComponents } from '../../core/dynamic-component/provide-dynamic-components';
 import type { FileUploadLimitsDto, FormFilesModel, FormModel } from '../../core/generated/contracts';
 import { FILE_VIEWER_SOURCE, type FileViewerSource } from '../../file/file-viewer';
@@ -64,7 +64,7 @@ describe('FormFilesComponent', () => {
   let fixture: ComponentFixture<FormFilesComponent>;
   const alerts = { open: vi.fn(), error: vi.fn(), warnings: AlertService.prototype.warnings };
   const confirm = vi.fn((_options: unknown, _signal?: AbortSignal) => Promise.resolve(true));
-  const saved = vi.spyOn(download, 'saveFile');
+  const saved = vi.fn<typeof saveFile>();
   /** Whether the element stands in an overlay, which a test that puts it in one says before it configures again. */
   let isInOverlay = false;
   let lifecycle: Pick<ScreenLifecycle, 'registerOwner'> | null = null;
@@ -113,6 +113,7 @@ describe('FormFilesComponent', () => {
         FormService,
         { provide: AlertService, useValue: alerts },
         { provide: ConfirmationService, useValue: { confirm } },
+        { provide: SAVE_FILE, useValue: saved },
         {
           provide: OverlayRef,
           useFactory: () =>

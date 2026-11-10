@@ -1,13 +1,13 @@
-.PHONY: all help build test clean contracts export-contracts format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
+.PHONY: all help build test clean contracts export-contracts contracts-check format format-check check-paths check-arch check-ts gate audit prepare reset db-prepare db-reset agent-up agent-down agent-restart logs-err mcp-check
 
 VOLUME ?= default
 WEB := demo/web
-PRETTIER_PATHS := . ../../air-ui/src ../../docs
+PRETTIER_PATHS := . ../../air-ui/src ../../air-ui/tests ../../docs
 AGENT_API_PORT ?= 5191
 AGENT_WEB_PORT ?= 4400
 AUDIT_CLI ?= auto
 AUDIT_MODEL ?= claude-opus-5-5-high
-AUDIT_CLAUDE_MODEL ?= claude-opus-5-5
+AUDIT_CLAUDE_MODEL ?= claude-fable-5-2
 AUDIT_TIMEOUT ?= 300
 AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md (including Section 7 ADR invariants). Do NOT run background tasks or subagents. Report objective bugs/regressions vs controversial design trade-offs concisely.
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
@@ -21,9 +21,9 @@ help: ## Show available targets
 build: ## Build the entire solution
 	dotnet build AirPlatform.slnx
 
-test: ## Run all layered xUnit tests (tests/*) and air-ui Vitest specs
+test: ## Run all layered xUnit tests (tests/*) and all air-ui/demo Vitest specs
 	dotnet test AirPlatform.slnx --nologo
-	@cd $(WEB) && ./node_modules/.bin/vitest run libs/air-ui/src/form/form-child-scope.spec.ts
+	@cd $(WEB) && TZ=America/New_York NX_DAEMON=false ./node_modules/.bin/nx test demo
 
 format: ## Format all C# files via dotnet format (.editorconfig) and frontend/docs via Prettier
 	@dotnet format AirPlatform.slnx --verbosity minimal && cd $(WEB) && npx prettier --write --log-level warn --config .prettierrc $(PRETTIER_PATHS)
@@ -31,22 +31,28 @@ format: ## Format all C# files via dotnet format (.editorconfig) and frontend/do
 format-check: ## Verify formatting without modifying files
 	@dotnet format AirPlatform.slnx --verify-no-changes --verbosity minimal && cd $(WEB) && npx prettier --check --config .prettierrc $(PRETTIER_PATHS)
 
-check-paths: check-arch ## Verify zero absolute filesystem paths and architectural rules in tracked files
+check-paths: ## Verify zero absolute filesystem paths in tracked files
 	@! git grep -nI -E '$(ABS_PATH_PATTERN)'
 
 check-ts: ## Verify TypeScript and Angular template compilation for air-ui and demo
 	@cd $(WEB) && npx ngc -p apps/demo/tsconfig.app.json --noEmit
 
-gate: format-check check-paths check-arch check-ts build test ## Run unified verification gate (format, paths, arch, ts, build, test)
+contracts-check: ## Verify generated TypeScript contracts and UI texts match C# definitions without mutating the working tree
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	dotnet run --project src/Air.UiContracts -- "$$tmp" >/dev/null && \
+	(cd $(WEB) && npx prettier --write --log-level warn --config .prettierrc --ignore-path /dev/null "$$tmp" >/dev/null) && \
+	diff -ru air-ui/src/core/generated "$$tmp"
 
-audit: ## Run controlled code audit on Claude Opus 5.5 (High) via agy CLI with automatic fallback to claude CLI
+gate: format-check check-paths check-arch contracts-check check-ts build test ## Run unified verification gate (format, paths, arch, contracts, ts, build, test)
+
+audit: ## Run controlled code audit on Claude Fable 5.2 (High) via claude CLI with automatic fallback to agy CLI
 	@if [ "$(AUDIT_CLI)" = "claude" ]; then \
-		claude --model $(AUDIT_CLAUDE_MODEL) --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' claude --model $(AUDIT_CLAUDE_MODEL) --effort high --strict-mcp-config --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	elif [ "$(AUDIT_CLI)" = "agy" ]; then \
 		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	else \
-		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)" || \
-		claude --model $(AUDIT_CLAUDE_MODEL) --effort high --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
+		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' claude --model $(AUDIT_CLAUDE_MODEL) --effort high --strict-mcp-config --dangerously-skip-permissions -p "$(AUDIT_PROMPT)" || \
+		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	fi
 
 check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, *Extensions.cs, and .resx parity
@@ -64,9 +70,12 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 	 errs.extend([f"{cs}: forbidden domain hardcoding {m.group(0)}" for m in [re.search(r"\"(?:mccCode|DocStatus|counterpartyId|toAccountId)\"|--dangerously-skip-permissions|Password123", txt, re.I)] if (cs.startswith("src/") or "Password123" in txt) and m]) or \
 	 errs.extend([f"{cs}: [AllowAnonymous] is forbidden on GridService/FormService; use [WebhookEndpoint] with explicit auth"] if cs.endswith(("GridService.cs", "FormService.cs")) and re.search(r"\[\s*AllowAnonymous\b", txt) else []) or \
 	 errs.extend([f"{cs}: use GetParent()/GetHooks() instead of new Parent()/new Hooks()"] if cs.startswith("src/") and os.path.basename(cs) not in ("FormService.cs", "GridService.cs") and re.search(r"new\s+(?:Parent|Hooks)\s*\(\s*\)", txt) else []) or \
+	 errs.extend([f"{cs}: use Time.Today / Time.UtcNow instead of raw DateTime/DateTimeOffset clock reads"] if cs.startswith("demo/src/") and "/Migrations/" not in cs and "/Demo.DevMigrations/" not in cs and re.search(r"\bDateTime(?:Offset)?\.(?:UtcNow|Now|Today)\b", txt) else []) or \
 	 errs.extend([f"{cs}: exceeds 1000 lines ({txt.count(chr(10)) + 1})"] if cs.startswith("src/") and txt.count(chr(10)) + 1 > 1000 else []) \
 	 for cs in sorted(glob.glob("**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs and not cs.endswith(".Designer.cs") and os.path.basename(cs) not in ("GlobalUsings.cs", "Program.cs") for txt in [open(cs, encoding="utf-8").read()]]; \
-	[errs.extend([f"{ts}: exceeds 1000 lines ({ttxt.count(chr(10)) + 1})"] if ttxt.count(chr(10)) + 1 > 1000 else []) for ts in sorted(glob.glob("air-ui/src/**/*.ts", recursive=True)) if not ts.endswith(".spec.ts") and not ts.endswith("contracts.ts") for ttxt in [open(ts, encoding="utf-8").read()]]; \
+	[errs.extend([f"{ts}: exceeds 1000 lines ({ttxt.count(chr(10)) + 1})"] if ttxt.count(chr(10)) + 1 > 1000 else []) or \
+	 errs.extend([f"{ts}: use newUuid() instead of raw crypto.randomUUID"] if os.path.basename(ts) != "uuid.ts" and "crypto.randomUUID" in ttxt else []) \
+	 for ts in sorted(glob.glob("air-ui/src/**/*.ts", recursive=True)) if not ts.endswith(".spec.ts") and not ts.endswith("contracts.ts") for ttxt in [open(ts, encoding="utf-8").read()]]; \
 	[errs.extend([f"{gu}: forbidden .Internals in GlobalUsings.cs (use local using in .cs files)"] if re.search(r"^global\s+using\s+.*\.Internals\b", open(gu, encoding="utf-8").read(), re.M) else []) for gu in sorted(glob.glob("**/GlobalUsings.cs", recursive=True)) if "/obj/" not in gu and "/bin/" not in gu]; \
 	[errs.extend([f"{rx}: missing in .uk.resx: {sorted(b - u)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())) if os.path.exists(rx[:-5] + ".uk.resx") else set())] if b - u]) for rx in sorted(glob.glob("**/*.resx", recursive=True)) if not rx.endswith(".uk.resx")]; \
 	ui_keys = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*:", open("air-ui/src/ui-components.ts", encoding="utf-8").read(), re.M)); \
@@ -77,6 +86,7 @@ check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts
 
 export-contracts: ## Export TypeScript contracts and localized UI texts
 	dotnet run --project src/Air.UiContracts -- air-ui/src/core/generated
+	@cd $(WEB) && npx prettier --write --log-level warn --config .prettierrc ../../air-ui/src/core/generated
 
 contracts: export-contracts
 

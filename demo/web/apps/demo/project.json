@@ -25,6 +25,7 @@
       "options": {
         "runner": "vitest",
         "tsConfig": "apps/demo/tsconfig.spec.json",
+        "include": ["**/*.spec.ts", "../../../libs/air-ui/src/**/*.spec.ts"],
         "watch": false
       }
     },

@@ -1,4 +1,3 @@
-import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 import { Lifetime } from '../core/lifetime';
 import { FormChildScope } from './form-child-scope';
@@ -44,7 +43,7 @@ describe('FormChildScope multi-tab synchronization', () => {
 
     // Trigger a committed mutation in tabLines (e.g. adding or editing an order line)
     const op = tabLines.mutations.begin();
-    tabLines.mutations.publish(op, { service: 'ecom/order-lines', operation: 'save', rowId: 42 });
+    tabLines.mutations.publish(op, { service: 'ecom/order-lines', operation: 'save', recordId: 42 });
     tabLines.mutations.finish(op);
 
     expect(parentRefreshCount).toBe(1);
