@@ -1318,6 +1318,9 @@
   <data name="AgentSyncPromptLabel" xml:space="preserve">
     <value>Synchronization: {0}</value>
   </data>
+  <data name="AgentSyncInputPlaceholder" xml:space="preserve">
+    <value>Add details or screenshots (optional) and press Enter to sync…</value>
+  </data>
   <data name="ChangeAgentBatchBadge" xml:space="preserve">
     <value>AI batch ({0}) · #{1}</value>
   </data>

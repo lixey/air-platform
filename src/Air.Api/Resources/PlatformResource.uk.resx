@@ -1321,6 +1321,9 @@
   <data name="AgentSyncPromptLabel" xml:space="preserve">
     <value>Синхронізація: {0}</value>
   </data>
+  <data name="AgentSyncInputPlaceholder" xml:space="preserve">
+    <value>Додайте деталі чи скріншоти (необов'язково) та натисніть Enter для синхронізації…</value>
+  </data>
   <data name="ChangeAgentBatchBadge" xml:space="preserve">
     <value>ШІ-пакет ({0}) · #{1}</value>
   </data>

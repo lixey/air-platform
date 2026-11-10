@@ -55,6 +55,7 @@
   "NothingToPick": "Nothing to pick.",
   "AgentProposalNotFound": "The proposal was not found or has expired.",
   "ChooseHour": "Choose an hour",
+  "AgentSyncInputPlaceholder": "Add details or screenshots (optional) and press Enter to sync\u2026",
   "AuthPermission": "Permission",
   "Must Change Password": "Must Change Password",
   "RightsRootFlag": "The root user is set once at installation; no save changes it.",

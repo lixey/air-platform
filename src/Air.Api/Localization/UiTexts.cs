@@ -54,6 +54,7 @@ public static class UiTexts
       ["AgentStepBadge"] = "Step {0}",
       ["AgentStopTitle"] = "Stop",
       ["AgentSupersededBadge"] = "Updated below",
+      ["AgentSyncInputPlaceholder"] = "Add details or screenshots (optional) and press Enter to sync\u2026",
       ["AgentSyncPromptLabel"] = "Synchronization: {0}",
       ["AgentTitle"] = "AI Assistant",
       ["AllAreTrue"] = "All of the following are true\u2026",

@@ -514,6 +514,8 @@ export interface AgentStreamEventDto {
 export interface AgentSyncRequest {
   sessionId?: string | null;
   sourceId: string;
+  message?: string | null;
+  syncFileAttachmentId?: string | null;
   attachmentIds?: string[] | null;
   locale?: string | null;
   provider?: string | null;

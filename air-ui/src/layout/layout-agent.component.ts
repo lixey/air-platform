@@ -23,6 +23,7 @@ import { BadgeComponent } from '../badge/badge.component';
 import { BtnComponent } from '../btn/btn.component';
 import type { AgentSyncSourceDto, UiColor, UiIcon } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import { ICON_SET } from '../icon/icon-set';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
@@ -161,15 +162,17 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
                 >
                   <i class="flex scale-85 items-center justify-center" [icon]="copiedId() === msg.id ? 'checkmark' : 'copy'"></i>
                 </button>
-                <button
-                  type="button"
-                  class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink"
-                  [title]="texts.of('AgentReturnToInput')"
-                  [attr.aria-label]="texts.of('AgentReturnToInput')"
-                  (click)="returnToInput(msg.text)"
-                >
-                  <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
-                </button>
+                @if (!msg.syncSource || msg.promptText) {
+                  <button
+                    type="button"
+                    class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink"
+                    [title]="texts.of('AgentReturnToInput')"
+                    [attr.aria-label]="texts.of('AgentReturnToInput')"
+                    (click)="returnToInput(msg.syncSource ? (msg.promptText ?? '') : msg.text)"
+                  >
+                    <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
+                  </button>
+                }
               }
               @if (!msg.syncSource) {
                 <button
@@ -467,21 +470,58 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
     </div>
 
     <div class="shrink-0 border-t border-line bg-surface p-2">
-      @if (agent.pendingAttachments().length > 0) {
-        <div class="mb-2 flex flex-wrap gap-1.5">
-          @for (att of agent.pendingAttachments(); track att.id) {
-            <div class="relative overflow-hidden rounded-md border border-line bg-surface">
-              <img [src]="att.previewUrl" [alt]="att.fileName" class="h-14 w-14 object-cover" />
+      @if (agent.pendingSyncSource() || agent.pendingAttachments().length > 0) {
+        <div class="mb-2 flex flex-wrap items-center gap-1.5">
+          @if (agent.pendingSyncSource(); as syncSrc) {
+            <div
+              class="flex max-w-full items-center gap-1.5 rounded-md border border-mark/30 bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink"
+            >
+              <i class="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-mark" [icon]="syncSourceIcon(syncSrc)"></i>
+              <span class="truncate">{{ syncSrc.label }}</span>
+              @if (agent.pendingSyncFile(); as syncFile) {
+                <span class="max-w-36 truncate text-muted" [title]="syncFile.fileName">· {{ syncFile.fileName }}</span>
+              }
               <button
                 type="button"
-                class="absolute top-0.5 right-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-surface/90 text-ink hover:bg-red-500 hover:text-white"
+                class="ml-0.5 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-red-500 hover:text-white"
                 [title]="texts.of('Delete')"
                 [attr.aria-label]="texts.of('Delete')"
-                (click)="agent.removePendingAttachment(att.id)"
+                (click)="agent.clearPendingSync()"
               >
                 <i class="flex items-center justify-center" [icon]="'close'"></i>
               </button>
             </div>
+          }
+
+          @for (att of agent.pendingAttachments(); track att.id) {
+            @if (isImageAttachment(att.contentType)) {
+              <div class="relative overflow-hidden rounded-md border border-line bg-surface">
+                <img [src]="att.previewUrl" [alt]="att.fileName" class="h-14 w-14 object-cover" />
+                <button
+                  type="button"
+                  class="absolute top-0.5 right-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-surface/90 text-ink hover:bg-red-500 hover:text-white"
+                  [title]="texts.of('Delete')"
+                  [attr.aria-label]="texts.of('Delete')"
+                  (click)="agent.removePendingAttachment(att.id)"
+                >
+                  <i class="flex items-center justify-center" [icon]="'close'"></i>
+                </button>
+              </div>
+            } @else {
+              <div class="flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink">
+                <i class="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted" [icon]="'import'"></i>
+                <span class="max-w-40 truncate" [title]="att.fileName">{{ att.fileName }}</span>
+                <button
+                  type="button"
+                  class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-red-500 hover:text-white"
+                  [title]="texts.of('Delete')"
+                  [attr.aria-label]="texts.of('Delete')"
+                  (click)="agent.removePendingAttachment(att.id)"
+                >
+                  <i class="flex items-center justify-center" [icon]="'close'"></i>
+                </button>
+              </div>
+            }
           }
         </div>
       }
@@ -511,7 +551,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
           #promptInput
           rows="1"
           [class]="fieldClasses(false) + ' flex-1 min-h-9 max-h-40 py-1.25 leading-6 resize-none overflow-hidden'"
-          [placeholder]="texts.of('AgentInputPlaceholder')"
+          [placeholder]="agent.pendingSyncSource() ? texts.of('AgentSyncInputPlaceholder') : texts.of('AgentInputPlaceholder')"
           [value]="draft()"
           (input)="draft.set(promptInput.value)"
           (keydown)="onKeydown($event)"
@@ -625,7 +665,8 @@ export class LayoutAgentComponent {
           this.pendingFileSyncSource.set(src);
           queueMicrotask(() => this.syncFileInput()?.nativeElement.click());
         } else {
-          void this.agent.runSync(src);
+          this.agent.setPendingSync(src, null);
+          queueMicrotask(() => this.promptInput()?.nativeElement.focus());
         }
         return;
       }
@@ -701,7 +742,7 @@ export class LayoutAgentComponent {
         id: idx + 1,
         label: src.label,
         subtitle: src.subtitle ?? undefined,
-        icon: ((src.icon as UiIcon) || (src.acceptsFile ? 'import' : 'reload')) as UiIcon,
+        icon: this.syncSourceIcon(src),
         row: src,
       })),
     ];
@@ -730,7 +771,11 @@ export class LayoutAgentComponent {
   }
 
   protected canSend(): boolean {
-    return (this.draft().trim().length > 0 || this.agent.pendingAttachments().length > 0) && !this.agent.isUploading();
+    return (
+      (this.draft().trim().length > 0 || this.agent.pendingAttachments().length > 0 || !!this.agent.pendingSyncSource()) &&
+      !this.agent.isUploading() &&
+      !this.agent.isStreaming()
+    );
   }
 
   protected async submit(): Promise<void> {
@@ -739,7 +784,12 @@ export class LayoutAgentComponent {
     }
     const text = this.draft();
     this.draft.set('');
-    await this.agent.send(text);
+    const syncSrc = this.agent.pendingSyncSource();
+    if (syncSrc) {
+      await this.agent.runSync(syncSrc, text);
+    } else {
+      await this.agent.send(text);
+    }
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -770,8 +820,16 @@ export class LayoutAgentComponent {
 
     const uploaded = await this.agent.uploadSingleFile(file);
     if (uploaded) {
-      await this.agent.runSync(src, [uploaded]);
+      this.agent.setPendingSync(src, uploaded);
+      queueMicrotask(() => this.promptInput()?.nativeElement.focus());
     }
+  }
+
+  protected syncSourceIcon(src: AgentSyncSourceDto): UiIcon {
+    if (src.icon && src.icon in ICON_SET) {
+      return src.icon as UiIcon;
+    }
+    return src.acceptsFile ? 'import' : 'reload';
   }
 
   protected isImageAttachment(contentType: string | null | undefined): boolean {

@@ -661,11 +661,24 @@ public static class AgentEndpointsExtensions
 
         var owner = AgentStore.ResolveOwner(ctx.RequestServices);
         var sessionId = AgentStore.NormalizeSessionId(body.SessionId);
+        AgentAttachmentDto? syncFile = null;
+        if (!string.IsNullOrWhiteSpace(body.SyncFileAttachmentId))
+        {
+          syncFile = store.GetAttachment(body.SyncFileAttachmentId, owner);
+          if (syncFile is null)
+          {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+          }
+        }
+
         var attachments = (body.AttachmentIds ?? [])
+          .Where(id => !string.Equals(id, syncFile?.Id, StringComparison.OrdinalIgnoreCase))
           .Select(id => store.GetAttachment(id, owner))
           .Where(a => a is not null)
           .Cast<AgentAttachmentDto>()
           .ToList();
+        var userMessage = body.Message?.Trim();
 
         ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
         ctx.Response.Headers.CacheControl = "no-cache";
@@ -696,6 +709,7 @@ public static class AgentEndpointsExtensions
             {
               SessionId = sessionId,
               SourceId = body.SourceId,
+              SyncFile = syncFile,
               Attachments = attachments,
               Locale = culture.TwoLetterISOLanguageName,
               Services = ctx.RequestServices,
@@ -721,7 +735,8 @@ public static class AgentEndpointsExtensions
           );
         }
 
-        if (!syncResult.RequiresAgentTurn)
+        var hasUserContext = !string.IsNullOrWhiteSpace(userMessage) || attachments.Count > 0;
+        if (!syncResult.RequiresAgentTurn && !hasUserContext)
         {
           if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
           {
@@ -732,6 +747,9 @@ public static class AgentEndpointsExtensions
           return;
         }
 
+        var hasImageAttachment = attachments.Any(a =>
+          string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+        );
         var (provider, selectedModel, selectedModelName) = await ResolveTurnProviderAndModelAsync(
           ctx,
           store,
@@ -740,7 +758,7 @@ public static class AgentEndpointsExtensions
           providers,
           body.Provider,
           body.Model,
-          preferPhotoModel: false,
+          preferPhotoModel: hasImageAttachment,
           ct
         );
 
@@ -766,13 +784,46 @@ public static class AgentEndpointsExtensions
           );
         }
 
+        var promptParts = new List<string>(3);
+        if (syncResult.RequiresAgentTurn)
+        {
+          promptParts.Add(
+            !string.IsNullOrWhiteSpace(syncResult.AgentPrompt)
+              ? syncResult.AgentPrompt
+              : "Review the synchronization context."
+          );
+        }
+        else if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
+        {
+          promptParts.Add($"[SYNCHRONIZATION SUMMARY]:\n{syncResult.SummaryMarkdown.Trim()}");
+        }
+
+        if (attachments.Count > 0)
+        {
+          promptParts.Add("[ATTACHED FILES]: Inspect all attached files via read_file and apply their exact details directly.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(userMessage))
+        {
+          promptParts.Add($"[USER INSTRUCTIONS]:\n{userMessage}");
+        }
+        else if (!syncResult.RequiresAgentTurn)
+        {
+          promptParts.Add(
+            hasImageAttachment
+              ? Localizer.Instance["AgentDefaultPhotoPrompt"]
+              : "Analyze the attached files in the context of this synchronization."
+          );
+        }
+
+        var effectiveMessage = string.Join("\n\n", promptParts);
+
         var turnReq = new AgentTurnRequest
         {
           SessionId = sessionId,
           Owner = owner,
-          Message = !string.IsNullOrWhiteSpace(syncResult.AgentPrompt)
-            ? syncResult.AgentPrompt
-            : "Review the synchronization context.",
+          Message = effectiveMessage,
+          Attachments = attachments,
           Locale = culture.TwoLetterISOLanguageName,
           ProviderHandle = provider.Handle,
           Model = selectedModel,

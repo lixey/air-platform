@@ -84,6 +84,8 @@ export class AgentService {
   readonly userPickedModel = signal(false);
   readonly messages = signal<readonly AgentChatMessage[]>([]);
   readonly pendingAttachments = signal<readonly AgentAttachment[]>([]);
+  readonly pendingSyncSource = signal<AgentSyncSourceDto | null>(null);
+  readonly pendingSyncFile = signal<AgentAttachment | null>(null);
   readonly isUploading = signal(false);
   readonly isStreaming = signal(false);
 
@@ -104,6 +106,8 @@ export class AgentService {
         this.activeProvider.set('Agy');
         this.messages.set([]);
         this.pendingAttachments.set([]);
+        this.pendingSyncSource.set(null);
+        this.pendingSyncFile.set(null);
         this.sessionId.set(Math.random().toString(36).slice(2, 12));
       });
     });
@@ -193,33 +197,60 @@ export class AgentService {
     this.pendingAttachments.update(prev => prev.filter(a => a.id !== id));
   }
 
+  setPendingSync(source: AgentSyncSourceDto, syncFile: AgentAttachment | null = null): void {
+    this.pendingSyncSource.set(source);
+    this.pendingSyncFile.set(syncFile);
+  }
+
+  clearPendingSync(): void {
+    this.pendingSyncSource.set(null);
+    this.pendingSyncFile.set(null);
+  }
+
   toggleStepsCollapsed(messageId: string): void {
     this.patchAssistant(messageId, m => ({ ...m, stepsCollapsed: !m.stepsCollapsed }));
   }
 
-  async runSync(source: AgentSyncSourceDto, explicitAttachments?: readonly AgentAttachment[]): Promise<void> {
+  async runSync(
+    source: AgentSyncSourceDto,
+    rawText = '',
+    explicitAttachments?: readonly AgentAttachment[],
+    explicitSyncFile?: AgentAttachment | null,
+  ): Promise<void> {
     if (this.isStreaming()) {
       return;
     }
 
-    const attachments = explicitAttachments ?? [];
-    const promptLabel = this.texts.of('AgentSyncPromptLabel', source.label);
+    const text = rawText.trim();
+    const attachments = explicitAttachments ?? this.pendingAttachments();
+    const syncFile = explicitSyncFile !== undefined ? explicitSyncFile : this.pendingSyncFile();
+
+    if (!explicitAttachments) {
+      this.pendingAttachments.set([]);
+    }
+    if (explicitSyncFile === undefined) {
+      this.pendingSyncSource.set(null);
+      this.pendingSyncFile.set(null);
+    }
+
+    const syncLabel = this.texts.of('AgentSyncPromptLabel', source.label);
+    const displayText = text ? `${syncLabel}\n\n${text}` : syncLabel;
+    const bubbleAttachments = syncFile ? [syncFile, ...attachments] : attachments;
+
     const userMsg: AgentChatMessage = {
       id: `m-${++this.nextId}`,
       role: 'user',
-      text: promptLabel,
-      attachments,
+      text: displayText,
+      attachments: bubbleAttachments,
       proposals: [],
       createdAt: new Date(),
-      promptText: promptLabel,
+      promptText: text,
       promptAttachments: attachments,
       syncSource: source,
     };
 
     const assistantMsgId = `m-${++this.nextId}`;
-    const modelsList = this.models();
-    const activeModelObj =
-      modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ?? modelsList.find(m => m.id === this.model());
+    const { activeModelObj } = this.resolveTurnModel(attachments);
 
     const assistantMsg: AgentChatMessage = {
       id: assistantMsgId,
@@ -232,7 +263,7 @@ export class AgentService {
       durationMs: 0,
       modelId: activeModelObj?.id || this.model(),
       modelName: activeModelObj?.name || this.model(),
-      promptText: promptLabel,
+      promptText: text,
       promptAttachments: attachments,
       syncSource: source,
     };
@@ -241,6 +272,8 @@ export class AgentService {
     await this.streamSseEndpoint('/api/agent/sync', assistantMsgId, {
       sessionId: this.sessionId(),
       sourceId: source.id,
+      message: text || null,
+      syncFileAttachmentId: syncFile?.id ?? null,
       attachmentIds: attachments.map(a => a.id),
       locale: this.locale.current(),
       provider: activeModelObj?.provider || this.activeProvider(),
@@ -272,15 +305,7 @@ export class AgentService {
     };
 
     const assistantMsgId = `m-${++this.nextId}`;
-    const modelsList = this.models();
-    const hasImageAttachment = attachments.some(a => !a.contentType || a.contentType.startsWith('image/'));
-    const activeModelObj =
-      hasImageAttachment && !this.userPickedModel()
-        ? (modelsList.find(m => m.isForPhotos) ??
-          modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
-          modelsList.find(m => m.id === this.model()))
-        : (modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
-          modelsList.find(m => m.id === this.model()));
+    const { activeModelObj, hasImageAttachment } = this.resolveTurnModel(attachments);
     const assistantMsg: AgentChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -498,10 +523,12 @@ export class AgentService {
     const target = list[idx];
     if (target.role === 'assistant') {
       const prevUser = idx > 0 && list[idx - 1]?.role === 'user' ? list[idx - 1] : null;
+      if (target.syncSource || prevUser?.syncSource) {
+        return;
+      }
       const promptText = target.promptText ?? prevUser?.text ?? '';
       const promptAttachments = target.promptAttachments ?? prevUser?.attachments ?? [];
-      const syncSource = target.syncSource ?? prevUser?.syncSource;
-      if (!syncSource && !promptText && promptAttachments.length === 0) {
+      if (!promptText && promptAttachments.length === 0) {
         return;
       }
 
@@ -510,18 +537,16 @@ export class AgentService {
         removeIds.add(prevUser.id);
       }
       this.messages.update(prev => prev.filter(m => !removeIds.has(m.id)));
-      if (syncSource) {
-        await this.runSync(syncSource, promptAttachments);
-      } else {
-        await this.send(promptText, promptAttachments);
-      }
+      await this.send(promptText, promptAttachments);
       return;
     }
 
+    if (target.syncSource) {
+      return;
+    }
     const promptText = target.text;
     const promptAttachments = target.attachments;
-    const syncSource = target.syncSource;
-    if (!syncSource && !promptText && promptAttachments.length === 0) {
+    if (!promptText && promptAttachments.length === 0) {
       return;
     }
 
@@ -531,11 +556,7 @@ export class AgentService {
       this.messages.update(prev => prev.filter(m => !removeIds.has(m.id)));
     }
 
-    if (syncSource) {
-      await this.runSync(syncSource, promptAttachments);
-    } else {
-      await this.send(promptText, promptAttachments);
-    }
+    await this.send(promptText, promptAttachments);
   }
 
   stop(): void {
@@ -657,9 +678,27 @@ export class AgentService {
     this.userPickedModel.set(false);
     this.messages.set([]);
     this.pendingAttachments.set([]);
+    this.pendingSyncSource.set(null);
+    this.pendingSyncFile.set(null);
     this.sessionId.set(Math.random().toString(36).slice(2, 12));
 
     await firstValueFrom(this.http.post('/api/agent/reset', { sessionId: oldSessionId }, shownByCaller())).catch(() => undefined);
+  }
+
+  private resolveTurnModel(attachments: readonly AgentAttachment[]): {
+    activeModelObj: AgentModelDto | undefined;
+    hasImageAttachment: boolean;
+  } {
+    const modelsList = this.models();
+    const hasImageAttachment = attachments.some(a => !a.contentType || a.contentType.startsWith('image/'));
+    const activeModelObj =
+      hasImageAttachment && !this.userPickedModel()
+        ? (modelsList.find(m => m.isForPhotos) ??
+          modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
+          modelsList.find(m => m.id === this.model()))
+        : (modelsList.find(m => m.id === this.model() && m.provider === this.activeProvider()) ??
+          modelsList.find(m => m.id === this.model()));
+    return { activeModelObj, hasImageAttachment };
   }
 
   private applyCommitResult(result: AgentCommitResultDto): void {
