@@ -2,14 +2,18 @@ using System.Security.Cryptography;
 
 namespace Platform.Api.Mutations.Internals;
 
-internal static class IdempotencyStore
+internal sealed class IdempotencyStore(TimeProvider? time = null)
 {
+  public static IdempotencyStore Default { get; } = new();
+
   private const int MaxKeyLength = 128;
   private const int MaxEntries = 100_000;
   private static readonly TimeSpan Retention = TimeSpan.FromHours(24);
-  private static readonly ConcurrentDictionary<string, KeyLock> KeyLocks = new(StringComparer.Ordinal);
-  private static readonly ConcurrentDictionary<string, KeptEntry> Entries = new(StringComparer.Ordinal);
-  private static long _lastPrunedTicks;
+
+  private readonly TimeProvider _time = time ?? TimeProvider.System;
+  private readonly ConcurrentDictionary<string, IdempotencyKeyLock> _keyLocks = new(StringComparer.Ordinal);
+  private readonly ConcurrentDictionary<string, IdempotencyKeptEntry> _entries = new(StringComparer.Ordinal);
+  private long _lastPrunedTicks;
 
   public static string ComputePayloadHash(string rawPayload)
   {
@@ -17,22 +21,14 @@ internal static class IdempotencyStore
     return Convert.ToHexString(bytes);
   }
 
-  private static void ValidateKey(string key)
-  {
-    if (key.Length > MaxKeyLength)
-    {
-      throw new IdempotencyConflictException($"Idempotency-Key must not exceed {MaxKeyLength} characters.");
-    }
-  }
-
-  public static async Task<IDisposable> AcquireLockAsync(long? tenantId, long? userId, string key, CancellationToken ct)
+  public async Task<IDisposable> AcquireLockAsync(long? tenantId, long? userId, string key, CancellationToken ct)
   {
     ValidateKey(key);
     var lockId = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
-    KeyLock entry;
+    IdempotencyKeyLock entry;
     while (true)
     {
-      entry = KeyLocks.GetOrAdd(lockId, static _ => new KeyLock());
+      entry = _keyLocks.GetOrAdd(lockId, static _ => new IdempotencyKeyLock());
       if (entry.TryAddRef())
       {
         break;
@@ -49,30 +45,33 @@ internal static class IdempotencyStore
       throw;
     }
 
-    return new ReleaseHandle(lockId, entry);
+    return new IdempotencyReleaseHandle(lockId, entry, ReleaseRef);
   }
 
-  public static bool TryGetCommitted(
+  public bool TryGetCommitted(
     long? tenantId,
     long? userId,
     string serviceKey,
     string key,
     string payloadHash,
-    out long recordId)
+    out long recordId,
+    out object? cachedResult)
   {
     ValidateKey(key);
     PruneIfNeeded();
     var storeKey = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
-    if (!Entries.TryGetValue(storeKey, out var entry))
+    if (!_entries.TryGetValue(storeKey, out var entry))
     {
       recordId = 0;
+      cachedResult = null;
       return false;
     }
 
-    if (DateTimeOffset.UtcNow - entry.CreatedAt > Retention)
+    if (_time.GetUtcNow() - entry.CreatedAt > Retention)
     {
-      Entries.TryRemove(storeKey, out _);
+      _entries.TryRemove(storeKey, out _);
       recordId = 0;
+      cachedResult = null;
       return false;
     }
 
@@ -83,44 +82,55 @@ internal static class IdempotencyStore
     }
 
     recordId = entry.RecordId;
+    cachedResult = entry.CachedResult;
     return true;
   }
 
-  public static void SaveCommitted(
+  public void SaveCommitted(
     long? tenantId,
     long? userId,
     string serviceKey,
     string key,
     string payloadHash,
-    long recordId)
+    long recordId,
+    object? cachedResult = null)
   {
     ValidateKey(key);
+    var now = _time.GetUtcNow();
     PruneIfNeeded();
-    if (Entries.Count >= MaxEntries)
+    if (_entries.Count >= MaxEntries)
     {
-      PruneExpired(DateTimeOffset.UtcNow);
-      if (Entries.Count >= MaxEntries)
+      PruneExpired(now);
+      if (_entries.Count >= MaxEntries)
       {
-        foreach (var oldest in Entries.OrderBy(kv => kv.Value.CreatedAt).Take(Math.Max(1, MaxEntries / 10)))
+        foreach (var oldest in _entries.OrderBy(kv => kv.Value.CreatedAt).Take(Math.Max(1, MaxEntries / 10)))
         {
-          Entries.TryRemove(oldest.Key, out _);
+          _entries.TryRemove(oldest.Key, out _);
         }
       }
     }
 
     var storeKey = $"{tenantId ?? 0}:{userId ?? 0}:{key}";
-    Entries[storeKey] = new KeptEntry(serviceKey, payloadHash, recordId, DateTimeOffset.UtcNow);
+    _entries[storeKey] = new IdempotencyKeptEntry(serviceKey, payloadHash, recordId, now, recordId > 0 ? null : cachedResult);
   }
 
-  internal static void Clear()
+  internal void Clear()
   {
-    Entries.Clear();
-    KeyLocks.Clear();
+    _entries.Clear();
+    _keyLocks.Clear();
   }
 
-  private static void PruneIfNeeded()
+  private static void ValidateKey(string key)
   {
-    var now = DateTimeOffset.UtcNow;
+    if (key.Length > MaxKeyLength)
+    {
+      throw new IdempotencyConflictException($"Idempotency-Key must not exceed {MaxKeyLength} characters.");
+    }
+  }
+
+  private void PruneIfNeeded()
+  {
+    var now = _time.GetUtcNow();
     var last = Interlocked.Read(ref _lastPrunedTicks);
     if (now.UtcTicks - last < TimeSpan.FromMinutes(10).Ticks)
     {
@@ -135,86 +145,22 @@ internal static class IdempotencyStore
     PruneExpired(now);
   }
 
-  private static void PruneExpired(DateTimeOffset now)
+  private void PruneExpired(DateTimeOffset now)
   {
-    foreach (var kv in Entries)
+    foreach (var kv in _entries)
     {
       if (now - kv.Value.CreatedAt > Retention)
       {
-        Entries.TryRemove(kv.Key, out _);
+        _entries.TryRemove(kv.Key, out _);
       }
     }
   }
 
-  private static void ReleaseRef(string lockId, KeyLock entry)
+  private void ReleaseRef(string lockId, IdempotencyKeyLock entry)
   {
     if (entry.ReleaseRef())
     {
-      KeyLocks.TryRemove(KeyValuePair.Create(lockId, entry));
-    }
-  }
-
-  private sealed record KeptEntry(string ServiceKey, string PayloadHash, long RecordId, DateTimeOffset CreatedAt);
-
-  private sealed class KeyLock
-  {
-    private int _refCount;
-    public SemaphoreSlim Semaphore { get; } = new(1, 1);
-
-    public bool TryAddRef()
-    {
-      while (true)
-      {
-        var current = Volatile.Read(ref _refCount);
-        if (current < 0)
-        {
-          return false;
-        }
-
-        if (Interlocked.CompareExchange(ref _refCount, current + 1, current) == current)
-        {
-          return true;
-        }
-      }
-    }
-
-    public bool ReleaseRef()
-    {
-      while (true)
-      {
-        var current = Volatile.Read(ref _refCount);
-        if (current <= 1)
-        {
-          if (Interlocked.CompareExchange(ref _refCount, -1, current) == current)
-          {
-            return true;
-          }
-        }
-        else if (Interlocked.CompareExchange(ref _refCount, current - 1, current) == current)
-        {
-          return false;
-        }
-      }
-    }
-  }
-
-  private sealed class ReleaseHandle(string lockId, KeyLock entry) : IDisposable
-  {
-    private int _disposed;
-
-    public void Dispose()
-    {
-      if (Interlocked.Exchange(ref _disposed, 1) == 0)
-      {
-        try
-        {
-          entry.Semaphore.Release();
-        }
-        finally
-        {
-          ReleaseRef(lockId, entry);
-        }
-      }
+      _keyLocks.TryRemove(KeyValuePair.Create(lockId, entry));
     }
   }
 }

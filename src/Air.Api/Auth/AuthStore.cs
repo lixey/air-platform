@@ -167,5 +167,21 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     return null;
   }
 
-  public Task SaveChangesAsync(CancellationToken ct = default) => db.SaveChangesAsync(ct);
+  public async Task SaveChangesAsync(CancellationToken ct = default)
+  {
+    var hasOnlyAuthChanges = db.ChangeTracker.Entries()
+      .Where(static e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      .All(static e => e.Entity is TUser or TSession);
+
+    if (!hasOnlyAuthChanges)
+    {
+      await db.SaveChangesAsync(ct);
+      return;
+    }
+
+    using (AsyncLocalTenantContext.UseSystemScope(db.TenantContext.UserId, db.TenantContext.CorrelationId))
+    {
+      await db.SaveChangesAsync(ct);
+    }
+  }
 }

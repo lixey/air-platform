@@ -3,7 +3,7 @@ namespace Platform.Api.Host.Internals;
 /// <summary>
 /// Resolves the current tenant, user, and rights for web requests from Claims, X-Tenant-Id header, or ambient AsyncLocal.
 /// </summary>
-public sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) : ITenantContext
+internal sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor) : ITenantContext
 {
   public long? TenantId
   {

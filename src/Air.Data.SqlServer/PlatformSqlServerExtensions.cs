@@ -11,7 +11,6 @@ public static class PlatformSqlServerExtensions
   {
     ArgumentNullException.ThrowIfNull(builder);
     ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-    QueryMap.UseCollationComparison = true;
 
     return builder.UseSqlServer(connectionString, o =>
     {
@@ -130,14 +129,27 @@ public static class PlatformSqlServerExtensions
 
       if (item is IHasTenant tenantEntity)
       {
-        if (tenantEntity.TenantId == 0)
+        if (!db.TenantContext.IsSystemScope)
+        {
+          if (!tenantId.HasValue)
+          {
+            throw new InvalidOperationException(
+              $"Cannot bulk import '{typeof(TEntity).Name}' without an active tenant.");
+          }
+
+          if (tenantEntity.TenantId == 0)
+          {
+            tenantEntity.TenantId = tenantId.Value;
+          }
+          else if (tenantEntity.TenantId != tenantId.Value)
+          {
+            throw new InvalidOperationException($"Cannot bulk import '{typeof(TEntity).Name}' belonging to another tenant.");
+          }
+        }
+        else if (tenantEntity.TenantId == 0)
         {
           tenantEntity.TenantId = tenantId ?? throw new InvalidOperationException(
-            $"Cannot bulk import '{typeof(TEntity).Name}' without an active tenant.");
-        }
-        else if (tenantId.HasValue && tenantEntity.TenantId != tenantId.Value)
-        {
-          throw new InvalidOperationException($"Cannot bulk import '{typeof(TEntity).Name}' belonging to another tenant.");
+            $"Cannot bulk import '{typeof(TEntity).Name}' without an explicit TenantId.");
         }
       }
 

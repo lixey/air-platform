@@ -11,7 +11,6 @@ public static class PlatformPostgresExtensions
   {
     ArgumentNullException.ThrowIfNull(builder);
     ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-    QueryMap.UseCollationComparison = false;
 
     var utcConnectionString = new NpgsqlConnectionStringBuilder(connectionString) { Timezone = "UTC" }.ConnectionString;
 

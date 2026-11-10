@@ -183,7 +183,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     NormalizeGridRequest(gridReq, request, queryDeclaration, isSelect);
 
-    var queryMap = BuildQueryMap(queryDeclaration, cols.List);
+    var queryMap = BuildQueryMap(queryDeclaration, cols.List, IsSqlServerProvider);
 
     if (queryDeclaration.Selector != null)
     {
@@ -306,7 +306,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     NormalizeGridRequest(request, request, queryDeclaration, isSelect);
 
-    var queryMap = BuildQueryMap(queryDeclaration, cols.List);
+    var queryMap = BuildQueryMap(queryDeclaration, cols.List, IsSqlServerProvider);
 
     var total = queryDeclaration.Selector != null
       ? await DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector).Filter(request).CountAsync(ct)
@@ -715,14 +715,22 @@ public abstract partial class GridService<TEntity, TRow>
     return forms;
   }
 
+  private bool IsSqlServerProvider =>
+    db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
+
   private static readonly ConcurrentDictionary<string, QueryMap<TEntity>> CachedQueryMaps = new(StringComparer.Ordinal);
 
-  internal static QueryMap<TEntity> BuildQueryMap(Query queryDeclaration, IReadOnlyList<GridColumnDto> columns)
+  internal static QueryMap<TEntity> BuildQueryMap(
+    Query queryDeclaration,
+    IReadOnlyList<GridColumnDto> columns,
+    bool useCollationComparison = false)
   {
     if (queryDeclaration.Selector is null)
     {
       var sb = new StringBuilder(columns.Count * 32 + 64);
-      sb.Append(typeof(TEntity).FullName).Append('|').Append(typeof(TRow).FullName).Append('#');
+      sb.Append(typeof(TEntity).FullName).Append('|')
+        .Append(typeof(TRow).FullName).Append('|')
+        .Append(useCollationComparison ? 'C' : 'L').Append('#');
       var canCache = true;
       for (var i = 0; i < columns.Count; i++)
       {
@@ -780,19 +788,23 @@ public abstract partial class GridService<TEntity, TRow>
           CachedQueryMaps.Clear();
         }
 
-        return CachedQueryMaps.GetOrAdd(sb.ToString(), _ => BuildQueryMapCore(queryDeclaration, columns));
+        return CachedQueryMaps.GetOrAdd(sb.ToString(), _ => BuildQueryMapCore(queryDeclaration, columns, useCollationComparison));
       }
     }
 
-    return BuildQueryMapCore(queryDeclaration, columns);
+    return BuildQueryMapCore(queryDeclaration, columns, useCollationComparison);
   }
 
-  private static QueryMap<TEntity> BuildQueryMapCore(Query queryDeclaration, IReadOnlyList<GridColumnDto> columns)
+  private static QueryMap<TEntity> BuildQueryMapCore(
+    Query queryDeclaration,
+    IReadOnlyList<GridColumnDto> columns,
+    bool useCollationComparison = false)
   {
     var builder = queryDeclaration.Selector is not null
       ? QueryMap.FromSelector(queryDeclaration.Selector)
       : QueryMap.For<TEntity>();
 
+    builder.UseCollationComparison(useCollationComparison);
     builder.AddEntityProperties(searchable: false);
 
     var entityParam = Expression.Parameter(typeof(TEntity), "e");

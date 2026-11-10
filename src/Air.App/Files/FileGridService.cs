@@ -18,7 +18,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   int IFormFilesSource.PageSize => 25;
 
-  protected FileLinks Links => field ??= new();
+  protected FileLinks Links => field ??= PlatformApp?.Services.GetService<FileLinks>() ?? new();
 
   protected IFileStores Stores => PlatformApp?.Services.GetService<IFileStores>() ?? new DefaultFileStores(new LocalFileStorage());
 

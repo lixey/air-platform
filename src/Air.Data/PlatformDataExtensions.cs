@@ -1,3 +1,5 @@
+using Platform.Data.Internals;
+
 namespace Platform.Data;
 
 public static class PlatformDataExtensions
@@ -11,45 +13,68 @@ public static class PlatformDataExtensions
       return services;
     }
 
-    var derivedDescriptor = services.FirstOrDefault(d =>
-      d.ServiceType != typeof(TContext) &&
-      typeof(TContext).IsAssignableFrom(d.ServiceType));
+    var tree = GetOrAddTree(services);
+    services.TryAddScoped(sp => new DbScope(sp.GetRequiredService<DbContextTree>()));
 
-    if (derivedDescriptor != null)
+    if (tree.CanCreate(typeof(TContext)))
     {
-      var derivedType = derivedDescriptor.ServiceType;
-      services.Replace(ServiceDescriptor.Scoped<TContext>(sp => (TContext)sp.GetRequiredService(derivedType)));
       return services;
     }
 
+    var existingDescriptor = services.LastOrDefault(d =>
+      d.ServiceType == typeof(TContext) &&
+      d.ImplementationFactory?.Target is not DbScopeForwarder);
+
+    var (factory, owned) = BuildConcreteFactory<TContext>(existingDescriptor);
+    tree.Register(typeof(TContext), factory, owned);
+
+    var leafForwarder = new DbScopeForwarder(typeof(TContext));
+    services.Replace(ServiceDescriptor.Scoped(leafForwarder.ResolveTyped<TContext>));
+
     for (var baseType = typeof(TContext).BaseType;
-         baseType != null && baseType != typeof(PlatformDbContext) && typeof(PlatformDbContext).IsAssignableFrom(baseType);
+         baseType != null && typeof(PlatformDbContext).IsAssignableFrom(baseType);
          baseType = baseType.BaseType)
     {
-      var conflicting = services.FirstOrDefault(d =>
-        d.ServiceType != typeof(TContext) &&
-        baseType.IsAssignableFrom(d.ServiceType) &&
-        !d.ServiceType.IsAssignableFrom(typeof(TContext)) &&
-        !typeof(TContext).IsAssignableFrom(d.ServiceType));
-
-      if (conflicting != null)
-      {
-        throw new InvalidOperationException(
-          $"Conflicting DbContext hierarchy: both '{typeof(TContext).Name}' and '{conflicting.ServiceType.Name}' derive from '{baseType.Name}'.");
-      }
-
-      services.Replace(ServiceDescriptor.Scoped(baseType, sp => sp.GetRequiredService<TContext>()));
-    }
-
-    if (typeof(TContext).BaseType != typeof(PlatformDbContext))
-    {
-      services.Replace(ServiceDescriptor.Scoped<PlatformDbContext>(sp => sp.GetRequiredService<TContext>()));
-    }
-    else
-    {
-      services.TryAddScoped<PlatformDbContext>(sp => sp.GetRequiredService<TContext>());
+      var baseForwarder = new DbScopeForwarder(baseType);
+      services.Replace(ServiceDescriptor.Scoped(baseType, baseForwarder.Resolve));
     }
 
     return services;
+  }
+
+  private static DbContextTree GetOrAddTree(IServiceCollection services)
+  {
+    if (services.FirstOrDefault(d => d.ServiceType == typeof(DbContextTree))?.ImplementationInstance is DbContextTree existing)
+    {
+      return existing;
+    }
+
+    var tree = new DbContextTree();
+    services.AddSingleton(tree);
+    return tree;
+  }
+
+  private static (Func<IServiceProvider, PlatformDbContext> Factory, bool Owned) BuildConcreteFactory<TContext>(
+    ServiceDescriptor? descriptor)
+    where TContext : PlatformDbContext
+  {
+    if (descriptor?.ImplementationInstance is PlatformDbContext singletonInstance)
+    {
+      return (_ => singletonInstance, false);
+    }
+
+    if (descriptor?.ImplementationFactory is { } customFactory)
+    {
+      return (sp => (PlatformDbContext)customFactory(sp), true);
+    }
+
+    var implType = descriptor?.ImplementationType ?? typeof(TContext);
+    return (sp =>
+    {
+      var typedOptions = sp.GetService<DbContextOptions<TContext>>();
+      return typedOptions != null && implType == typeof(TContext)
+        ? (PlatformDbContext)ActivatorUtilities.CreateInstance(sp, implType, typedOptions)
+        : (PlatformDbContext)ActivatorUtilities.CreateInstance(sp, implType);
+    }, true);
   }
 }

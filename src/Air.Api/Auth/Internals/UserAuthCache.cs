@@ -3,9 +3,15 @@ namespace Platform.Api.Auth.Internals;
 internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
 {
   private const string AuthTag = "platform:auth";
-  private static readonly string[] SessionTags = [AuthTag];
+  private const int MaxUserGenerations = 10_000;
+  private const int MaxSessionGenerations = 50_000;
+
   private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(5);
   private static readonly TimeSpan ProfileTtl = TimeSpan.FromMinutes(10);
+
+  private readonly ConcurrentDictionary<long, long> _userGenerations = new();
+  private readonly ConcurrentDictionary<long, long> _sessionGenerations = new();
+  private long _globalGeneration;
 
   public async Task<SessionAuthSnapshot?> GetSessionAsync(long sessionId, IAuthStore store, CancellationToken ct = default)
   {
@@ -14,8 +20,11 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
       return null;
     }
 
+    var gGen = Volatile.Read(ref _globalGeneration);
+    var sGen = _sessionGenerations.GetValueOrDefault(sessionId);
+
     return await cache.GetOrCreateAsync(
-      SessionKey(sessionId),
+      SessionKey(gGen, sGen, sessionId),
       async token =>
       {
         var dbSession = await store.FindSessionAsync(sessionId, token);
@@ -29,7 +38,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
               dbSession.ExpiresAt);
       },
       SessionTtl,
-      SessionTags,
+      [AuthTag, SessionTag(sessionId)],
       ct);
   }
 
@@ -44,8 +53,11 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
       return null;
     }
 
+    var gGen = Volatile.Read(ref _globalGeneration);
+    var uGen = _userGenerations.GetValueOrDefault(userId);
+
     return await cache.GetOrCreateAsync(
-      ProfileKey(userId, tenantId),
+      ProfileKey(gGen, uGen, userId, tenantId),
       async token =>
       {
         var user = await store.FindUserByIdAsync(userId, token);
@@ -92,7 +104,8 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
   {
     if (sessionId > 0)
     {
-      await cache.RemoveAsync(SessionKey(sessionId), ct);
+      BumpGeneration(_sessionGenerations, sessionId, MaxSessionGenerations);
+      await cache.RemoveByTagAsync(SessionTag(sessionId), ct);
     }
   }
 
@@ -100,15 +113,35 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
   {
     if (userId > 0)
     {
+      BumpGeneration(_userGenerations, userId, MaxUserGenerations);
       await cache.RemoveByTagAsync(UserTag(userId), ct);
     }
   }
 
-  public async Task ClearAsync(CancellationToken ct = default) =>
+  public async Task ClearAsync(CancellationToken ct = default)
+  {
+    Interlocked.Increment(ref _globalGeneration);
+    _userGenerations.Clear();
+    _sessionGenerations.Clear();
     await cache.RemoveByTagAsync(AuthTag, ct);
+  }
 
-  private static string SessionKey(long sessionId) => $"platform:auth:v1:session:{sessionId}";
+  private void BumpGeneration(ConcurrentDictionary<long, long> map, long id, int maxEntries)
+  {
+    if (map.Count >= maxEntries && !map.ContainsKey(id))
+    {
+      Interlocked.Increment(ref _globalGeneration);
+      map.Clear();
+      return;
+    }
+
+    map.AddOrUpdate(id, 1, static (_, prev) => prev + 1);
+  }
+
+  private static string SessionTag(long sessionId) => $"platform:auth:s:{sessionId}";
   private static string UserTag(long userId) => $"platform:auth:u:{userId}";
-  private static string ProfileKey(long userId, long? tenantId) =>
-    $"platform:auth:v1:profile:{userId}:{tenantId ?? 0}";
+  private static string SessionKey(long gGen, long sGen, long sessionId) =>
+    $"platform:auth:v1:g{gGen}:s{sGen}:session:{sessionId}";
+  private static string ProfileKey(long gGen, long uGen, long userId, long? tenantId) =>
+    $"platform:auth:v1:g{gGen}:u{uGen}:profile:{userId}:{tenantId ?? 0}";
 }

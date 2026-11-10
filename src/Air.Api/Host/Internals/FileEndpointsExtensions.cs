@@ -8,15 +8,14 @@ internal static class FileEndpointsExtensions
   {
     api.MapGet("/platform-files/{token}", async (string token, HttpContext httpContext) =>
     {
-      var links = new Files.FileLinks();
+      var links = httpContext.RequestServices.GetRequiredService<Files.FileLinks>();
       var link = links.Read(token);
       if (link == null)
       {
         return Results.NotFound();
       }
 
-      var stores = httpContext.RequestServices.GetService<Files.IFileStores>()
-        ?? new Files.DefaultFileStores(new Data.Files.LocalFileStorage());
+      var stores = httpContext.RequestServices.GetRequiredService<Files.IFileStores>();
       var storage = stores.Of(link.Store);
       var stream = await storage.OpenReadAsync(link.Key, httpContext.RequestAborted);
       if (stream == null)
@@ -51,6 +50,10 @@ internal static class FileEndpointsExtensions
         disposition.SetHttpFileName(name);
         httpContext.Response.Headers.ContentDisposition = disposition.ToString();
         httpContext.Response.Headers[HeaderNames.XContentTypeOptions] = "nosniff";
+        httpContext.Response.Headers[HeaderNames.ContentSecurityPolicy] =
+          isInline && string.Equals(type, "application/pdf", StringComparison.OrdinalIgnoreCase)
+            ? "default-src 'none'; object-src 'self'; img-src 'self' data: blob:; style-src 'unsafe-inline'"
+            : "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'";
 
         return Results.Stream(stream, type, enableRangeProcessing: true);
       }

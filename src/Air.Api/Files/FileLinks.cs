@@ -5,26 +5,27 @@ using Platform.Api.Files.Internals;
 
 namespace Platform.Api.Files;
 
-public sealed class FileLinks
+public sealed class FileLinks(TimeProvider? time = null)
 {
   public const string Segment = "platform-files";
   private const int MaxTokenLength = 4096;
   private const int MacBytes = 32;
 
+  private readonly TimeProvider _time = time ?? TimeProvider.System;
   private readonly string _prefix = $"/api/{Segment}/";
   private readonly TimeSpan _lifetime = TimeSpan.FromHours(24);
 
   public string Url(BaseAppFile file)
   {
     ArgumentNullException.ThrowIfNull(file);
-    return _prefix + Sign(file.StorageKey, file.ContentType, file.Name, DateTimeOffset.UtcNow + _lifetime, file.Store);
+    return _prefix + Sign(file.StorageKey, file.ContentType, file.Name, _time.GetUtcNow() + _lifetime, file.Store);
   }
 
   public string? TryUrl(BaseAppFile file) => CanSign(file.StorageKey, file.ContentType, file.Name) ? Url(file) : null;
 
   public string? TryThumbnailUrl(BaseAppFile file) =>
     file.ThumbnailKey is { } key && CanSign(key, file.ContentType, file.Name)
-      ? _prefix + Sign(key, file.ContentType, file.Name, DateTimeOffset.UtcNow + _lifetime, file.Store, isThumbnail: true)
+      ? _prefix + Sign(key, file.ContentType, file.Name, _time.GetUtcNow() + _lifetime, file.Store, isThumbnail: true)
       : null;
 
   internal string Sign(string key, string contentType, string name, DateTimeOffset expires, string? store = null, bool isThumbnail = false)
@@ -80,7 +81,7 @@ public sealed class FileLinks
       return null;
     }
 
-    return link is not null && CanSign(link.Key, link.ContentType, link.Name) && link.Expires > DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+    return link is not null && CanSign(link.Key, link.ContentType, link.Name) && link.Expires > _time.GetUtcNow().ToUnixTimeSeconds()
       ? link
       : null;
   }

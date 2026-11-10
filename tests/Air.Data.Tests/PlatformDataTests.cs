@@ -169,19 +169,11 @@ public sealed class PlatformDataTests : IDisposable
     Assert.Single(matchedCi);
     Assert.Equal(order1.Id, matchedCi[0].Id);
 
-    QueryMap.UseCollationComparison = true;
-    try
-    {
-      var queryWithPercent = map.Plan(new ListRequest { Search = "50%" }).Filter(db.Orders);
-      Assert.DoesNotContain("ToLower", queryWithPercent.Expression.ToString(), StringComparison.OrdinalIgnoreCase);
-      var matched = await queryWithPercent.ToListAsync();
-      Assert.Single(matched);
-      Assert.Equal(order1.Id, matched[0].Id);
-    }
-    finally
-    {
-      QueryMap.UseCollationComparison = false;
-    }
+    var queryWithPercent = map.Plan(new ListRequest { Search = "50%" }, useCollationComparison: true).Filter(db.Orders);
+    Assert.DoesNotContain("ToLower", queryWithPercent.Expression.ToString(), StringComparison.OrdinalIgnoreCase);
+    var matched = await queryWithPercent.ToListAsync();
+    Assert.Single(matched);
+    Assert.Equal(order1.Id, matched[0].Id);
 
     Guid revertRunId;
     using (db.BeginMutationRun())

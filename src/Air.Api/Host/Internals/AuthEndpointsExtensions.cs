@@ -66,6 +66,13 @@ internal static class AuthEndpointsExtensions
 
     api.MapPost("/auth/login", async (LoginRequest? req, HttpContext ctx, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
     {
+      var rateLimiter = ctx.RequestServices.GetService<Auth.Internals.LoginRateLimiter>();
+      var remoteIp = ctx.Connection.RemoteIpAddress?.ToString();
+      if (rateLimiter?.IsLimited(remoteIp) == true)
+      {
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+      }
+
       var login = req?.Login?.Trim() ?? "";
       if (string.IsNullOrWhiteSpace(login) || string.IsNullOrEmpty(req?.Password))
       {
@@ -75,6 +82,7 @@ internal static class AuthEndpointsExtensions
       var user = await authStore.FindUserByLoginAsync(login, ct);
       if (user == null || !user.IsActive)
       {
+        rateLimiter?.RecordFailure(remoteIp);
         hasher.VerifyPassword(req.Password, DummyPasswordHash.Value);
         return Results.Unauthorized();
       }
@@ -88,6 +96,7 @@ internal static class AuthEndpointsExtensions
       if (string.IsNullOrEmpty(user.PasswordHash) ||
           hasher.VerifyPassword(req.Password, user.PasswordHash) == PasswordVerification.Failed)
       {
+        rateLimiter?.RecordFailure(remoteIp);
         var newFailedCount = user.AccessFailedCount + 1;
         var newLockoutCount = user.LockoutCount;
         var newLockoutEnd = user.LockoutEnd;

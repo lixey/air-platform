@@ -6,7 +6,7 @@ namespace Platform.Data.Entities;
 /// </summary>
 [NoAudit]
 [Index(nameof(TenantId), nameof(Table), nameof(RowId)), Index(nameof(TenantId), nameof(RunId)), Index(nameof(At))]
-public sealed class AppPlatformChange : IEntity, IHasTenant
+public sealed class AppPlatformChange : IEntity
 {
   public const int CorrelationIdMaxLength = 128;
   public const int TableMaxLength = 128;
@@ -14,7 +14,7 @@ public sealed class AppPlatformChange : IEntity, IHasTenant
 
   public long Id { get; set; }
 
-  public long TenantId { get; set; }
+  public long? TenantId { get; set; }
 
   public Guid RunId { get; set; }
 

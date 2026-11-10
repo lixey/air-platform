@@ -112,7 +112,8 @@ public static class MutationRunner
     Func<CancellationToken, Task<TResult>> executeCreate,
     Func<long, CancellationToken, Task<TResult?>>? reloadById = null,
     Func<TResult, long?>? extractId = null,
-    CancellationToken ct = default)
+    CancellationToken ct = default,
+    IServiceProvider? services = null)
     where TResult : class
   {
     if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -120,13 +121,14 @@ public static class MutationRunner
       return await RunAsync(db, executeCreate, ct);
     }
 
+    var store = services?.GetService<IdempotencyStore>() ?? IdempotencyStore.Default;
     var trimmedKey = idempotencyKey.Trim();
     var tenantId = db.TenantContext.TenantId;
     var userId = db.TenantContext.UserId;
     var payloadHash = IdempotencyStore.ComputePayloadHash(rawPayload);
 
-    using var keyLock = await IdempotencyStore.AcquireLockAsync(tenantId, userId, trimmedKey, ct);
-    if (IdempotencyStore.TryGetCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, out var recordId))
+    using var keyLock = await store.AcquireLockAsync(tenantId, userId, trimmedKey, ct);
+    if (store.TryGetCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, out var recordId, out var cachedResult))
     {
       if (recordId > 0 && reloadById != null)
       {
@@ -135,6 +137,11 @@ public static class MutationRunner
         {
           return reloaded;
         }
+      }
+
+      if (recordId <= 0 && cachedResult is TResult replayedDto)
+      {
+        return replayedDto;
       }
 
       if (typeof(TResult) == typeof(MutationResultDto))
@@ -154,10 +161,7 @@ public static class MutationRunner
     var createdId = extractId != null
       ? extractId(created)
       : (created as IEntity)?.Id;
-    if (createdId is > 0)
-    {
-      IdempotencyStore.SaveCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, createdId.Value);
-    }
+    store.SaveCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, createdId ?? 0, created);
 
     return created;
   }

@@ -818,7 +818,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       NormalizeGridRequest(request, request, queryDeclaration, isSelect: false, applyInitialFilters: false);
 
-      var queryMap = BuildQueryMap(queryDeclaration, cols.List);
+      var queryMap = BuildQueryMap(queryDeclaration, cols.List, IsSqlServerProvider);
 
       if (queryDeclaration.Selector != null)
       {

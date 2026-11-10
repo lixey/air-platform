@@ -21,6 +21,8 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     IServiceProvider services,
     CancellationToken ct)
   {
+    services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
+
     if (typeof(IGridService).IsAssignableFrom(serviceType))
     {
       return await DispatchGridAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);

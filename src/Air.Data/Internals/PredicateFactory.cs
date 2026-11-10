@@ -39,7 +39,12 @@ internal static class PredicateFactory
       [FilterOperator.NotMatches] = (FilterOperator.Matches, true)
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-  public static Expression Build(QueryField field, Expression member, FilterRule rule, QueryLimits limits)
+  public static Expression Build(
+    QueryField field,
+    Expression member,
+    FilterRule rule,
+    QueryLimits limits,
+    bool useCollationComparison = false)
   {
     var (positive, negate) = Operators[rule.Operator];
     var predicate = positive switch
@@ -49,7 +54,7 @@ internal static class PredicateFactory
       FilterOperator.In => Membership(field, member, rule, limits),
       FilterOperator.GreaterThan or FilterOperator.GreaterThanOrEqual
         or FilterOperator.LessThan or FilterOperator.LessThanOrEqual => Relational(field, member, positive, rule.Value),
-      _ => Text(field, member, positive, rule.Value)
+      _ => Text(field, member, positive, rule.Value, useCollationComparison)
     };
 
     return negate ? Expression.Not(predicate) : predicate;
@@ -183,7 +188,7 @@ internal static class PredicateFactory
     var single => [single]
   };
 
-  private static Expression Text(QueryField field, Expression member, string op, object? raw)
+  private static Expression Text(QueryField field, Expression member, string op, object? raw, bool useCollationComparison)
   {
     var text = (string)Required(field, raw);
     var pattern = op switch
@@ -199,12 +204,11 @@ internal static class PredicateFactory
       throw new QueryRequestException(QueryError.InvalidValue, $"'{field.Name}' is matched against an empty text.", field.Name);
     }
 
-    return TextMatch(field, member, pattern);
+    return TextMatch(field, member, pattern, useCollationComparison);
   }
 
-  internal static Expression TextMatch(QueryField field, Expression member, TextPattern pattern)
+  internal static Expression TextMatch(QueryField field, Expression member, TextPattern pattern, bool useCollation = false)
   {
-    var useCollation = QueryMap.UseCollationComparison;
     var left = useCollation ? member : Expression.Call(member, StringToLower);
     var term = BoundValue.Of(useCollation ? pattern.Term : pattern.Term.ToLowerInvariant(), typeof(string));
     Expression match = pattern.Kind switch

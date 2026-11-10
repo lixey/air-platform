@@ -1,6 +1,6 @@
 namespace Platform.Data.Internals;
 
-public static class MemberPath
+internal static class MemberPath
 {
   public static string Of(LambdaExpression lambda) =>
     TryOf(lambda) ?? throw new InvalidOperationException($"'{lambda}' is not a member path; declare the field with an explicit name.");

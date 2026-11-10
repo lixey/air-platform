@@ -9,6 +9,7 @@ public sealed class QueryMapBuilder<TEntity> where TEntity : class
   private LambdaExpression? _key;
   private QueryLimits _limits = QueryLimits.Default;
   private NullOrdering _nullOrdering = NullOrdering.Native;
+  private bool _useCollationComparison;
 
   internal QueryMapBuilder()
   {
@@ -88,13 +89,19 @@ public sealed class QueryMapBuilder<TEntity> where TEntity : class
     return this;
   }
 
+  public QueryMapBuilder<TEntity> UseCollationComparison(bool enabled = true)
+  {
+    _useCollationComparison = enabled;
+    return this;
+  }
+
   public QueryMap<TEntity> Build()
   {
     var fields = _declarations.Select(Compile).ToList();
     var key = ResolveKey(fields);
     var defaultSort = _defaultSort.Select(rule => DefaultTerm(fields, rule)).ToList();
 
-    return new QueryMap<TEntity>(fields, key, defaultSort, _limits, _nullOrdering);
+    return new QueryMap<TEntity>(fields, key, defaultSort, _limits, _nullOrdering, _useCollationComparison);
   }
 
   internal QueryMapBuilder<TEntity> AddSelector<TRow>(Expression<Func<TEntity, TRow>> selector) =>

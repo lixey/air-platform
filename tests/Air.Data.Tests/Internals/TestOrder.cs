@@ -7,5 +7,6 @@ internal sealed class TestOrder : IEntity, IHasTenant, IHasVersion
   public int Ver { get; set; }
   public string Name { get; set; } = string.Empty;
   public decimal Amount { get; set; }
+  public DateTime? DeliveryDate { get; set; }
   public bool IsArchived { get; set; }
 }

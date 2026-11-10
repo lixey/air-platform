@@ -11,12 +11,12 @@ public sealed class MutationAndServiceSecurityTests : IDisposable
   {
     _connection = new SqliteConnection("DataSource=:memory:");
     _connection.Open();
-    IdempotencyStore.Clear();
+    IdempotencyStore.Default.Clear();
   }
 
   public void Dispose()
   {
-    IdempotencyStore.Clear();
+    IdempotencyStore.Default.Clear();
     _connection.Dispose();
   }
 

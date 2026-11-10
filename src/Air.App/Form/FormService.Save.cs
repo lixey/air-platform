@@ -241,7 +241,8 @@ public abstract partial class FormService<TEntity>
             ?? await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == replayedId, reloadCt);
         },
         _ => _lastSavedEntity?.Id,
-        ct)
+        ct,
+        PlatformApp?.Services)
       : await db.RunMutationAsync(
         mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, cellPatch: null, mutationCt),
         ct: ct);

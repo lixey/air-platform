@@ -24,6 +24,46 @@ public static class ServiceEndpointsExtensions
     "StatusFlowService`1"
   };
 
+  internal static void TryBindModuleDbScope(PathString requestPath, ModuleCatalog catalog, IServiceProvider services)
+  {
+    var rawPath = requestPath.Value;
+    if (string.IsNullOrEmpty(rawPath) || !rawPath.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+    {
+      return;
+    }
+
+    var servicePath = rawPath["/api/".Length..].Trim('/');
+    if (string.IsNullOrEmpty(servicePath) ||
+        servicePath.StartsWith("auth/", StringComparison.OrdinalIgnoreCase) ||
+        servicePath.StartsWith("platform-", StringComparison.OrdinalIgnoreCase) ||
+        servicePath.StartsWith("metadata", StringComparison.OrdinalIgnoreCase))
+    {
+      return;
+    }
+
+    var parts = servicePath.Split('/');
+    if (parts.Length < 2)
+    {
+      return;
+    }
+
+    var serviceName = parts.Length >= 3 &&
+                      (string.Equals(parts[^2], "move-status", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(parts[^2], "get-action-input", StringComparison.OrdinalIgnoreCase))
+      ? string.Join('/', parts[..^2])
+      : string.Join('/', parts[..^1]);
+
+    var serviceType = catalog.FindFeature(serviceName)?.ServiceType
+      ?? catalog.FindServiceType(serviceName)
+      ?? catalog.FindFeature(parts[0] + "/" + parts[1])?.ServiceType
+      ?? catalog.FindServiceType(parts[0] + "/" + parts[1]);
+
+    if (serviceType is not null)
+    {
+      services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
+    }
+  }
+
   public static void MapServiceEndpoints(this RouteGroupBuilder api)
   {
     api.MapPost("/{**servicePath}", async (
@@ -77,6 +117,8 @@ public static class ServiceEndpointsExtensions
         {
           return Results.NotFound($"Service '{serviceName}' not found.");
         }
+
+        services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
 
         foreach (var dispatcher in services.GetServices<IServiceEndpointDispatcher>())
         {

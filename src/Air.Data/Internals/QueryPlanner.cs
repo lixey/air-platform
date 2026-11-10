@@ -1,6 +1,6 @@
 namespace Platform.Data.Internals;
 
-internal sealed class QueryPlanner<TEntity>(QueryMap<TEntity> map) where TEntity : class
+internal sealed class QueryPlanner<TEntity>(QueryMap<TEntity> map, bool useCollationComparison = false) where TEntity : class
 {
   private static readonly char[] WordBreaks = [' ', '\t', '\r', '\n'];
 
@@ -102,7 +102,7 @@ internal sealed class QueryPlanner<TEntity>(QueryMap<TEntity> map) where TEntity
         QueryError.OperatorNotAllowed, $"'{field.Name}' does not admit '{rule.Operator}'.", field.Name);
     }
 
-    return PredicateFactory.Build(field, field.Bind(_entity), rule, map.Limits);
+    return PredicateFactory.Build(field, field.Bind(_entity), rule, map.Limits, useCollationComparison);
   }
 
   private Expression? CompileSearch(ListRequest request)
@@ -145,7 +145,7 @@ internal sealed class QueryPlanner<TEntity>(QueryMap<TEntity> map) where TEntity
     var member = field.Bind(_entity);
     if (field.Kind == FieldKind.Text)
     {
-      return PredicateFactory.TextMatch(field, member, pattern);
+      return PredicateFactory.TextMatch(field, member, pattern, useCollationComparison);
     }
 
     return pattern.IsPlain && RequestValue.TryConvert(pattern.Term, field.ValueType, out var typed)

@@ -16,13 +16,15 @@ public sealed class QueryMap<TEntity> where TEntity : class
     QueryField key,
     IReadOnlyList<SortTerm> defaultSort,
     QueryLimits limits,
-    NullOrdering nullOrdering)
+    NullOrdering nullOrdering,
+    bool useCollationComparison = false)
   {
     _fields = fields.ToFrozenDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
     Key = key;
     DefaultSort = defaultSort;
     Limits = limits;
     NullOrdering = nullOrdering;
+    UseCollationComparison = useCollationComparison;
   }
 
   public IReadOnlyCollection<QueryField> Fields => _fields.Values;
@@ -30,14 +32,15 @@ public sealed class QueryMap<TEntity> where TEntity : class
   public QueryField Key { get; }
   public QueryLimits Limits { get; }
   public NullOrdering NullOrdering { get; }
+  public bool UseCollationComparison { get; }
   internal IReadOnlyList<SortTerm> DefaultSort { get; }
 
   public QueryField? Find(string name) => _fields.GetValueOrDefault(name);
 
-  public QueryPlan<TEntity> Plan(ListRequest request)
+  public QueryPlan<TEntity> Plan(ListRequest request, bool? useCollationComparison = null)
   {
     ArgumentNullException.ThrowIfNull(request);
-    return new QueryPlanner<TEntity>(this).Plan(request);
+    return new QueryPlanner<TEntity>(this, useCollationComparison ?? UseCollationComparison).Plan(request);
   }
 
   public QueryMap<TEntity> Narrow(Func<QueryField, FieldCapabilities> capabilities)
@@ -46,7 +49,7 @@ public sealed class QueryMap<TEntity> where TEntity : class
     var narrowed = _fields.Values
       .Select(f => f.With(f.Capabilities & capabilities(f)))
       .Where(f => f.Capabilities != FieldCapabilities.None);
-    return new QueryMap<TEntity>(narrowed, Key, DefaultSort, Limits, NullOrdering);
+    return new QueryMap<TEntity>(narrowed, Key, DefaultSort, Limits, NullOrdering, UseCollationComparison);
   }
 
   public QueryMap<TEntity> Narrow(Func<QueryField, bool> predicate)

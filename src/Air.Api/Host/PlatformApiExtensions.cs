@@ -54,6 +54,9 @@ public static class PlatformApiExtensions
     builder.Services.AddHybridCache();
     builder.Services.TryAddSingleton<ICacheProvider, Caching.Internals.CacheProvider>();
     builder.Services.TryAddSingleton<IUserAuthCache, Auth.Internals.UserAuthCache>();
+    builder.Services.TryAddSingleton<Auth.Internals.LoginRateLimiter>();
+    builder.Services.TryAddSingleton<Mutations.Internals.IdempotencyStore>();
+    builder.Services.TryAddSingleton<FileLinks>();
     var filesPath = builder.Configuration["Files:Path"];
     if (string.IsNullOrWhiteSpace(filesPath))
     {
@@ -90,6 +93,11 @@ public static class PlatformApiExtensions
   {
     return app.Use(async (context, next) =>
     {
+      if (context.RequestServices.GetService<ModuleCatalog>() is { } requestCatalog)
+      {
+        ServiceEndpointsExtensions.TryBindModuleDbScope(context.Request.Path, requestCatalog, context.RequestServices);
+      }
+
       string? token = null;
       var isCookie = false;
 
@@ -171,7 +179,10 @@ public static class PlatformApiExtensions
         }
       }
 
-      await next();
+      using (AsyncLocalTenantContext.Use(null, null, null, context.TraceIdentifier))
+      {
+        await next();
+      }
     });
   }
 
