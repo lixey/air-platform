@@ -101,7 +101,7 @@ public class Elements
 
   private static readonly ConcurrentDictionary<(Type EntityType, string ExpressionKey), Delegate> CompiledInfoSelectors = new();
 
-  public FormElement<TEntity, TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp>> expression)
+  public FormElement<TEntity, TProp> Add<TEntity, TProp>(Expression<Func<TEntity, TProp?>> expression)
   {
     var memberPath = MemberPath.Of(expression);
     var path = ToCamelPath(memberPath);
@@ -113,11 +113,14 @@ public class Elements
       TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
-      IsDisabled = _disabled
+      IsDisabled = _disabled,
+      ResolvedPropertyType = typeof(TProp)
     };
 
     if (memberPath.Contains('.'))
     {
+      el.IsDisabled = true;
+      el.IsServerOwned = true;
       var navPaths = ExtractNavigationPaths(expression);
       if (navPaths.Count > 0)
       {
@@ -125,6 +128,20 @@ public class Elements
       }
 
       el.InfoValueGetter = obj => PropertyAccessorCache.GetPathValue(obj, memberPath);
+    }
+    else if (!string.IsNullOrEmpty(memberPath) && typeof(IEntity).IsAssignableFrom(typeof(TProp)))
+    {
+      el.NavigationPropertyName = memberPath;
+      el.ReferencePath = path;
+      var navProp = PropertyAccessorCache.GetProperty(typeof(TEntity), memberPath);
+      var explicitFkName = navProp?.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.ForeignKeyAttribute>()?.Name;
+      var fkProp = PropertyAccessorCache.GetProperty(typeof(TEntity), explicitFkName ?? memberPath + "Id") ?? throw new InvalidOperationException(
+          $"Navigation property '{typeof(TEntity).Name}.{memberPath}' requires a matching foreign key property '{memberPath}Id' (or [ForeignKey]) to be used in Elements.Add.");
+      el.Path = ToCamelPath(fkProp.Name);
+      el.Label = PathToLabel(path, typeof(TEntity));
+      el.Type = ResolveFieldType(fkProp.PropertyType);
+      el.Model = ResolveDefaultModel(fkProp.PropertyType);
+      el.ResolvedPropertyType = fkProp.PropertyType;
     }
 
     _elements.Add(el);
@@ -140,7 +157,7 @@ public class Elements
       : BuildStableInfoPath(expression, exprKey);
     var path = EnsureUniquePath(basePath);
 
-    var compiled = Grid.GridColumn<object>.ContainsClosure(expression.Body)
+    var compiled = ExpressionClosureInspector.ContainsClosure(expression.Body)
       ? expression.Compile()
       : (Func<TEntity, TProp>)CompiledInfoSelectors.GetOrAdd(
           (typeof(TEntity), exprKey),
@@ -150,12 +167,14 @@ public class Elements
     {
       Path = path,
       Label = label,
+      HasExplicitLabel = true,
       Type = ResolveFieldType(typeof(TProp)),
       TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = new FormInfoModel(),
       Tab = _currentTab,
       IsDisabled = true,
       IsServerOwned = true,
+      ResolvedPropertyType = typeof(TProp),
       InfoNavigationPaths = navPaths.Count > 0 ? navPaths : null,
       InfoValueGetter = obj =>
       {
@@ -294,6 +313,7 @@ public class Elements
 
   public FormElement<object, TProp> Add<TProp>(string path)
   {
+    var isDotPath = path.Contains('.');
     var el = new FormElementDto
     {
       Path = path,
@@ -302,7 +322,9 @@ public class Elements
       TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
-      IsDisabled = _disabled
+      IsDisabled = _disabled || isDotPath,
+      IsServerOwned = isDotPath,
+      ResolvedPropertyType = typeof(TProp)
     };
     _elements.Add(el);
     return new FormElement<object, TProp>(el);

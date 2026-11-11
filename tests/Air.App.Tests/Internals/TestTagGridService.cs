@@ -4,5 +4,10 @@ internal sealed class TestTagGridService(AppTestDbContext db, PlatformAppService
 {
   public override Feature Feature => TestAppModule.Tags;
   protected override void SetQuery(Query query) => query.Where(t => t.IsActive);
-  protected override void SetColumns(Columns columns) => columns.Add(t => t.Name);
+
+  protected override void SetColumns(Columns columns)
+  {
+    columns.Add(t => t.Name);
+    columns.Add(t => t.DefaultPrice);
+  }
 }

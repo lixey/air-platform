@@ -11,9 +11,9 @@ public sealed class EcomSalesReturnLineFormService(EcomDbContext db, EcomService
 
   protected override void SetElements(Elements elements)
   {
-    elements.Add(e => e.ProductId)
+    elements.Add(e => e.Product)
       .AsReference<OrgProductGridService>()
-      .PatchOnSelect<OrgProduct>(e => e.Price, p => p.Price)
+      .PatchOnSelect(e => e.Price, p => p.Price)
       .Required()
       .Span(12);
     elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(3);

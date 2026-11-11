@@ -742,7 +742,12 @@ public abstract partial class GridService<TEntity, TRow>
     var cols = CreateColumns();
 
     var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase));
-    if (IsReadOnly || col == null || !col.IsEditable)
+    if (IsReadOnly ||
+        col == null ||
+        !col.IsEditable ||
+        string.IsNullOrEmpty(col.Path) ||
+        col.Path.Contains('.') ||
+        !await RestrictedQuery().AsNoTracking().AnyAsync(e => e.Id == request.Id.Value, ct))
     {
       return new GridCellDto
       {
@@ -818,7 +823,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       NormalizeGridRequest(request, request, queryDeclaration, isSelect: false, applyInitialFilters: false);
 
-      var queryMap = BuildQueryMap(queryDeclaration, cols.List, IsSqlServerProvider);
+      var queryMap = BuildQueryMap(GetType(), queryDeclaration, cols.List, IsSqlServerProvider);
 
       if (queryDeclaration.Selector != null)
       {

@@ -69,12 +69,6 @@ public sealed class FormElementDto
   public FilterNode? DisabledWhen { get; set; }
 
   [JsonIgnore]
-  internal Func<object, bool>? VisibleWhenPredicate { get; set; }
-
-  [JsonIgnore]
-  internal Func<object, bool>? DisabledWhenPredicate { get; set; }
-
-  [JsonIgnore]
   internal Func<DbContext, long, CancellationToken, Task<List<long>>>? JoinLoader { get; set; }
 
   [JsonIgnore]
@@ -88,6 +82,15 @@ public sealed class FormElementDto
 
   [JsonIgnore]
   internal bool? ExplicitRequired { get; set; }
+
+  [JsonIgnore]
+  internal bool HasExplicitLabel { get; set; }
+
+  [JsonIgnore]
+  internal string? NavigationPropertyName { get; set; }
+
+  [JsonIgnore]
+  internal Type? ResolvedPropertyType { get; set; }
 
   [JsonIgnore]
   public Type? ReferenceServiceType { get; set; }

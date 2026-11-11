@@ -23,7 +23,7 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
   {
     columns.Add(r => r.Doc.Number);
     columns.Add(r => r.Doc.Date);
-    columns.Add(r => r.Doc.DocStatus).Label("Status").AsReference<EcomDocStatusGridService, EcomDocStatus>()
+    columns.Add(r => r.Doc.DocStatus).Label("Status").AsReference<EcomDocStatusGridService>()
       .Where(s => s.DocTypeId, EcomData.DocType.CustomerOrderId)
       .Color(line => line.Doc.DocStatus.Color.Handle);
     columns.Add(r => r.Doc.Organization).AsReference<OrgOrganizationGridService>().Color(line => line.Doc.Organization.Color.Handle);

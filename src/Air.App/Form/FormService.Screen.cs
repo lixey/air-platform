@@ -1,4 +1,5 @@
 using Platform.App.Files.Internals;
+using Platform.App.Form.Internals;
 using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
@@ -12,14 +13,14 @@ public abstract partial class FormService<TEntity>
 
   public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default)
   {
-    Request = request;
+    SetRequest(request);
     var id = request.Id;
     IsNew = id is null or 0;
 
     var parent = GetParent();
 
     TEntity? entity = null;
-    if (id is not null && id > 0)
+    if (id is > 0)
     {
       entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct);
       if (entity != null)
@@ -28,24 +29,12 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    await PreloadParentRecordAsync(parent, ct);
-
     CurrentEntity = entity;
+    await PreloadParentRecordAsync(parent, ct);
 
     var elements = new Elements();
     await SetElementsAsync(elements, ct);
-    if (parent.BoundProperty != null && request.ParentId is > 0)
-    {
-      var boundCamel = Elements.ToCamelPath(parent.BoundProperty.Name);
-      foreach (var el in elements.List)
-      {
-        if (string.Equals(el.Path, boundCamel, StringComparison.OrdinalIgnoreCase))
-        {
-          el.IsDisabled = true;
-          el.IsServerOwned = true;
-        }
-      }
-    }
+    LockBoundParentElement(elements, parent, Request.ParentId);
 
     if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
     {
@@ -56,15 +45,7 @@ public abstract partial class FormService<TEntity>
           continue;
         }
 
-        var targetName = prop.Name;
-        var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
-        if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
-            !targetName.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
-            PropertyAccessorCache.GetProperty(typeof(TEntity), targetName + "Id") != null)
-        {
-          targetName += "Id";
-        }
-
+        var targetName = ResolvePresetPropertyName(prop.Name);
         var targetCamel = Elements.ToCamelPath(targetName);
         foreach (var el in elements.List)
         {
@@ -76,8 +57,18 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    await LocalizeAndResolveSelectElementsAsync(elements, ct);
-    await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
+    await FormReferenceResolver.LocalizeAndResolveSelectElementsAsync<TEntity>(
+      GetType(),
+      Feature,
+      db,
+      PlatformApp,
+      User,
+      L,
+      IsReadOnly,
+      elements,
+      ct);
+
+    await FormReferenceResolver.ResolveTimeZoneInheritLabelsAsync(db, L, ParentId, elements, entity, ct);
     _lastElements = elements;
 
     var formModel = new FormModel
@@ -108,9 +99,9 @@ public abstract partial class FormService<TEntity>
     var caption = RecordCaption(entity, id);
     var filesChildren = elements.Children.Where(c => c.IsFiles && IsChildPermitted(c)).ToList();
     var pageChildren = elements.Children.Where(c => !c.IsFiles && IsChildPermitted(c)).ToList();
-    var hasPages = pageChildren.Count > 0 && id.HasValue && id.Value > 0;
+    var hasPages = pageChildren.Count > 0 && id is > 0;
 
-    if (filesChildren.Count > 0 && id.HasValue && id.Value > 0)
+    if (filesChildren.Count > 0 && id is > 0)
     {
       formModel.Files = await BuildFilesModelsAsync(servicePath, id, filesChildren, ct);
     }
@@ -121,7 +112,7 @@ public abstract partial class FormService<TEntity>
 
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
-      ConfigureStatusFlowAndActions(servicePath, statusFlow, elements.StatusFlowAllowsReadOnly, formModel, entity, id, actionStart);
+      ConfigureStatusFlowAndActions(servicePath, statusFlow, elements.StatusFlowAllowsReadOnly, entity, id, actionStart);
     }
 
     if (entity != null && id is > 0)
@@ -193,253 +184,17 @@ public abstract partial class FormService<TEntity>
     };
   }
 
-  private async Task LocalizeAndResolveSelectElementsAsync(Elements elements, CancellationToken ct = default)
+  private static string ResolvePresetPropertyName(string propName)
   {
-    foreach (var child in elements.Children)
+    var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), propName);
+    if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
+        !propName.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
+        PropertyAccessorCache.GetProperty(typeof(TEntity), propName + "Id") != null)
     {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), child.ServiceType, $"AddChild '{child.DeclaredKey}'");
+      return propName + "Id";
     }
 
-    if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
-    {
-      var statusMemberName = StatusMoveNavBuilder.ExtractStatusMemberName(statusFlow.StatusMember);
-
-      var statusOptions = statusFlow.Statuses.Select(s => new OptionDto
-      {
-        Id = s.Id,
-        Name = L[s.Name],
-        Color = s.Color,
-        Title = s.Title != null ? L[s.Title] : null
-      }).ToList();
-
-      foreach (var el in elements.List)
-      {
-        var isStatusField = statusMemberName != null
-          ? string.Equals(el.Path, statusMemberName, StringComparison.OrdinalIgnoreCase)
-          : el.Path.EndsWith("statusId", StringComparison.OrdinalIgnoreCase)
-            || el.Path.Equals("status", StringComparison.OrdinalIgnoreCase);
-
-        if (isStatusField)
-        {
-          el.IsDisabled = true;
-          el.IsServerOwned = true;
-          el.Type = UiFieldType.Text;
-          el.Model = new FormSelectModel
-          {
-            Options = statusOptions
-          };
-        }
-      }
-    }
-
-    ApplyElementConstraints(elements);
-
-    foreach (var el in elements.List)
-    {
-      if (!string.IsNullOrEmpty(el.SeparatorLabel))
-      {
-        el.SeparatorLabel = L[el.SeparatorLabel];
-      }
-
-      if (!string.IsNullOrEmpty(el.Label))
-      {
-        el.Label = ScreenBuilderHelpers.ResolveFieldLabel(L, Feature, el.Path, el.Label);
-      }
-
-      if (!string.IsNullOrEmpty(el.Title))
-      {
-        el.Title = L[el.Title];
-      }
-
-      if (!string.IsNullOrEmpty(el.Placeholder))
-      {
-        el.Placeholder = L[el.Placeholder];
-      }
-
-      if (!string.IsNullOrEmpty(el.Help))
-      {
-        el.Help = L[el.Help];
-      }
-
-      if (el.Model is FormSelectModel select)
-      {
-        select.Options = ScreenBuilderHelpers.LocalizeOptions(L, select.Options);
-
-        if (!string.IsNullOrEmpty(select.ReferenceService))
-        {
-          var targetServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
-          ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), targetServiceType, $"AsReference on '{el.Path}'");
-          if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name")
-          {
-            if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))
-            {
-              try
-              {
-                if (ModuleCatalog.Instance.CreateServiceInstance(targetServiceType, db, PlatformApp) is IGridService gridInst)
-                {
-                  var customPaths = gridInst.GetReferenceLabelPaths();
-                  if (customPaths is { Count: > 0 })
-                  {
-                    select.ReferenceLabelPaths = [.. customPaths];
-                  }
-                }
-              }
-              catch { }
-            }
-          }
-
-          if (el.AllowsCreate && !el.IsDisabled && !el.IsServerOwned && !IsReadOnly)
-          {
-            var createFormType = el.CreateFormServiceType;
-            if (createFormType == null && targetServiceType != null)
-            {
-              var candidateName = targetServiceType.Name.Replace("GridService", "FormService");
-              createFormType = targetServiceType.Assembly.GetType(targetServiceType.Namespace + "." + candidateName)
-                ?? targetServiceType.Assembly.GetTypes().FirstOrDefault(t => t.Name == candidateName);
-            }
-
-            if (createFormType != null && typeof(IFormService).IsAssignableFrom(createFormType))
-            {
-              var targetFeat = ModuleCatalog.Instance.FindFeature(createFormType)
-                ?? (targetServiceType != null ? ModuleCatalog.Instance.FindFeature(targetServiceType) : null);
-              var canCreate = targetFeat is { IsReadOnly: false } &&
-                              User is { IsAuthenticated: true } &&
-                              ServiceEndpointsExtensions.CanEdit(targetFeat, User);
-
-              if (canCreate)
-              {
-                var createServicePath = ServicePathResolver.Resolve(createFormType);
-                try
-                {
-                  if (ModuleCatalog.Instance.CreateServiceInstance(createFormType, db, PlatformApp) is IFormService createFormInst)
-                  {
-                    select.CreateOverlay = await createFormInst.OverlayAsync(createServicePath, ct);
-                  }
-                }
-                catch { }
-
-                select.CreateOverlay ??= OverlayModel.Dialog($"{createServicePath}.modal").Screen(createServicePath).Build();
-              }
-            }
-          }
-        }
-      }
-      else if (el.IsRightsTree && el.Model is FormCheckboxTreeModel treeModel)
-      {
-        var held = User is { IsAuthenticated: true } ? User.Permissions : null;
-        treeModel.Nodes = RightsTree.Build(ModuleCatalog.Instance, held);
-      }
-    }
-  }
-
-  internal void ApplyElementConstraints(Elements elements)
-  {
-    var efEntityType = db.Model.FindEntityType(typeof(TEntity));
-
-    foreach (var el in elements.List)
-    {
-      if (string.IsNullOrEmpty(el.Path))
-      {
-        continue;
-      }
-
-      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
-      var propType = entityProp?.PropertyType;
-      var efProp = efEntityType != null && entityProp != null && !el.IsInputOnly ? efEntityType.FindProperty(entityProp.Name) : null;
-
-      if (efProp != null)
-      {
-        el.Constraints.AllowsNull ??= efProp.IsNullable;
-        if (efProp.GetMaxLength() is { } storageMax && storageMax >= 0)
-        {
-          el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
-            ? Math.Min(el.Constraints.MaxLength.Value, storageMax)
-            : storageMax;
-          el.Constraints.LengthUnit ??= propType == typeof(byte[]) ? FormLengthUnit.Bytes : FormLengthUnit.Utf16;
-        }
-
-        if (propType != null && (Nullable.GetUnderlyingType(propType) ?? propType) == typeof(decimal))
-        {
-          el.Constraints.Precision ??= efProp.GetPrecision();
-          el.Constraints.Scale ??= efProp.GetScale();
-        }
-
-        if (!efProp.IsNullable && el.ExplicitRequired != false && !el.IsServerOwned)
-        {
-          if (propType == typeof(string) || efProp.IsForeignKey())
-          {
-            el.IsRequired = true;
-          }
-        }
-      }
-
-      var annotations = entityProp != null
-        ? entityProp.GetCustomAttributes<ValidationAttribute>()
-        : [];
-
-      foreach (var attr in annotations)
-      {
-        switch (attr)
-        {
-          case RequiredAttribute req:
-            if (el.ExplicitRequired != false && !el.IsServerOwned)
-            {
-              el.IsRequired = true;
-              el.Constraints.AllowsNull = false;
-              if (propType == typeof(string) && !req.AllowEmptyStrings)
-              {
-                el.Constraints.RejectsBlank = true;
-              }
-            }
-
-            break;
-          case StringLengthAttribute strLen:
-            el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
-              ? Math.Min(el.Constraints.MaxLength.Value, strLen.MaximumLength)
-              : strLen.MaximumLength;
-            if (strLen.MinimumLength > 0)
-            {
-              el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, strLen.MinimumLength);
-            }
-
-            el.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
-            break;
-          case MaxLengthAttribute maxLen when maxLen.Length >= 0:
-            el.Constraints.MaxLength = el.Constraints.MaxLength.HasValue
-              ? Math.Min(el.Constraints.MaxLength.Value, maxLen.Length)
-              : maxLen.Length;
-            el.Constraints.LengthUnit ??= propType == typeof(byte[])
-              ? FormLengthUnit.Bytes
-              : (propType != null && typeof(ICollection).IsAssignableFrom(propType) ? FormLengthUnit.Items : FormLengthUnit.Utf16);
-            break;
-          case MinLengthAttribute minLen when minLen.Length > 0:
-            el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, minLen.Length);
-            el.Constraints.LengthUnit ??= propType == typeof(byte[])
-              ? FormLengthUnit.Bytes
-              : (propType != null && typeof(ICollection).IsAssignableFrom(propType) ? FormLengthUnit.Items : FormLengthUnit.Utf16);
-            break;
-        }
-      }
-
-      if (propType != null && propType.IsValueType && Nullable.GetUnderlyingType(propType) == null)
-      {
-        el.Constraints.AllowsNull = false;
-      }
-
-      if (el.IsRequired)
-      {
-        el.Constraints.AllowsNull = false;
-        if (propType == typeof(string))
-        {
-          el.Constraints.RejectsBlank = true;
-        }
-        else if (propType != null && typeof(ICollection).IsAssignableFrom(propType))
-        {
-          el.Constraints.MinLength = Math.Max(el.Constraints.MinLength ?? 0, 1);
-          el.Constraints.LengthUnit ??= FormLengthUnit.Items;
-        }
-      }
-    }
+    return propName;
   }
 
   private async Task<List<Contracts.FormFilesModel>> BuildFilesModelsAsync(
@@ -673,7 +428,6 @@ public abstract partial class FormService<TEntity>
     string servicePath,
     IRecordStatuses<TEntity> statusFlow,
     bool allowReadOnly,
-    FormModel formModel,
     TEntity? entity,
     long? id,
     List<NavElementModel> actionStart)
@@ -683,7 +437,7 @@ public abstract partial class FormService<TEntity>
       flowSvc.AttachPlatformApp(PlatformApp);
     }
 
-    if (entity != null && id.HasValue && id.Value > 0 && (!IsReadOnly || allowReadOnly))
+    if (entity != null && id is > 0 && (!IsReadOnly || allowReadOnly))
     {
       var currentStatus = statusFlow.StatusMember.Compile()(entity);
       foreach (var transition in statusFlow.Transitions)
@@ -789,8 +543,7 @@ public abstract partial class FormService<TEntity>
         })
         .Label(L[child.DeclaredLabel])
         .Fill()
-        .Min(240)
-      );
+        .Min(240));
     }
   }
 }

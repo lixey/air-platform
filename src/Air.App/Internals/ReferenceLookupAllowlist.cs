@@ -28,16 +28,16 @@ internal static class ReferenceLookupAllowlist
       {
         try
         {
-          if (typeof(IFormService).IsAssignableFrom(serviceType))
+          if (typeof(Form.IFormService).IsAssignableFrom(serviceType))
           {
-            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is IFormService form)
+            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is Form.IFormService form)
             {
               await form.GetElementsMetadataAsync(ct);
             }
           }
-          else if (typeof(IGridService).IsAssignableFrom(serviceType))
+          else if (typeof(Grid.IGridService).IsAssignableFrom(serviceType))
           {
-            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is IGridService grid)
+            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is Grid.IGridService grid)
             {
               grid.RegisterMetadata();
             }
@@ -95,6 +95,16 @@ internal static class ReferenceLookupAllowlist
     set[field] = 1;
   }
 
+  public static IReadOnlyCollection<string> GetAllowedFilterFields(Type? serviceType) =>
+    serviceType != null && AllowedFilters.TryGetValue(serviceType, out var set)
+      ? [.. set.Keys]
+      : [];
+
+  public static string GetAllowedFilterSignature(Type? serviceType) =>
+    serviceType != null && AllowedFilters.TryGetValue(serviceType, out var set) && !set.IsEmpty
+      ? string.Join(',', set.Keys.OrderBy(static k => k, StringComparer.OrdinalIgnoreCase))
+      : string.Empty;
+
   public static List<string>? FilterLabelPaths(
     Type serviceType,
     IReadOnlyList<string>? gridDefaultLabels,
@@ -128,37 +138,45 @@ internal static class ReferenceLookupAllowlist
     return result.Count > 0 ? result : null;
   }
 
-  public static FilterNode? SanitizeFilter(Type serviceType, FilterNode? filter)
+  public static bool TrySanitizeFilter(Type serviceType, FilterNode? filter, out FilterNode? sanitized)
   {
     if (filter == null)
     {
-      return null;
+      sanitized = null;
+      return true;
     }
 
     AllowedFilters.TryGetValue(serviceType, out var registered);
-    return SanitizeNode(filter, registered);
+    if (!IsAllowedNode(filter, registered))
+    {
+      sanitized = null;
+      return false;
+    }
+
+    sanitized = filter;
+    return true;
   }
 
-  private static FilterNode? SanitizeNode(FilterNode node, ConcurrentDictionary<string, byte>? registered)
+  private static bool IsAllowedNode(FilterNode node, ConcurrentDictionary<string, byte>? registered)
   {
     if (node is FilterRule rule)
     {
+      if (string.IsNullOrWhiteSpace(rule.Field))
+      {
+        return false;
+      }
+
       var isAllowedField = string.Equals(rule.Field, "id", StringComparison.OrdinalIgnoreCase) ||
                            registered != null && registered.ContainsKey(rule.Field);
       var isAllowedOp = rule.Operator is FilterOperator.Equals or FilterOperator.IsNull or FilterOperator.In;
-      return isAllowedField && isAllowedOp ? rule : null;
+      return isAllowedField && isAllowedOp;
     }
 
     if (node is FilterGroup group)
     {
-      var items = group.Items
-        .Select(child => SanitizeNode(child, registered))
-        .Where(child => child != null)
-        .Cast<FilterNode>()
-        .ToList();
-      return items.Count > 0 ? new FilterGroup { Logic = group.Logic, Items = items } : null;
+      return group.Items.All(child => IsAllowedNode(child, registered));
     }
 
-    return null;
+    return false;
   }
 }

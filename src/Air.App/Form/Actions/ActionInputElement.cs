@@ -1,3 +1,4 @@
+using Platform.App.Internals;
 using Platform.Data.Internals;
 
 namespace Platform.App.Form.Actions;
@@ -45,9 +46,10 @@ public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
     dto.ValueKind = FormValueKind.Reference;
     dto.ReferenceServiceType = typeof(TGridService);
     dto.ReferencePath ??= dto.Path.EndsWith("Id", StringComparison.Ordinal) ? dto.Path[..^2] : dto.Path;
+    ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     dto.Model = new FormSelectModel
     {
-      ReferenceService = Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TGridService)),
+      ReferenceService = ServicePathResolver.Resolve(typeof(TGridService)),
       ReferenceLabelPaths = ["name"]
     };
     return this;
@@ -59,11 +61,12 @@ public sealed class ActionInputElement<TInput, TProp>(FormElementDto dto)
   {
     if (dto.Model is FormSelectModel selectModel)
     {
-      var sourcePath = Platform.App.Form.Elements.ToCamelPath(MemberPath.Of(sourceMember));
+      var sourcePath = Elements.ToCamelPath(MemberPath.Of(sourceMember));
       var rule = FilterNode.Rule(sourcePath, FilterOperator.Equals, value);
       selectModel.ReferenceFilter = selectModel.ReferenceFilter is null
         ? rule
         : FilterNode.All(selectModel.ReferenceFilter, rule);
+      ReferenceLookupAllowlist.RegisterFilterField(dto.ReferenceServiceType, sourcePath);
     }
 
     return this;

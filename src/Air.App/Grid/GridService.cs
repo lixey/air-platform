@@ -76,6 +76,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return true;
     }
 
+    var parent = GetParent();
+    if (parent.BoundProperty != null && !parent.IsOptional && request.ParentId is null or <= 0)
+    {
+      return false;
+    }
+
     if (typeof(BaseAppFile).IsAssignableFrom(typeof(TEntity)) ||
         typeof(BaseAppAuthRole).IsAssignableFrom(typeof(TEntity)) ||
         typeof(BaseAppAuthGrant).IsAssignableFrom(typeof(TEntity)) ||
@@ -110,7 +116,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   {
     ParentService = parentService;
     ParentId = parentId;
-    if (!string.IsNullOrEmpty(parentService) || parentId is > 0)
+    var parent = GetParent();
+    if (!string.IsNullOrEmpty(parentService) || parentId.HasValue || parent.BoundProperty != null && !parent.IsOptional)
     {
       return await EnsureParentScopeAsync(lockParent: false, ct);
     }
@@ -121,10 +128,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
   {
     var parent = GetParent();
-    var hasRequiredBoundParent = parent.BoundProperty != null &&
-                                 !parent.IsOptional &&
-                                 Feature.ServiceType != null &&
-                                 Feature.ServiceType != GetType();
+    var hasRequiredBoundParent = parent.BoundProperty != null && !parent.IsOptional;
     var (allowed, preloaded, parentChildren) = await ParentScopeValidator.ValidateAndLoadAsync(
       db,
       PlatformApp,
@@ -397,6 +401,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.StatusFlow.GetType(), "UseStatusOf");
     }
 
+    string? resolvedParentFormPath = null;
     foreach (var col in cols.List)
     {
       if (col.PickerSourceType != null)
@@ -407,6 +412,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       if (col.ReferenceServiceType != null)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.ReferenceServiceType, $"AsReference on '{col.Path}'");
+      }
+
+      if (col.Cell is GridCellCoverModel { Service.Length: > 0, ParentService.Length: 0 } cover)
+      {
+        resolvedParentFormPath ??= ResolveFormServicePath(cols) ?? string.Empty;
+        cover.ParentService = resolvedParentFormPath;
       }
     }
 
@@ -427,9 +438,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return ModuleCatalog.Instance.FindServiceType(FormServicePath);
     }
 
-    var candidateFormName = GetType().Name.Replace("GridService", "FormService");
-    return GetType().Assembly.GetType(GetType().Namespace + "." + candidateFormName)
-      ?? GetType().Assembly.GetTypes().FirstOrDefault(t => t.Name == candidateFormName);
+    return ParentScopeValidator.ResolveConventionFormType(GetType());
   }
 
   private string? ResolveFormServicePath(Columns columns)

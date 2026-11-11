@@ -1,3 +1,4 @@
+using Platform.App.Internals;
 using Platform.Data.Internals;
 
 namespace Platform.App.Grid;
@@ -38,7 +39,7 @@ public class Columns
     return new StatusFlowBuilder(this);
   }
 
-  public GridColumn<TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
+  public GridColumn<TRow, TRow, TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp?>> expression)
   {
     var path = ToCamelPath(MemberPath.Of(expression));
     var isRefType = typeof(Reference).IsAssignableFrom(typeof(TProp));
@@ -54,19 +55,19 @@ public class Columns
       MemberType = typeof(TProp)
     };
     _columns.Add(col);
-    return new GridColumn<TProp>(col, this);
+    return new GridColumn<TRow, TRow, TProp>(col, this);
   }
 
   private static readonly ConcurrentDictionary<(Type RowType, string ExpressionKey), Func<object, object?>> CompiledValueEvaluators = new();
 
-  public GridColumn<TProp> Add<TRow, TProp>(string path, Expression<Func<TRow, TProp>> expression)
+  public GridColumn<TRow, TRow, TProp> Add<TRow, TProp>(string path, Expression<Func<TRow, TProp>> expression)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(path);
     ArgumentNullException.ThrowIfNull(expression);
 
     var camelPath = ToCamelPath(path);
     var isRefType = typeof(Reference).IsAssignableFrom(typeof(TProp));
-    var isSubquery = GridColumn<TProp>.ContainsClosure(expression.Body);
+    var isSubquery = ExpressionClosureInspector.ContainsClosure(expression.Body);
 
     Func<object, object?>? evaluator = null;
     if (!isSubquery)
@@ -92,7 +93,7 @@ public class Columns
       IsSubqueryExpression = isSubquery
     };
     _columns.Add(col);
-    return new GridColumn<TProp>(col, this);
+    return new GridColumn<TRow, TRow, TProp>(col, this);
   }
 
   private static Func<object, object?> BuildSafeEvaluator<TRow, TProp>(Expression<Func<TRow, TProp>> expression)
@@ -116,7 +117,7 @@ public class Columns
     };
   }
 
-  public GridColumn<TProp> Add<TProp>(string path)
+  public GridColumn<object, object, TProp> Add<TProp>(string path)
   {
     var camelPath = ToCamelPath(path);
     var col = new GridColumnDto
@@ -130,7 +131,7 @@ public class Columns
       MemberType = typeof(TProp)
     };
     _columns.Add(col);
-    return new GridColumn<TProp>(col, this);
+    return new GridColumn<object, object, TProp>(col, this);
   }
 
   internal static string ToCamelPath(string path)

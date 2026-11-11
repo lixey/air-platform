@@ -66,49 +66,246 @@ export function isFieldDisabled(
   return Boolean(element.disabledWhen && values && evaluateFilterNode(element.disabledWhen, values()));
 }
 
+const ISO_DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_TEMPORAL_PREFIX_RE = /^\d{4}-\d{2}-\d{2}(?:$|[T\s])/;
+
 /** Evaluates a declarative `FilterNode` predicate against the current form draft values. */
 export function evaluateFilterNode(node: FilterNode | null | undefined, values: Readonly<Record<string, unknown>>): boolean {
   if (!node) {
     return true;
   }
   if (node.kind === 'FilterGroup') {
-    return node.logic === 'or'
+    if (node.items.length === 0) {
+      return true;
+    }
+    return node.logic?.toLowerCase() === 'or'
       ? node.items.some(item => evaluateFilterNode(item, values))
       : node.items.every(item => evaluateFilterNode(item, values));
   }
-  const actual = values[node.field];
+  if (!node.field) {
+    return false;
+  }
+  const actual = readFieldValue(values, node.field);
   const expected = node.value;
   switch (node.operator) {
     case 'isNull':
-      return actual == null || actual === '';
+      return isEmptyValue(actual);
     case 'isNotNull':
-      return actual != null && actual !== '';
+      return !isEmptyValue(actual);
     case 'equals':
-      return actual == expected || (actual != null && expected != null && String(actual) === String(expected));
+      return areEqualValues(actual, expected);
     case 'notEquals':
-      return actual != expected && (actual == null || expected == null || String(actual) !== String(expected));
-    case 'greaterThan':
-      return Number(actual) > Number(expected);
-    case 'greaterThanOrEqual':
-      return Number(actual) >= Number(expected);
-    case 'lessThan':
-      return Number(actual) < Number(expected);
-    case 'lessThanOrEqual':
-      return Number(actual) <= Number(expected);
+      return !areEqualValues(actual, expected);
+    case 'greaterThan': {
+      const cmp = compareOrderedValues(actual, expected);
+      return cmp !== undefined && cmp > 0;
+    }
+    case 'greaterThanOrEqual': {
+      const cmp = compareOrderedValues(actual, expected);
+      return cmp !== undefined && cmp >= 0;
+    }
+    case 'lessThan': {
+      const cmp = compareOrderedValues(actual, expected);
+      return cmp !== undefined && cmp < 0;
+    }
+    case 'lessThanOrEqual': {
+      const cmp = compareOrderedValues(actual, expected);
+      return cmp !== undefined && cmp <= 0;
+    }
     case 'contains':
-      return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().includes(expected.toLowerCase());
+      return matchesContains(actual, expected);
     case 'notContains':
-      return typeof actual !== 'string' || typeof expected !== 'string' || !actual.toLowerCase().includes(expected.toLowerCase());
+      return !matchesContains(actual, expected);
     case 'startsWith':
       return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().startsWith(expected.toLowerCase());
     case 'endsWith':
       return typeof actual === 'string' && typeof expected === 'string' && actual.toLowerCase().endsWith(expected.toLowerCase());
     case 'in':
-      return Array.isArray(expected) && expected.some(v => v == actual || String(v) === String(actual));
+      return matchesIn(actual, expected);
     case 'notIn':
-      return !Array.isArray(expected) || !expected.some(v => v == actual || String(v) === String(actual));
+      return !matchesIn(actual, expected);
+    case 'matches':
+      return matchesRegex(actual, expected);
+    case 'notMatches':
+      return !matchesRegex(actual, expected);
     default:
+      return false;
+  }
+}
+
+function readFieldValue(values: Readonly<Record<string, unknown>>, field: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(values, field)) {
+    return values[field];
+  }
+  if (!field.includes('.')) {
+    const lower = field.toLowerCase();
+    for (const key of Object.keys(values)) {
+      if (key.toLowerCase() === lower) {
+        return values[key];
+      }
+    }
+    return undefined;
+  }
+  let current: unknown = values;
+  for (const segment of field.split('.')) {
+    if (current == null || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined;
+    }
+    const rec = current as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(rec, segment)) {
+      current = rec[segment];
+      continue;
+    }
+    const lowerSeg = segment.toLowerCase();
+    const matchedKey = Object.keys(rec).find(k => k.toLowerCase() === lowerSeg);
+    if (!matchedKey) {
+      return undefined;
+    }
+    current = rec[matchedKey];
+  }
+  return current;
+}
+
+function isEmptyValue(val: unknown): boolean {
+  return val == null || val === '' || (Array.isArray(val) && val.length === 0);
+}
+
+function tryParseBoolean(val: unknown): boolean | undefined {
+  if (typeof val === 'boolean') {
+    return val;
+  }
+  if (typeof val === 'string') {
+    const normalized = val.trim().toLowerCase();
+    if (normalized === 'true') {
       return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function tryParseFiniteNumber(val: unknown): number | undefined {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? val : undefined;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? num : undefined;
+  }
+  return undefined;
+}
+
+function tryParseTemporalMs(val: unknown): number | undefined {
+  if (val instanceof Date) {
+    const ms = val.getTime();
+    return Number.isFinite(ms) ? ms : undefined;
+  }
+  if (typeof val !== 'string' || !ISO_TEMPORAL_PREFIX_RE.test(val)) {
+    return undefined;
+  }
+  const dateOnlyMatch = ISO_DATE_ONLY_RE.exec(val);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    const ms = Date.UTC(year, month - 1, day);
+    const check = new Date(ms);
+    return check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day ? ms : undefined;
+  }
+  const parsed = Date.parse(val);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function areEqualValues(left: unknown, right: unknown): boolean {
+  if (left == null && right == null) {
+    return true;
+  }
+  if (left == null || right == null) {
+    return false;
+  }
+  if (typeof left === 'boolean' || typeof right === 'boolean') {
+    const lb = tryParseBoolean(left);
+    const rb = tryParseBoolean(right);
+    return lb !== undefined && rb !== undefined && lb === rb;
+  }
+  if (typeof left === 'number' || typeof right === 'number') {
+    const ln = tryParseFiniteNumber(left);
+    const rn = tryParseFiniteNumber(right);
+    return ln !== undefined && rn !== undefined && ln === rn;
+  }
+  const lt = tryParseTemporalMs(left);
+  const rt = tryParseTemporalMs(right);
+  if (lt !== undefined && rt !== undefined) {
+    return lt === rt;
+  }
+  return String(left).toLowerCase() === String(right).toLowerCase();
+}
+
+function compareOrderedValues(left: unknown, right: unknown): number | undefined {
+  if (isEmptyValue(left) || isEmptyValue(right)) {
+    return undefined;
+  }
+  if (typeof left === 'boolean' || typeof right === 'boolean') {
+    return undefined;
+  }
+  if (typeof left === 'number' || typeof right === 'number') {
+    const ln = tryParseFiniteNumber(left);
+    const rn = tryParseFiniteNumber(right);
+    if (ln === undefined || rn === undefined) {
+      return undefined;
+    }
+    return ln < rn ? -1 : ln > rn ? 1 : 0;
+  }
+  const lt = tryParseTemporalMs(left);
+  const rt = tryParseTemporalMs(right);
+  if (lt !== undefined && rt !== undefined) {
+    return lt < rt ? -1 : lt > rt ? 1 : 0;
+  }
+  if (typeof left === 'string' && typeof right === 'string') {
+    const ls = left.toLowerCase();
+    const rs = right.toLowerCase();
+    return ls < rs ? -1 : ls > rs ? 1 : 0;
+  }
+  return undefined;
+}
+
+function matchesContains(actual: unknown, expected: unknown): boolean {
+  if (actual == null || expected == null) {
+    return false;
+  }
+  if (typeof actual === 'string' && typeof expected === 'string') {
+    return actual.toLowerCase().includes(expected.toLowerCase());
+  }
+  if (Array.isArray(actual)) {
+    return actual.some(item => areEqualValues(item, expected));
+  }
+  return false;
+}
+
+function matchesIn(actual: unknown, expected: unknown): boolean {
+  if (actual == null || !Array.isArray(expected)) {
+    return false;
+  }
+  if (Array.isArray(actual)) {
+    return actual.some(item => expected.some(exp => areEqualValues(item, exp)));
+  }
+  return expected.some(exp => areEqualValues(actual, exp));
+}
+
+function matchesRegex(actual: unknown, expected: unknown): boolean {
+  if (typeof actual !== 'string' || typeof expected !== 'string' || expected.length === 0) {
+    return false;
+  }
+  try {
+    return new RegExp(expected, 'i').test(actual);
+  } catch {
+    return false;
   }
 }
 

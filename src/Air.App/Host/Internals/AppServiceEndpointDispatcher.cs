@@ -209,6 +209,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
       case "save-cell":
         {
+          if (!ServiceEndpointsExtensions.CanEdit(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
           var (req, isMalformed) = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
           if (isMalformed)
           {
@@ -617,6 +622,11 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     CancellationToken ct)
   {
     var isPicker = req.IsReferencePicker || req.ReferenceLabelPaths is { Count: > 0 };
+    if (isPicker)
+    {
+      await ReferenceLookupAllowlist.EnsureWarmAsync(services, ct);
+    }
+
     var canView = grid.CanView(req, userContext);
     if (!canView && (!isPicker || !grid.CanLookup(req, userContext)))
     {
@@ -625,10 +635,14 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
     if (!canView)
     {
-      await ReferenceLookupAllowlist.EnsureWarmAsync(services, ct);
+      if (!ReferenceLookupAllowlist.TrySanitizeFilter(serviceType, req.Filter, out var sanitizedFilter))
+      {
+        return false;
+      }
+
       req.IsReferencePicker = true;
       req.IsDataOnly = true;
-      req.Filter = ReferenceLookupAllowlist.SanitizeFilter(serviceType, req.Filter);
+      req.Filter = sanitizedFilter;
       req.ColumnFilter = null;
       req.NamedFilters = null;
       req.PatchSourceColumns = ReferenceLookupAllowlist.FilterPatchColumns(serviceType, req.PatchSourceColumns);

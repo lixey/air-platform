@@ -2,23 +2,13 @@ namespace Platform.App.Internals;
 
 internal static class PropertyAccessorCache
 {
-  private sealed class TypePropertyComparer : IEqualityComparer<(Type Type, string Name)>
-  {
-    public static readonly TypePropertyComparer Instance = new();
-
-    public bool Equals((Type Type, string Name) x, (Type Type, string Name) y) =>
-      x.Type == y.Type && StringComparer.OrdinalIgnoreCase.Equals(x.Name, y.Name);
-
-    public int GetHashCode((Type Type, string Name) obj) =>
-      HashCode.Combine(obj.Type, StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name));
-  }
+  private const int MaxStringCacheEntries = 4096;
+  private const int MaxCachedPathLength = 128;
 
   private static readonly string[] LabelCandidateNames = ["Name", "Title", "Number", "Code", "Login"];
 
   private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertiesByType = new();
-  private static readonly ConcurrentDictionary<(Type Type, string Name), PropertyInfo?> PropertyByName = new(TypePropertyComparer.Instance);
-  private static readonly ConcurrentDictionary<(Type Type, string Name), Func<object, object?>?> GetterByName = new(TypePropertyComparer.Instance);
-  private static readonly ConcurrentDictionary<(Type Type, string Name), Action<object, object?>?> SetterByName = new(TypePropertyComparer.Instance);
+  private static readonly ConcurrentDictionary<Type, FrozenDictionary<string, CompiledPropertyAccessor>> AccessorsByType = new();
   private static readonly ConcurrentDictionary<Type, Func<object, object?>?> LabelGetterByType = new();
   private static readonly ConcurrentDictionary<string, string[]> PathSegmentsCache = new(StringComparer.Ordinal);
   private static readonly ConcurrentDictionary<string, string[]> CamelPathSegmentsCache = new(StringComparer.Ordinal);
@@ -28,45 +18,19 @@ internal static class PropertyAccessorCache
     PropertiesByType.GetOrAdd(type, static t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance));
 
   public static PropertyInfo? GetProperty(Type type, string name) =>
-    PropertyByName.GetOrAdd((type, name), static key =>
-      key.Type.GetProperty(key.Name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase));
+    !string.IsNullOrEmpty(name) && GetAccessors(type).TryGetValue(name, out var accessor)
+      ? accessor.Property
+      : null;
 
   public static Func<object, object?>? GetGetter(Type type, string name) =>
-    GetterByName.GetOrAdd((type, name), static key =>
-    {
-      var prop = GetProperty(key.Type, key.Name);
-      if (prop is null || !prop.CanRead || prop.GetIndexParameters().Length > 0)
-      {
-        return null;
-      }
-
-      var targetParam = Expression.Parameter(typeof(object), "target");
-      var typedTarget = Expression.Convert(targetParam, key.Type);
-      var propAccess = Expression.Property(typedTarget, prop);
-      var boxedValue = prop.PropertyType.IsValueType
-        ? Expression.Convert(propAccess, typeof(object))
-        : (Expression)propAccess;
-
-      return Expression.Lambda<Func<object, object?>>(boxedValue, targetParam).Compile();
-    });
+    !string.IsNullOrEmpty(name) && GetAccessors(type).TryGetValue(name, out var accessor)
+      ? accessor.Getter
+      : null;
 
   public static Action<object, object?>? GetSetter(Type type, string name) =>
-    SetterByName.GetOrAdd((type, name), static key =>
-    {
-      var prop = GetProperty(key.Type, key.Name);
-      if (prop is null || !prop.CanWrite || prop.GetIndexParameters().Length > 0)
-      {
-        return null;
-      }
-
-      var targetParam = Expression.Parameter(typeof(object), "target");
-      var valueParam = Expression.Parameter(typeof(object), "value");
-      var typedTarget = Expression.Convert(targetParam, key.Type);
-      var typedValue = Expression.Convert(valueParam, prop.PropertyType);
-      var assign = Expression.Assign(Expression.Property(typedTarget, prop), typedValue);
-
-      return Expression.Lambda<Action<object, object?>>(assign, targetParam, valueParam).Compile();
-    });
+    !string.IsNullOrEmpty(name) && GetAccessors(type).TryGetValue(name, out var accessor)
+      ? accessor.Setter
+      : null;
 
   public static string? GetReferenceLabel(object target)
   {
@@ -87,28 +51,58 @@ internal static class PropertyAccessorCache
     return getter?.Invoke(target)?.ToString();
   }
 
-  public static string[] GetPathSegments(string path) =>
-    PathSegmentsCache.GetOrAdd(path, static p => p.Split('.'));
-
-  public static string[] GetCamelPathSegments(string path) =>
-    CamelPathSegmentsCache.GetOrAdd(path, static p =>
+  public static string[] GetPathSegments(string path)
+  {
+    if (PathSegmentsCache.TryGetValue(path, out var cached))
     {
-      var raw = GetPathSegments(p);
-      var res = new string[raw.Length];
-      for (var i = 0; i < raw.Length; i++)
-      {
-        res[i] = ToCamel(raw[i]);
-      }
+      return cached;
+    }
 
-      return res;
-    });
+    var computed = path.Split('.');
+    if (path.Length <= MaxCachedPathLength && PathSegmentsCache.Count < MaxStringCacheEntries)
+    {
+      PathSegmentsCache.TryAdd(path, computed);
+    }
 
-  public static string ToCamel(string str) =>
-    string.IsNullOrEmpty(str)
-      ? str
-      : char.IsLower(str[0])
-        ? str
-        : CamelCaseCache.GetOrAdd(str, static s => char.ToLowerInvariant(s[0]) + s[1..]);
+    return computed;
+  }
+
+  public static string[] GetCamelPathSegments(string path)
+  {
+    if (CamelPathSegmentsCache.TryGetValue(path, out var cached))
+    {
+      return cached;
+    }
+
+    var computed = BuildCamelPathSegments(path);
+    if (path.Length <= MaxCachedPathLength && CamelPathSegmentsCache.Count < MaxStringCacheEntries)
+    {
+      CamelPathSegmentsCache.TryAdd(path, computed);
+    }
+
+    return computed;
+  }
+
+  public static string ToCamel(string str)
+  {
+    if (string.IsNullOrEmpty(str) || char.IsLower(str[0]))
+    {
+      return str;
+    }
+
+    if (CamelCaseCache.TryGetValue(str, out var cached))
+    {
+      return cached;
+    }
+
+    var computed = char.ToLowerInvariant(str[0]) + str[1..];
+    if (str.Length <= MaxCachedPathLength && CamelCaseCache.Count < MaxStringCacheEntries)
+    {
+      CamelCaseCache.TryAdd(str, computed);
+    }
+
+    return computed;
+  }
 
   public static object? GetValue(object? target, string propertyName)
   {
@@ -117,8 +111,7 @@ internal static class PropertyAccessorCache
       return null;
     }
 
-    var getter = GetGetter(target.GetType(), propertyName);
-    return getter?.Invoke(target);
+    return GetGetter(target.GetType(), propertyName)?.Invoke(target);
   }
 
   public static object? GetPathValue(object? target, string path)
@@ -132,8 +125,7 @@ internal static class PropertyAccessorCache
     {
       if (target is IDictionary<string, object?> d)
       {
-        d.TryGetValue(path, out var v);
-        return v;
+        return TryGetDictionaryValue(d, path);
       }
 
       return GetGetter(target.GetType(), path)?.Invoke(target);
@@ -151,7 +143,7 @@ internal static class PropertyAccessorCache
       var segment = segments[i];
       if (current is IDictionary<string, object?> dict)
       {
-        dict.TryGetValue(segment, out current);
+        current = TryGetDictionaryValue(dict, segment);
         continue;
       }
 
@@ -165,5 +157,91 @@ internal static class PropertyAccessorCache
     }
 
     return current;
+  }
+
+  private static FrozenDictionary<string, CompiledPropertyAccessor> GetAccessors(Type type) =>
+    AccessorsByType.GetOrAdd(type, BuildAccessors);
+
+  private static FrozenDictionary<string, CompiledPropertyAccessor> BuildAccessors(Type type)
+  {
+    var props = GetProperties(type);
+    var map = new Dictionary<string, CompiledPropertyAccessor>(props.Length, StringComparer.OrdinalIgnoreCase);
+    foreach (var prop in props)
+    {
+      if (prop.GetIndexParameters().Length > 0 || map.ContainsKey(prop.Name))
+      {
+        continue;
+      }
+
+      map[prop.Name] = new CompiledPropertyAccessor(
+        prop,
+        CompileGetter(type, prop),
+        CompileSetter(type, prop));
+    }
+
+    return map.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+  }
+
+  private static Func<object, object?>? CompileGetter(Type type, PropertyInfo prop)
+  {
+    if (!prop.CanRead)
+    {
+      return null;
+    }
+
+    var targetParam = Expression.Parameter(typeof(object), "target");
+    var typedTarget = Expression.Convert(targetParam, type);
+    var propAccess = Expression.Property(typedTarget, prop);
+    var boxedValue = prop.PropertyType.IsValueType
+      ? Expression.Convert(propAccess, typeof(object))
+      : (Expression)propAccess;
+
+    return Expression.Lambda<Func<object, object?>>(boxedValue, targetParam).Compile();
+  }
+
+  private static Action<object, object?>? CompileSetter(Type type, PropertyInfo prop)
+  {
+    if (!prop.CanWrite)
+    {
+      return null;
+    }
+
+    var targetParam = Expression.Parameter(typeof(object), "target");
+    var valueParam = Expression.Parameter(typeof(object), "value");
+    var typedTarget = Expression.Convert(targetParam, type);
+    var typedValue = Expression.Convert(valueParam, prop.PropertyType);
+    var assign = Expression.Assign(Expression.Property(typedTarget, prop), typedValue);
+
+    return Expression.Lambda<Action<object, object?>>(assign, targetParam, valueParam).Compile();
+  }
+
+  private static string[] BuildCamelPathSegments(string path)
+  {
+    var raw = GetPathSegments(path);
+    var res = new string[raw.Length];
+    for (var i = 0; i < raw.Length; i++)
+    {
+      res[i] = ToCamel(raw[i]);
+    }
+
+    return res;
+  }
+
+  private static object? TryGetDictionaryValue(IDictionary<string, object?> dict, string key)
+  {
+    if (dict.TryGetValue(key, out var exact))
+    {
+      return exact;
+    }
+
+    foreach (var kv in dict)
+    {
+      if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase))
+      {
+        return kv.Value;
+      }
+    }
+
+    return null;
   }
 }

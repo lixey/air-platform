@@ -14,7 +14,7 @@ public abstract partial class GridService<TEntity, TRow>
   {
     ParentService = request?.ParentService;
     ParentId = request?.ParentId;
-    if (!await EnsureParentScopeAsync(lockParent: false, ct) && ParentId is > 0)
+    if (!await EnsureParentScopeAsync(lockParent: false, ct))
     {
       return new ScreenDto
       {

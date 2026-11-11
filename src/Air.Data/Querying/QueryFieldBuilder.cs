@@ -16,6 +16,7 @@ public sealed class QueryFieldBuilder
 
   public QueryFieldBuilder FilterOnly() => Capabilities(FieldCapabilities.Filter);
   public QueryFieldBuilder SortOnly() => Capabilities(FieldCapabilities.Sort);
+  public QueryFieldBuilder SearchOnly() => Capabilities(FieldCapabilities.Search);
 
   public QueryFieldBuilder Searchable(bool value = true) => Toggle(FieldCapabilities.Search, value);
   public QueryFieldBuilder Sortable(bool value = true) => Toggle(FieldCapabilities.Sort, value);

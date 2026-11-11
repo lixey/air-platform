@@ -1,108 +1,34 @@
 using Platform.App.Internals;
 
-namespace Platform.App.Form;
+namespace Platform.App.Form.Internals;
 
-public abstract partial class FormService<TEntity>
-  where TEntity : class, IEntity, new()
+internal static class FormDraftEngine
 {
   private static readonly JsonSerializerOptions DraftJsonOptions = new(JsonSerializerDefaults.Web)
   {
     ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
   };
 
-  public virtual async Task<FormDraftResultDto> PrepareDraftAsync(
-    long? recordId = null,
-    IReadOnlyDictionary<string, object?>? overrides = null,
-    ISet<string>? pendingReferencePaths = null,
-    long? parentId = null,
-    string? parentService = null,
-    string? triggerField = null,
-    CancellationToken ct = default)
+  public static async Task<FormDraftResultDto> BuildDraftResultAsync<TEntity>(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    IReadOnlyList<FormElementDto> allElements,
+    object? modelObj,
+    TEntity? currentEntity,
+    bool isEdit,
+    IReadOnlyDictionary<string, object?>? overrides,
+    ISet<string>? pendingReferencePaths,
+    string? triggerField,
+    bool hasComputeHooks,
+    Func<TEntity, IReadOnlyDictionary<string, object?>, IReadOnlySet<string>, Task<(IReadOnlyList<MessageDto> SaveErrors, IReadOnlyList<MessageDto> RuleFailures)>> runValidationAsync,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
   {
-    var isEdit = recordId is > 0;
-    var parent = GetParent();
-    if (parentId is null or <= 0 && parent.BoundProperty != null && overrides != null)
-    {
-      foreach (var (k, v) in overrides)
-      {
-        if (string.Equals(k, parent.BoundProperty.Name, StringComparison.OrdinalIgnoreCase) &&
-            ExtractReferenceId(v) is > 0 and var overridePid)
-        {
-          parentId = overridePid;
-          break;
-        }
-      }
-    }
+    var editableElements = GetDraftEditableElements(typeof(TEntity), allElements);
+    var sensitiveKeys = GetSensitiveKeys(typeof(TEntity));
 
-    var req = new FormRequest
-    {
-      Id = isEdit ? recordId : null,
-      ParentId = parentId,
-      ParentService = parentService
-    };
-    SetRequest(req);
-    _lastElements = null;
-
-    await PreloadParentRecordAsync(parent, ct);
-    if (isEdit && CurrentEntity?.Id != recordId!.Value)
-    {
-      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == recordId.Value, ct);
-      if (CurrentEntity != null)
-      {
-        RestoreBoundParentId(CurrentEntity, parent);
-        if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
-        {
-          await PreloadParentRecordAsync(parent, ct);
-        }
-      }
-    }
-
-    var elements = await EnsureElementsAsync(ct, reload: true);
-    var editableElements = elements.List
-      .Where(static el =>
-        !string.IsNullOrEmpty(el.Path) &&
-        !el.IsDisabled &&
-        !el.IsServerOwned &&
-        !el.IsHidden &&
-        !el.IsSecret &&
-        !string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase) &&
-        el.Model is not FormInfoModel)
-      .ToList();
-
-    object? modelObj = null;
-    try
-    {
-      modelObj = await GetModelAsync(req, ct);
-    }
-    catch when (!isEdit)
-    {
-      // Ignore default model resolution errors when parent context is not yet created
-    }
-
-    if (Request.ParentId is null or <= 0 &&
-        parent.BoundProperty != null &&
-        CurrentEntity != null &&
-        parent.BoundProperty.GetValue(CurrentEntity) is long entityPid and > 0)
-    {
-      Request.ParentId = entityPid;
-    }
-
-    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
-    {
-      await PreloadParentRecordAsync(parent, ct);
-    }
-
-    var recordVer = (CurrentEntity as IHasVersion)?.Ver;
-    var baseValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-    if (modelObj != null)
-    {
-      var jsonEl = JsonSerializer.SerializeToElement(modelObj, DraftJsonOptions);
-      if (jsonEl.ValueKind == JsonValueKind.Object)
-      {
-        PopulateDraftValuesFromJson(jsonEl, editableElements, baseValues, ignoreZeroNumbers: !isEdit);
-      }
-    }
-
+    var recordVer = (currentEntity as IHasVersion)?.Ver;
+    var baseValues = SerializeDraftSnapshot(modelObj, editableElements, ignoreZeroNumbers: !isEdit);
     var originalValues = isEdit
       ? CloneDraftValues(baseValues)
       : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -110,6 +36,8 @@ public abstract partial class FormService<TEntity>
 
     if (overrides is not { Count: > 0 } && pendingReferencePaths is not { Count: > 0 })
     {
+      StripSensitiveKeys(sensitiveKeys, originalValues);
+      StripSensitiveKeys(sensitiveKeys, values);
       return new FormDraftResultDto
       {
         OriginalValues = originalValues,
@@ -123,12 +51,17 @@ public abstract partial class FormService<TEntity>
     {
       foreach (var (k, v) in overrides)
       {
-        values[k] = v;
-        explicitlyProvided.Add(k);
+        if (!k.Contains('.'))
+        {
+          values[k] = v;
+          explicitlyProvided.Add(k);
+        }
       }
     }
 
     await ApplyDraftSelectPatchesAsync(
+      db,
+      app,
       editableElements,
       originalValues,
       values,
@@ -138,94 +71,47 @@ public abstract partial class FormService<TEntity>
       triggerField,
       ct);
 
-    foreach (var el in editableElements)
-    {
-      if (!el.IsRequired ||
-          el.Model is not FormSelectModel { Options.Count: > 0 } select ||
-          select.IsMultiple ||
-          el.ValueKind == FormValueKind.List)
-      {
-        continue;
-      }
-
-      if (explicitlyProvided.Contains(el.Path) || pendingReferencePaths?.Contains(el.Path) == true)
-      {
-        continue;
-      }
-
-      if (!values.TryGetValue(el.Path, out var curVal) ||
-          !FilterNodeEvaluator.TryConvertToDecimal(curVal, out var curId) ||
-          curId <= 0)
-      {
-        values[el.Path] = select.Options[0].Id;
-      }
-    }
-
-    var hooks = GetHooks();
+    ApplyDefaultRequiredSelectOptions(editableElements, explicitlyProvided, pendingReferencePaths, values);
 
     var draftEntity = new TEntity();
-    if (CurrentEntity != null)
+    if (currentEntity != null)
     {
-      CopyMatchingProperties(CurrentEntity, draftEntity);
-      draftEntity.Id = CurrentEntity.Id;
+      FormValueBinder.CopyMatchingProperties(currentEntity, draftEntity);
+      draftEntity.Id = currentEntity.Id;
     }
 
-    var mergedJson = JsonSerializer.SerializeToElement(values, DraftJsonOptions);
-    if (mergedJson.ValueKind == JsonValueKind.Object)
-    {
-      foreach (var prop in mergedJson.EnumerateObject())
-      {
-        SetPropertyValue(draftEntity, prop.Name, prop.Value);
-      }
-    }
+    ApplyMergedValuesToDraftEntity(values, draftEntity);
 
-    if (Request.ParentId is null or <= 0 &&
-        parent.BoundProperty != null &&
-        parent.BoundProperty.GetValue(draftEntity) is long draftPid and > 0)
-    {
-      Request.ParentId = draftPid;
-    }
-
-    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
-    {
-      await PreloadParentRecordAsync(parent, ct);
-    }
+    var preComputeSnapshot = hasComputeHooks
+      ? SerializeDraftSnapshot(draftEntity, editableElements, ignoreZeroNumbers: false)
+      : null;
 
     List<MessageDto> messages = [];
     try
     {
-      var (_, ruleCtx) = await RunValidationPipelineAsync(
-        elements,
-        hooks,
-        draftEntity,
-        originalValues,
-        explicitlyProvided,
-        ct);
-      messages = ruleCtx.Failures;
+      var (saveErrors, ruleFailures) = await runValidationAsync(draftEntity, originalValues, explicitlyProvided);
+      if (saveErrors.Count > 0)
+      {
+        messages.AddRange(saveErrors);
+      }
+
+      if (ruleFailures.Count > 0)
+      {
+        messages.AddRange(ruleFailures);
+      }
     }
     catch
     {
-      // Non-fatal during draft preparation when parent or external context is not yet persisted
     }
 
-    if (hooks.BeforeValidateActions.Count > 0)
+    if (preComputeSnapshot != null)
     {
-      var computedJson = JsonSerializer.SerializeToElement(draftEntity, DraftJsonOptions);
-      if (computedJson.ValueKind == JsonValueKind.Object)
-      {
-        var afterCompute = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        PopulateDraftValuesFromJson(computedJson, editableElements, afterCompute, ignoreZeroNumbers: false);
-        foreach (var (k, v) in afterCompute)
-        {
-          if (v != null &&
-              (!explicitlyProvided.Contains(k) ||
-               FilterNodeEvaluator.TryConvertToDecimal(v, out var numV) && numV != 0m))
-          {
-            values[k] = v;
-          }
-        }
-      }
+      var afterComputeSnapshot = SerializeDraftSnapshot(draftEntity, editableElements, ignoreZeroNumbers: false);
+      MergeComputedChanges(preComputeSnapshot, afterComputeSnapshot, explicitlyProvided, values);
     }
+
+    StripSensitiveKeys(sensitiveKeys, originalValues);
+    StripSensitiveKeys(sensitiveKeys, values);
 
     return new FormDraftResultDto
     {
@@ -236,7 +122,138 @@ public abstract partial class FormService<TEntity>
     };
   }
 
-  private async Task ApplyDraftSelectPatchesAsync(
+  public static long? ExtractReferenceId(object? val) => val switch
+  {
+    Reference r => r.Id > 0 ? r.Id : null,
+    IDictionary<string, object?> d when d.TryGetValue("id", out var idObj) && FilterNodeEvaluator.TryConvertToDecimal(idObj, out var dec) && dec > 0 => (long)dec,
+    JsonElement { ValueKind: JsonValueKind.Object } je when TryGetJsonPropertyIgnoreCase(je, "id", out var idProp) && FilterNodeEvaluator.TryConvertToDecimal(idProp, out var jDec) && jDec > 0 => (long)jDec,
+    _ when FilterNodeEvaluator.TryConvertToDecimal(val, out var dVal) && dVal > 0 => (long)dVal,
+    _ => null
+  };
+
+  public static List<FormElementDto> GetDraftEditableElements(Type entityType, IReadOnlyList<FormElementDto> allElements)
+  {
+    return allElements
+      .Where(el =>
+      {
+        if (string.IsNullOrEmpty(el.Path) ||
+            el.Path.Contains('.') ||
+            el.IsDisabled ||
+            el.IsServerOwned ||
+            el.IsHidden ||
+            el.IsSecret ||
+            string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase) ||
+            el.Model is FormInfoModel)
+        {
+          return false;
+        }
+
+        var prop = PropertyAccessorCache.GetProperty(entityType, el.Path);
+        return prop == null || !Attribute.IsDefined(prop, typeof(SensitiveAttribute));
+      })
+      .ToList();
+  }
+
+  public static HashSet<string> GetSensitiveKeys(Type entityType)
+  {
+    var sensitive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var prop in PropertyAccessorCache.GetProperties(entityType))
+    {
+      if (Attribute.IsDefined(prop, typeof(SensitiveAttribute)))
+      {
+        sensitive.Add(prop.Name);
+        sensitive.Add(Elements.ToCamelPath(prop.Name));
+        sensitive.Add(JsonNamingPolicy.CamelCase.ConvertName(prop.Name));
+      }
+    }
+
+    return sensitive;
+  }
+
+  public static void StripSensitiveKeys(HashSet<string> sensitiveKeys, Dictionary<string, object?> dict)
+  {
+    if (sensitiveKeys.Count == 0 || dict.Count == 0)
+    {
+      return;
+    }
+
+    foreach (var key in dict.Keys.ToList())
+    {
+      if (sensitiveKeys.Contains(key))
+      {
+        dict.Remove(key);
+      }
+    }
+  }
+
+  public static Dictionary<string, object?> SerializeDraftSnapshot(
+    object? modelObj,
+    IReadOnlyList<FormElementDto> editableElements,
+    bool ignoreZeroNumbers)
+  {
+    var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+    if (modelObj == null)
+    {
+      return values;
+    }
+
+    var jsonEl = JsonSerializer.SerializeToElement(modelObj, DraftJsonOptions);
+    if (jsonEl.ValueKind == JsonValueKind.Object)
+    {
+      PopulateDraftValuesFromJson(jsonEl, editableElements, values, ignoreZeroNumbers);
+    }
+
+    return values;
+  }
+
+  public static Dictionary<string, object?> CloneDraftValues(Dictionary<string, object?> source)
+  {
+    var clone = new Dictionary<string, object?>(source.Count, StringComparer.OrdinalIgnoreCase);
+    foreach (var (k, v) in source)
+    {
+      clone[k] = v is IEnumerable<long> list ? list.ToList() : v;
+    }
+
+    return clone;
+  }
+
+  public static void ApplyMergedValuesToDraftEntity<TEntity>(Dictionary<string, object?> values, TEntity draftEntity)
+    where TEntity : class, IEntity
+  {
+    var mergedJson = JsonSerializer.SerializeToElement(values, DraftJsonOptions);
+    if (mergedJson.ValueKind == JsonValueKind.Object)
+    {
+      foreach (var prop in mergedJson.EnumerateObject())
+      {
+        FormValueBinder.SetPropertyValue(draftEntity, prop.Name, prop.Value);
+      }
+    }
+  }
+
+  public static void MergeComputedChanges(
+    Dictionary<string, object?> preCompute,
+    Dictionary<string, object?> afterCompute,
+    HashSet<string> explicitlyProvided,
+    Dictionary<string, object?> targetValues)
+  {
+    foreach (var (k, afterVal) in afterCompute)
+    {
+      var existedBefore = preCompute.TryGetValue(k, out var beforeVal);
+      var changedByCompute = !existedBefore || !AreDraftValuesEqual(beforeVal, afterVal);
+      if (changedByCompute)
+      {
+        targetValues[k] = afterVal;
+      }
+      else if (afterVal != null && !explicitlyProvided.Contains(k) && targetValues.ContainsKey(k))
+      {
+        targetValues[k] = afterVal;
+      }
+    }
+  }
+
+  public static async Task ApplyDraftSelectPatchesAsync(
+    PlatformDbContext db,
+    PlatformAppService? app,
     IReadOnlyList<FormElementDto> editableElements,
     Dictionary<string, object?> originalValues,
     Dictionary<string, object?> values,
@@ -283,7 +300,7 @@ public abstract partial class FormService<TEntity>
       var svcType = ModuleCatalog.Instance.FindServiceType(refSvc);
       if (svcType == null ||
           !typeof(IGridService).IsAssignableFrom(svcType) ||
-          ModuleCatalog.Instance.CreateServiceInstance(svcType, db, PlatformApp) is not IGridService refGrid)
+          ModuleCatalog.Instance.CreateServiceInstance(svcType, db, app) is not IGridService refGrid)
       {
         continue;
       }
@@ -341,7 +358,7 @@ public abstract partial class FormService<TEntity>
             var targetSvcType = ModuleCatalog.Instance.FindServiceType(targetRefSvc);
             if (targetSvcType != null &&
                 typeof(IGridService).IsAssignableFrom(targetSvcType) &&
-                ModuleCatalog.Instance.CreateServiceInstance(targetSvcType, db, PlatformApp) is IGridService targetGrid)
+                ModuleCatalog.Instance.CreateServiceInstance(targetSvcType, db, app) is IGridService targetGrid)
             {
               try
               {
@@ -351,7 +368,9 @@ public abstract partial class FormService<TEntity>
                   continue;
                 }
               }
-              catch { }
+              catch
+              {
+              }
             }
           }
 
@@ -386,6 +405,62 @@ public abstract partial class FormService<TEntity>
     }
   }
 
+  public static void ApplyDefaultRequiredSelectOptions(
+    IReadOnlyList<FormElementDto> editableElements,
+    HashSet<string> explicitlyProvided,
+    ISet<string>? pendingReferencePaths,
+    Dictionary<string, object?> values)
+  {
+    foreach (var el in editableElements)
+    {
+      if (!el.IsRequired ||
+          el.Model is not FormSelectModel { Options.Count: > 0 } select ||
+          select.IsMultiple ||
+          el.ValueKind == FormValueKind.List)
+      {
+        continue;
+      }
+
+      if (explicitlyProvided.Contains(el.Path) || pendingReferencePaths?.Contains(el.Path) == true)
+      {
+        continue;
+      }
+
+      if (!values.TryGetValue(el.Path, out var curVal) ||
+          !FilterNodeEvaluator.TryConvertToDecimal(curVal, out var curId) ||
+          curId <= 0)
+      {
+        values[el.Path] = select.Options[0].Id;
+      }
+    }
+  }
+
+  private static bool AreDraftValuesEqual(object? left, object? right)
+  {
+    if (ReferenceEquals(left, right))
+    {
+      return true;
+    }
+
+    if (left is null || right is null)
+    {
+      return false;
+    }
+
+    if (FilterNodeEvaluator.TryConvertToDecimal(left, out var lDec) &&
+        FilterNodeEvaluator.TryConvertToDecimal(right, out var rDec))
+    {
+      return lDec == rDec;
+    }
+
+    if (left is IEnumerable<long> lList && right is IEnumerable<long> rList)
+    {
+      return lList.SequenceEqual(rList);
+    }
+
+    return Equals(left, right);
+  }
+
   private static bool MatchesRowFilter(IDictionary<string, object?> row, FilterNode filter) =>
     FilterNodeEvaluator.Evaluate(filter, field =>
     {
@@ -404,26 +479,6 @@ public abstract partial class FormService<TEntity>
 
       return null;
     });
-
-  private static long? ExtractReferenceId(object? val) => val switch
-  {
-    Reference r => r.Id > 0 ? r.Id : null,
-    IDictionary<string, object?> d when d.TryGetValue("id", out var idObj) && FilterNodeEvaluator.TryConvertToDecimal(idObj, out var dec) && dec > 0 => (long)dec,
-    JsonElement { ValueKind: JsonValueKind.Object } je when TryGetJsonPropertyIgnoreCase(je, "id", out var idProp) && FilterNodeEvaluator.TryConvertToDecimal(idProp, out var jDec) && jDec > 0 => (long)jDec,
-    _ when FilterNodeEvaluator.TryConvertToDecimal(val, out var dVal) && dVal > 0 => (long)dVal,
-    _ => null
-  };
-
-  private static Dictionary<string, object?> CloneDraftValues(Dictionary<string, object?> source)
-  {
-    var clone = new Dictionary<string, object?>(source.Count, StringComparer.OrdinalIgnoreCase);
-    foreach (var (k, v) in source)
-    {
-      clone[k] = v is IEnumerable<long> list ? list.ToList() : v;
-    }
-
-    return clone;
-  }
 
   private static void PopulateDraftValuesFromJson(
     JsonElement jsonEl,
@@ -460,7 +515,7 @@ public abstract partial class FormService<TEntity>
             }
           }
         }
-        else if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt64(out var refId) && refId > 0)
+        else if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt64(out var refId) && (refId > 0 || !ignoreZeroNumbers && select.Options?.Any(o => o.Id == refId) == true))
         {
           target[el.Path] = refId;
         }
@@ -508,7 +563,7 @@ public abstract partial class FormService<TEntity>
         continue;
       }
 
-      if (prop.ValueKind == JsonValueKind.String && prop.GetString() is { Length: > 0 } str)
+      if (prop.ValueKind == JsonValueKind.String && prop.GetString() is { } str && (!ignoreZeroNumbers || str.Length > 0))
       {
         target[el.Path] = str;
       }

@@ -1,19 +1,13 @@
 namespace Platform.App.Grid;
 
-public class Columns<TRow> : Columns where TRow : class
+public class Columns<TRow> : Columns
 {
-  public GridColumn<TRow, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
-  {
-    var baseCol = base.Add<TRow, TProp>(expression);
-    return new GridColumn<TRow, TProp>(baseCol.Dto, this);
-  }
+  public GridColumn<TRow, TRow, TProp> Add<TProp>(Expression<Func<TRow, TProp?>> expression) =>
+    base.Add(expression);
 
-  public GridColumn<TRow, TProp> Add<TProp>(string path, Expression<Func<TRow, TProp>> expression)
-  {
-    var baseCol = base.Add<TRow, TProp>(path, expression);
-    return new GridColumn<TRow, TProp>(baseCol.Dto, this);
-  }
+  public GridColumn<TRow, TRow, TProp> Add<TProp>(string path, Expression<Func<TRow, TProp>> expression) =>
+    base.Add(path, expression);
 
-  public StatusFlowBuilder UseStatusOf(Screens.IRecordStatuses<TRow> statuses) =>
-    base.UseStatusOf(statuses);
+  public new GridColumn<TRow, TRow, TProp> Add<TProp>(string path) =>
+    new(base.Add<TProp>(path).Dto, this);
 }

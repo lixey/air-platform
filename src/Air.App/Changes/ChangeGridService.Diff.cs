@@ -20,7 +20,8 @@ public abstract partial class ChangeGridService
     ParentService = request.ParentService;
     ParentId = request.ParentId;
 
-    var change = request.Id is > 0
+    var parentScopeValid = await EnsureParentScopeAsync(lockParent: false, ct);
+    var change = parentScopeValid && request.Id is > 0
       ? await RestrictedQuery().AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.Id.Value, ct)
       : null;
 
@@ -106,8 +107,8 @@ public abstract partial class ChangeGridService
     var fields = new List<ChangeDiffFieldDto>(orderedKeys.Count);
     foreach (var key in orderedKeys)
     {
-      beforeDict.TryGetValue(key, out var beforeElem);
-      afterDict.TryGetValue(key, out var afterElem);
+      var hasBefore = beforeDict.TryGetValue(key, out var beforeElem);
+      var hasAfter = afterDict.TryGetValue(key, out var afterElem);
 
       var formattedBefore = await FormatAuditPropertyValueAsync(
         targetDb,
@@ -117,14 +118,16 @@ public abstract partial class ChangeGridService
         beforeElem,
         ct
       );
-      var formattedAfter = await FormatAuditPropertyValueAsync(
-        targetDb,
-        efEntity,
-        modL,
-        key,
-        afterElem,
-        ct
-      );
+      var formattedAfter = hasBefore && hasAfter && string.Equals(beforeElem.GetRawText(), afterElem.GetRawText(), StringComparison.Ordinal)
+        ? formattedBefore
+        : await FormatAuditPropertyValueAsync(
+            targetDb,
+            efEntity,
+            modL,
+            key,
+            afterElem,
+            ct
+          );
 
       if (change.Operation == ChangeOperations.Added && string.IsNullOrEmpty(formattedAfter))
       {

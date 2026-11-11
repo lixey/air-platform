@@ -11,5 +11,6 @@ internal sealed class TestInvoiceGridService(AppTestDbContext db, PlatformAppSer
     columns.UseStatusOf(new TestInvoiceStatusFlow(db));
     columns.Add(i => i.Number).Editable();
     columns.Add(i => i.Status);
+    columns.Add(i => i.PrintedCount).Sortable(false).Filterable(false);
   }
 }

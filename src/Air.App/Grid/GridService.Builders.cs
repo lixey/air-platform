@@ -716,8 +716,6 @@ public abstract partial class GridService<TEntity, TRow>
         handler(c);
         return Task.CompletedTask;
       });
-    public void ValidateDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDelete(handler);
-    public void ValidateDelete(Action<GridDeleteContext<TEntity>> handler) => BeforeDelete(handler);
 
     public void AfterDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
     public void AfterDelete(Action<GridDeleteContext<TEntity>> handler) =>
@@ -728,24 +726,5 @@ public abstract partial class GridService<TEntity, TRow>
       });
   }
 
-  public sealed class Columns : Columns<TRow>
-  {
-    public new GridColumn<TEntity, TRow, TProp> Add<TProp>(Expression<Func<TRow, TProp>> expression)
-    {
-      var col = base.Add(expression);
-      return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
-    }
-
-    public new GridColumn<TEntity, TRow, TProp> Add<TProp>(string path, Expression<Func<TRow, TProp>> expression)
-    {
-      var col = base.Add(path, expression);
-      return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
-    }
-
-    public new GridColumn<TEntity, TRow, TProp> Add<TProp>(string path)
-    {
-      var col = base.Add<TProp>(path);
-      return new GridColumn<TEntity, TRow, TProp>(col.Dto, this);
-    }
-  }
+  public sealed class Columns : Columns<TEntity, TRow>;
 }

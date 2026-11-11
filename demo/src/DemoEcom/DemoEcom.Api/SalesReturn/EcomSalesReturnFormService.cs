@@ -18,10 +18,10 @@ public sealed class EcomSalesReturnFormService(EcomDbContext db, EcomSalesReturn
     elements.Add(e => e.Date).Span(3);
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
     elements.Add(e => e.CustomerId).AsReference<OrgCustomerGridService>().Required().Span(4);
-    elements.Add(e => e.ContactId).AsReference<OrgCustomerContactGridService, OrgCustomerContact>()
+    elements.Add(e => e.Contact).AsReference<OrgCustomerContactGridService>()
       .Where(c => c.CustomerId, e => e.CustomerId).Span(4);
     elements.Add(e => e.CounterpartyId).AsReference<OrgCounterpartyGridService>().Span(4);
-    elements.Add(e => e.WarehouseId).AsReference<OrgWarehouseGridService, OrgWarehouse>()
+    elements.Add(e => e.Warehouse).AsReference<OrgWarehouseGridService>()
       .Where(w => w.OrganizationId, e => e.OrganizationId).Required().Span(6);
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(6);
     elements.Add(e => e.Note).AsTextarea();

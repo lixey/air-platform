@@ -6,7 +6,7 @@ public abstract class EcomDocGridService(EcomDbContext db, EcomService? ecom = n
   protected abstract long Type { get; }
   protected virtual EcomDocFlowService? Flow => flow;
 
-  protected virtual GridColumn<long> AddStatusColumn(Columns<EcomDoc> columns)
+  protected virtual GridColumn<EcomDoc, EcomDoc, long> AddStatusColumn(Columns<EcomDoc> columns)
   {
     var col = columns.Add(r => r.DocStatusId).Label("Status");
     if (Flow != null)

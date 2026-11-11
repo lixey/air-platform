@@ -1,3 +1,4 @@
+using Platform.App.Form.Internals;
 using Platform.App.Internals;
 
 namespace Platform.App.Form;
@@ -10,28 +11,30 @@ public abstract partial class FormService<TEntity>
 
   public virtual async Task<object?> GetModelAsync(FormRequest request, CancellationToken ct = default)
   {
-    Request = request;
+    SetRequest(request);
     var id = request.Id;
     IsNew = id is null or 0;
 
     var parent = GetParent();
+    if (!IsNew && CurrentEntity?.Id != id!.Value)
+    {
+      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct)
+        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      RestoreBoundParentId(CurrentEntity, parent);
+    }
+    else if (!IsNew && CurrentEntity != null)
+    {
+      RestoreBoundParentId(CurrentEntity, parent);
+    }
+
     await PreloadParentRecordAsync(parent, ct);
 
-    var elements = _lastElements;
-    if (elements == null)
-    {
-      if (!IsNew && CurrentEntity?.Id != id!.Value)
-      {
-        CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct);
-      }
-
-      elements = await EnsureElementsAsync(ct, reload: true);
-    }
+    var elements = _lastElements ?? await EnsureElementsAsync(ct, reload: true);
 
     TEntity entity;
     if (IsNew)
     {
-      entity = CreateBlankEntity(parent, request.ParentId);
+      entity = CreateBlankEntity(parent, Request.ParentId);
     }
     else
     {
@@ -44,7 +47,11 @@ public abstract partial class FormService<TEntity>
         var rawInfoNavPaths = new List<string>();
         foreach (var el in elements.List)
         {
-          if (!string.IsNullOrEmpty(el.ReferencePath))
+          if (!string.IsNullOrEmpty(el.NavigationPropertyName))
+          {
+            refNames.Add(el.NavigationPropertyName);
+          }
+          else if (!string.IsNullOrEmpty(el.ReferencePath))
           {
             refNames.Add(el.ReferencePath);
           }
@@ -60,7 +67,7 @@ public abstract partial class FormService<TEntity>
         }
 
         var includePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var validNavPath in ResolveValidEntityNavigationPaths(efModel, rawInfoNavPaths))
+        foreach (var validNavPath in FormReferenceResolver.ResolveValidEntityNavigationPaths(efModel, rawInfoNavPaths))
         {
           refNames.Add(validNavPath.Split('.')[0]);
           if (validNavPath.Contains('.'))
@@ -84,7 +91,9 @@ public abstract partial class FormService<TEntity>
             if (!needsQuery && PropertyAccessorCache.GetValue(CurrentEntity!, nav.Name) == null)
             {
               var fkPropName = nav.ForeignKey.Properties.FirstOrDefault()?.Name;
-              if (fkPropName != null && PropertyAccessorCache.GetValue(CurrentEntity!, fkPropName) is long and > 0)
+              if (fkPropName != null &&
+                  FormValidator.TryExtractIntegralOrEnumId(PropertyAccessorCache.GetValue(CurrentEntity!, fkPropName), out var fkId) &&
+                  fkId > 0)
               {
                 needsQuery = true;
               }
@@ -109,7 +118,6 @@ public abstract partial class FormService<TEntity>
     _lastSavedEntity = entity;
 
     var hooks = GetHooks();
-
     if (IsNew)
     {
       await InitializeNewRecordAsync(entity, elements, parent, hooks, ct);
@@ -123,16 +131,13 @@ public abstract partial class FormService<TEntity>
     {
       foreach (var prop in presetJson.EnumerateObject())
       {
-        var targetName = prop.Name;
-        var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), targetName);
-        if ((entityProp == null || typeof(IEntity).IsAssignableFrom(entityProp.PropertyType)) &&
-            !targetName.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
-            PropertyAccessorCache.GetProperty(typeof(TEntity), targetName + "Id") != null)
+        if (prop.Name.Contains('.'))
         {
-          targetName += "Id";
+          continue;
         }
 
-        SetPropertyValue(entity, targetName, prop.Value);
+        var targetName = ResolvePresetPropertyName(prop.Name);
+        FormValueBinder.SetPropertyValue(entity, targetName, prop.Value);
       }
     }
 
@@ -192,7 +197,16 @@ public abstract partial class FormService<TEntity>
       await PopulateReferencesAsync(dict, entity, ct);
     }
 
-    await PopulateInfoValuesAsync(dict, entity, entityId, ct);
+    var elements = await EnsureElementsAsync(ct);
+    _lastSavedEntity = await FormReferenceResolver.PopulateInfoValuesAsync(
+      db,
+      Reachable,
+      elements.List,
+      dict,
+      entity,
+      _lastSavedEntity,
+      entityId,
+      ct);
 
     var unavailable = await EvaluateUnavailableAsync(entityId, ct);
 
@@ -207,13 +221,63 @@ public abstract partial class FormService<TEntity>
     };
   }
 
+  public virtual async Task PopulateReferencesAsync(
+    Dictionary<string, object?> dict,
+    object? entity,
+    CancellationToken ct = default)
+  {
+    if (entity == null)
+    {
+      return;
+    }
+
+    var elements = await EnsureElementsAsync(ct);
+    await FormReferenceResolver.PopulateReferencesCoreAsync(
+      db,
+      PlatformApp,
+      dict,
+      entity,
+      CurrentEntity,
+      _lastSavedEntity,
+      elements.List,
+      ct);
+  }
+
+  public virtual async Task PopulateReferencesAsync(
+    Dictionary<string, object?> dict,
+    object? entity,
+    ScreenDto screen,
+    CancellationToken ct = default)
+  {
+    if (entity == null || screen.Layout?.Root == null)
+    {
+      return;
+    }
+
+    var formModel = FormReferenceResolver.FindFormModel(screen.Layout.Root);
+    if (formModel == null)
+    {
+      return;
+    }
+
+    await FormReferenceResolver.PopulateReferencesCoreAsync(
+      db,
+      PlatformApp,
+      dict,
+      entity,
+      CurrentEntity,
+      _lastSavedEntity,
+      formModel.Elements,
+      ct);
+  }
+
   public virtual Task<object> SaveAsync(JsonElement json, CancellationToken ct = default) =>
     SaveAsync(json, null, ct);
 
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
     var (req, entityJson) = FormRequest.Normalize(json, request);
-    var input = DeserializeInput(entityJson);
+    var input = FormValueBinder.DeserializeInput<TEntity>(entityJson);
 
     if (req.Id is null or <= 0 && input.Id > 0)
     {
@@ -222,7 +286,7 @@ public abstract partial class FormService<TEntity>
 
     var id = req.Id;
     var clientVer = req.Ver;
-    Request = req;
+    SetRequest(req);
     IsNew = id is null or 0;
     _lastSavedEntity = null;
     _lastSaveWarnings = null;
@@ -246,6 +310,7 @@ public abstract partial class FormService<TEntity>
       : await db.RunMutationAsync(
         mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, cellPatch: null, mutationCt),
         ct: ct);
+
     if (PlatformApp != null && _lastSavedEntity != null)
     {
       await PlatformApp.ClearAuthCacheForEntityAsync(_lastSavedEntity, db, ct);
@@ -294,44 +359,6 @@ public abstract partial class FormService<TEntity>
     }
 
     return entity;
-  }
-
-  private static TEntity DeserializeInput(JsonElement entityJson)
-  {
-    if (entityJson.ValueKind == JsonValueKind.Object)
-    {
-      var result = new TEntity();
-      foreach (var jProp in entityJson.EnumerateObject())
-      {
-        var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), jProp.Name);
-        var setter = PropertyAccessorCache.GetSetter(typeof(TEntity), jProp.Name);
-        if (prop == null || setter == null || IsIgnoredNavigationProperty(prop.PropertyType))
-        {
-          continue;
-        }
-
-        var val = jProp.Value;
-        var underlying = Nullable.GetUnderlyingType(prop.PropertyType);
-        var targetType = underlying ?? prop.PropertyType;
-        if (val.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ||
-            val.ValueKind == JsonValueKind.String && targetType != typeof(string) && string.IsNullOrWhiteSpace(val.GetString()))
-        {
-          if (!prop.PropertyType.IsValueType || underlying != null)
-          {
-            setter(result, null);
-          }
-
-          continue;
-        }
-
-        SetPropertyValue(result, prop.Name, val);
-      }
-
-      return result;
-    }
-
-    return JsonSerializer.Deserialize<TEntity>(entityJson.GetRawText(), PlatformJsonOptions.DefaultOptions)
-      ?? new TEntity();
   }
 
   private async Task<object> SaveCoreAsync(
@@ -409,22 +436,46 @@ public abstract partial class FormService<TEntity>
     else
     {
       await PopulateExistingRecordAsync(entity, elements, hooks, ct);
-      originalValues = SnapshotValues(entity);
+      originalValues = FormValueBinder.SnapshotValues(entity);
     }
 
-    HashSet<string>? presentPaths = null;
+    HashSet<string>? presentPaths;
     HashSet<string> disabledElementPaths;
     if (cellPatch is { } cp)
     {
+      if (string.IsNullOrEmpty(cp.Path) || cp.Path.Contains('.'))
+      {
+        throw new FormRefusedException(
+          MutationOutcome.Refused,
+          L["FormReadOnly"],
+          [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
+      }
+
       var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
       presentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cp.Path };
-      CopyMatchingProperties(entity, input);
-      SetPropertyValue(input, cp.Path, cp.Value);
-      NormalizeNullableStrings(elements, input);
-      disabledElementPaths = ComputeDisabledElementPaths(elements, IsNew, entity, input, presentPaths);
-      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input, disabledElementPaths);
+      FormValueBinder.CopyMatchingProperties(entity, input);
+      FormValueBinder.SetPropertyValue(input, cp.Path, cp.Value);
+      FormValueBinder.NormalizeNullableStrings(elements.List, input);
+      disabledElementPaths = FormValueBinder.ComputeDisabledElementPaths(
+        elements.List,
+        parent.BoundProperty,
+        parent.IsOptional,
+        IsNew,
+        entity,
+        input,
+        presentPaths);
+      var protectedPaths = FormValueBinder.BuildProtectedPaths(
+        elements.List,
+        parent.BoundProperty,
+        parent.IsOptional,
+        presentPaths,
+        IsNew,
+        entity,
+        input,
+        disabledElementPaths);
       var propName = PropertyAccessorCache.GetProperty(typeof(TEntity), cp.Path)?.Name ?? cp.Path;
       if (targetElement == null ||
+          targetElement.IsHidden ||
           targetElement.IsDisabled ||
           disabledElementPaths.Contains(targetElement.Path) ||
           targetElement.IsServerOwned ||
@@ -437,18 +488,33 @@ public abstract partial class FormService<TEntity>
           [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
       }
 
-      SetPropertyValue(entity, cp.Path, cp.Value);
-      NormalizeNullableStrings(elements, entity);
+      FormValueBinder.SetPropertyValue(entity, cp.Path, cp.Value);
+      FormValueBinder.NormalizeNullableStrings(elements.List, entity);
     }
     else
     {
-      presentPaths = BuildPresentPaths(entityJson);
-      NormalizeNullableStrings(elements, input);
-      disabledElementPaths = ComputeDisabledElementPaths(elements, IsNew, entity, input, presentPaths);
-      var protectedPaths = BuildProtectedPaths(elements, presentPaths, IsNew, entity, input, disabledElementPaths);
-      CopyMatchingProperties(input, entity, protectedPaths);
-      NormalizeNullableStrings(elements, entity);
-      if (id.HasValue && id.Value > 0)
+      presentPaths = FormValueBinder.BuildPresentPaths(typeof(TEntity), entityJson);
+      FormValueBinder.NormalizeNullableStrings(elements.List, input);
+      disabledElementPaths = FormValueBinder.ComputeDisabledElementPaths(
+        elements.List,
+        parent.BoundProperty,
+        parent.IsOptional,
+        IsNew,
+        entity,
+        input,
+        presentPaths);
+      var protectedPaths = FormValueBinder.BuildProtectedPaths(
+        elements.List,
+        parent.BoundProperty,
+        parent.IsOptional,
+        presentPaths,
+        IsNew,
+        entity,
+        input,
+        disabledElementPaths);
+      FormValueBinder.CopyMatchingProperties(input, entity, protectedPaths);
+      FormValueBinder.NormalizeNullableStrings(elements.List, entity);
+      if (id is > 0)
       {
         entity.Id = id.Value;
       }
@@ -478,6 +544,11 @@ public abstract partial class FormService<TEntity>
     }
 
     var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, originalValues, presentPaths, ct, disabledElementPaths);
+    if (saveCtx.Errors.Count > 0)
+    {
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+    }
+
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
@@ -493,7 +564,7 @@ public abstract partial class FormService<TEntity>
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
     }
 
-    ValidateElementConstraints(elements, entity, ruleCtx, onlyAcceptingInput: false, disabledElementPaths);
+    FormValidator.ValidateElementConstraints(db, L, elements.List, entity, ruleCtx, onlyAcceptingInput: false, disabledElementPaths);
     if (ruleCtx.Failures.Count > 0)
     {
       throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], ruleCtx.Failures);
@@ -509,8 +580,7 @@ public abstract partial class FormService<TEntity>
     }
 
     await db.SaveChangesAsync(ct);
-
-    await SyncJoinedReferencesAsync(elements, entity, ct);
+    await FormReferenceResolver.SyncJoinedReferencesAsync(db, elements.List, entity, ct);
 
     if (hooks.AfterSaveActions.Count > 0)
     {
@@ -560,7 +630,7 @@ public abstract partial class FormService<TEntity>
     CancellationToken ct = default)
   {
     request.Id ??= id;
-    Request = request;
+    SetRequest(request);
     IsNew = false;
     _lastSavedEntity = null;
     _lastSaveWarnings = null;
@@ -609,6 +679,153 @@ public abstract partial class FormService<TEntity>
     return result;
   }
 
+  public virtual async Task<FormDraftResultDto> PrepareDraftAsync(
+    long? recordId = null,
+    IReadOnlyDictionary<string, object?>? overrides = null,
+    ISet<string>? pendingReferencePaths = null,
+    long? parentId = null,
+    string? parentService = null,
+    string? triggerField = null,
+    CancellationToken ct = default)
+  {
+    var isEdit = recordId is > 0;
+    var parent = GetParent();
+    if (parentId is null or <= 0 && parent.BoundProperty != null && overrides != null)
+    {
+      foreach (var (k, v) in overrides)
+      {
+        if (string.Equals(k, parent.BoundProperty.Name, StringComparison.OrdinalIgnoreCase) &&
+            FormDraftEngine.ExtractReferenceId(v) is > 0 and var overridePid)
+        {
+          parentId = overridePid;
+          break;
+        }
+      }
+    }
+
+    var req = new FormRequest
+    {
+      Id = isEdit ? recordId : null,
+      ParentId = parentId,
+      ParentService = parentService
+    };
+    SetRequest(req);
+    IsNew = !isEdit;
+    _lastElements = null;
+
+    if (isEdit && CurrentEntity?.Id != recordId!.Value)
+    {
+      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == recordId.Value, ct)
+        ?? throw new KeyNotFoundException(L["FormNotFound"]);
+      RestoreBoundParentId(CurrentEntity, parent);
+    }
+
+    await PreloadParentRecordAsync(parent, ct);
+
+    object? modelObj = null;
+    try
+    {
+      modelObj = await GetModelAsync(req, ct);
+    }
+    catch when (!isEdit && !parentId.HasValue && string.IsNullOrEmpty(parentService))
+    {
+    }
+
+    if (Request.ParentId is null or <= 0 &&
+        parent.BoundProperty != null &&
+        CurrentEntity != null &&
+        parent.BoundProperty.GetValue(CurrentEntity) is long entityPid and > 0)
+    {
+      Request.ParentId = entityPid;
+    }
+
+    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+    {
+      await PreloadParentRecordAsync(parent, ct);
+    }
+
+    var elements = await EnsureElementsAsync(ct, reload: true);
+    var hooks = GetHooks();
+    return await FormDraftEngine.BuildDraftResultAsync(
+      db,
+      PlatformApp,
+      elements.List,
+      modelObj,
+      CurrentEntity,
+      isEdit,
+      overrides,
+      pendingReferencePaths,
+      triggerField,
+      hooks.ComputeActions.Count > 0,
+      async (draftEntity, originalValues, explicitlyProvided) =>
+      {
+        if (Request.ParentId is null or <= 0 &&
+            parent.BoundProperty != null &&
+            parent.BoundProperty.GetValue(draftEntity) is long draftPid and > 0)
+        {
+          Request.ParentId = draftPid;
+        }
+
+        if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+        {
+          await PreloadParentRecordAsync(parent, ct);
+        }
+
+        var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(
+          elements,
+          hooks,
+          draftEntity,
+          originalValues,
+          explicitlyProvided,
+          ct);
+        return (saveCtx.Errors, ruleCtx.Failures);
+      },
+      ct);
+  }
+
+  private async Task<(FormSaveContext<TEntity> SaveContext, RuleContext<TEntity> RuleContext)> RunValidationPipelineAsync(
+    Elements elements,
+    Hooks hooks,
+    TEntity entity,
+    IReadOnlyDictionary<string, object?>? originalValues,
+    IReadOnlySet<string>? presentPaths,
+    CancellationToken ct,
+    IReadOnlySet<string>? disabledElementPaths = null)
+  {
+    var saveCtx = new FormSaveContext<TEntity>
+    {
+      Entity = entity,
+      IsNew = IsNew,
+      Db = db,
+      OriginalValues = originalValues,
+      PresentPaths = presentPaths
+    };
+
+    foreach (var h in hooks.ComputeActions)
+    {
+      h(saveCtx);
+    }
+
+    var rules = new Rules();
+    SetRules(rules);
+
+    var ruleCtx = new RuleContext<TEntity>
+    {
+      SaveContext = saveCtx
+    };
+
+    FormValidator.ValidateElementConstraints(db, L, elements.List, entity, ruleCtx, onlyAcceptingInput: true, disabledElementPaths);
+
+    foreach (var r in rules.Validators)
+    {
+      await r(saveCtx, ruleCtx, ct);
+    }
+
+    await FormValidator.ValidateUniqueElementsAsync(db, L, elements.List, entity, IsNew, ruleCtx, ct);
+    await FormValidator.ValidateReferenceElementsAsync(db, PlatformApp, L, elements.List, entity, IsNew, originalValues, ruleCtx, ct, disabledElementPaths);
+    return (saveCtx, ruleCtx);
+  }
+
   private TEntity CreateBlankEntity(Parent parent, long? parentId)
   {
     var entity = new TEntity();
@@ -652,7 +869,7 @@ public abstract partial class FormService<TEntity>
     Hooks hooks,
     CancellationToken ct)
   {
-    await PopulateJoinedReferencesAsync(elements, entity, ct);
+    await FormReferenceResolver.PopulateJoinedReferencesAsync(db, elements.List, entity, ct);
 
     var loadCtx = new FormLoadContext<TEntity>
     {
@@ -662,75 +879,6 @@ public abstract partial class FormService<TEntity>
     foreach (var h in hooks.AfterLoadActions)
     {
       await h(loadCtx, ct);
-    }
-  }
-
-  private async Task PopulateJoinedReferencesAsync(
-    Elements elements,
-    TEntity entity,
-    CancellationToken ct)
-  {
-    foreach (var el in elements.List)
-    {
-      if (el.JoinLoader == null || string.IsNullOrEmpty(el.Path))
-      {
-        continue;
-      }
-
-      var ids = await el.JoinLoader(db, entity.Id, ct);
-      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
-      if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
-      {
-        entityProp.SetValue(entity, new List<long>(ids));
-      }
-    }
-  }
-
-  private async Task SyncJoinedReferencesAsync(
-    Elements elements,
-    TEntity entity,
-    CancellationToken ct)
-  {
-    var anyChanged = false;
-    foreach (var el in elements.List)
-    {
-      if (el.JoinSyncer == null || string.IsNullOrEmpty(el.Path))
-      {
-        continue;
-      }
-
-      var raw = PropertyAccessorCache.GetValue(entity, el.Path);
-      var desired = new List<long>();
-      if (raw is IEnumerable<long> longSeq)
-      {
-        desired = longSeq.Where(id => id > 0).Distinct().ToList();
-      }
-      else if (raw is IEnumerable enumerable and not string)
-      {
-        foreach (var item in enumerable)
-        {
-          if (item != null && long.TryParse(item.ToString(), out var parsed) && parsed > 0 && !desired.Contains(parsed))
-          {
-            desired.Add(parsed);
-          }
-        }
-      }
-
-      if (await el.JoinSyncer(db, entity.Id, desired, ct))
-      {
-        anyChanged = true;
-      }
-
-      var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
-      if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
-      {
-        entityProp.SetValue(entity, new List<long>(desired));
-      }
-    }
-
-    if (anyChanged)
-    {
-      await db.SaveChangesAsync(ct);
     }
   }
 }

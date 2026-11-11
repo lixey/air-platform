@@ -99,12 +99,24 @@ public static partial class AgentProposalBuilder
           ? cpId
           : (long?)null;
 
-        var dayPage = await ownerGrid.GetDataAsync(new ListRequest
+        GridPageDto<object> dayPage;
+        try
         {
-          Page = 0,
-          PageSize = 50,
-          Filter = FilterNode.Rule(datePath, FilterOperator.Equals, dateStr)
-        }, ct);
+          dayPage = await ownerGrid.GetDataAsync(new ListRequest
+          {
+            Page = 0,
+            PageSize = 50,
+            Filter = FilterNode.Rule(datePath, FilterOperator.Equals, dateStr)
+          }, ct);
+        }
+        catch (QueryRequestException)
+        {
+          dayPage = await ownerGrid.GetDataAsync(new ListRequest
+          {
+            Page = 0,
+            PageSize = 50
+          }, ct);
+        }
 
         foreach (var rawRow in dayPage.Rows)
         {

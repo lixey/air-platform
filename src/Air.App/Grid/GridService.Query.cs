@@ -43,29 +43,24 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (ParentId.HasValue)
     {
-      if (parent.FilterFunc != null && parent.MatchesService(ParentService))
+      if (ParentId.Value <= 0 || !parent.MatchesService(ParentService))
       {
-        query = parent.FilterFunc(query, ParentId.Value);
-      }
-      else if (ParentId is > 0 && ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
-      {
-        query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
+        query = query.Where(_ => false);
       }
       else if (parent.FilterFunc != null)
       {
         query = parent.FilterFunc(query, ParentId.Value);
       }
-      else if (ParentId is > 0 && !parent.HasRead)
+      else if (ResolveParentChildBuilder() is { FilterProvider: { } filterProvider })
+      {
+        query = (IQueryable<TEntity>)filterProvider(db, ParentId.Value, query);
+      }
+      else if (!parent.HasRead)
       {
         query = query.Where(_ => false);
       }
     }
-    else if (parent.BoundProperty != null &&
-             !parent.IsOptional &&
-             Feature.ServiceType != null &&
-             Feature.ServiceType != GetType() &&
-             !(gridReq?.IsReferencePicker ?? false) &&
-             gridReq?.ReferenceLabelPaths is not { Count: > 0 })
+    else if (parent.BoundProperty != null && !parent.IsOptional)
     {
       query = query.Where(_ => false);
     }
@@ -149,7 +144,7 @@ public abstract partial class GridService<TEntity, TRow>
     ParentId = gridReq?.ParentId;
     var isReferenceSelect = gridReq?.ReferenceLabelPaths is { Count: > 0 };
     var isSelect = isReferenceSelect || (gridReq?.IsReferencePicker ?? false);
-    if (!await EnsureParentScopeAsync(lockParent: false, ct) && (ParentId is > 0 || !isSelect))
+    if (!await EnsureParentScopeAsync(lockParent: false, ct))
     {
       return new GridPageDto<object> { Rows = [], Total = 0, Number = request.Page, Size = request.PageSize, HasMore = false };
     }
@@ -183,7 +178,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     NormalizeGridRequest(gridReq, request, queryDeclaration, isSelect);
 
-    var queryMap = BuildQueryMap(queryDeclaration, cols.List, IsSqlServerProvider);
+    var queryMap = BuildQueryMap(GetType(), queryDeclaration, allColumns, IsSqlServerProvider);
 
     if (queryDeclaration.Selector != null)
     {
@@ -295,7 +290,7 @@ public abstract partial class GridService<TEntity, TRow>
     ParentService = request.ParentService;
     ParentId = request.ParentId;
     var isSelect = request.ReferenceLabelPaths is { Count: > 0 } || request.IsReferencePicker;
-    if (!await EnsureParentScopeAsync(lockParent: false, ct) && (ParentId is > 0 || !isSelect))
+    if (!await EnsureParentScopeAsync(lockParent: false, ct))
     {
       return new GridCountDto { Total = 0 };
     }
@@ -306,7 +301,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     NormalizeGridRequest(request, request, queryDeclaration, isSelect);
 
-    var queryMap = BuildQueryMap(queryDeclaration, cols.List, IsSqlServerProvider);
+    var queryMap = BuildQueryMap(GetType(), queryDeclaration, cols.List, IsSqlServerProvider);
 
     var total = queryDeclaration.Selector != null
       ? await DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector).Filter(request).CountAsync(ct)
@@ -673,7 +668,7 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var segment in segments)
     {
       var prop = PropertyAccessorCache.GetProperty(currentType, segment);
-      if (prop == null || IsScalarType(prop.PropertyType))
+      if (prop == null || GridQueryMapBuilder<TEntity, TRow>.IsScalarType(prop.PropertyType))
       {
         return null;
       }
@@ -718,260 +713,10 @@ public abstract partial class GridService<TEntity, TRow>
   private bool IsSqlServerProvider =>
     db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 
-  private static readonly ConcurrentDictionary<string, QueryMap<TEntity>> CachedQueryMaps = new(StringComparer.Ordinal);
-
   internal static QueryMap<TEntity> BuildQueryMap(
+    Type serviceType,
     Query queryDeclaration,
     IReadOnlyList<GridColumnDto> columns,
-    bool useCollationComparison = false)
-  {
-    if (queryDeclaration.Selector is null)
-    {
-      var sb = new StringBuilder(columns.Count * 32 + 64);
-      sb.Append(typeof(TEntity).FullName).Append('|')
-        .Append(typeof(TRow).FullName).Append('|')
-        .Append(useCollationComparison ? 'C' : 'L').Append('#');
-      var canCache = true;
-      for (var i = 0; i < columns.Count; i++)
-      {
-        var col = columns[i];
-        if (col.FilterExpression is not null || col.IsSubqueryExpression)
-        {
-          canCache = false;
-          break;
-        }
-
-        var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
-        sb.Append(col.Path).Append('|')
-          .Append(col.FilterPath).Append('|')
-          .Append(col.ValueExpression?.ToString()).Append('|')
-          .Append(isRef ? '1' : '0').Append('|')
-          .Append(col.IsHidden ? '1' : '0').Append('|')
-          .Append(col.IsSortable ? '1' : '0').Append('|')
-          .Append(col.IsFilterable ? '1' : '0');
-        if (col.ReferenceLabelPaths is { Count: > 0 } refLabels)
-        {
-          for (var j = 0; j < refLabels.Count; j++)
-          {
-            sb.Append(',').Append(refLabels[j]);
-          }
-        }
-
-        sb.Append(';');
-      }
-
-      if (canCache)
-      {
-        if (queryDeclaration.SearchFields is { Count: > 0 } sfs)
-        {
-          sb.Append("#S:");
-          for (var i = 0; i < sfs.Count; i++)
-          {
-            sb.Append(sfs[i]).Append(',');
-          }
-        }
-
-        if (queryDeclaration.DefaultSort.Count > 0)
-        {
-          sb.Append("#D:");
-          for (var i = 0; i < queryDeclaration.DefaultSort.Count; i++)
-          {
-            sb.Append(queryDeclaration.DefaultSort[i].Field)
-              .Append(':')
-              .Append(queryDeclaration.DefaultSort[i].Direction)
-              .Append(',');
-          }
-        }
-
-        if (CachedQueryMaps.Count > 512)
-        {
-          CachedQueryMaps.Clear();
-        }
-
-        return CachedQueryMaps.GetOrAdd(sb.ToString(), _ => BuildQueryMapCore(queryDeclaration, columns, useCollationComparison));
-      }
-    }
-
-    return BuildQueryMapCore(queryDeclaration, columns, useCollationComparison);
-  }
-
-  private static QueryMap<TEntity> BuildQueryMapCore(
-    Query queryDeclaration,
-    IReadOnlyList<GridColumnDto> columns,
-    bool useCollationComparison = false)
-  {
-    var builder = queryDeclaration.Selector is not null
-      ? QueryMap.FromSelector(queryDeclaration.Selector)
-      : QueryMap.For<TEntity>();
-
-    builder.UseCollationComparison(useCollationComparison);
-    builder.AddEntityProperties(searchable: false);
-
-    var entityParam = Expression.Parameter(typeof(TEntity), "e");
-    var hasExplicitSearchFields = queryDeclaration.SearchFields is { Count: > 0 };
-
-    foreach (var col in columns)
-    {
-      if (string.IsNullOrEmpty(col.Path))
-      {
-        continue;
-      }
-
-      if (col.FilterExpression is not null)
-      {
-        var filterKey = !string.IsNullOrEmpty(col.FilterPath) ? col.FilterPath : col.Path;
-        builder.Field(filterKey, col.FilterExpression, f => f.FilterOnly());
-        if (!string.Equals(filterKey, col.Path, StringComparison.OrdinalIgnoreCase))
-        {
-          builder.Field(col.Path, col.FilterExpression, f => f.FilterOnly());
-        }
-
-        continue;
-      }
-
-      if (col.ValueExpression is not null)
-      {
-        builder.Field(col.Path, col.ValueExpression);
-        builder.Configure(col.Path, f =>
-        {
-          if (!hasExplicitSearchFields && !col.IsHidden && col.ValueExpression.ReturnType == typeof(string))
-          {
-            f.Searchable();
-          }
-
-          if (!col.IsSortable && !queryDeclaration.DefaultSort.Any(s => string.Equals(s.Field, col.Path, StringComparison.OrdinalIgnoreCase)))
-          {
-            f.Sortable(false);
-          }
-
-          if (!col.IsFilterable)
-          {
-            f.Filterable(false);
-          }
-        });
-
-        continue;
-      }
-
-      var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
-      if (isRef)
-      {
-        var primaryLabelProp = col.ReferenceLabelPaths is { Count: > 0 } ? col.ReferenceLabelPaths[0] : null;
-        var nameExpr = (primaryLabelProp != null
-            ? builder.FindExpression($"{col.Path}.{primaryLabelProp}") ?? BuildEntityMemberExpression(entityParam, $"{col.Path}.{primaryLabelProp}", preferNameOnObject: true)
-            : null)
-          ?? builder.FindExpression(col.Path + ".Name")
-          ?? BuildEntityMemberExpression(entityParam, col.Path, preferNameOnObject: true);
-        if (nameExpr != null)
-        {
-          builder.Field(col.Path, nameExpr);
-        }
-
-        if (!string.IsNullOrEmpty(col.FilterPath) && !string.Equals(col.FilterPath, col.Path, StringComparison.OrdinalIgnoreCase))
-        {
-          var idExpr = builder.FindExpression(col.FilterPath)
-            ?? builder.FindExpression(col.Path + ".Id")
-            ?? BuildEntityMemberExpression(entityParam, col.FilterPath, preferNameOnObject: false);
-          if (idExpr != null)
-          {
-            builder.Field(col.FilterPath, idExpr);
-          }
-        }
-
-        continue;
-      }
-
-      var existingExpr = builder.FindExpression(col.Path);
-      if (existingExpr is null)
-      {
-        var expr = BuildEntityMemberExpression(entityParam, col.Path, preferNameOnObject: true);
-        if (expr is not null)
-        {
-          builder.Field(col.Path, expr);
-        }
-      }
-      else if (!hasExplicitSearchFields && !col.IsHidden && existingExpr.ReturnType == typeof(string))
-      {
-        builder.Configure(col.Path, f => f.Searchable());
-      }
-
-      if (!col.IsSortable &&
-          builder.FindExpression(col.Path) is not null &&
-          !queryDeclaration.DefaultSort.Any(s => string.Equals(s.Field, col.Path, StringComparison.OrdinalIgnoreCase)))
-      {
-        builder.Configure(col.Path, f => f.Sortable(false));
-      }
-    }
-
-    if (queryDeclaration.SearchFields is { Count: > 0 })
-    {
-      foreach (var sf in queryDeclaration.SearchFields)
-      {
-        if (builder.FindExpression(sf) is not null)
-        {
-          builder.Configure(sf, f => f.Searchable());
-        }
-        else if (BuildEntityMemberExpression(entityParam, sf, preferNameOnObject: true) is { } searchExpr)
-        {
-          builder.Field(sf, searchExpr, f => f.Searchable());
-        }
-      }
-    }
-
-    foreach (var rule in queryDeclaration.DefaultSort)
-    {
-      if (builder.FindExpression(rule.Field) is null)
-      {
-        var sortExpr = BuildEntityMemberExpression(entityParam, rule.Field, preferNameOnObject: true);
-        if (sortExpr is not null)
-        {
-          builder.Field(rule.Field, sortExpr, f => f.SortOnly());
-        }
-      }
-    }
-
-    return builder.Build();
-  }
-
-  private static LambdaExpression? BuildEntityMemberExpression(ParameterExpression entityParam, string path, bool preferNameOnObject)
-  {
-    var segments = path.Split('.');
-    Expression? current = entityParam;
-    var currentType = typeof(TEntity);
-
-    foreach (var segment in segments)
-    {
-      var prop = PropertyAccessorCache.GetProperty(currentType, segment);
-      if (prop is null)
-      {
-        return null;
-      }
-
-      current = Expression.Property(current, prop);
-      currentType = prop.PropertyType;
-    }
-
-    if (!IsScalarType(currentType))
-    {
-      if (preferNameOnObject)
-      {
-        var nameProp = PropertyAccessorCache.GetProperty(currentType, "Name");
-        if (nameProp != null && IsScalarType(nameProp.PropertyType))
-        {
-          current = Expression.Property(current, nameProp);
-          return Expression.Lambda(current, entityParam);
-        }
-      }
-
-      return null;
-    }
-
-    return Expression.Lambda(current, entityParam);
-  }
-
-  private static bool IsScalarType(Type t)
-  {
-    var u = Nullable.GetUnderlyingType(t) ?? t;
-    return u.IsValueType || u == typeof(string);
-  }
+    bool useCollationComparison = false) =>
+    GridQueryMapBuilder<TEntity, TRow>.Build(serviceType, queryDeclaration, columns, useCollationComparison);
 }

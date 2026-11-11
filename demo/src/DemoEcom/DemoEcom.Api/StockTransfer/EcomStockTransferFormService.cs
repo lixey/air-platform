@@ -17,9 +17,9 @@ public sealed class EcomStockTransferFormService(EcomDbContext db, EcomStockTran
     elements.Disable(Frozen);
     elements.Add(e => e.Date).Span(3);
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
-    elements.Add(e => e.WarehouseId).Label("From warehouse").AsReference<OrgWarehouseGridService, OrgWarehouse>()
+    elements.Add(e => e.Warehouse).Label("From warehouse").AsReference<OrgWarehouseGridService>()
       .Where(w => w.OrganizationId, e => e.OrganizationId).Required().Span(6);
-    elements.Add(e => e.WarehouseToId).Label("To warehouse").AsReference<OrgWarehouseGridService, OrgWarehouse>()
+    elements.Add(e => e.WarehouseTo).Label("To warehouse").AsReference<OrgWarehouseGridService>()
       .Where(w => w.OrganizationId, e => e.OrganizationId).Required().Span(6);
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(6);
     elements.Add(e => e.Note).AsTextarea();

@@ -2,6 +2,23 @@ namespace Platform.App.Internals;
 
 internal static class ParentScopeValidator
 {
+  private static readonly ConcurrentDictionary<Type, Type?> CachedConventionFormTypes = new();
+
+  public static Type? ResolveConventionFormType(Type? gridServiceType)
+  {
+    if (gridServiceType == null)
+    {
+      return null;
+    }
+
+    return CachedConventionFormTypes.GetOrAdd(gridServiceType, static t =>
+    {
+      var candidateName = t.Name.Replace("GridService", "FormService");
+      return t.Assembly.GetType(t.Namespace + "." + candidateName)
+        ?? t.Assembly.GetTypes().FirstOrDefault(x => x.Name == candidateName);
+    });
+  }
+
   public static bool DeclaresParentScope(Type? serviceType)
   {
     var setParentMethod = serviceType?.GetMethod("SetParent", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -93,17 +110,8 @@ internal static class ParentScopeValidator
     if (boundParentServiceType != null &&
         ModuleCatalog.Instance.FindServiceType(parentService) is { } actualType)
     {
-      if (boundParentServiceType.IsAssignableFrom(actualType) ||
-          actualType.IsAssignableFrom(boundParentServiceType))
-      {
-        return true;
-      }
-
-      if (GetFormEntityType(boundParentServiceType) is { } expectedEntity &&
-          expectedEntity == GetFormEntityType(actualType))
-      {
-        return true;
-      }
+      return boundParentServiceType.IsAssignableFrom(actualType) ||
+             actualType.IsAssignableFrom(boundParentServiceType);
     }
 
     return false;
@@ -134,13 +142,7 @@ internal static class ParentScopeValidator
       return null;
     }
 
-    var tracked = db.Set<TParent>().Local.FirstOrDefault(e => e.Id == parentId.Value);
-    if (tracked != null)
-    {
-      return tracked;
-    }
-
-    return db.Set<TParent>().FirstOrDefault(e => e.Id == parentId.Value);
+    return db.Set<TParent>().Local.FirstOrDefault(e => e.Id == parentId.Value);
   }
 
   public static async Task<(bool Allowed, object? PreloadedParent, IReadOnlyList<Form.ChildGridBuilder>? ParentChildren)> ValidateAndLoadAsync(
@@ -156,7 +158,12 @@ internal static class ParentScopeValidator
     bool lockParent,
     CancellationToken ct)
   {
-    if (hasRequiredBoundParent && parentId is null or <= 0)
+    if (parentId.HasValue && parentId.Value <= 0)
+    {
+      return (false, null, null);
+    }
+
+    if (hasRequiredBoundParent && parentId is null)
     {
       return (false, null, null);
     }
@@ -169,11 +176,19 @@ internal static class ParentScopeValidator
       return (false, null, null);
     }
 
-    var parentServiceType = (!string.IsNullOrEmpty(requestParentService)
-      ? ModuleCatalog.Instance.FindServiceType(requestParentService)
-      : null) ?? boundParentServiceType;
+    Type? parentServiceType = null;
+    if (!string.IsNullOrEmpty(requestParentService))
+    {
+      parentServiceType = ModuleCatalog.Instance.FindServiceType(requestParentService);
+      if (parentServiceType == null)
+      {
+        return (false, null, null);
+      }
+    }
 
-    if (parentId is not > 0)
+    parentServiceType ??= boundParentServiceType;
+
+    if (parentId is null)
     {
       if (parentServiceType != null &&
           typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
@@ -189,15 +204,22 @@ internal static class ParentScopeValidator
 
     var parentEntityType = ModuleCatalog.GetServiceEntityType(parentServiceType) ?? boundParentEntityType;
 
-    if (lockParent && parentEntityType != null)
-    {
-      await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
-    }
-
     if (parentServiceType != null &&
         typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
         ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is Form.IFormService parentForm)
     {
+      if (!string.IsNullOrEmpty(parentForm.Feature.Module) &&
+          (app?.User is not { IsAuthenticated: true } user ||
+           !ServiceEndpointsExtensions.CanView(parentForm.Feature, user)))
+      {
+        return (false, null, null);
+      }
+
+      if (lockParent && parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null)
+      {
+        await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
+      }
+
       parentForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
       var loaded = await parentForm.LoadParentRecordAsync(parentId.Value, ct);
       if (loaded == null)
@@ -209,13 +231,18 @@ internal static class ParentScopeValidator
       return (true, loaded, children);
     }
 
-    if (parentEntityType != null)
+    if (parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null)
     {
+      if (lockParent)
+      {
+        await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
+      }
+
       var loaded = await db.FindAsync(parentEntityType, [parentId.Value], ct);
       return loaded != null ? (true, loaded, null) : (false, null, null);
     }
 
-    return (true, null, null);
+    return (false, null, null);
   }
 
   public static async Task<Form.ChildGridBuilder?> ResolveChildBuilderAsync(
@@ -279,7 +306,7 @@ internal static class ParentScopeValidator
 
     if (cache is { } cached &&
         string.Equals(cached.Service, effectiveParentService, StringComparison.OrdinalIgnoreCase) &&
-        (cached.ParentId == parentId || cached.Children.Count > 0))
+        cached.ParentId == parentId)
     {
       return cached.Children.FirstOrDefault(predicate);
     }

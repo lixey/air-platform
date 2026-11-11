@@ -18,13 +18,13 @@ public sealed class EcomIncomingPaymentFormService(
     elements.Disable(Frozen);
     elements.Add(e => e.Date).Span(3);
     elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew).Span(3);
-    elements.Add(e => e.MoneyAccountId).AsReference<OrgMoneyAccountGridService, OrgMoneyAccount>()
+    elements.Add(e => e.MoneyAccount).AsReference<OrgMoneyAccountGridService>()
       .Where(a => a.OrganizationId, e => e.OrganizationId).Required().Span(3);
     elements.Add(e => e.Amount).AsMoney().Min(0.01m).Span(3);
     elements.Add(e => e.PaymentMethodId).AsReference<OrgPaymentMethodGridService>().Span(3);
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(3);
     elements.Add(e => e.CustomerId).AsReference<OrgCustomerGridService>().Span(4);
-    elements.Add(e => e.ContactId).AsReference<OrgCustomerContactGridService, OrgCustomerContact>()
+    elements.Add(e => e.Contact).AsReference<OrgCustomerContactGridService>()
       .Where(c => c.CustomerId, e => e.CustomerId).Span(4);
     elements.Add(e => e.CounterpartyId).AsReference<OrgCounterpartyGridService>().Span(4);
     elements.Add(e => e.Note).AsTextarea();
