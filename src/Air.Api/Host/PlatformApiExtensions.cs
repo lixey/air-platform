@@ -106,7 +106,8 @@ public static class PlatformApiExtensions
       string? token = null;
       var isCookie = false;
 
-      if (context.Request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
+      var accessCookieName = AuthClaims.GetAccessCookieName(context.Request.Host.Port);
+      if (context.Request.Cookies.TryGetValue(accessCookieName, out var cookieToken) &&
           !string.IsNullOrWhiteSpace(cookieToken))
       {
         token = cookieToken;

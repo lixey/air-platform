@@ -12,11 +12,12 @@ public interface IFormFilesSource
     string look,
     CancellationToken cancellationToken
   );
-  Task<long?> AttachFileAsync(
+  Task<GridActionDto> AttachFileAsync(
     long parentId,
     string fileName,
     string contentType,
     byte[] content,
+    string? parentService = null,
     CancellationToken cancellationToken = default
   );
   Task<long?> FindExistingParentIdByHashAsync(

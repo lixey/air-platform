@@ -321,7 +321,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       return null;
     }
 
-    var existing = await RestrictedQuery()
+    var existing = await UnscopedRestrictedQuery()
       .AsNoTracking()
       .Where(f => f.Sha256 == sha256)
       .OrderByDescending(f => f.Id)
@@ -359,7 +359,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       Expression.Constant(true));
     var lambda = Expression.Lambda<Func<TFile, bool>>(Expression.AndAlso(isCoverExpr, inOwnersLambda.Body), param);
 
-    var covers = await RestrictedQuery().AsNoTracking().Where(lambda).ToListAsync(cancellationToken);
+    var covers = await UnscopedRestrictedQuery().AsNoTracking().Where(lambda).ToListAsync(cancellationToken);
     var result = new Dictionary<long, GridCoverDto>();
 
     foreach (var cover in covers)

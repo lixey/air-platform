@@ -168,6 +168,10 @@ public static partial class AgentProposalBuilder
       {
         var readObj = await ownerGrid.ReadRowAsync(duplicateId.Value, ct);
         matchedRow = CleanGridRow(readObj);
+        if (matchedRow == null)
+        {
+          return (null, null, null);
+        }
       }
 
       var dupDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(

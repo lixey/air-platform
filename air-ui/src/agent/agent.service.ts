@@ -22,6 +22,8 @@ import type {
 import { TextsService } from '../core/texts.service';
 import { browserZone } from '../core/time-zone';
 import { newUuid } from '../core/uuid';
+import { type ImageRules, optimizeImage } from '../file/file-optimize';
+import { imageFactsOf } from '../file/image-facts';
 import { GridService } from '../grid/grid.service';
 import { OverlayService } from '../overlay/overlay.service';
 import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from './agent-block-models';
@@ -53,6 +55,13 @@ export interface AgentChatMessage {
 }
 
 const STREAM_DELTA_COALESCE_MS = 32;
+
+const AGENT_IMAGE_RULES: ImageRules = {
+  images: 'optimize',
+  imageMaxSide: 2048,
+  imageQuality: 0.85,
+  accept: ['image/jpeg', 'image/png'],
+};
 
 function createSessionId(): string {
   return newUuid().replace(/-/g, '');
@@ -152,7 +161,8 @@ export class AgentService {
 
     this.isUploading.set(true);
     try {
-      for (const file of list) {
+      for (const raw of list) {
+        const file = await this.prepareUploadFile(raw);
         const form = new FormData();
         form.append('file', file, file.name);
         const saved = await firstValueFrom(this.http.post<AgentAttachment>('/api/agent/upload', form, shownByCaller()));
@@ -174,8 +184,9 @@ export class AgentService {
   async uploadSingleFile(file: File): Promise<AgentAttachment | null> {
     this.isUploading.set(true);
     try {
+      const prepared = await this.prepareUploadFile(file);
       const form = new FormData();
-      form.append('file', file, file.name);
+      form.append('file', prepared, prepared.name);
       return await firstValueFrom(this.http.post<AgentAttachment>('/api/agent/upload', form, shownByCaller()));
     } catch (err) {
       const msg =
@@ -189,6 +200,11 @@ export class AgentService {
     } finally {
       this.isUploading.set(false);
     }
+  }
+
+  private async prepareUploadFile(file: File): Promise<File> {
+    const facts = await imageFactsOf(file);
+    return optimizeImage(file, AGENT_IMAGE_RULES, facts);
   }
 
   removePendingAttachment(id: string): void {

@@ -41,8 +41,6 @@ public static class AgentProposalExecutor
     CancellationToken ct
   )
   {
-    var db = services.GetRequiredService<PlatformDbContext>();
-    var app = services.GetRequiredService<PlatformAppService>();
     var store = services.GetRequiredService<AgentStore>();
     var L = Localizer.Instance;
     var owner = AgentStore.ResolveOwner(services);
@@ -175,6 +173,32 @@ public static class AgentProposalExecutor
         RefreshServices = []
       };
     }
+
+    IAsyncDisposable? ownedExecScope = null;
+    var execServices = services;
+    if (services.GetService<IHttpContextAccessor>()?.HttpContext != null)
+    {
+      var scope = services.CreateAsyncScope();
+      ownedExecScope = scope;
+      execServices = scope.ServiceProvider;
+    }
+
+    await using var _ = ownedExecScope;
+
+    if (execServices.GetService<DbScope>() is { } dbScope)
+    {
+      foreach (var (prop, _) in pendingItems)
+      {
+        if (ModuleCatalog.Instance.FindServiceType(prop.Service) is { } svcType &&
+            ModuleCatalog.GetServiceDbContextType(svcType) is { } ctxType)
+        {
+          dbScope.Bind(ctxType);
+        }
+      }
+    }
+
+    var db = execServices.GetRequiredService<PlatformDbContext>();
+    var app = execServices.GetRequiredService<PlatformAppService>();
 
     var lockedProposals = new List<AgentProposalDto>();
     try
@@ -576,6 +600,7 @@ public static class AgentProposalExecutor
           var existingPage = await childGrid.GetDataAsync(
             new GridRequest
             {
+              ParentService = formInst.Service,
               ParentId = recordId,
               Page = 0,
               PageSize = 500,
@@ -636,6 +661,7 @@ public static class AgentProposalExecutor
               var delRes = await childGrid.DeleteAsync(
                 new GridRequest
                 {
+                  ParentService = formInst.Service,
                   ParentId = recordId,
                   SelectedIds = idsToDelete
                 },
@@ -654,6 +680,7 @@ public static class AgentProposalExecutor
                 var delRes = await childGrid.DeleteAsync(
                   new GridRequest
                   {
+                    ParentService = formInst.Service,
                     ParentId = recordId,
                     SelectedIds = [lineId]
                   },
@@ -746,14 +773,19 @@ public static class AgentProposalExecutor
           if (att != null && File.Exists(att.LocalPath))
           {
             var bytes = await File.ReadAllBytesAsync(att.LocalPath, mutationCt);
-            _ = await fileSource.AttachFileAsync(
-                  recordId,
-                  att.FileName,
-                  att.ContentType,
-                  bytes,
-                  mutationCt
-                )
-                ?? throw new InvalidOperationException(L["MutationRefused"]);
+            var attachRes = await fileSource.AttachFileAsync(
+              recordId,
+              att.FileName,
+              att.ContentType,
+              bytes,
+              formInst.Service,
+              mutationCt
+            );
+            if (attachRes.Outcome != MutationOutcome.Committed || attachRes.Id is not > 0)
+            {
+              var attachErr = attachRes.Warnings?.FirstOrDefault()?.Detail ?? attachRes.Title ?? L["MutationRefused"];
+              throw new InvalidOperationException(attachErr);
+            }
           }
         }
       }

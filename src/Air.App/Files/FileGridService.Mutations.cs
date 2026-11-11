@@ -633,33 +633,57 @@ public abstract partial class FileGridService<TFile>
     }, ct: cancellationToken);
   }
 
-  async Task<long?> IFormFilesSource.AttachFileAsync(
+  async Task<GridActionDto> IFormFilesSource.AttachFileAsync(
     long parentId,
     string fileName,
     string contentType,
     byte[] content,
+    string? parentService,
     CancellationToken cancellationToken
   )
   {
     if (parentId <= 0 || content.Length == 0)
     {
-      return null;
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [new MessageDto { Detail = L[parentId <= 0 ? "RequestInvalid" : "FileRefused"], Code = "file.invalid", Type = MessageType.Error }]
+      };
     }
 
     var parent = GetParent();
     ParentId = parentId;
-    ParentService ??= parent.BoundParentService;
+    if (!string.IsNullOrWhiteSpace(parentService))
+    {
+      ParentService = parentService;
+    }
+    else if (parent.BoundParentServiceType is { IsAbstract: false })
+    {
+      ParentService ??= parent.BoundParentService;
+    }
 
     var rules = FileRulesAttribute.Of(typeof(TFile));
-    if (ValidateFileHeader(fileName, contentType, content.Length, rules, out var cleanedName, out var normalizedType) != null ||
-        ValidateFileMagicBytes(normalizedType, content) != null)
+    if (ValidateFileHeader(fileName, contentType, content.Length, rules, out var cleanedName, out var normalizedType) is { } headerError)
     {
-      return null;
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [headerError]
+      };
+    }
+
+    if (ValidateFileMagicBytes(normalizedType, content) is { } contentError)
+    {
+      return new GridActionDto
+      {
+        Outcome = MutationOutcome.Refused,
+        Warnings = [contentError]
+      };
     }
 
     var sha256 = Convert.ToHexStringLower(SHA256.HashData(content));
 
-    var result = await db.RunMutationAsync(
+    return await db.RunMutationAsync(
       mutationCt => SaveUploadedFileInMutationAsync(
         cleanedName,
         normalizedType,
@@ -672,7 +696,5 @@ public abstract partial class FileGridService<TFile>
         rules,
         mutationCt),
       ct: cancellationToken);
-
-    return result.Outcome == MutationOutcome.Committed ? result.Id : null;
   }
 }

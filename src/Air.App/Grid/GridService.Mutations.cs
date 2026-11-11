@@ -21,6 +21,25 @@ public abstract partial class GridService<TEntity, TRow>
     return query;
   }
 
+  /// <summary>Applies BaseQuery, SetUserRestrictions, and SetQuery filters without requiring a single ParentId scope.</summary>
+  protected IQueryable<TEntity> UnscopedRestrictedQuery()
+  {
+    var query = BaseQuery(db);
+    var restrictions = new UserRestrictions();
+    SetUserRestrictions(restrictions);
+    foreach (var restriction in restrictions.Filters)
+    {
+      query = query.Where(restriction);
+    }
+
+    foreach (var filter in GetQueryDeclaration().Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    return query;
+  }
+
   protected async Task<IReadOnlyList<long>> InferBoundParentIdFromIdsAsync(
     IReadOnlyList<long> ids,
     CancellationToken ct,

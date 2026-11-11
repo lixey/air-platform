@@ -5,6 +5,24 @@ internal static class AuthEndpointsExtensions
   private static readonly Lazy<string> DummyPasswordHash = new(() =>
     new PasswordHasher().HashPassword("dummy-password-for-timing-defense"));
 
+  private static readonly ConcurrentDictionary<long, (string PrevHash, string NextToken, DateTimeOffset ExpiresAt)> GraceRefreshTokens = new();
+
+  private static void CleanupExpiredGraceTokens(DateTimeOffset now)
+  {
+    if (GraceRefreshTokens.Count <= 256)
+    {
+      return;
+    }
+
+    foreach (var (sid, entry) in GraceRefreshTokens)
+    {
+      if (entry.ExpiresAt <= now)
+      {
+        GraceRefreshTokens.TryRemove(sid, out _);
+      }
+    }
+  }
+
   public static void MapAuthEndpoints(this RouteGroupBuilder api)
   {
     api.MapPost("/auth/get-login-screen", (HttpContext ctx) =>
@@ -134,8 +152,12 @@ internal static class AuthEndpointsExtensions
       );
       await authStore.SaveChangesAsync(ct);
 
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
-      IssueRefreshCookie(ctx.Response, refreshToken, now.AddDays(30), ctx.Request.IsHttps);
+      IssueAccessCookie(ctx, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
+      IssueRefreshCookie(ctx, refreshToken, now.AddDays(30));
+      if (AuthClaims.GetAccessCookieName(ctx.Request.Host.Port) != AuthClaims.AccessCookie)
+      {
+        DeleteLegacyUnsuffixedCookies(ctx);
+      }
 
       var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
       if (user.LanguageId is > 0)
@@ -152,7 +174,7 @@ internal static class AuthEndpointsExtensions
     });
 
     api.MapPost("/auth/change-password", async (ChangePasswordRequest? req, HttpContext ctx, IUserContext userContext, IAuthStore authStore, IPasswordHasher hasher, CancellationToken ct) =>
-      await PlatformEndpointsExtensions.WithRequestCultureAsync(ctx.Request, async _ =>
+      await PlatformEndpointsExtensions.WithRequestCultureAsync(ctx.Request, async culture =>
       {
         if (!userContext.IsAuthenticated || userContext.UserId is null)
         {
@@ -239,10 +261,11 @@ internal static class AuthEndpointsExtensions
           await authStore.SaveChangesAsync(ct);
         }
 
-        IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
+        IssueAccessCookie(ctx, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
         if (newRefreshToken != null)
         {
-          IssueRefreshCookie(ctx.Response, newRefreshToken, now.AddDays(30), ctx.Request.IsHttps);
+          GraceRefreshTokens.TryRemove(session.Id, out _);
+          IssueRefreshCookie(ctx, newRefreshToken, now.AddDays(30));
         }
 
         var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
@@ -270,9 +293,24 @@ internal static class AuthEndpointsExtensions
       BaseAppAuthSession? session = null;
       string? providedHash = null;
 
-      var rawRefresh = !string.IsNullOrWhiteSpace(req?.RefreshToken)
-        ? req.RefreshToken
-        : ctx.Request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var refreshCookie) ? refreshCookie : null;
+      var refreshCookieName = AuthClaims.GetRefreshCookieName(ctx.Request.Host.Port);
+      var usedLegacyUnsuffixedCookie = false;
+      string? rawRefresh = null;
+      if (!string.IsNullOrWhiteSpace(req?.RefreshToken))
+      {
+        rawRefresh = req.RefreshToken;
+      }
+      else if (ctx.Request.Cookies.TryGetValue(refreshCookieName, out var refreshCookie) && !string.IsNullOrWhiteSpace(refreshCookie))
+      {
+        rawRefresh = refreshCookie;
+      }
+      else if (refreshCookieName != AuthClaims.RefreshCookie &&
+               ctx.Request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var legacyRefresh) &&
+               !string.IsNullOrWhiteSpace(legacyRefresh))
+      {
+        rawRefresh = legacyRefresh;
+        usedLegacyUnsuffixedCookie = true;
+      }
 
       if (!string.IsNullOrWhiteSpace(rawRefresh))
       {
@@ -298,6 +336,7 @@ internal static class AuthEndpointsExtensions
       {
         if (session.RotatedAt is not { } rotatedAt || now - rotatedAt > TimeSpan.FromSeconds(30))
         {
+          GraceRefreshTokens.TryRemove(session.Id, out _);
           session.RevokedAt = now;
           session.RevokedReason = "reuse";
           await authStore.SaveChangesAsync(ct);
@@ -309,35 +348,65 @@ internal static class AuthEndpointsExtensions
           return Results.Unauthorized();
         }
 
-        try
+        if (GraceRefreshTokens.TryGetValue(session.Id, out var grace) &&
+            grace.PrevHash == providedHash &&
+            grace.ExpiresAt > now)
         {
-          session.LastUsedAt = now;
-          await authStore.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-          foreach (var entry in ex.Entries)
+          try
           {
-            await entry.ReloadAsync(ct);
+            session.LastUsedAt = now;
+            await authStore.SaveChangesAsync(ct);
+          }
+          catch (DbUpdateConcurrencyException ex)
+          {
+            foreach (var entry in ex.Entries)
+            {
+              await entry.ReloadAsync(ct);
+            }
+
+            if (session.RevokedAt != null || session.ExpiresAt <= now)
+            {
+              return Results.Unauthorized();
+            }
           }
 
-          if (session.RevokedAt != null || session.ExpiresAt <= now)
+          IssueRefreshCookie(ctx, grace.NextToken, session.ExpiresAt);
+        }
+        else
+        {
+          try
           {
-            return Results.Unauthorized();
+            session.LastUsedAt = now;
+            await authStore.SaveChangesAsync(ct);
+          }
+          catch (DbUpdateConcurrencyException ex)
+          {
+            foreach (var entry in ex.Entries)
+            {
+              await entry.ReloadAsync(ct);
+            }
+
+            if (session.RevokedAt != null || session.ExpiresAt <= now)
+            {
+              return Results.Unauthorized();
+            }
           }
         }
       }
       else
       {
+        var prevHash = session.RefreshTokenHash;
         var nextRefresh = SessionTokenService.CreateRefreshToken();
-        session.PreviousRefreshTokenHash = session.RefreshTokenHash;
+        session.PreviousRefreshTokenHash = prevHash;
         session.RefreshTokenHash = SessionTokenService.HashRefreshToken(nextRefresh);
         session.RotatedAt = now;
         session.LastUsedAt = now;
         try
         {
           await authStore.SaveChangesAsync(ct);
-          IssueRefreshCookie(ctx.Response, nextRefresh, session.ExpiresAt, ctx.Request.IsHttps);
+          CleanupExpiredGraceTokens(now);
+          GraceRefreshTokens[session.Id] = (prevHash, nextRefresh, now.AddSeconds(30));
+          IssueRefreshCookie(ctx, nextRefresh, session.ExpiresAt);
         }
         catch (DbUpdateConcurrencyException ex)
         {
@@ -354,7 +423,19 @@ internal static class AuthEndpointsExtensions
           {
             return Results.Unauthorized();
           }
+
+          if (GraceRefreshTokens.TryGetValue(session.Id, out var racedGrace) &&
+              racedGrace.PrevHash == providedHash &&
+              racedGrace.ExpiresAt > now)
+          {
+            IssueRefreshCookie(ctx, racedGrace.NextToken, session.ExpiresAt);
+          }
         }
+      }
+
+      if (usedLegacyUnsuffixedCookie)
+      {
+        DeleteLegacyUnsuffixedCookies(ctx);
       }
 
       if (authCache != null)
@@ -368,7 +449,7 @@ internal static class AuthEndpointsExtensions
         securityInfo = await authStore.LoadSecurityInfoAsync(user.Id, ct);
       }
 
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
+      IssueAccessCookie(ctx, session.Id, user.Id, now.AddMinutes(30), user.TokenVersion);
 
       var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
       return Results.Ok(await BuildSessionDtoAsync(user, securityInfo, isUk, session.TenantId, authStore, ct));
@@ -381,19 +462,27 @@ internal static class AuthEndpointsExtensions
         return Results.StatusCode(StatusCodes.Status403Forbidden);
       }
 
+      var logoutRefreshCookieName = AuthClaims.GetRefreshCookieName(ctx.Request.Host.Port);
       BaseAppAuthSession? session = null;
       if (userContext.SessionId is { } sid)
       {
         session = await authStore.FindSessionAsync(sid, ct);
       }
-      else if (ctx.Request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var refreshCookie) &&
+      else if (ctx.Request.Cookies.TryGetValue(logoutRefreshCookieName, out var refreshCookie) &&
                !string.IsNullOrWhiteSpace(refreshCookie))
       {
         session = await authStore.FindSessionByHashAsync(SessionTokenService.HashRefreshToken(refreshCookie), ct);
       }
+      else if (logoutRefreshCookieName != AuthClaims.RefreshCookie &&
+               ctx.Request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var legacyLogoutRefresh) &&
+               !string.IsNullOrWhiteSpace(legacyLogoutRefresh))
+      {
+        session = await authStore.FindSessionByHashAsync(SessionTokenService.HashRefreshToken(legacyLogoutRefresh), ct);
+      }
 
       if (session != null)
       {
+        GraceRefreshTokens.TryRemove(session.Id, out _);
         session.RevokedAt = DateTimeOffset.UtcNow;
         session.RevokedReason = "self";
         await authStore.SaveChangesAsync(ct);
@@ -405,8 +494,13 @@ internal static class AuthEndpointsExtensions
         }
       }
 
-      ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions { Path = "/", SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = ctx.Request.IsHttps });
-      ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions { Path = "/api/auth", SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = ctx.Request.IsHttps });
+      var logoutAccessCookieName = AuthClaims.GetAccessCookieName(ctx.Request.Host.Port);
+      ctx.Response.Cookies.Delete(logoutAccessCookieName, new CookieOptions { Path = "/", SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = ctx.Request.IsHttps });
+      ctx.Response.Cookies.Delete(logoutRefreshCookieName, new CookieOptions { Path = "/api/auth", SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = ctx.Request.IsHttps });
+      if (logoutAccessCookieName != AuthClaims.AccessCookie)
+      {
+        DeleteLegacyUnsuffixedCookies(ctx);
+      }
 
       return Results.Ok(new { });
     });
@@ -521,7 +615,7 @@ internal static class AuthEndpointsExtensions
         await authCache.RemoveUserAsync(user.Id, ct);
       }
 
-      IssueAccessCookie(ctx.Response, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion, ctx.Request.IsHttps);
+      IssueAccessCookie(ctx, session.Id, user.Id, DateTimeOffset.UtcNow.AddMinutes(30), user.TokenVersion);
       var isUk = await ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
       return Results.Ok(await BuildSessionDtoAsync(user, securityInfo, isUk, req.Id, authStore, ct));
     };
@@ -553,7 +647,8 @@ internal static class AuthEndpointsExtensions
       return sid;
     }
 
-    if (request.Cookies.TryGetValue(AuthClaims.AccessCookie, out var cookieToken) &&
+    var accessCookieName = AuthClaims.GetAccessCookieName(request.Host.Port);
+    if (request.Cookies.TryGetValue(accessCookieName, out var cookieToken) &&
         SessionTokenService.TryValidateAccessToken(cookieToken, out var parsedSid, out _, out _))
     {
       return parsedSid;
@@ -562,28 +657,48 @@ internal static class AuthEndpointsExtensions
     return null;
   }
 
-  private static void IssueAccessCookie(HttpResponse response, long sessionId, long userId, DateTimeOffset expires, int tokenVersion = 1, bool isSecure = false)
+  private static void IssueAccessCookie(HttpContext ctx, long sessionId, long userId, DateTimeOffset expires, int tokenVersion = 1)
   {
+    var accessCookieName = AuthClaims.GetAccessCookieName(ctx.Request.Host.Port);
     var accessToken = SessionTokenService.CreateAccessToken(sessionId, userId, expires, tokenVersion);
-    response.Cookies.Append(AuthClaims.AccessCookie, accessToken, new CookieOptions
+    ctx.Response.Cookies.Append(accessCookieName, accessToken, new CookieOptions
     {
       Path = "/",
       Expires = expires,
       SameSite = SameSiteMode.Lax,
       HttpOnly = true,
-      Secure = isSecure
+      Secure = ctx.Request.IsHttps
     });
   }
 
-  private static void IssueRefreshCookie(HttpResponse response, string refreshToken, DateTimeOffset expires, bool isSecure = false)
+  private static void IssueRefreshCookie(HttpContext ctx, string refreshToken, DateTimeOffset expires)
   {
-    response.Cookies.Append(AuthClaims.RefreshCookie, refreshToken, new CookieOptions
+    var refreshCookieName = AuthClaims.GetRefreshCookieName(ctx.Request.Host.Port);
+    ctx.Response.Cookies.Append(refreshCookieName, refreshToken, new CookieOptions
     {
       Path = "/api/auth",
       Expires = expires,
       SameSite = SameSiteMode.Lax,
       HttpOnly = true,
-      Secure = isSecure
+      Secure = ctx.Request.IsHttps
+    });
+  }
+
+  private static void DeleteLegacyUnsuffixedCookies(HttpContext ctx)
+  {
+    ctx.Response.Cookies.Delete(AuthClaims.AccessCookie, new CookieOptions
+    {
+      Path = "/",
+      SameSite = SameSiteMode.Lax,
+      HttpOnly = true,
+      Secure = ctx.Request.IsHttps
+    });
+    ctx.Response.Cookies.Delete(AuthClaims.RefreshCookie, new CookieOptions
+    {
+      Path = "/api/auth",
+      SameSite = SameSiteMode.Lax,
+      HttpOnly = true,
+      Secure = ctx.Request.IsHttps
     });
   }
 

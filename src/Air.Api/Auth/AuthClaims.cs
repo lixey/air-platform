@@ -18,4 +18,14 @@ public static class AuthClaims
   public const string TimeZoneHeader = "X-Platform-Time-Zone";
   public const string AccessCookie = "platform_access";
   public const string RefreshCookie = "platform_refresh";
+
+  public static string GetAccessCookieName(int? hostPort) =>
+    hostPort is > 0 and not (80 or 443) and var port
+      ? $"{AccessCookie}_{port.ToString(CultureInfo.InvariantCulture)}"
+      : AccessCookie;
+
+  public static string GetRefreshCookieName(int? hostPort) =>
+    hostPort is > 0 and not (80 or 443) and var port
+      ? $"{RefreshCookie}_{port.ToString(CultureInfo.InvariantCulture)}"
+      : RefreshCookie;
 }

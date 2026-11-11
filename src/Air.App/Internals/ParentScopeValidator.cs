@@ -180,7 +180,9 @@ internal static class ParentScopeValidator
     if (!string.IsNullOrEmpty(requestParentService))
     {
       parentServiceType = ModuleCatalog.Instance.FindServiceType(requestParentService);
-      if (parentServiceType == null)
+      if (parentServiceType == null &&
+          !(boundParentServiceType is { IsAbstract: true } &&
+            string.Equals(requestParentService, boundParentService, StringComparison.OrdinalIgnoreCase)))
       {
         return (false, null, null);
       }
@@ -203,6 +205,53 @@ internal static class ParentScopeValidator
     }
 
     var parentEntityType = ModuleCatalog.GetServiceEntityType(parentServiceType) ?? boundParentEntityType;
+
+    if (parentServiceType is { IsAbstract: true } &&
+        typeof(Form.IFormService).IsAssignableFrom(parentServiceType))
+    {
+      var candidates = ModuleCatalog.Instance.AllServiceTypes
+        .Where(t => !t.IsAbstract && parentServiceType.IsAssignableFrom(t))
+        .ToList();
+      var distinctFeatures = candidates
+        .Select(ModuleCatalog.Instance.FindFeature)
+        .Where(f => f is not null)
+        .Distinct()
+        .ToList();
+      if (candidates.Count > 0 && distinctFeatures.Count <= 1)
+      {
+        if (distinctFeatures is [var sharedFeature] &&
+            sharedFeature is not null &&
+            !string.IsNullOrEmpty(sharedFeature.Module) &&
+            (app?.User is not { IsAuthenticated: true } user ||
+             !ServiceEndpointsExtensions.CanView(sharedFeature, user)))
+        {
+          return (false, null, null);
+        }
+
+        if (lockParent && parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null)
+        {
+          await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
+        }
+
+        foreach (var candidateType in candidates)
+        {
+          if (ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) is not Form.IFormService candidateForm)
+          {
+            continue;
+          }
+
+          candidateForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
+          var loaded = await candidateForm.LoadParentRecordAsync(parentId.Value, ct);
+          if (loaded != null)
+          {
+            var (_, children) = await candidateForm.GetElementsMetadataAsync(ct);
+            return (true, loaded, children);
+          }
+        }
+
+        return (false, null, null);
+      }
+    }
 
     if (parentServiceType != null &&
         typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
