@@ -4,6 +4,7 @@
     <ProjectReference Include="..\DemoApp\DemoApp.Api\DemoApp.Api.csproj" />
     <ProjectReference Include="..\DemoOrg\DemoOrg.Api\DemoOrg.Api.csproj" />
     <ProjectReference Include="..\DemoEcom\DemoEcom.Api\DemoEcom.Api.csproj" />
+    <ProjectReference Include="..\..\..\src\Air.Agent\Air.Agent.csproj" />
     <ProjectReference Include="..\..\..\src\Air.Data.Postgres\Air.Data.Postgres.csproj" />
   </ItemGroup>
 

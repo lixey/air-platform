@@ -7,4 +7,7 @@ public sealed record GridNavNamedFilterGroupModel : NavButtonModel
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
   public bool IsRemembered { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+  public bool IsInline { get; set; }
 }

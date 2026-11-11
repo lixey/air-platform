@@ -30,7 +30,8 @@ public static class AgentProposalExecutor
       RefreshServices = batchResult.RefreshServices,
       AlsoCommitted = others.Count > 0 ? others : null,
       RunId = batchResult.RunId,
-      BatchCode = batchResult.BatchCode
+      BatchCode = batchResult.BatchCode,
+      Warnings = primary.Warnings
     };
   }
 
@@ -269,8 +270,7 @@ public static class AgentProposalExecutor
 
           // Phase B: Execute steps sequentially in topological order, propagating committed IDs and intra-batch updates
           var outcomes =
-            new List<(AgentProposalDto Proposal, long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices
-              )>();
+            new List<(AgentProposalDto Proposal, long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)>();
 
           foreach (var stepProposal in sortedProposals)
           {
@@ -289,7 +289,7 @@ public static class AgentProposalExecutor
             );
 
             committedIdsByProposalId[stepProposal.Id] = outcome.RecordId;
-            outcomes.Add((stepProposal, outcome.RecordId, outcome.RecordLabel, outcome.FormServicePath, outcome.RefreshServices));
+            outcomes.Add((stepProposal, outcome.RecordId, outcome.RecordLabel, outcome.FormServicePath, outcome.RefreshServices, outcome.Warnings));
           }
 
           var refresh = outcomes
@@ -322,7 +322,8 @@ public static class AgentProposalExecutor
             FormService = outcome.FormServicePath,
             RefreshServices = allRefreshServices,
             RunId = committedRunId,
-            BatchCode = batchCode
+            BatchCode = batchCode,
+            Warnings = outcome.Warnings
           }
         );
       }
@@ -350,7 +351,7 @@ public static class AgentProposalExecutor
     }
   }
 
-  private static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices)> ExecuteStepCoreAsync(
+  private static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)> ExecuteStepCoreAsync(
     AgentProposalDto proposal,
     StagedProposalPayload payload,
     Dictionary<string, long> committedIdsByProposalId,
@@ -508,6 +509,12 @@ public static class AgentProposalExecutor
     {
       var errMsg = (saveResult as FormDataDto)?.Warnings?.FirstOrDefault()?.Detail ?? L["AgentErrorSave"];
       throw new InvalidOperationException(errMsg);
+    }
+
+    var collectedWarnings = new List<MessageDto>();
+    if (formInst.GetLastSaveWarnings() is { Count: > 0 } parentWarnings)
+    {
+      collectedWarnings.AddRange(parentWarnings);
     }
 
     // Save child line items if present
@@ -710,6 +717,11 @@ public static class AgentProposalExecutor
                 var lineErr = (savedLine as FormDataDto)?.Warnings?.FirstOrDefault()?.Detail ?? L["MutationRefused"];
                 throw new InvalidOperationException($"{lineName}: {lineErr}");
               }
+
+              if (childFormInst.GetLastSaveWarnings() is { Count: > 0 } childWarnings)
+              {
+                collectedWarnings.AddRange(childWarnings);
+              }
             }
             catch (FormRefusedException refusedEx)
             {
@@ -783,6 +795,6 @@ public static class AgentProposalExecutor
       .Distinct(StringComparer.OrdinalIgnoreCase)
       .ToList();
 
-    return (recordId, recordLabel, formInst.Service, refreshServices);
+    return (recordId, recordLabel, formInst.Service, refreshServices, collectedWarnings.Count > 0 ? collectedWarnings : null);
   }
 }

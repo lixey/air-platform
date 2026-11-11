@@ -17,6 +17,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
     base.SetQuery(query);
     var me = User?.UserId;
     query.NamedFilter("status", L["Status"])
+      .ShowCounts()
       .Item(
         "open",
         L["In work"],
@@ -28,7 +29,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
         doc => doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCompletedId || doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCanceledId
       ).Color(UiColor.Emerald)
       .All(L["All"]);
-    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).Remember();
+    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
   }
 
   protected override void SetColumns(Columns<EcomDoc> columns)

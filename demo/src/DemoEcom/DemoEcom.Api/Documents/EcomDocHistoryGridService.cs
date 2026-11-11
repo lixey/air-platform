@@ -10,13 +10,15 @@ public abstract class EcomDocHistoryGridService<TDocForm>(EcomDbContext db, Ecom
 
   protected override void SetColumns(Columns<EcomDocMove> columns)
   {
-    var statuses = flow?.Statuses ?? db.EcomDocStatus
-      .AsNoTracking()
-      .Include(s => s.Color)
-      .OrderBy(s => s.SortOrder)
-      .ToList()
-      .Select(s => new OptionDto { Id = s.Id, Name = L[s.Name], Color = s.Color?.Handle.ToLowerInvariant() })
-      .ToList();
+    var statuses = flow?.Statuses ?? (db is null
+      ? []
+      : db.EcomDocStatus
+        .AsNoTracking()
+        .Include(s => s.Color)
+        .OrderBy(s => s.SortOrder)
+        .ToList()
+        .Select(s => new OptionDto { Id = s.Id, Name = L[s.Name], Color = s.Color?.Handle.ToLowerInvariant() })
+        .ToList());
 
     columns.Add(r => r.At).Label("Time");
     columns.Add(r => r.FromId).Label("From status").AsSelect(statuses);

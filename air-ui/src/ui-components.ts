@@ -84,6 +84,7 @@ import { NavMenuBodyComponent } from './nav/nav-menu-body.component';
 import { NavComponent } from './nav/nav.component';
 import { OverlayConfirmComponent } from './overlay/overlay-confirm.component';
 import { OverlayDirtyComponent } from './overlay/overlay-dirty.component';
+import { PanelScreenComponent } from './panels/panel-screen.component';
 import { SelectOverlayComponent } from './select/select-overlay.component';
 
 /** The shell's side menu, a panel the frame composes. */
@@ -304,5 +305,6 @@ export const UI_COMPONENTS = defineComponents({
   FormNavSave: FormNavSaveComponent,
   FormNavSaveClose: FormNavSaveCloseComponent,
   FormNavSaveOpen: FormNavSaveOpenComponent,
+  PanelScreen: PanelScreenComponent,
   Report: () => import('./report/report.component').then(m => m.ReportComponent),
 }) satisfies Record<PlatformKind | ClientKind, unknown>;

@@ -8,6 +8,9 @@ public sealed class PanelNodeDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public PanelModel? Model { get; set; }
 
+  [JsonIgnore]
+  internal Type? EmbeddedServiceType { get; set; }
+
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Label { get; set; }
 

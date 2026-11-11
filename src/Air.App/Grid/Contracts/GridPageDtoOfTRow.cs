@@ -10,4 +10,7 @@ public class GridPageDto<TRow> : Page<TRow>
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public Dictionary<string, OverlayDto>? Forms { get; init; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public Dictionary<string, int>? NamedFilterCounts { get; init; }
 }

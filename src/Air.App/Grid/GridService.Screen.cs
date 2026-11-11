@@ -163,6 +163,7 @@ public abstract partial class GridService<TEntity, TRow>
           Key = group.Key,
           Label = group.Label != null ? L[group.Label] : null,
           IsRemembered = group.IsRemembered,
+          IsInline = group.IsInline,
           Items = groupItems
         });
       }

@@ -1,7 +1,9 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, LOCALE_ID, model } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavNamedFilterModel } from '../../core/generated/contracts';
 import { NAV_MENU } from '../../nav/nav-menu';
+import type { UiColor } from '../../theme/ui-color';
+import { formatCount } from '../cell/grid-cell-format';
 import { GridService } from '../grid.service';
 
 /**
@@ -15,13 +17,14 @@ import { GridService } from '../grid.service';
   imports: [BtnComponent],
   template: `
     @if (grid) {
-      <ui-btn [model]="model()" [selected]="isOn()" (click)="press()" />
+      <ui-btn [model]="model()" [selected]="isOn()" [badge]="badge()" [badgeColor]="badgeColor()" (click)="press()" />
     }
   `,
 })
 export class GridNavNamedFilterComponent {
   protected readonly grid = inject(GridService, { optional: true });
   private readonly menu = inject(NAV_MENU, { optional: true });
+  private readonly locale = inject(LOCALE_ID);
 
   readonly model = model<GridNavNamedFilterModel | null>();
 
@@ -29,6 +32,20 @@ export class GridNavNamedFilterComponent {
     const model = this.model();
     return !!model && !!this.grid?.isNamedFilterOn(model.key);
   });
+
+  protected readonly badge = computed<string | number | null>(() => {
+    const model = this.model();
+    if (!model) {
+      return null;
+    }
+    const live = this.grid?.namedFilterCountOf(model.key) ?? null;
+    if (live !== null) {
+      return formatCount(live, this.locale);
+    }
+    return model.badge ?? null;
+  });
+
+  protected readonly badgeColor = computed<UiColor>(() => this.model()?.color ?? 'slate');
 
   protected press(): void {
     const model = this.model();

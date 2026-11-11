@@ -25,12 +25,31 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
   protected override void SetQuery(Query query)
   {
     base.SetQuery(query);
-    query.InitialFilter(r => r.DocStatusId).In(
-      EcomData.DocStatus.CustomerOrderNewId,
-      EcomData.DocStatus.CustomerOrderInProgressId,
-      EcomData.DocStatus.CustomerOrderConfirmedId,
-      EcomData.DocStatus.CustomerOrderPausedId
-    );
+    var me = User?.UserId;
+    query.NamedFilter("status", L["Status"])
+      .Inline()
+      .ShowCounts()
+      .Item(
+        "open",
+        L["In work"],
+        doc =>
+          doc.DocStatusId == EcomData.DocStatus.CustomerOrderNewId ||
+          doc.DocStatusId == EcomData.DocStatus.CustomerOrderInProgressId ||
+          doc.DocStatusId == EcomData.DocStatus.CustomerOrderConfirmedId ||
+          doc.DocStatusId == EcomData.DocStatus.CustomerOrderPausedId
+      ).Color(UiColor.Amber).Default()
+      .Item(
+        "completed",
+        L["Completed"],
+        doc => doc.DocStatusId == EcomData.DocStatus.CustomerOrderCompletedId
+      ).Color(UiColor.Emerald)
+      .Item(
+        "canceled",
+        L["Canceled"],
+        doc => doc.DocStatusId == EcomData.DocStatus.CustomerOrderCanceledId
+      ).Color(UiColor.Rose)
+      .All(L["All"]);
+    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
     query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
   }
 

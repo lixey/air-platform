@@ -8,6 +8,20 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
     public Func<TEntity, bool>? Condition { get; set; }
     public string? Message { get; set; }
     public string? Code { get; set; }
+    public bool IsWarning { get; set; }
+  }
+
+  private void Emit(RuleContext<TEntity> ctx, ValidatorEntry entry, string defaultMessage)
+  {
+    var message = entry.Message ?? defaultMessage;
+    if (entry.IsWarning)
+    {
+      ctx.Warn(message, path, entry.Code);
+    }
+    else
+    {
+      ctx.AddFailure(message, path, entry.Code);
+    }
   }
 
   private readonly List<ValidatorEntry> _entries = [];
@@ -42,7 +56,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!predicate(val))
         {
-          ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
+          Emit(ctx, entry, "Invalid value.");
         }
 
         return Task.CompletedTask;
@@ -59,7 +73,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!predicate(ctx.SaveContext.Entity, val))
         {
-          ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
+          Emit(ctx, entry, "Invalid value.");
         }
 
         return Task.CompletedTask;
@@ -76,7 +90,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!await predicate(val, ct))
         {
-          ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
+          Emit(ctx, entry, "Invalid value.");
         }
       }
     });
@@ -91,7 +105,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!await predicate(ctx.SaveContext.Entity, val, ct))
         {
-          ctx.AddFailure(entry.Message ?? "Invalid value.", path, entry.Code);
+          Emit(ctx, entry, "Invalid value.");
         }
       }
     });
@@ -107,7 +121,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (val is string str && !string.IsNullOrEmpty(str) && !regex.IsMatch(str))
         {
-          ctx.AddFailure(entry.Message ?? "Value does not match required pattern.", path, entry.Code);
+          Emit(ctx, entry, "Value does not match required pattern.");
         }
 
         return Task.CompletedTask;
@@ -131,6 +145,16 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
     if (_entries.Count > 0)
     {
       _entries[^1].Code = code;
+    }
+
+    return this;
+  }
+
+  public RuleBuilder<TEntity, TProp> AsWarning(bool isWarning = true)
+  {
+    if (_entries.Count > 0)
+    {
+      _entries[^1].IsWarning = isWarning;
     }
 
     return this;

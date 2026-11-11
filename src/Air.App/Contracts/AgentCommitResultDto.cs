@@ -17,4 +17,7 @@ public sealed class AgentCommitResultDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? BatchCode { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<MessageDto>? Warnings { get; set; }
 }

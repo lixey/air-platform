@@ -249,9 +249,13 @@ export class BtnComponent {
     return own ? `${classes} ${own}` : classes;
   });
 
-  protected readonly badgeClasses = computed(
-    () => `hue-${this.badgeColor()} bg-(--hue) text-(--btn-on-hue) shrink-0 rounded-full px-1.5 text-xs font-semibold leading-4`,
-  );
+  protected readonly badgeClasses = computed(() => {
+    const view = this.view();
+    const badgeColor = this.badgeColor();
+    const isSolidSameHue = (view.selected || view.variant === 'solid') && badgeColor === view.color;
+    const tone = isSolidSameHue ? 'bg-(--badge-ground) text-(--badge-ink)' : 'bg-(--hue) text-(--btn-on-hue)';
+    return `hue-${badgeColor} ${tone} shrink-0 rounded-full px-1.5 text-xs font-semibold leading-4 tabular-nums`;
+  });
 
   constructor() {
     // The template that hosts the button hears a click before the button's own listener does, so a press against a

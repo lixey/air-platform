@@ -7,6 +7,8 @@ public static class ServicePathResolver
 
   public static string Resolve(Type serviceType) => Resolve(serviceType, null);
 
+  public static string Resolve<TService>() where TService : IPlatformService => Resolve(typeof(TService), null);
+
   internal static string Resolve(Type serviceType, IEnumerable<string>? additionalHandles)
   {
     ArgumentNullException.ThrowIfNull(serviceType);

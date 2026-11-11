@@ -20,6 +20,12 @@ public sealed class EcomCustomerOrderLineFormService(EcomDbContext db, EcomServi
     elements.Add(e => e.Note).AsTextarea().Span(12);
   }
 
+  protected override void SetRules(Rules rules) =>
+    rules.For(e => e.DiscountPercent)
+      .Must(d => d <= 25m)
+      .WithMessage(L["Discount exceeds 25% — verify manager approval."])
+      .AsWarning();
+
   protected override void SetHooks(Hooks hooks)
   {
     base.SetHooks(hooks);

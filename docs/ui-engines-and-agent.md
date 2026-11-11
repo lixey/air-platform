@@ -1,6 +1,6 @@
 # Декларативні рушії інтерфейсу (`Air.App`), `@air/ui` та ШІ-асистент (`Air.Agent`)
 
-Цей посібник пояснює, як працюють основні будівельні блоки прикладного розробника в **`Air.App`**, як вони відображаються у фронтенді **`@air/ui`** та як взаємодіють із вбудованим ШІ-асистентом **`Air.Agent`**.
+Цей посібник пояснює реальні будівельні блоки прикладного розробника в **`Air.App`**, як вони рендеряться у фронтенді **`@air/ui`** та як взаємодіють із вбудованим ШІ-асистентом **`Air.Agent`** (усі приклади відповідають золотому еталону в `demo/`).
 
 ---
 
@@ -8,129 +8,179 @@
 
 У платформі є два варіанти базового сервісу таблиці:
 
-- **`GridService<TEntity>`** (де рядок таблиці `TRow == TEntity`) — використовується у 90% випадків для стандартних реєстрів і довідників.
-- **`GridService<TEntity, TRow>`** — використовується у складних випадках, коли потрібна кастомна SQL-проєкція `SelectSelector` (наприклад, розрахунок агрегатів або специфічних полів рядка з кількох таблиць).
+- **`GridService<TEntity>`** (де рядок таблиці `TRow == TEntity`) — стандартний варіант для більшості реєстрів, документів і довідників.
+- **`GridService<TEntity, TRow>`** — використовується, коли потрібна кастомна SQL-проєкція `query.Select(...)` з обчислюваними полями або агрегатами з кількох таблиць.
 
 ### 1.1. Оголошення колонок (`SetColumns`)
 
 ```csharp
 protected override void SetColumns(Columns columns)
 {
-  columns.UseForm<EcomCustomerOrderFormService>();
-  columns.StatusFlow<EcomCustomerOrderFlowService>();
+  columns.UseStatusOf(flow);
 
-  columns.Add(x => x.Date).AsDate().Width(110);
-  columns.Add(x => x.CounterpartyId)
-    .AsReference<OrgCounterpartyGridService>()
-    .Label(x => x.Counterparty!.Name)
-    .Width(180);
-  columns.Add(x => x.Amount).AsMoney().Sum().Width(130);
-  columns.Add(x => x.Description).Width(240);
+  columns.Add(d => d.Number).Width(120);
+  columns.Add(d => d.Date).Width(115);
+  columns.Add(d => d.Customer).AsReference<OrgCustomerGridService>().Width(220);
+  columns.Add(d => d.Amount).AsMoney().Sum().SelectionSum().Width(130);
+  columns.Add(d => d.Note).Hidden();
 }
 ```
 
 Ключові можливості колонок:
 
-- **Типи відображення:** `.AsDate()`, `.AsDatetime()`, `.AsNumber()`, `.AsMoney()`, `.AsPercent()`, `.AsCheckbox()`, `.AsSelect(options)`, `.AsReference<TGridService>()`, `.AsCover<TFileGrid>()`, `.AsImage()`.
-- **Навігація до форми з комірки:** `.AsOpenForm<TFormService>()` або `.AsOpenForm<TFormService>(x => x.TargetId)` (якщо `TargetId` у рядку дорівнює `null`, клік безпечно ігнорується й ніколи не відкриває чужий запис за ID рядка).
-- **Inline-редагування в таблиці:** `.Editable()` (або `.Editable(() => ...)`), а також `.PickedBy<TSource>(method)` для швидкого вибору значення в комірці через серверний пікер.
-- **Підсумки:** `.Sum()` (рахує загальну суму в БД) та `.SelectionSum(unit)` (рахує суму виділених галочками рядків у клієнті).
-- **Керування сортуванням і фільтрацією:** `.Sortable(false)`, `.Filterable(false)`, `.Hidden()`.
-- **Підказки (`Title`):** `.Title(tooltip)` або двоскладова підказка джерела `.Title(uiSource, dbSource)` при наведенні курсора.
+- **Типи та форматування:** `.AsDate()`, `.AsDatetime()`, `.AsNumber()`, `.AsMoney()`, `.AsPercent()`, `.AsCheckbox()`, `.AsSelect(options)`, `.AsReference<TGridService>()`, `.AsCover<TFileGrid>()`, `.AsImage()`.
+- **Перехід до картки з комірки:** `.AsOpenForm<TFormService>()` або `.AsOpenForm<TFormService>(x => x.TargetId)` (якщо `TargetId == null`, клік безпечно ігнорується).
+- **Редагування в комірці та пікери:** `.Editable()`, `.PickedBy<TSourceGrid>(AttachMethod)`.
+- **Підсумки:** `.Sum()` (агрегат на рівні СУБД у нижньому рядку таблиці) та `.SelectionSum()` (підрахунок виділених рядків у клієнті).
+- **Підказки (`Title`):** `.Title(tooltip)` або двоскладова підказка джерела `.Title(uiSource, dbSource)`.
 
-### 1.2. Навігація, дії та іменовані фільтри (`SetNav`, `SetQuery`)
+### 1.2. Навігація, іменовані фільтри з живими лічильниками та захист видалення (`SetNav`, `SetQuery`, `SetHooks`)
 
-- У `SetNav(Nav nav)` додаються кнопки створення (`nav.AddCreate<TForm>()`), пакетні або одиночні дії (`nav.AddAction(HandleAction).Confirm(...).Ask(...)`), пікери масового підбору (`nav.AddPicker<TSource>(...)`).
-- У `SetQuery(Query query)` задаються базові обмеження, сортування за замовчуванням (`query.DefaultSort(...)`), швидкі вкладки-фільтри (`query.AddFilter(handle, label, predicate)`), підсвічування рядків кольором (`query.Color(...)`) та серверні прапорці доступності кнопок для кожного рядка (`OfferBatchEvaluator`).
+- **Іменовані вкладки та фільтри (`SetQuery`):**
+  ```csharp
+  protected override void SetQuery(Query query)
+  {
+    query.Where(d => d.DocTypeId == EcomData.DocType.CustomerOrderId);
+    query.SortByDescending(d => d.Date).ThenByDescending(d => d.Id);
+
+    query.NamedFilter("stage", "Stage")
+      .Inline()
+      .ShowCounts()
+      .Item("open", "Open", d => d.DocStatusId != CompletedId && d.DocStatusId != CanceledId)
+      .Default()
+      .Color(UiColor.Blue)
+      .Item("completed", "Completed", d => d.DocStatusId == CompletedId)
+      .Color(UiColor.Green)
+      .All("All");
+
+    query.NamedFilter("unpaid", "Unpaid", d => d.PaidAmount < d.Amount)
+      .Color(UiColor.Amber)
+      .ShowCount();
+  }
+  ```
+  - `.Inline()` відображає групу як компактну смугу вкладок безпосередньо в панелі навігації грида (без випадаючого списку).
+  - `.ShowCounts()` (на групі) та `.ShowCount()` (на окремому фільтрі чи елементі) автоматично повертають живі лічильники в `GridPageDto.NamedFilterCounts` (з нульовими витратами, якщо лічильники не увімкнені або запит іде з reference-пікера) і миттєво оновлюють бейджі після мутацій.
+- **Декларативний захист видалення за FK (`SetHooks`):**
+  ```csharp
+  protected override void SetHooks(Hooks hooks)
+  {
+    hooks.AllowMultiDelete();
+    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.BrandId, "Cannot delete brand: it is used by products.");
+  }
+  ```
+  Підтримуються як обов'язкові (`long`), так і необов'язкові (`long?`) зовнішні ключі: платформа перевіряє всі виділені ID одним пакетним `Distinct`-запитом і повертає локалізовану відмову для зайнятих записів.
 
 ### 1.3. Дочірні таблиці та інваріант батьківського скоупу (`SetParent`)
 
-Якщо таблиця є підлеглою (наприклад, рядки замовлення всередині картки замовлення):
-
 ```csharp
-protected override void SetParent(Parent parent)
-{
-  parent.Bind<EcomCustomerOrderFormService, EcomDoc>(x => x.DocId);
-}
+protected override void SetParent(Parent parent) =>
+  parent.Bind<EcomCustomerOrderFormService>(line => line.DocId);
 ```
 
-- **Інваріант безпеки:** У всіх точках входу (`GetDataAsync`, `GetCountAsync`, `ExportAsync`, `SaveCellAsync`, `DeleteAsync`, `ExecuteBatchAsync`, `MoveStatusAsync`, `FileGridService.Upload/Delete`) платформа **першим кроком** викликає `EnsureParentScopeAsync`. Якщо користувач не має доступу до батьківського запису, будь-яке читання, експорт або мутація дочірніх рядків блокується.
+У всіх точках входу (`GetDataAsync`, `ExportAsync`, `SaveCellAsync`, `DeleteAsync`, кастомних діях, `MoveStatusAsync`, `FileGridService`) платформа **першим кроком** викликає `EnsureParentScopeAsync`. Якщо батьківський запис недоступний поточному користувачеві, будь-яке читання або мутація дочірніх рядків блокується.
 
 ---
 
-## 2. Форми та картки записів (`FormService<TEntity>`)
+## 2. Форми, правила та неблокуючі попередження (`FormService<TEntity>`)
 
-`FormService<TEntity>` керує відображенням форми (оверлеєм `Drawer` або `Popover`), підготовкою чернетки (`PrepareDraftAsync`), валідацією та збереженням запису.
+`FormService<TEntity>` керує оверлеєм картки (`OverlayModel.Drawer` за замовчуванням або `OverlayModel.Popover` для компактних форм без дочірніх таблиць), підготовкою чернетки (`PrepareDraftAsync`), правилами валідації та збереженням.
 
-### 2.1. Побудова елементів форми (`SetElements`)
+### 2.1. Елементи форми, `PatchOnSelect` та декларативне `SumTo` (`SetElements`)
 
 ```csharp
 protected override void SetElements(Elements elements)
 {
-  elements.AddRow(row =>
-  {
-    row.Add(x => x.Date).AsDate().Required();
-    row.Add(x => x.CounterpartyId)
-      .AsReference<OrgCounterpartyGridService>()
-      .PatchOnSelect(s => s.Map(c => c.CurrencyId, x => x.CurrencyId))
-      .Required();
-  });
+  elements.Add(d => d.Customer)
+    .AsReference<OrgCustomerGridService>()
+    .PatchOnSelect(d => d.DeliveryTypeId, c => c.DeliveryTypeId)
+    .PatchOnSelect(d => d.PaymentMethodId, c => c.PaymentMethodId)
+    .Required()
+    .Span(6);
 
-  elements.Add(x => x.Description)
-    .DisabledWhen(x => x.StatusId == EcomDocStatus.Completed);
+  elements.Add(d => d.Amount).AsMoney().ServerOwned().Span(3);
 
-  elements.AddChild<EcomCustomerOrderLineGridService>();
+  elements.AddChild<EcomCustomerOrderLineGridService>()
+    .Label("Lines")
+    .SumTo("amount", "amount")
+    .ReadOnlyWhen(d => d.DocStatusId != EcomData.DocStatus.CustomerOrderNewId);
 }
 ```
 
-### 2.2. Як працює `PrepareDraftAsync` та `PatchOnSelect`
+- **`PatchOnSelect`:** під час зміни поля-довідника у формі оновлює залежні поля лише для зміненого тригера (`triggerField`), не перезатираючи інші поля чернетки.
+- **`DisabledWhen` та `VisibleWhen`:** оцінюються на сервері алгоритмом нерухомої точки (fixed-point) — зміна типу чи прапорця в одному збереженні коректно розблоковує або ховає залежні поля, але поле ніколи не може розблокувати саме себе.
+- **`.SumTo(parentField, childColumn)`:** декларативно вказує зв'язок суми дочірніх рядків із полем заголовка як для UI, так і для ШІ-пропозицій `<air_proposal>`.
 
-Коли користувач відкриває форму створення/редагування або змінює значення довідника з `.PatchOnSelect(...)`:
+### 2.2. Правила валідації (`SetRules`) та неблокуючі попередження (`AsWarning`, `Warn`)
 
-1. Форма спершу встановлює `Request`, завантажує батьківський запис і поточну сутність `CurrentEntity` (при редагуванні), і лише потім будує список елементів `EnsureElementsAsync`, щоб умовна логіка (`IsNew`, `CurrentEntity`) працювала зі справжніми даними.
-2. Якщо користувач змінив конкретне поле (`triggerField`), `PatchOnSelect` виконує патч лише для цього поля (включно з легітимним значенням `0`), не перезатираючи інші поля, які користувач уже встиг відредагувати вручну.
-
-### 2.3. Канонічна семантика `DisabledWhen` та `VisibleWhen` при збереженні
-
-Платформа використовує **алгоритм нерухомої точки (fixed-point)** для оцінки `DisabledWhen` на сервері під час збереження (`FormService.Save.cs`):
-
-- **При створенні (`IsNew`):** доступність полів обчислюється на ефективному стані `draft + input`.
-- **При редагуванні (`!IsNew`):** поле `F` вважається захищеним від зміни, якщо воно заблоковане **і** в збереженому стані в БД (`entity`), **і** в ефективному стані після застосування вже прийнятих полів із `input`. При цьому для перевірки самого поля `F` його власне значення завжди береться з БД (`entity`), щоб поле не могло розблокувати саме себе (наприклад, `IsPosted.DisabledWhen(x => x.IsPosted)`).
-- Завдяки цьому легітимні сценарії працюють безвідмовно:
-  1. Якщо зміна `Type: A -> B` в одному збереженні розблоковує обов'язкове поле `ExtraField`, сервер приймає `ExtraField` і валідує його як `Required`.
-  2. Якщо користувач заповнює `Amount` і одночасно ставить галочку `IsLocked = true`, сервер приймає `Amount`, а замок починає діяти з наступного збереження.
-- **Приховані поля (`Hidden` / `VisibleWhen == false`):** автоматично виключаються з перевірки `Required` та обов'язковості посилань на ефективному стані, але їхні збережені в БД значення не затираються.
-
----
-
-## 3. Статусні потоки (`StatusFlowService<TEntity>`)
-
-`StatusFlowService<TEntity>` описує життєвий цикл документа або рядка:
+Поруч із помилками, що блокують збереження (`FormRefusedException`), платформа підтримує **неблокуючі попередження (`MessageType.Warning`)**, які дозволяють зберегти запис і автоматично показують жовтий тост користувачеві (як при збереженні з форми, так і при підтвердженні `<air_proposal>` у чаті ШІ):
 
 ```csharp
-protected override void Configure()
-{
-  Status(x => x.StatusId);
+protected override void SetRules(Rules rules) =>
+  rules.For(e => e.DiscountPercent)
+    .Must(d => d <= 25m)
+    .WithMessage(L["Discount exceeds 25% — verify manager approval."])
+    .AsWarning();
 
-  Transition("Confirm", from: [OrderStatus.New], to: OrderStatus.Confirmed)
-    .Color(UiColor.Emerald)
-    .Guard((order, ct) => order.Total > 0 ? null : L["OrderTotalMustBePositive"])
-    .Effect(async (ctx, order, ct) => { ... });
-}
+protected override void SetHooks(Hooks hooks) =>
+  hooks.BeforeSave(c =>
+  {
+    if (c.Entity.DeliveryDate is { } dd && dd < c.Entity.Date)
+    {
+      c.Warn(L["Delivery date is earlier than the order date."], path: "deliveryDate");
+    }
+  });
 ```
 
-- **Двофазне пакетне виконання (`MoveInternalAsync`):** При переведенні пакета рядків спочатку перевіряються всі `Guards` по всьому пакету. Якщо хоча б один запис не проходить гард, жоден запис у пакеті не змінюється.
-- **Каскадна синхронізація (`ChildFlowRuleBuilder` та `AddFollower`):** Дозволяє автоматично перераховувати статус і суму замовлення при зміні статусів його рядків. Перед завантаженням дочірніх рядків і розрахунком агрегатів (`Sum`, `Cost`, `All`, `Any`) автоматично береться песимістичне блокування батьківського запису (`LockAsync`).
-- **Дерево прав (`RightsTree`):** Використовує `AllTransitions` (повний список переходів сервісу фічі), щоб адміністратор бачив чекбокси прав на кожен перехід статусу в налаштуваннях ролі.
+Всередині `rules.For(...).Custom((val, ctx) => ...)` також доступний метод `ctx.Warn(...)`.
 
 ---
 
-## 4. Звіти (`ReportService`), Екрани (`ScreenService`), Файли (`FileGridService`) та Аудит (`ChangeGridService`)
+## 3. Статусні потоки (`StatusFlowService`)
 
-- **`ReportService<TFilter, TRow>`**: будує аналітичні звіти з панеллю параметрів фільтрації, групуванням, підсумковими рядками, форматуванням дат/грошей та клікабельними рядками для переходу до первинних документів.
-- **`ScreenService`**: дозволяє будувати комбіновані дашборди з KPI-картками, графіками (`ChartService`) та панелями (`PanelLayout`).
-- **`FileGridService<TFile, TParent>`**: готовий сервіс прикріплених файлів із перевіркою MIME-типів за сигнатурами байтів (`FileTypeTable`), генерацією WebP/JPEG прев'ю, обкладинками (`FileCover.Auto`), лімітами розміру/кількості та підписаними посиланнями `FileLinks`.
-- **`ChangeGridService`**: глобальний переглядач журналу аудиту `AppPlatformChange`, який будує покроковий Diff «До / Після» з розшифруванням назв довідників та форматуванням часу у часовому поясі користувача (`User.TimeZone`).
+`StatusFlowService` декларативно описує життєвий цикл документа або рядка, права на переходи та діалоги підтвердження/опитування:
+
+```csharp
+protected override void SetFlow(Flow flow)
+{
+  flow.State(doc => doc.DocStatusId);
+  flow.Status(New, "New", UiColor.Sky);
+  flow.Status(Confirmed, "Confirmed", UiColor.Blue);
+  flow.FinalStatus(Completed, "Completed", UiColor.Green);
+  flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
+  flow.Initial(New);
+}
+
+public Transition Confirm => FromOpen().To(Confirmed).When(HasLines, NoLines).Do(PostAsync);
+
+public Transition Cancel => FromOpen().To(Canceled)
+  .Confirm(Texts.CancelConfirm)
+  .Ask<EcomDocCancelInput>(input => EcomDocActions.AskReason(input, r => r.Reason), note: r => r.Reason)
+  .Do(PostAsync);
+```
+
+- **Атомарність пакета:** якщо хоча б один виділений запис не проходить умову `.When(...)` або додає помилку в `Move.Context`, жоден запис у пакеті не змінює статус.
+- **Каскадні правила та підписники (`ChildRule`, `AddFollower`):** автоматично синхронізують статус і суми батьківського документа під песимістичним блокуванням `LockAsync`.
+- **Інтеграція з `RightsTree`:** кожен публічний перехід автоматично стає окремим правом фічі в дереві налаштування ролей.
+
+---
+
+## 4. Аналітичні звіти (`ReportService`), Комбіновані екрани (`ScreenService`), Файли (`FileGridService`) та Аудит (`ChangeGridService`)
+
+- **`ReportService`:** базовий сервіс інтерактивних аналітичних дашбордів (`GetReportAsync(ReportRequest, CancellationToken)` -> `ReportDataDto`), який підтримує групи швидких фільтрів (`FilterGroups`), картки KPI (`Kpis`), стовпчикові/лінійні/кругові діаграми (`Charts`) та деталізовану таблицю (`Table`) з клікабельним відкриттям картки документа (`RowDto.Open`). Див. еталон `EcomSalesReportService` у `demo/`.
+- **`ScreenService` та мультипанельні робочі місця (`PanelLayout.Screen<TService>`):** дозволяє компонувати кілька повноцінних екранів платформи (наприклад, реєстр замовлень поруч із залишками складу або звітом) без жодного рядка кастомного фронтенд-коду:
+  ```csharp
+  public override Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
+    Task.FromResult(new ScreenDto
+    {
+      Layout = PanelLayout.Row(servicePath)
+        .Screen<EcomCustomerOrderGridService>("orders", p => p.Label(L["Customer Orders"]).Fill().Min(520))
+        .Screen<EcomStockBalanceGridService>("stock", p => p.Label(L["Stock Balances"]).Size(480).Resizable().Collapsible())
+        .Build()
+    });
+  ```
+  Кожна вбудована панель рендериться компонентом `PanelScreenComponent` із незалежною навігацією та реактивним оновленням, а `PlatformValidator` на старті перевіряє всі вкладені сервіси на вертикальну ізоляцію модулів (ADR #8).
+- **`FileGridService<TFile, TParent>`:** вбудований сервіс файлів із перевіркою сигнатур байтів, генерацією прев'ю, обкладинками (`IHasCoverFile`) та підписаними URL `FileLinks`.
+- **`ChangeGridService`:** глобальний переглядач історії `AppPlatformChange` із розшифруванням назв довідників і часовим поясом користувача.
 
 ---
 
@@ -138,27 +188,16 @@ protected override void Configure()
 
 Бібліотека `air-ui/` побудована на **Angular 22+ Standalone Components**, **Signals (`signal`, `computed`, `linkedSignal`)** та **Tailwind CSS v4** зі суворою типізацією (`"strict": true`).
 
-- **Динамічна диспетчеризація (`UI_COMPONENTS`):** Бекенд повертає дерево панелей і моделей (`GridModel`, `FormModel`, `ReportModel`, `NavModel`), а `@air/ui` автоматично резолвить відповідні компоненти за полем `kind`.
-- **Синхронізація контрактів (`make contracts`):** Усі DTO в `Air.Api` та `Air.App`, позначені атрибутом `[UiContract]`, автоматично експортуються у `air-ui/src/core/generated/contracts.ts`, `endpoints.ts` та `ui-texts.json`. Жодні інтерфейси бекенду чи тексти локалізації не дублюються вручну на фронтенді.
+- **Динамічне дерево компонентів (`UI_COMPONENTS`):** рендерить `Grid`, `Form`, `Report`, `PanelScreen`, `Nav` та елементи керування виключно за серверними моделями `kind` на семантичних CSS-токенах теми (`bg-surface`, `bg-field`, `border-line`, `text-ink`) без жодних сирих палітрових чи `dark:*` класів.
+- **Єдине джерело контрактів (`make contracts`):** CLI `Air.UiContracts` експортує всі `[UiContract]` DTO та ключі локалізації у `air-ui/src/core/generated/contracts.ts` та `ui-texts.json` (перевіряється в `make contracts-check` під час `make gate`).
 
 ---
 
 ## 6. Вбудований ШІ-асистент (`Air.Agent` та `Air.Mcp`)
 
-ШІ-асистент працює повністю на основі метаданих платформи й не містить жодної специфіки конкретних застосунків:
+ШІ-асистент підключається одним рядком `.AddAirAgent()` у `PlatformHostOptions` і керується виключно метаданими платформи:
 
-1. **Гранулярний доступ (`AgentAccess`):** Додайте `.AllowAgent()` (`AgentAccess.ReadWrite`, за замовчуванням) або `.AllowAgent(AgentAccess.Read)` до фічі в описі модуля (зокрема на звітах `ReportService`, які мають потрапляти в аналітичний контекст ШІ):
-   ```csharp
-   public static readonly Feature Order = new Feature(Handle, nameof(Order)).AllowAgent();
-   public static readonly Feature SalesReport = new Feature(Handle, nameof(SalesReport)).AllowAgent(AgentAccess.Read);
-   ```
-2. **Як формується контекст та предметні знання (`AgentContextQueryService` / `AgentMemoryCatalog`):**
-   - Реєстр `AgentFeatureRegistry` знаходить фічі за рівнем `AgentAccess`: читання таблиць і звітів вимагає `AllowsAgent` + `CanView`, а генерація та виконання мутацій через форми — `AllowsAgentWrite` + `CanEdit`.
-   - Модулі реєструють свої предметні правила адитивно без обрізання через `AgentMemoryCatalog.RegisterDomainKnowledge(moduleHandle, title, content)` (або `options.AddDomainKnowledge(...)` у `AddAirAgent`).
-   - Невеликі довідники (`<= 50` записів) підвантажуються в контекст одразу, а великі (`> 50` записів) опитуються через серверний пошук або вбудовані MCP-інструменти (`POST /api/mcp`: `air_catalog_list`, `air_catalog_describe`, `air_records_query`, `air_proposal_stage`).
-3. **Картки пропозицій `<air_proposal>` та декларативне підсумовування (`SumTo`):**
-   - Коли користувач просить створити або змінити запис (чи розпізнати прикріплене зображення або документ), ШІ формує картку `<air_proposal>` (напряму або через `air_proposal_stage`), а якщо дочірня таблиця оголосила `.AddChild<TLineGrid>().SumTo("total", "amount")`, сума батьківського документа перераховується декларативно за метаданими форми.
-   - Запис у БД відбувається **виключно після натискання кнопки підтвердження користувачем** через стандартний `FormService.SaveAsync`.
-4. **Сувора ізоляція процесу, пам'яті та сесій (`TenantId`, `UserId`, `SessionId`):**
-   - CLI-провайдери отримують промпт виключно через `stdin`, працюють в очищеному списку змінних оточення та одноразовій директорії ходу з правами `0700`, а виклики Loopback MCP прив'язані до криптографічного токена поточного ходу й сесії.
-   - Пам'ять `AppAgentMemory` ізольована на рівні глобального фільтра та конвенцій запису `PlatformDbContext` за `(TenantId, UserId)`: глобальні правила/зерна (`TenantId == null`), спільні правила тенанта (`Kind == "Rule"`, `UserId == null`) та приватні нотатки користувача (`Preference` / `Fact`, `UserId == currentUserId`).
+1. **Гранулярний доступ (`AgentAccess`):** `.AllowAgent()` вмикає читання й підготовку змін (`AgentAccess.ReadWrite`), а `.AllowAgent(AgentAccess.Read)` відкриває таблицю або `ReportService` лише для читання й аналітики з урахуванням прав поточного користувача (`CanView` / `CanEdit`).
+2. **Модульна база знань (`AgentMemoryCatalog.RegisterDomainKnowledge`):** кожен модуль реєструє свої бізнес-правила у `ConfigureServices`, які автоматично сідяться в `AppAgentMemory` й додаються в системний контекст без обрізання.
+3. **Картки `<air_proposal>`, довідники та попередження:** малі довідники (`<= 50` записів) підвантажуються одразу, більші опитуються через серверний пошук та вбудовані MCP-інструменти (`POST /api/mcp`: `air_catalog_list`, `air_catalog_describe`, `air_records_query`, `air_proposal_stage`). При підтвердженні `<air_proposal>` `AgentProposalExecutor` виконує стандартний `FormService.SaveAsync` в атомарній транзакції й прокидає всі неблокуючі попередження (`AgentCommitResultDto.Warnings`) у клієнтський `AlertService`.
+4. **Безпека та ізоляція:** CLI-провайдери отримують промпт через `stdin` у тимчасовій директорії `0700` з очищеним оточенням і одноразовим криптографічним токеном ходу, а пам'ять і сесії чату суворо ізольовані за `(TenantId, UserId)`.

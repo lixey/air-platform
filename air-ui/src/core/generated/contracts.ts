@@ -238,6 +238,7 @@ export interface Page<TRow = unknown> {
 export interface GridPageDto<TRow = RowDto> extends Page<TRow> {
   bottomRows?: TRow[] | null;
   forms?: Record<string, OverlayDto> | null;
+  namedFilterCounts?: Record<string, number> | null;
   topRows?: TRow[] | null;
 }
 
@@ -305,6 +306,7 @@ export interface PanelKinds {
   Nav: NavModel;
   OverlayConfirm: OverlayConfirmModel;
   OverlayDirty: OverlayDirtyModel;
+  PanelScreen: PanelScreenModel;
   Report: ReportModel;
 }
 
@@ -441,6 +443,7 @@ export interface AgentCommitResultDto {
   alsoCommitted?: AgentCommitResultDto[] | null;
   runId?: string | null;
   batchCode?: string | null;
+  warnings?: MessageDto[] | null;
 }
 
 export interface AgentModelDto {
@@ -1131,6 +1134,7 @@ export interface GridNavNamedFilterGroupModel extends NavButtonModel {
   kind: 'GridNavNamedFilterGroup';
   items: GridNavNamedFilterModel[];
   isRemembered?: boolean;
+  isInline?: boolean;
 }
 
 export interface GridNavNamedFilterModel extends NavButtonModel {
@@ -1436,6 +1440,11 @@ export interface PanelNodeDto {
   pageUnderHeight?: number | null;
   direction?: PanelDirection | null;
   children?: PanelNodeDto[] | null;
+}
+
+export interface PanelScreenModel {
+  kind: 'PanelScreen';
+  service: string;
 }
 
 export interface PickedValue {

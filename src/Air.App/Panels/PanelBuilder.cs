@@ -13,6 +13,21 @@ public sealed class PanelBuilder
     return this;
   }
 
+  public PanelBuilder Screen<TService>() where TService : class, IPlatformService
+  {
+    Node.EmbeddedServiceType = typeof(TService);
+    Node.Model = new PanelScreenModel { Service = ServicePathResolver.Resolve(typeof(TService)) };
+    return this;
+  }
+
+  public PanelBuilder Screen<TService>(string key, Action<PanelBuilder>? configure = null)
+    where TService : class, IPlatformService =>
+    Panel(key, p =>
+    {
+      p.Screen<TService>();
+      configure?.Invoke(p);
+    });
+
   public PanelBuilder Label(string label)
   {
     Node.Label = label;

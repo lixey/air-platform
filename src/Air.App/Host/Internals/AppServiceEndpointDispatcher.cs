@@ -91,7 +91,13 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        return Results.Ok(await screenService.BuildScreenAsync(serviceName, ct));
+        var screen = await screenService.BuildScreenAsync(serviceName, ct);
+        ScreenService.EnforceAndFilterScreen(
+          serviceType,
+          screen,
+          userContext,
+          services.GetService<ModuleCatalog>() ?? ModuleCatalog.Instance);
+        return Results.Ok(screen);
       }
 
       return await DispatchCustomServiceMethodAsync(serviceType, screenService, method, feat, httpRequest, services, ct);

@@ -26,19 +26,7 @@ public sealed class OrgCustomerGridService(OrgDbContext db, OrgService? org = nu
     query.SearchBy(r => r.Id, r => r.Name, r => r.Phone);
   }
 
-  protected override void SetHooks(Hooks hooks)
-  {
-    var inUse = L["The customer has a counterparty and cannot be deleted."];
-    hooks.BeforeDelete(async (c, cancellationToken) =>
-    {
-      var selected = c.Records.Select(r => (long?)r.Id).ToList();
-      var used = await db.OrgCounterparty.Where(counterparty => selected.Contains(counterparty.CustomerId))
-        .Select(counterparty => counterparty.CustomerId!.Value).Distinct().ToListAsync(cancellationToken);
-      foreach (var id in used)
-      {
-        c.AddError("customer.used", inUse, id);
-      }
-    });
-  }
+  protected override void SetHooks(Hooks hooks) =>
+    hooks.PreventDeleteWhenUsedBy<OrgCounterparty>(c => c.CustomerId, "The customer has a counterparty and cannot be deleted.");
 }
 

@@ -733,6 +733,14 @@ export class AgentService {
   }
 
   private applyCommitResult(result: AgentCommitResultDto): void {
+    if (result.warnings?.length) {
+      this.alert.warnings(result.warnings, result.recordLabel);
+    }
+    for (const extra of result.alsoCommitted ?? []) {
+      if (extra.warnings?.length) {
+        this.alert.warnings(extra.warnings, extra.recordLabel);
+      }
+    }
     this.messages.update(list =>
       list.map(m => ({
         ...m,

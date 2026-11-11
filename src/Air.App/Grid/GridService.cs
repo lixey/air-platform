@@ -54,7 +54,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return _cachedHooks;
     }
 
-    var hooks = new Hooks();
+    var hooks = new Hooks(Feature.Module);
     SetHooks(hooks);
     return _cachedHooks = hooks;
   }
@@ -495,6 +495,25 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       {
         throw new InvalidOperationException(
           $"Grid '{GetType().FullName}' cannot call UseActionsOf<{formType.Name}>() because entity type '{formEntityType?.Name}' does not match '{typeof(TEntity).Name}'.");
+      }
+    }
+
+    var hooks = GetHooks();
+    if (hooks.DependentEntityTypes.Count > 0)
+    {
+      var dbType = ModuleCatalog.GetServiceDbContextType(GetType());
+      if (dbType != null && dbType != typeof(PlatformDbContext))
+      {
+        var dbProps = dbType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        foreach (var depType in hooks.DependentEntityTypes)
+        {
+          var expectedSetType = typeof(DbSet<>).MakeGenericType(depType);
+          if (!dbProps.Any(p => p.PropertyType == expectedSetType))
+          {
+            throw new InvalidOperationException(
+              $"Grid '{GetType().FullName}' registers PreventDeleteWhenUsedBy<{depType.Name}>(), but DbContext '{dbType.Name}' does not expose 'DbSet<{depType.Name}>'. Add 'public DbSet<{depType.Name}> ... => Set<{depType.Name}>();' to '{dbType.Name}'.");
+          }
+        }
       }
     }
   }

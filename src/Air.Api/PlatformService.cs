@@ -9,7 +9,7 @@ public abstract class PlatformService(PlatformAppService? app = null) : IPlatfor
   protected IUserContext? User => PlatformApp?.User;
   protected ITenantContext? TenantContext => PlatformApp?.Tenant;
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
-  protected ILocalizer L => Localizer.Instance;
+  protected ILocalizer L => Localizer.Instance.For(Feature?.Module);
 
   public abstract Feature Feature { get; }
 

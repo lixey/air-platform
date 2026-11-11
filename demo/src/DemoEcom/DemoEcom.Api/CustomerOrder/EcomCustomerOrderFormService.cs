@@ -44,8 +44,20 @@ public sealed class EcomCustomerOrderFormService(
     elements.Add(e => e.CounterpartyId).AsReference<OrgCounterpartyGridService>().Span(12);
     elements.Add(e => e.Note).AsTextarea().Span(12);
 
-    elements.AddChild<EcomCustomerOrderLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomCustomerOrderLineGridService>().Key("lines").Label("Lines").SumTo("amount", "amount");
     elements.AddChild<EcomCustomerOrderFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomCustomerOrderHistoryGridService>().Key("history").Label("History");
+  }
+
+  protected override void SetHooks(Hooks hooks)
+  {
+    base.SetHooks(hooks);
+    hooks.BeforeSave(c =>
+    {
+      if (c.Entity.DueDate.HasValue && c.Entity.DueDate.Value < c.Entity.Date)
+      {
+        c.Warn(L["Due date is earlier than the order date."], path: "dueDate");
+      }
+    });
   }
 }

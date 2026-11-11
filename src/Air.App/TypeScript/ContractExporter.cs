@@ -195,6 +195,7 @@ public static class ContractExporter
     sb.AppendLine("export interface GridPageDto<TRow = RowDto> extends Page<TRow> {");
     sb.AppendLine("  bottomRows?: TRow[] | null;");
     sb.AppendLine("  forms?: Record<string, OverlayDto> | null;");
+    sb.AppendLine("  namedFilterCounts?: Record<string, number> | null;");
     sb.AppendLine("  topRows?: TRow[] | null;");
     sb.AppendLine("}");
     sb.AppendLine();

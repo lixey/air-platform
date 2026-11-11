@@ -342,6 +342,12 @@ public abstract partial class GridService<TEntity, TRow>
       return this;
     }
 
+    public GridNamedFilterBuilder ShowCount(bool show = true)
+    {
+      item.IsCountShown = show;
+      return this;
+    }
+
     public GridNamedFilterBuilder Title(string title)
     {
       item.Title = title;
@@ -356,13 +362,13 @@ public abstract partial class GridService<TEntity, TRow>
   {
     public GridNamedFilterGroupBuilder Item(string key, string label, Expression<Func<TEntity, bool>> predicate)
     {
-      group.Items.Add(new NamedFilterItem($"{group.Key}.{key}", label, predicate));
+      group.Items.Add(new NamedFilterItem($"{group.Key}.{key}", label, predicate) { IsCountShown = group.IsCountShown });
       return this;
     }
 
     public GridNamedFilterGroupBuilder All(string label)
     {
-      group.Items.Add(new NamedFilterItem($"{group.Key}.all", label, null));
+      group.Items.Add(new NamedFilterItem($"{group.Key}.all", label, null) { IsCountShown = group.IsCountShown });
       return this;
     }
 
@@ -399,6 +405,37 @@ public abstract partial class GridService<TEntity, TRow>
     public GridNamedFilterGroupBuilder Title(string uiSource, string dbSource) =>
       Title(Feature.FormatSourceTitle(uiSource, dbSource));
 
+    public GridNamedFilterGroupBuilder ShowCount(bool show = true)
+    {
+      if (group.Items.Count > 0)
+      {
+        group.Items[^1].IsCountShown = show;
+      }
+      else
+      {
+        group.IsCountShown = show;
+      }
+
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder ShowCounts(bool show = true)
+    {
+      group.IsCountShown = show;
+      foreach (var item in group.Items)
+      {
+        item.IsCountShown = show;
+      }
+
+      return this;
+    }
+
+    public GridNamedFilterGroupBuilder Inline(bool inline = true)
+    {
+      group.IsInline = inline;
+      return this;
+    }
+
     public GridNamedFilterGroupBuilder Remember(bool remember = true)
     {
       group.IsRemembered = remember;
@@ -413,6 +450,7 @@ public abstract partial class GridService<TEntity, TRow>
     public Expression<Func<TEntity, bool>>? Predicate { get; } = predicate;
     public bool IsRemembered { get; set; }
     public bool IsDefault { get; set; }
+    public bool IsCountShown { get; set; }
     public string? Color { get; set; }
     public string? Title { get; set; }
   }
@@ -422,6 +460,8 @@ public abstract partial class GridService<TEntity, TRow>
     public string Key { get; } = key;
     public string? Label { get; } = label;
     public bool IsRemembered { get; set; }
+    public bool IsCountShown { get; set; }
+    public bool IsInline { get; set; }
     public List<NamedFilterItem> Items { get; } = [];
   }
 
@@ -543,13 +583,89 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  public sealed class Hooks
+  public sealed class Hooks(string? moduleHandle = null)
   {
     internal bool IsMultiDeleteAllowed { get; private set; }
+    internal List<Type> DependentEntityTypes { get; } = [];
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
     internal List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
 
     public void AllowMultiDelete(bool allow = true) => IsMultiDeleteAllowed = allow;
+
+    public void PreventDeleteWhenUsedBy<TDependent>(
+      Expression<Func<TDependent, long>> foreignKey,
+      string? message = null)
+      where TDependent : class
+    {
+      ArgumentNullException.ThrowIfNull(foreignKey);
+      DependentEntityTypes.Add(typeof(TDependent));
+      BeforeDeleteActions.Add(async (c, ct) =>
+      {
+        if (c.Db is null || c.Records.IsEmpty)
+        {
+          return;
+        }
+
+        var ids = c.Records.Select(r => r.Id).Distinct().ToArray();
+        var query = c.Db.Set<TDependent>()
+          .AsNoTracking()
+          .Select(foreignKey)
+          .Where(fk => ids.Contains(fk))
+          .Distinct();
+        var usedIds = query is IAsyncEnumerable<long>
+          ? await query.ToListAsync(ct)
+          : query.ToList();
+        RefuseUsedRecords(c, usedIds, message);
+      });
+    }
+
+    public void PreventDeleteWhenUsedBy<TDependent>(
+      Expression<Func<TDependent, long?>> foreignKey,
+      string? message = null)
+      where TDependent : class
+    {
+      ArgumentNullException.ThrowIfNull(foreignKey);
+      DependentEntityTypes.Add(typeof(TDependent));
+      BeforeDeleteActions.Add(async (c, ct) =>
+      {
+        if (c.Db is null || c.Records.IsEmpty)
+        {
+          return;
+        }
+
+        var ids = c.Records.Select(r => r.Id).Distinct().ToArray();
+        var query = c.Db.Set<TDependent>()
+          .AsNoTracking()
+          .Select(foreignKey)
+          .Where(fk => fk.HasValue && ids.Contains(fk.Value))
+          .Select(fk => fk!.Value)
+          .Distinct();
+        var usedIds = query is IAsyncEnumerable<long>
+          ? await query.ToListAsync(ct)
+          : query.ToList();
+        RefuseUsedRecords(c, usedIds, message);
+      });
+    }
+
+    private void RefuseUsedRecords(GridDeleteContext<TEntity> context, List<long> usedIds, string? message)
+    {
+      if (usedIds.Count == 0)
+      {
+        return;
+      }
+
+      var loc = !string.IsNullOrEmpty(moduleHandle)
+        ? Localizer.Instance.For(moduleHandle)
+        : Localizer.Instance;
+      var text = !string.IsNullOrEmpty(message) ? loc[message] : loc["DeleteRefusedInUse"];
+      foreach (var usedId in usedIds)
+      {
+        if (!context.Errors.Any(e => e.RecordId == usedId && string.Equals(e.Title, text, StringComparison.Ordinal)))
+        {
+          context.Refuse(text, usedId);
+        }
+      }
+    }
 
     public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>

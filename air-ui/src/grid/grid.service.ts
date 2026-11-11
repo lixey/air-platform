@@ -566,6 +566,12 @@ export class GridService {
     return this.named.isOn(key);
   }
 
+  /** The live row count the last page answered for a named filter key; `null` when none was reported. */
+  namedFilterCountOf(key: string): number | null {
+    const count = this.data()?.namedFilterCounts?.[key];
+    return typeof count === 'number' ? count : null;
+  }
+
   /**
    * Presses a toggle, which flips it, or an item, which takes its group's place; a press of the chosen item changes
    * nothing and asks nothing. The general filters stay as they are.
@@ -737,7 +743,12 @@ export class GridService {
     } else {
       this.selection.retain(answer.rows);
     }
-    this._data.set(answer);
+    const prevCounts = untracked(this.data)?.namedFilterCounts;
+    this._data.set(
+      answer.page > 1 && answer.namedFilterCounts === undefined && prevCounts !== undefined
+        ? { ...answer, namedFilterCounts: prevCounts }
+        : answer,
+    );
     this.changes.settle(answer.rows, untracked(this.tableColumns));
     this._page.set(answer.page);
     if (typeof answer.total === 'number') {
@@ -765,7 +776,9 @@ export class GridService {
       accepts: event => {
         const model = untracked(this.model);
         return (
-          !!model && (event.operation === 'save' ? untracked(() => this.forms.follows(event.service)) : event.service === model.service)
+          !!model &&
+          ((event.operation === 'save' ? untracked(() => this.forms.follows(event.service)) : event.service === model.service) ||
+            !!event.affected?.some(a => a.service === model.service))
         );
       },
       refresh: event => {

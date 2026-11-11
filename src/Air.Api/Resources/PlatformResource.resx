@@ -1348,4 +1348,7 @@
   <data name="AgentErrorTurnTimeout" xml:space="preserve">
     <value>The AI assistant timed out before completing the response.</value>
   </data>
+  <data name="DeleteRefusedInUse" xml:space="preserve">
+    <value>Record cannot be deleted because it is used in other records.</value>
+  </data>
 </root>

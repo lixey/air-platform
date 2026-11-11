@@ -37,5 +37,12 @@ public sealed class PanelLayoutBuilder
 
   public PanelLayoutBuilder Panel(string key, PanelModel model) => Panel(key, p => p.Model(model));
 
+  public PanelLayoutBuilder Screen<TService>(string key, Action<PanelBuilder>? configure = null)
+    where TService : class, IPlatformService
+  {
+    _root.Screen<TService>(key, configure);
+    return this;
+  }
+
   public PanelLayoutDto Build() => _layout;
 }

@@ -574,4 +574,49 @@
   <data name="Source warehouse and target warehouse must be different." xml:space="preserve">
     <value>Склад-відправник і склад-отримувач мають відрізнятися.</value>
   </data>
+  <data name="Sales Workspace" xml:space="preserve">
+    <value>Робоче місце продажів</value>
+  </data>
+  <data name="Sales Analytics" xml:space="preserve">
+    <value>Аналітика продажів</value>
+  </data>
+  <data name="Period" xml:space="preserve">
+    <value>Період</value>
+  </data>
+  <data name="30 days" xml:space="preserve">
+    <value>30 днів</value>
+  </data>
+  <data name="90 days" xml:space="preserve">
+    <value>90 днів</value>
+  </data>
+  <data name="This year" xml:space="preserve">
+    <value>Цей рік</value>
+  </data>
+  <data name="12 months" xml:space="preserve">
+    <value>12 місяців</value>
+  </data>
+  <data name="Currency" xml:space="preserve">
+    <value>Валюта</value>
+  </data>
+  <data name="Revenue" xml:space="preserve">
+    <value>Виручка</value>
+  </data>
+  <data name="Collection rate" xml:space="preserve">
+    <value>Рівень оплат</value>
+  </data>
+  <data name="Monthly sales &amp; payments" xml:space="preserve">
+    <value>Продажі та оплати за місяцями</value>
+  </data>
+  <data name="Orders by status" xml:space="preserve">
+    <value>Замовлення за статусами</value>
+  </data>
+  <data name="Recent customer orders" xml:space="preserve">
+    <value>Останні замовлення клієнтів</value>
+  </data>
+  <data name="Due date is earlier than the order date." xml:space="preserve">
+    <value>Бажана дата виконання раніша за дату замовлення.</value>
+  </data>
+  <data name="Discount exceeds 25% — verify manager approval." xml:space="preserve">
+    <value>Знижка перевищує 25% — перевірте погодження керівника.</value>
+  </data>
 </root>

@@ -244,21 +244,85 @@ public sealed class ModuleCatalog
     serviceType is null
       ? null
       : ServiceDbContextCache.GetOrAdd(serviceType, static t =>
-        t.GetConstructors()
+      {
+        var ctorParams = t.GetConstructors()
           .FirstOrDefault()
-          ?.GetParameters()
-          .Select(p => p.ParameterType)
-          .FirstOrDefault(pt => typeof(PlatformDbContext).IsAssignableFrom(pt)));
+          ?.GetParameters();
+        if (ctorParams is null)
+        {
+          return null;
+        }
 
-  public static void EnsureModuleServiceAccessAllowed(Type sourceServiceType, Type? targetServiceType, string context)
+        foreach (var p in ctorParams)
+        {
+          if (typeof(PlatformDbContext).IsAssignableFrom(p.ParameterType))
+          {
+            return p.ParameterType;
+          }
+        }
+
+        foreach (var p in ctorParams)
+        {
+          if (p.ParameterType != typeof(PlatformAppService) &&
+              typeof(PlatformAppService).IsAssignableFrom(p.ParameterType))
+          {
+            var appCtorParams = p.ParameterType.GetConstructors().FirstOrDefault()?.GetParameters();
+            var appDb = appCtorParams?.FirstOrDefault(ap => typeof(PlatformDbContext).IsAssignableFrom(ap.ParameterType))?.ParameterType;
+            if (appDb is not null)
+            {
+              return appDb;
+            }
+          }
+        }
+
+        return null;
+      });
+
+  private Type? ResolveModuleDbContextType(Type? serviceType)
+  {
+    var moduleHandle = FindFeature(serviceType)?.Module;
+    if (string.IsNullOrEmpty(moduleHandle))
+    {
+      return null;
+    }
+
+    Type? resolved = null;
+    foreach (var (st, feat) in _featuresByServiceType)
+    {
+      if (!string.Equals(feat.Module, moduleHandle, StringComparison.OrdinalIgnoreCase))
+      {
+        continue;
+      }
+
+      var candidate = GetServiceDbContextType(st);
+      if (candidate is null || candidate == typeof(PlatformDbContext))
+      {
+        continue;
+      }
+
+      if (resolved is null || resolved.IsAssignableFrom(candidate))
+      {
+        resolved = candidate;
+      }
+    }
+
+    return resolved;
+  }
+
+  public static void EnsureModuleServiceAccessAllowed(
+    Type sourceServiceType,
+    Type? targetServiceType,
+    string context,
+    ModuleCatalog? catalog = null)
   {
     if (targetServiceType is null)
     {
       return;
     }
 
-    var sourceDbType = GetServiceDbContextType(sourceServiceType);
-    var targetDbType = GetServiceDbContextType(targetServiceType);
+    var activeCatalog = catalog ?? Instance;
+    var sourceDbType = GetServiceDbContextType(sourceServiceType) ?? activeCatalog.ResolveModuleDbContextType(sourceServiceType);
+    var targetDbType = GetServiceDbContextType(targetServiceType) ?? activeCatalog.ResolveModuleDbContextType(targetServiceType);
     if (sourceDbType is not null &&
         targetDbType is not null &&
         sourceDbType != typeof(PlatformDbContext) &&

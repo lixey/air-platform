@@ -7,7 +7,6 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
   private readonly List<MutationError> _errors = [];
   private readonly List<MutationError> _warnings = [];
   private readonly Func<CancellationToken, Task>? _flusher;
-  private readonly PlatformDbContext? _db;
 
   protected GridSelectionContext(
     IEnumerable<long> selectedIds,
@@ -18,12 +17,14 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
     SelectedIds = selectedIds.Distinct().ToImmutableArray();
     Records = records.ToImmutableArray();
     _flusher = flusher;
-    _db = db;
+    Db = db;
   }
 
   public ImmutableArray<long> SelectedIds { get; }
 
   public ImmutableArray<TEntity> Records { get; }
+
+  internal PlatformDbContext? Db { get; }
 
   public IReadOnlyList<MutationError> Errors => _errors;
 
@@ -46,8 +47,8 @@ public abstract class GridSelectionContext<TEntity> : IMutationContext where TEn
     _flusher != null ? _flusher(cancellationToken) : Task.CompletedTask;
 
   public Task LockAsync<TLocked>(CancellationToken cancellationToken, params long[] key) where TLocked : class =>
-    MutationContext.AcquireLocksAsync(_db, typeof(TLocked), [key], cancellationToken);
+    MutationContext.AcquireLocksAsync(Db, typeof(TLocked), [key], cancellationToken);
 
   public Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
-    MutationContext.AcquireLocksAsync(_db, typeof(TLocked), keys, cancellationToken);
+    MutationContext.AcquireLocksAsync(Db, typeof(TLocked), keys, cancellationToken);
 }

@@ -16,19 +16,7 @@ public sealed class OrgProductCategoryGridService(OrgDbContext db, OrgService? o
 
   protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks)
-  {
-    var inUse = L["The product category is used by products and cannot be deleted."];
-    hooks.BeforeDelete(async (c, cancellationToken) =>
-    {
-      var selected = c.Records.Select(r => (long?)r.Id).ToList();
-      var used = await db.OrgProduct.Where(product => selected.Contains(product.CategoryId))
-        .Select(product => product.CategoryId!.Value).Distinct().ToListAsync(cancellationToken);
-      foreach (var id in used)
-      {
-        c.AddError("category.used", inUse, id);
-      }
-    });
-  }
+  protected override void SetHooks(Hooks hooks) =>
+    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.CategoryId, "The product category is used by products and cannot be deleted.");
 }
 

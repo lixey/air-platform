@@ -21,18 +21,9 @@ public sealed class OrgOrganizationGridService(OrgDbContext db, OrgService? org 
 
   protected override void SetHooks(Hooks hooks)
   {
-    var inUse = L["The organization has warehouses or money accounts and cannot be deleted."];
-    hooks.BeforeDelete(async (c, cancellationToken) =>
-    {
-      var selected = c.Records.Select(r => r.Id).ToList();
-      var used = await db.OrgWarehouse.Where(w => selected.Contains(w.OrganizationId)).Select(w => w.OrganizationId)
-        .Union(db.OrgMoneyAccount.Where(a => selected.Contains(a.OrganizationId)).Select(a => a.OrganizationId))
-        .ToListAsync(cancellationToken);
-      foreach (var id in used)
-      {
-        c.AddError("organization.used", inUse, id);
-      }
-    });
+    const string inUse = "The organization has warehouses or money accounts and cannot be deleted.";
+    hooks.PreventDeleteWhenUsedBy<OrgWarehouse>(w => w.OrganizationId, inUse);
+    hooks.PreventDeleteWhenUsedBy<OrgMoneyAccount>(a => a.OrganizationId, inUse);
   }
 }
 

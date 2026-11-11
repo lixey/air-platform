@@ -16,4 +16,7 @@ public class RuleContext<TEntity>
       Code = code,
       Type = MessageType.Error
     });
+
+  public void Warn(string message, string? path = null, string? code = null) =>
+    SaveContext.Warn(message, code, path: path ?? CurrentPath);
 }

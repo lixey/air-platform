@@ -22,19 +22,7 @@ public sealed class OrgCounterpartyGridService(OrgDbContext db, OrgService? org 
 
   protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks)
-  {
-    var inUse = L["The counterparty supplies products and cannot be deleted."];
-    hooks.BeforeDelete(async (c, cancellationToken) =>
-    {
-      var selected = c.Records.Select(r => r.Id).ToList();
-      var used = await db.OrgProduct.Where(product => selected.Contains(product.SupplierId))
-        .Select(product => product.SupplierId).Distinct().ToListAsync(cancellationToken);
-      foreach (var id in used)
-      {
-        c.AddError("counterparty.used", inUse, id);
-      }
-    });
-  }
+  protected override void SetHooks(Hooks hooks) =>
+    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.SupplierId, "The counterparty supplies products and cannot be deleted.");
 }
 

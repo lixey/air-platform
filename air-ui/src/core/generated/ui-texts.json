@@ -294,6 +294,7 @@
   "Pages": "Pages",
   "ChoosePeriodOf": "Choose the period of {0}",
   "Logout": "Logout",
+  "DeleteRefusedInUse": "Record cannot be deleted because it is used in other records.",
   "FileUnavailable": "The selected file is unavailable.",
   "FilePixelsRefused": "The image is larger than {0} megapixels.",
   "Content Type": "Content Type",

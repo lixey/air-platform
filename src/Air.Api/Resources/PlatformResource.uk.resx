@@ -1351,4 +1351,7 @@
   <data name="AgentErrorTurnTimeout" xml:space="preserve">
     <value>Час очікування відповіді ШІ-асистента вичерпано.</value>
   </data>
+  <data name="DeleteRefusedInUse" xml:space="preserve">
+    <value>Запис неможливо видалити, оскільки він використовується в інших записах.</value>
+  </data>
 </root>

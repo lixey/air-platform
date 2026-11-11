@@ -10,6 +10,9 @@
     <ProjectReference Include="..\..\src\Air.Data\Air.Data.csproj" />
     <ProjectReference Include="..\..\src\Air.Api\Air.Api.csproj" />
     <ProjectReference Include="..\..\src\Air.App\Air.App.csproj" />
+    <ProjectReference Include="..\..\demo\src\DemoApp\DemoApp.Api\DemoApp.Api.csproj" />
+    <ProjectReference Include="..\..\demo\src\DemoOrg\DemoOrg.Api\DemoOrg.Api.csproj" />
+    <ProjectReference Include="..\..\demo\src\DemoEcom\DemoEcom.Api\DemoEcom.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
