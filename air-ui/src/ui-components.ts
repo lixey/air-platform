@@ -1,4 +1,4 @@
-import type { AgentBlockOverlayModel } from './agent/agent-blocks.component';
+import type { AgentBlockOverlayModel } from './agent/agent-block-overlay.model';
 import { defineComponents } from './core/dynamic-component/component-map';
 import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
 import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
@@ -220,8 +220,8 @@ export type ClientKind = keyof ClientPanelKinds | keyof ClientHeaderKinds;
 /** Every kind the library draws, the platform's and its own, each under the component named after it. */
 export const UI_COMPONENTS = defineComponents({
   LayoutMenu: LayoutMenuComponent,
-  LayoutAgent: () => import('./layout/layout-agent.component').then(m => m.LayoutAgentComponent),
-  AgentBlockOverlay: () => import('./agent/agent-blocks.component').then(m => m.AgentBlockOverlayComponent),
+  LayoutAgent: () => import('./agent/layout-agent.component').then(m => m.LayoutAgentComponent),
+  AgentBlockOverlay: () => import('./agent/agent-block-overlay.component').then(m => m.AgentBlockOverlayComponent),
   ChangeDiff: () => import('./change/change-diff.component').then(m => m.ChangeDiffComponent),
   LayoutTabs: LayoutTabsComponent,
   LayoutRouteScreen: LayoutRouteScreenComponent,

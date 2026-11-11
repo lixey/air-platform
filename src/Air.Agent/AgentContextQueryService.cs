@@ -192,7 +192,6 @@ public static class AgentContextQueryService
     foreach (var feat in ModuleCatalog.Instance.AllFeatures)
     {
       if (!feat.AllowsAgent ||
-          !AgentFeatureRegistry.CanEditFeature(feat, app) ||
           !AgentFeatureRegistry.CanViewFeature(feat, app) ||
           feat.ServiceType == null ||
           !typeof(IGridService).IsAssignableFrom(feat.ServiceType))
@@ -472,7 +471,6 @@ public static class AgentContextQueryService
     foreach (var feat in ModuleCatalog.Instance.AllFeatures)
     {
       if (!feat.AllowsAgent ||
-          !AgentFeatureRegistry.CanEditFeature(feat, app) ||
           !AgentFeatureRegistry.CanViewFeature(feat, app) ||
           feat.ServiceType == null ||
           !typeof(IGridService).IsAssignableFrom(feat.ServiceType))
@@ -565,7 +563,8 @@ public static class AgentContextQueryService
 
     foreach (var feat in ModuleCatalog.Instance.AllFeatures)
     {
-      if (!AgentFeatureRegistry.CanViewFeature(feat, app) ||
+      if (!feat.AllowsAgent ||
+          !AgentFeatureRegistry.CanViewFeature(feat, app) ||
           feat.ServiceType == null ||
           !typeof(IReportService).IsAssignableFrom(feat.ServiceType))
       {
@@ -625,66 +624,93 @@ public static class AgentContextQueryService
 
     if (recordId is > 0)
     {
-      var baseDesc = targetDesc ?? descriptors.FirstOrDefault()
-        ?? throw new InvalidOperationException("No agent-enabled forms are registered.");
-      var resolvedDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(
-        descriptors,
-        baseDesc,
-        requestedService,
-        recordId.Value,
-        db,
-        app,
-        ct
-      );
-      if (ModuleCatalog.Instance.CreateServiceInstance(resolvedDesc.FormServiceType, db, app) is not IFormService formInst ||
-          !formInst.Feature.AllowsAgent ||
-          !AgentFeatureRegistry.CanViewFeature(formInst.Feature, app))
+      if (string.IsNullOrWhiteSpace(requestedService))
       {
-        throw new InvalidOperationException($"Access denied or form service '{resolvedDesc.ServicePath}' not available.");
+        throw new InvalidOperationException("Parameter 'service' is required when querying a record by 'id'.");
       }
 
-      var values = await GetExistingFormValuesAsync(formInst, recordId.Value, ct);
-      var (_, children) = await formInst.GetElementsMetadataAsync(ct);
-
-      var existingLines = new List<Dictionary<string, object?>>();
-      var childGrid = AgentFeatureRegistry.ResolveEditableChildLineGrid(children, db, app)?.ChildGrid;
-      if (childGrid == null)
+      if (targetDesc != null)
       {
-        foreach (var c in children)
-        {
-          if (!c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType) &&
-              ModuleCatalog.Instance.CreateServiceInstance(c.ServiceType, db, app) is IGridService cg &&
-              AgentFeatureRegistry.CanViewFeature(cg.Feature, app))
-          {
-            childGrid = cg;
-            break;
-          }
-        }
-      }
-
-      if (childGrid != null)
-      {
-        var page = await childGrid.GetDataAsync(
-          new GridRequest { ParentId = recordId.Value, Page = 0, PageSize = 200, IsDataOnly = true },
+        var resolvedDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(
+          descriptors,
+          targetDesc,
+          requestedService,
+          recordId.Value,
+          db,
+          app,
           ct
         );
-        foreach (var rawRow in page.Rows)
+        if (ModuleCatalog.Instance.CreateServiceInstance(resolvedDesc.FormServiceType, db, app) is not IFormService formInst ||
+            !formInst.Feature.AllowsAgent ||
+            !AgentFeatureRegistry.CanViewFeature(formInst.Feature, app))
         {
-          if (CleanGridRow(rawRow) is { } cleaned)
+          throw new InvalidOperationException($"Access denied or form service '{resolvedDesc.ServicePath}' not available.");
+        }
+
+        formInst.SetRequest(new FormRequest { Id = recordId.Value });
+        var values = await GetExistingFormValuesAsync(formInst, recordId.Value, ct);
+        var (_, children) = await formInst.GetElementsMetadataAsync(ct);
+
+        var existingLines = new List<Dictionary<string, object?>>();
+        var childGrid = AgentFeatureRegistry.ResolveEditableChildLineGrid(children, db, app)?.ChildGrid;
+        if (childGrid == null)
+        {
+          foreach (var c in children)
           {
-            existingLines.Add(cleaned);
+            if (!c.IsFiles && c.ServiceType != null && typeof(IGridService).IsAssignableFrom(c.ServiceType) &&
+                ModuleCatalog.Instance.CreateServiceInstance(c.ServiceType, db, app) is IGridService cg &&
+                cg.Feature.AllowsAgent &&
+                AgentFeatureRegistry.CanViewFeature(cg.Feature, app))
+            {
+              childGrid = cg;
+              break;
+            }
           }
         }
+
+        if (childGrid != null)
+        {
+          var page = await childGrid.GetDataAsync(
+            new GridRequest { ParentId = recordId.Value, Page = 0, PageSize = 200, IsDataOnly = true },
+            ct
+          );
+          foreach (var rawRow in page.Rows)
+          {
+            if (CleanGridRow(rawRow) is { } cleaned)
+            {
+              existingLines.Add(cleaned);
+            }
+          }
+        }
+
+        return new
+        {
+          id = recordId.Value,
+          service = resolvedDesc.ServicePath,
+          label = resolvedDesc.Label,
+          values,
+          lines = existingLines
+        };
       }
 
-      return new
+      var directSvcType = ModuleCatalog.Instance.FindServiceType(requestedService);
+      if (directSvcType != null &&
+          typeof(IGridService).IsAssignableFrom(directSvcType) &&
+          ModuleCatalog.Instance.CreateServiceInstance(directSvcType, db, app) is IGridService roGrid &&
+          roGrid.Feature.AllowsAgent &&
+          AgentFeatureRegistry.CanViewFeature(roGrid.Feature, app))
       {
-        id = recordId.Value,
-        service = resolvedDesc.ServicePath,
-        label = resolvedDesc.Label,
-        values,
-        lines = existingLines
-      };
+        var row = await roGrid.ReadRowAsync(recordId.Value, ct)
+          ?? throw new InvalidOperationException($"Record #{recordId.Value} was not found in '{requestedService}'.");
+        return new
+        {
+          id = recordId.Value,
+          service = ServicePathResolver.Resolve(directSvcType),
+          values = CleanGridRow(row) ?? new Dictionary<string, object?>()
+        };
+      }
+
+      throw new InvalidOperationException($"Service '{requestedService}' was not found or access is denied.");
     }
 
     Type? gridType = null;

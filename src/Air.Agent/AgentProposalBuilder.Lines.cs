@@ -12,10 +12,10 @@ public static partial class AgentProposalBuilder
       bool isEdit,
       long? recordId,
       GridCreateDescriptor targetDesc,
+      ChildGridBuilder childBuilder,
       IGridService? childGrid,
       IFormService childFormInst,
       IReadOnlyList<FormElementDto> childEditableElements,
-      IReadOnlyList<FormElementDto> editableElements,
       Dictionary<string, object?> formValues,
       HashSet<string> explicitlyProvided,
       List<PendingNewReference> newReferences,
@@ -51,6 +51,11 @@ public static partial class AgentProposalBuilder
     }
 
     var childDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(childFormInst, ct);
+    var qtyElement = childEditableElements.FirstOrDefault(e =>
+      e.Path.Equals("qty", StringComparison.OrdinalIgnoreCase) ||
+      e.Path.Equals("quantity", StringComparison.OrdinalIgnoreCase));
+    var priceElement = childEditableElements.FirstOrDefault(e => e.Path.Equals("price", StringComparison.OrdinalIgnoreCase));
+    var amountElement = childEditableElements.FirstOrDefault(e => e.Path.Equals("amount", StringComparison.OrdinalIgnoreCase));
 
     foreach (var item in linesProp.EnumerateArray())
     {
@@ -82,6 +87,11 @@ public static partial class AgentProposalBuilder
       foreach (var cel in childEditableElements)
       {
         var hasCellProp = TryGetPropertyIgnoreCase(item, cel.Path, out var rawCellProp);
+        if (!hasCellProp && qtyElement != null && ReferenceEquals(cel, qtyElement))
+        {
+          var altQtyKey = cel.Path.Equals("qty", StringComparison.OrdinalIgnoreCase) ? "quantity" : "qty";
+          hasCellProp = TryGetPropertyIgnoreCase(item, altQtyKey, out rawCellProp);
+        }
 
         if (cel.Model is FormSelectModel cSelect && !string.IsNullOrEmpty(cSelect.ReferenceService))
         {
@@ -257,7 +267,39 @@ public static partial class AgentProposalBuilder
         }
       }
 
-      var usedLinePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "qty", "price", "amount", "sortOrder" };
+      // Delegate all line defaults, SelectPatches, and hooks.Compute to FormService.PrepareDraftAsync
+      var linePendingPaths = linePendingRefs
+        .Where(r => !r.IsExistingRecordEdit)
+        .Select(r => r.FieldPath)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+      var lineOverrides = explicitlySetLineFields
+        .Where(k => !linePendingPaths.Contains(k))
+        .ToDictionary(
+          k => k,
+          k => lineDict.GetValueOrDefault(k),
+          StringComparer.OrdinalIgnoreCase
+        );
+      var lineDraft = await childFormInst.PrepareDraftAsync(
+        recordId: itemLineId,
+        overrides: lineOverrides,
+        pendingReferencePaths: linePendingPaths,
+        parentId: isEdit ? recordId : null,
+        parentService: targetDesc.ServicePath,
+        ct: ct
+      );
+      foreach (var (k, v) in lineDraft.Values)
+      {
+        if (!linePendingPaths.Contains(k) && v != null &&
+            (!explicitlySetLineFields.Contains(k) ||
+             !lineDict.TryGetValue(k, out var curV) ||
+             curV == null ||
+             TryConvertToDecimal(curV, out var curDec) && curDec == 0m))
+        {
+          lineDict[k] = v;
+        }
+      }
+
+      var usedLinePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "sortOrder" };
       string? name = null;
       if (lineDict.TryGetValue("name", out var nameObj) && !string.IsNullOrWhiteSpace(nameObj?.ToString()))
       {
@@ -300,76 +342,34 @@ public static partial class AgentProposalBuilder
         usedLinePaths.Add(secondaryRefEl.Path);
       }
 
-      var linePendingPaths = linePendingRefs
-        .Where(r => !r.IsExistingRecordEdit)
-        .Select(r => r.FieldPath)
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-      var lineOverrides = explicitlySetLineFields
-        .Where(k => !linePendingPaths.Contains(k))
-        .ToDictionary(
-          k => k,
-          k => lineDict.GetValueOrDefault(k),
-          StringComparer.OrdinalIgnoreCase
-        );
-      var lineDraft = await childFormInst.PrepareDraftAsync(
-        recordId: itemLineId,
-        overrides: lineOverrides,
-        pendingReferencePaths: linePendingPaths,
-        parentId: isEdit ? recordId : null,
-        parentService: targetDesc.ServicePath,
-        ct: ct
-      );
-      foreach (var (k, v) in lineDraft.Values)
+      decimal? lineQty = null;
+      if (qtyElement != null &&
+          lineDict.TryGetValue(qtyElement.Path, out var rawQty) &&
+          TryConvertToDecimal(rawQty, out var decQty) &&
+          decQty != 0m)
       {
-        if (!explicitlySetLineFields.Contains(k) && !linePendingPaths.Contains(k) && v != null)
-        {
-          lineDict[k] = v;
-        }
+        lineQty = decQty;
+        usedLinePaths.Add(qtyElement.Path);
       }
 
-      var qty = (TryGetDecimal(item, "qty") ?? TryGetDecimal(item, "quantity")) is > 0 and var q
-        ? q
-        : (lineDict.TryGetValue("qty", out var defQ) && TryConvertToDecimal(defQ, out var dq) && dq > 0
-          ? dq
-          : lineDict.TryGetValue("quantity", out var defQuantity) && TryConvertToDecimal(defQuantity, out var dqn) && dqn > 0
-            ? dqn
-            : 1m);
-      var price = TryGetDecimal(item, "price")
-                  ?? (lineDict.TryGetValue("price", out var defP) && TryConvertToDecimal(defP, out var dp) && dp != 0m ? dp : null);
-      var amount = TryGetDecimal(item, "amount")
-                   ?? (lineDict.TryGetValue("amount", out var defA) && TryConvertToDecimal(defA, out var da) && da != 0m ? da : null);
-
-      if (price is null or 0m && amount is not null and not 0m)
+      decimal? linePrice = null;
+      if (priceElement != null &&
+          lineDict.TryGetValue(priceElement.Path, out var rawPrice) &&
+          TryConvertToDecimal(rawPrice, out var decPrice) &&
+          decPrice != 0m)
       {
-        price = qty > 0 ? Math.Round(amount.Value / qty, 2) : amount.Value;
+        linePrice = decPrice;
+        usedLinePaths.Add(priceElement.Path);
       }
 
-      if (amount is null or 0m && price is not null and not 0m)
+      decimal? lineAmount = null;
+      if (amountElement != null &&
+          lineDict.TryGetValue(amountElement.Path, out var rawAmt) &&
+          TryConvertToDecimal(rawAmt, out var decAmt) &&
+          decAmt != 0m)
       {
-        amount = Math.Round(qty * price.Value, 2);
-      }
-
-      var finalPrice = price ?? 0m;
-      var finalAmount = amount ?? 0m;
-
-      if (childEditableElements.Any(e => e.Path.Equals("qty", StringComparison.OrdinalIgnoreCase)))
-      {
-        lineDict["qty"] = qty;
-      }
-
-      if (childEditableElements.Any(e => e.Path.Equals("quantity", StringComparison.OrdinalIgnoreCase)))
-      {
-        lineDict["quantity"] = qty;
-      }
-
-      if (childEditableElements.Any(e => e.Path.Equals("price", StringComparison.OrdinalIgnoreCase)))
-      {
-        lineDict["price"] = finalPrice;
-      }
-
-      if (childEditableElements.Any(e => e.Path.Equals("amount", StringComparison.OrdinalIgnoreCase)))
-      {
-        lineDict["amount"] = finalAmount;
+        lineAmount = decAmt;
+        usedLinePaths.Add(amountElement.Path);
       }
 
       List<AgentProposalFieldDto>? extraLineFields = null;
@@ -430,9 +430,9 @@ public static partial class AgentProposalBuilder
         new AgentProposalLineDto
         {
           Name = name,
-          Qty = qty,
-          Price = finalPrice,
-          Amount = finalAmount,
+          Qty = lineQty,
+          Price = linePrice,
+          Amount = lineAmount,
           Category = lineCategoryLabel,
           Fields = extraLineFields
         }
@@ -447,16 +447,29 @@ public static partial class AgentProposalBuilder
       }
     }
 
-    var moneyElements = editableElements.Where(e => e.Model is FormMoneyModel).ToList();
-    var primaryMoneyEl = moneyElements.Count == 1 ? moneyElements[0] : null;
-    var linesTotal = proposalLines.Sum(l => l.Amount);
-    if (proposalLines.Count > 0 &&
-        linesTotal > 0m &&
-        primaryMoneyEl != null &&
-        !explicitlyProvided.Contains(primaryMoneyEl.Path) &&
-        (!formValues.TryGetValue(primaryMoneyEl.Path, out var curAmt) || !TryConvertToDecimal(curAmt, out var decAmt) || decAmt == 0m))
+    // Declarative child-to-parent rollup strictly when declared on AddChild(...).SumTo(parentField, childField)
+    if (rawLineDicts.Count > 0 &&
+        !string.IsNullOrWhiteSpace(childBuilder.SumTargetPath) &&
+        !string.IsNullOrWhiteSpace(childBuilder.SumSourcePath) &&
+        !explicitlyProvided.Contains(childBuilder.SumTargetPath) &&
+        (!formValues.TryGetValue(childBuilder.SumTargetPath, out var curParentTotal) ||
+         !TryConvertToDecimal(curParentTotal, out var existingTotal) ||
+         existingTotal == 0m))
     {
-      formValues[primaryMoneyEl.Path] = linesTotal;
+      var computedTotal = 0m;
+      foreach (var dict in rawLineDicts)
+      {
+        if (dict.TryGetValue(childBuilder.SumSourcePath, out var lineVal) &&
+            TryConvertToDecimal(lineVal, out var decLineVal))
+        {
+          computedTotal += decLineVal;
+        }
+      }
+
+      if (computedTotal != 0m)
+      {
+        formValues[childBuilder.SumTargetPath] = computedTotal;
+      }
     }
 
     return (proposalLines, rawLineDicts);

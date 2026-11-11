@@ -383,9 +383,10 @@ public static class AgentProposalExecutor
         var refFormType = ModuleCatalog.Instance.FindServiceType(pendingRef.FormService);
         if (refFormType != null &&
             ModuleCatalog.Instance.CreateServiceInstance(refFormType, db, app) is IFormService refFormInst &&
-            refFormInst.Feature.AllowsAgent &&
+            refFormInst.Feature.AllowsAgentWrite &&
             AgentFeatureRegistry.CanEditFeature(refFormInst.Feature, app))
         {
+          refFormInst.SetRequest(new FormRequest());
           var (refEls, _) = await refFormInst.GetElementsMetadataAsync(mutationCt);
           var refDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(refFormInst, mutationCt);
           foreach (var (k, v) in pendingRef.ExtraValues)
@@ -445,16 +446,16 @@ public static class AgentProposalExecutor
                    ?? throw new InvalidOperationException($"Form service '{payload.Service}' not found.");
 
     if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, app) is not IFormService formInst ||
-        !formInst.Feature.AllowsAgent ||
+        !formInst.Feature.AllowsAgentWrite ||
         !AgentFeatureRegistry.CanEditFeature(formInst.Feature, app))
     {
       throw new InvalidOperationException(L["MutationRefused"]);
     }
 
+    formInst.SetRequest(new FormRequest { Id = isEdit ? payload.RecordId : null });
     var ver = payload.Ver;
     if (isEdit)
     {
-      formInst.SetRequest(new FormRequest { Id = payload.RecordId });
       var existingEntity = await formInst.LoadParentRecordAsync(payload.RecordId!.Value, mutationCt);
       if (existingEntity is IHasVersion currentVersioned)
       {

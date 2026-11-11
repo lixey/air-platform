@@ -4,4 +4,5 @@ public sealed record McpCallContext(
   long? TenantId,
   long? UserId,
   IReadOnlySet<string>? Rights,
-  string? SessionId);
+  string? SessionId,
+  string? TurnToken = null);

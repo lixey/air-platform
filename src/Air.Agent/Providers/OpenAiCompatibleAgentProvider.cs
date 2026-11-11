@@ -20,7 +20,7 @@ public sealed class OpenAiCompatibleAgentProvider : IAgentProvider
     yield return new AgentStreamEventDto
     {
       Type = "error",
-      Text = "LM Studio provider is registered as a future adapter."
+      Text = Localizer.Instance["AgentErrorCliMissing"]
     };
   }
 }

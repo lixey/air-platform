@@ -8,6 +8,6 @@ internal sealed class ReceiptFormService(AgentTestDbContext db, PlatformAppServi
     elements.Add(r => r.Title).Required();
     elements.Add(r => r.Amount);
     elements.Add(r => r.CategoryId).AsReference<CategoryGridService>();
-    elements.AddChild<ReceiptLineGridService>();
+    elements.AddChild<ReceiptLineGridService>().Key("lines").SumTo("amount", "amount");
   }
 }

@@ -55,6 +55,15 @@ internal static class EntityWriteConventions
               $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant.");
           }
         }
+
+        if (entry.Entity is AppAgentMemory && !isSystemScope)
+        {
+          var origUserId = entry.Property(nameof(AppAgentMemory.UserId)).OriginalValue as long?;
+          if (origUserId.HasValue && origUserId != tenantContext.UserId)
+          {
+            throw new InvalidOperationException("Cannot modify or delete another user's AppAgentMemory.");
+          }
+        }
       }
 
       if (entry.State is EntityState.Added or EntityState.Modified)
@@ -122,6 +131,20 @@ internal static class EntityWriteConventions
           }
         }
 
+        if (entry.Entity is AppAgentMemory addedMemory && !isSystemScope)
+        {
+          if (addedMemory.UserId is null or 0)
+          {
+            var isSharedKind = string.Equals(addedMemory.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(addedMemory.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase);
+            addedMemory.UserId = isSharedKind ? null : tenantContext.UserId;
+          }
+          else if (addedMemory.UserId != tenantContext.UserId)
+          {
+            throw new InvalidOperationException("Cannot insert AppAgentMemory belonging to another user.");
+          }
+        }
+
         if (entry.Entity is IHasVersion version)
         {
           if (version.Ver == 0)
@@ -161,6 +184,13 @@ internal static class EntityWriteConventions
           var tenantProp = entry.Property(nameof(IInheritedByChildTenants.TenantId));
           tenantProp.CurrentValue = tenantProp.OriginalValue;
           tenantProp.IsModified = false;
+        }
+
+        if (entry.Entity is AppAgentMemory && !isSystemScope)
+        {
+          var userProp = entry.Property(nameof(AppAgentMemory.UserId));
+          userProp.CurrentValue = userProp.OriginalValue;
+          userProp.IsModified = false;
         }
 
         if (entry.Entity is IHasVersion version)

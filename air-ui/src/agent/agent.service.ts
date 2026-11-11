@@ -2,8 +2,6 @@ import { Location } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { effect, inject, Service, signal, untracked } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from '../agent/agent-block-models';
-import { parseAgentBlocks } from '../agent/agent-block-parser';
 import { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { AuthService, identityOf } from '../app/auth/auth.service';
@@ -23,8 +21,11 @@ import type {
 } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { browserZone } from '../core/time-zone';
+import { newUuid } from '../core/uuid';
 import { GridService } from '../grid/grid.service';
 import { OverlayService } from '../overlay/overlay.service';
+import { AGENT_BLOCK_PLUGINS, type AgentContentBlock } from './agent-block-models';
+import { parseAgentBlocks, stripAgentControlBlocks } from './agent-block-parser';
 
 export type AgentAttachment = AgentAttachmentDto;
 export type AgentProposalField = AgentProposalFieldDto;
@@ -51,13 +52,10 @@ export interface AgentChatMessage {
   readonly stepsCollapsed?: boolean;
 }
 
-function stripProposalBlocks(raw: string): string {
-  return raw
-    .replace(/```(?:json|xml)?\s*<air_proposal>[\s\S]*?(?:<\/air_proposal>\s*```|<\/air_proposal>|$)/gi, '')
-    .replace(/<air_proposal>[\s\S]*?(?:<\/air_proposal>|$)/gi, '')
-    .replace(/```(?:json|xml)?\s*<air_memory>[\s\S]*?(?:<\/air_memory>\s*```|<\/air_memory>|$)/gi, '')
-    .replace(/<air_memory>[\s\S]*?(?:<\/air_memory>|$)/gi, '')
-    .trim();
+const STREAM_DELTA_COALESCE_MS = 32;
+
+function createSessionId(): string {
+  return newUuid().replace(/-/g, '');
 }
 
 @Service()
@@ -76,7 +74,7 @@ export class AgentService {
   private statusLoaded = false;
   private lastIdentity = identityOf(this.auth.currentUser());
 
-  readonly sessionId = signal<string>(Math.random().toString(36).slice(2, 12));
+  readonly sessionId = signal<string>(createSessionId());
   readonly models = signal<readonly AgentModelDto[]>([]);
   readonly syncSources = signal<readonly AgentSyncSourceDto[]>([]);
   readonly model = signal<string>('');
@@ -108,7 +106,7 @@ export class AgentService {
         this.pendingAttachments.set([]);
         this.pendingSyncSource.set(null);
         this.pendingSyncFile.set(null);
-        this.sessionId.set(Math.random().toString(36).slice(2, 12));
+        this.sessionId.set(createSessionId());
       });
     });
   }
@@ -346,6 +344,40 @@ export class AgentService {
     }, 200);
 
     let rawAccumulated = '';
+    let hasUnflushedDelta = false;
+    let hasFlushedFirstDelta = false;
+    let deltaTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushDeltaNow = (): void => {
+      if (deltaTimer !== null) {
+        clearTimeout(deltaTimer);
+        deltaTimer = null;
+      }
+      if (!hasUnflushedDelta) {
+        return;
+      }
+      hasUnflushedDelta = false;
+      hasFlushedFirstDelta = true;
+      const cleanText = stripAgentControlBlocks(rawAccumulated);
+      const blocks = parseAgentBlocks(cleanText, this.blockPlugins, assistantMsgId);
+      this.patchAssistant(assistantMsgId, m => ({
+        ...m,
+        text: cleanText,
+        blocks,
+        statusText: null,
+      }));
+    };
+
+    const scheduleDeltaFlush = (): void => {
+      hasUnflushedDelta = true;
+      if (!hasFlushedFirstDelta) {
+        flushDeltaNow();
+        return;
+      }
+      if (deltaTimer === null) {
+        deltaTimer = setTimeout(flushDeltaNow, STREAM_DELTA_COALESCE_MS);
+      }
+    };
 
     try {
       const doFetch = () =>
@@ -403,15 +435,9 @@ export class AgentService {
               }));
             } else if (evt.type === 'delta' && evt.text) {
               rawAccumulated += evt.text;
-              const cleanText = stripProposalBlocks(rawAccumulated);
-              const blocks = parseAgentBlocks(cleanText, this.blockPlugins, assistantMsgId);
-              this.patchAssistant(assistantMsgId, m => ({
-                ...m,
-                text: cleanText,
-                blocks,
-                statusText: null,
-              }));
+              scheduleDeltaFlush();
             } else if (evt.type === 'supersede' && evt.supersededProposalIds?.length) {
+              flushDeltaNow();
               const supSet = new Set(evt.supersededProposalIds);
               this.messages.update(list =>
                 list.map(m => ({
@@ -423,6 +449,7 @@ export class AgentService {
               GridService.reloadServices(evt.refreshServices ?? undefined);
               void this.ensureStatusLoaded(true);
             } else if (evt.type === 'proposal' && evt.proposal) {
+              flushDeltaNow();
               const incoming: AgentProposal = { ...evt.proposal, status: 'pending' };
               this.patchAssistant(assistantMsgId, m => {
                 const exists = m.proposals.some(p => p.id === incoming.id);
@@ -433,6 +460,7 @@ export class AgentService {
                 };
               });
             } else if (evt.type === 'error') {
+              flushDeltaNow();
               this.patchAssistant(assistantMsgId, m => {
                 const nextText = m.text || (evt.text ?? this.texts.of('RequestFailed'));
                 return {
@@ -443,8 +471,9 @@ export class AgentService {
                 };
               });
             } else if (evt.type === 'done') {
+              flushDeltaNow();
               this.patchAssistant(assistantMsgId, m => {
-                const nextText = stripProposalBlocks(rawAccumulated) || m.text;
+                const nextText = stripAgentControlBlocks(rawAccumulated) || m.text;
                 return {
                   ...m,
                   text: nextText,
@@ -482,6 +511,7 @@ export class AgentService {
         }
       }
     } catch (err) {
+      flushDeltaNow();
       if ((err as Error)?.name !== 'AbortError') {
         this.patchAssistant(assistantMsgId, m => {
           const nextText = m.text || this.texts.of('AgentErrorRequest');
@@ -494,6 +524,7 @@ export class AgentService {
         });
       }
     } finally {
+      flushDeltaNow();
       clearInterval(durationTimer);
       const finalDuration = Math.max(0, Math.round(performance.now() - startedAt));
       this.patchAssistant(assistantMsgId, m => ({
@@ -680,7 +711,7 @@ export class AgentService {
     this.pendingAttachments.set([]);
     this.pendingSyncSource.set(null);
     this.pendingSyncFile.set(null);
-    this.sessionId.set(Math.random().toString(36).slice(2, 12));
+    this.sessionId.set(createSessionId());
 
     await firstValueFrom(this.http.post('/api/agent/reset', { sessionId: oldSessionId }, shownByCaller())).catch(() => undefined);
   }

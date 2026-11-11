@@ -34,7 +34,13 @@ public sealed class Feature<TAccess> : Feature where TAccess : FeatureAccess, ne
     return this;
   }
 
-  public new Feature<TAccess> AllowAgent(bool allow = true)
+  public new Feature<TAccess> AllowAgent(AgentAccess access = AgentAccess.ReadWrite)
+  {
+    base.AllowAgent(access);
+    return this;
+  }
+
+  public new Feature<TAccess> AllowAgent(bool allow)
   {
     base.AllowAgent(allow);
     return this;

@@ -64,7 +64,7 @@ public class AsyncLocalTenantContext : ITenantContext
     _box.Value = new TenantBox
     {
       TenantId = previous?.TenantId,
-      IsSystemScope = previous?.IsSystemScope ?? (previous?.TenantId == null),
+      IsSystemScope = previous?.IsSystemScope ?? false,
       Rights = previous?.Rights,
       UserId = previous?.UserId,
       CorrelationId = correlationId

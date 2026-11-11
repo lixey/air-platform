@@ -85,6 +85,7 @@
       <Using Include="Platform.Agent" />
       <Using Include="Platform.Agent.Contracts" />
       <Using Include="Platform.Agent.Providers" />
+      <Using Include="Platform.Agent.Tools" />
     </ItemGroup>
   </Target>
 </Project>

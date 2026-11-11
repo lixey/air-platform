@@ -170,20 +170,31 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId) =>
+      (psi, prompt, existingConvId, mcpConfigPath) =>
       {
         psi.ArgumentList.Add("--print");
-        psi.ArgumentList.Add(prompt);
+        psi.ArgumentList.Add("--input-format");
+        psi.ArgumentList.Add("text");
         psi.ArgumentList.Add("--output-format");
         psi.ArgumentList.Add("stream-json");
         psi.ArgumentList.Add("--verbose");
         psi.ArgumentList.Add("--safe-mode");
         psi.ArgumentList.Add("--strict-mcp-config");
+        if (!string.IsNullOrWhiteSpace(mcpConfigPath))
+        {
+          psi.ArgumentList.Add("--mcp-config");
+          psi.ArgumentList.Add(mcpConfigPath);
+        }
+
         psi.ArgumentList.Add("--disable-slash-commands");
         psi.ArgumentList.Add("--tools");
         psi.ArgumentList.Add("Read");
         psi.ArgumentList.Add("--allowedTools");
-        psi.ArgumentList.Add("Read");
+        psi.ArgumentList.Add(
+          !string.IsNullOrWhiteSpace(mcpConfigPath)
+            ? "Read,mcp__air__air_catalog_list,mcp__air__air_catalog_describe,mcp__air__air_records_query,mcp__air__air_proposal_stage"
+            : "Read"
+        );
         if (!string.IsNullOrWhiteSpace(cliModel))
         {
           psi.ArgumentList.Add("--model");
@@ -200,6 +211,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
           psi.ArgumentList.Add("--resume");
           psi.ArgumentList.Add(existingConvId);
         }
+
+        return prompt;
       },
       (root, fullAssistantText, pendingEvents) =>
       {

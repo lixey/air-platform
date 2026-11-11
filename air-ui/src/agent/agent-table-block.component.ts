@@ -1,153 +1,14 @@
-import { Component, computed, inject, Injector, input } from '@angular/core';
-import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
+import { Component, inject, Injector, input } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
-import { ChartComponent } from '../chart/chart.component';
-import type { ReportChartDto, ReportColumnDto, ReportKpiDto, ReportTableDto, RowDto, UiColor } from '../core/generated/contracts';
+import type { ReportColumnDto, ReportTableDto, RowDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
-import { NavComponent } from '../nav/nav.component';
-import { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
 import { singlePanelLayout } from '../panels/single-panel-layout';
 import { canOpenTarget, openReportRow } from '../report/report-row-open';
 import { ScreenMutations } from '../screen/screen-mutations';
-import { UI_COLORS } from '../theme/ui-color';
-import { renderMarkdownToSafeHtml, sanitizeAgentHtml } from './agent-markdown';
-
-function asUiColor(color: string | null | undefined): UiColor | null {
-  if (!color) {
-    return null;
-  }
-  const lower = color.toLowerCase();
-  return UI_COLORS.find(c => c === lower) ?? null;
-}
-
-export interface AgentBlockOverlayModel {
-  kind: 'AgentBlockOverlay';
-  title: string;
-  chart?: ReportChartDto | null;
-  table?: ReportTableDto | null;
-}
-
-@Component({
-  selector: 'ui-agent-markdown-block',
-  template: `
-    <div
-      class="rounded-lg border border-line bg-surface-2 px-3.5 py-2.5 text-sm text-ink break-words space-y-1.5"
-      [innerHTML]="safeHtml()"
-    ></div>
-  `,
-  host: { class: 'block w-full min-w-0' },
-})
-export class AgentMarkdownBlockComponent {
-  private readonly sanitizer = inject(DomSanitizer);
-  readonly content = input.required<string>();
-
-  protected readonly safeHtml = computed<SafeHtml>(() => this.sanitizer.bypassSecurityTrustHtml(renderMarkdownToSafeHtml(this.content())));
-}
-
-@Component({
-  selector: 'ui-agent-html-block',
-  template: `
-    <div
-      class="rounded-lg border border-line bg-surface-2 px-3.5 py-2.5 text-sm text-ink break-words overflow-x-auto"
-      [innerHTML]="safeHtml()"
-    ></div>
-  `,
-  host: { class: 'block w-full min-w-0' },
-})
-export class AgentHtmlBlockComponent {
-  private readonly sanitizer = inject(DomSanitizer);
-  readonly html = input.required<string>();
-
-  protected readonly safeHtml = computed<SafeHtml>(() => this.sanitizer.bypassSecurityTrustHtml(sanitizeAgentHtml(this.html())));
-}
-
-@Component({
-  selector: 'ui-agent-kpi-block',
-  template: `
-    <div class="grid grid-cols-2 gap-2 w-full min-w-0">
-      @for (kpi of kpis(); track kpi.label) {
-        <div class="bg-surface border border-line rounded-xl p-3 flex flex-col gap-0.5 min-w-0">
-          <span class="text-xs font-medium text-muted truncate">{{ kpi.label }}</span>
-          <span class="text-lg font-semibold tabular-nums truncate" [class]="hueTextClass(kpi.color)">
-            {{ formatKpi(kpi) }}
-          </span>
-          @if (kpi.subtitle; as sub) {
-            <span class="text-[11px] text-muted truncate">{{ sub }}</span>
-          }
-        </div>
-      }
-    </div>
-  `,
-  host: { class: 'block w-full min-w-0' },
-})
-export class AgentKpiBlockComponent {
-  private readonly locale = inject(LocaleService).current;
-  readonly kpis = input.required<readonly ReportKpiDto[]>();
-
-  protected formatKpi(kpi: ReportKpiDto): string {
-    const loc = this.locale();
-    if (kpi.isPercent) {
-      return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
-    }
-    if (kpi.currency) {
-      return formatCellAmount(kpi.value, loc, moneyFormatOf({ decimals: 0, currency: kpi.currency }));
-    }
-    return formatCellNumber(kpi.value, loc, Number.isInteger(kpi.value) ? 0 : null, true);
-  }
-
-  protected hueTextClass(color: string | null | undefined): string {
-    const hue = asUiColor(color);
-    return hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
-  }
-}
-
-@Component({
-  selector: 'ui-agent-chart-block',
-  imports: [ChartComponent, BtnComponent],
-  template: `
-    <div class="relative w-full min-w-0">
-      <ui-chart [chart]="chart()" />
-      @if (expandable()) {
-        <div class="absolute top-2.5 right-2.5 z-10">
-          <ui-btn size="small" variant="ghost" icon="fullscreen" [title]="texts.of('FitToScreen')" (click)="openExpanded()" />
-        </div>
-      }
-    </div>
-  `,
-  host: { class: 'block w-full min-w-0' },
-})
-export class AgentChartBlockComponent {
-  private readonly overlay = inject(OverlayService);
-  private readonly injector = inject(Injector);
-  protected readonly texts = inject(TextsService);
-
-  readonly chart = input.required<ReportChartDto>();
-  readonly expandable = input(true);
-
-  protected openExpanded(): void {
-    const c = this.chart();
-    const expandedChart: ReportChartDto = { ...c, height: 440 };
-    this.overlay.open(
-      {
-        key: `agent.chart.${c.key}`,
-        presentation: 'dialog',
-        width: '920px',
-        closesOnEscape: true,
-        closesOnOutside: true,
-        layout: singlePanelLayout('main', {
-          kind: 'AgentBlockOverlay',
-          title: c.title || this.texts.of('AgentTitle'),
-          chart: expandedChart,
-        }),
-      },
-      null,
-      this.injector,
-    );
-  }
-}
+import { asAgentUiColor } from './agent-ui-helpers';
 
 @Component({
   selector: 'ui-agent-table-block',
@@ -257,7 +118,7 @@ export class AgentTableBlockComponent {
 
   protected rowClass(idx: number, row: RowDto): string {
     const cursor = this.isRowClickable(row) ? ' cursor-pointer' : '';
-    const rowHue = asUiColor(row.color);
+    const rowHue = asAgentUiColor(row.color);
     if (rowHue) {
       return `hue-${rowHue} bg-(--hue-cell) hover:bg-(--hue-cell-hover)${cursor}`;
     }
@@ -279,7 +140,7 @@ export class AgentTableBlockComponent {
 
   protected badgePillClass(col: ReportColumnDto, row: RowDto): string {
     const cellColor = row.colors?.[col.key] ?? row.color;
-    const hue = asUiColor(cellColor) ?? 'slate';
+    const hue = asAgentUiColor(cellColor) ?? 'slate';
     return `inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold hue-${hue} bg-(--btn-ground) text-(--btn-ink) border border-(--btn-edge)`;
   }
 
@@ -324,7 +185,7 @@ export class AgentTableBlockComponent {
     const align =
       col.kind === 'text' || col.kind === 'badge' ? 'text-left font-medium' : isLeft ? 'text-left tabular-nums' : 'text-right tabular-nums';
     const cellColor = row.colors?.[col.key] ?? (!isLeft ? row.color : undefined);
-    const hue = asUiColor(cellColor);
+    const hue = asAgentUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `h-8 px-2.5 border-r border-b border-line whitespace-nowrap last:border-r-0 ${align} ${colorCls}`;
   }
@@ -333,44 +194,8 @@ export class AgentTableBlockComponent {
     const isLeft = col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime';
     const align = isLeft ? 'text-left' : 'text-right tabular-nums';
     const cellColor = row.colors?.[col.key] ?? (!isLeft ? row.color : undefined);
-    const hue = asUiColor(cellColor);
+    const hue = asAgentUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `h-8 px-2.5 border-r border-t border-line whitespace-nowrap last:border-r-0 ${align} ${colorCls}`;
-  }
-}
-
-@Component({
-  selector: 'ui-agent-block-overlay',
-  imports: [NavComponent, BtnComponent, AgentChartBlockComponent, AgentTableBlockComponent],
-  template: `
-    @if (model(); as m) {
-      <ui-nav class="shrink-0 border-b border-line bg-surface-2">
-        <ng-container ngProjectAs="[start]">
-          <span class="pl-2 font-semibold text-ink truncate">{{ m.title }}</span>
-        </ng-container>
-        <ng-container ngProjectAs="[end]">
-          <ui-btn variant="ghost" icon="close" [title]="texts.of('Close')" (click)="close()" />
-        </ng-container>
-      </ui-nav>
-      <div class="flex-1 min-h-0 overflow-auto p-4 bg-field">
-        @if (m.chart; as c) {
-          <ui-agent-chart-block [chart]="c" [expandable]="false" />
-        }
-        @if (m.table; as t) {
-          <ui-agent-table-block [table]="t" [expandable]="false" />
-        }
-      </div>
-    }
-  `,
-  host: { class: 'flex flex-col w-full h-full min-w-0 min-h-0 overflow-hidden bg-surface' },
-})
-export class AgentBlockOverlayComponent {
-  protected readonly texts = inject(TextsService);
-  private readonly overlayRef = inject(OverlayRef, { optional: true });
-
-  readonly model = input<AgentBlockOverlayModel>();
-
-  protected close(): void {
-    this.overlayRef?.close();
   }
 }

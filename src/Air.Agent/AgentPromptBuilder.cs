@@ -7,7 +7,12 @@ public static class AgentPromptBuilder
 {
   private const int MaxInlinePromptBytes = 105_000;
 
-  public static string BuildPrompt(AgentTurnRequest request, string? contextJson, string? workspaceDir = null)
+  public static async Task<string> BuildPromptAsync(
+    AgentTurnRequest request,
+    string? contextJson,
+    string? turnWorkspaceDir = null,
+    CancellationToken ct = default
+  )
   {
     var sb = new StringBuilder();
     var uiCulture = CultureInfo.CurrentUICulture;
@@ -15,8 +20,8 @@ public static class AgentPromptBuilder
       ? uiCulture.EnglishName
       : $"{uiCulture.EnglishName} ({uiCulture.NativeName})";
 
-    var recordsFile = !string.IsNullOrWhiteSpace(workspaceDir)
-      ? AgentStore.GetRecordsFilePath(workspaceDir, request.Owner, request.SessionId)
+    var recordsFile = !string.IsNullOrWhiteSpace(turnWorkspaceDir)
+      ? AgentStore.GetRecordsFilePath(turnWorkspaceDir)
       : null;
     var hasRecordsFile = recordsFile != null && File.Exists(recordsFile);
 
@@ -32,7 +37,7 @@ public static class AgentPromptBuilder
       "1. NEVER save records directly without user confirmation. Instead, prepare proposal card(s) by outputting `<air_proposal>` JSON block(s) in your response."
     );
     sb.AppendLine(
-      "2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or any MCP/browser tools! Shell commands are blocked by the sandbox and calling `run_command` will immediately crash and abort your response. The ONLY tool you may ever call is `read_file` (or `view_file` / `Read`) on the exact `AbsolutePath` listed in `[ATTACHED FILES]`, `[EXTENDED WORKSPACE RECORDS]`, or `[AVAILABLE FORMS...]` below."
+      "2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or any browser tools! Shell commands are blocked by the sandbox and calling `run_command` will immediately crash and abort your response. You may ONLY call `read_file` (or `view_file` / `Read`) on the exact `AbsolutePath` listed in `[ATTACHED FILES]`, `[EXTENDED WORKSPACE RECORDS]`, or `[AVAILABLE FORMS...]` below, and (when available in your tool list) the built-in `air_*` MCP tools (`air_catalog_list`, `air_catalog_describe`, `air_records_query`, `air_proposal_stage`)."
     );
     sb.AppendLine(
       "3. If the user attached image/document file(s) listed in `[ATTACHED FILES]` below, call `read_file` / `Read` on each `AbsolutePath` once (unless the image is already attached in your vision input) to read all field values and line items matching the target form schema. Cross-reference attached screenshots/documents against `recentRecords` (and `[EXTENDED WORKSPACE RECORDS]` if older rows or `largeDictionaries` entries are needed) before proposing changes."
@@ -40,7 +45,7 @@ public static class AgentPromptBuilder
     sb.AppendLine("4. CREATING vs EDITING RECORDS:");
     sb.AppendLine("   - To CREATE a new record: omit `id` in `<air_proposal>` and populate the required fields in `values`.");
     sb.AppendLine(
-      "   - To EDIT an existing record: ALWAYS check `recentRecords` (and `[EXTENDED WORKSPACE RECORDS]` when needed) first! When a record already exists (such as an imported statement row, document, or counterparty), NEVER create a duplicate — include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (records that include a `\"form\"` property), use that record's `form` service."
+      "   - To EDIT an existing record: ALWAYS check `recentRecords` (and `[EXTENDED WORKSPACE RECORDS]` when needed) first! When a record already exists (such as an imported statement row, document, or dictionary record), NEVER create a duplicate — include `\"id\": <recordId>` in `<air_proposal>` and pass ONLY the fields being modified in `values` (all other existing fields are automatically preserved and diffed as `old → new`). For polymorphic records in `recentRecords` (records that include a `\"form\"` property), use that record's `form` service."
     );
     sb.AppendLine(
       "   - When editing child `lines`, set `\"linesMode\": \"replace\"` (default) to replace all lines or `\"linesMode\": \"append\"` to add lines to existing ones. When editing multi-select fields, set `\"multiSelectMode\": \"append\"` to add items or `\"multiSelectMode\": \"replace\"` (default) to replace them."
@@ -57,7 +62,7 @@ public static class AgentPromptBuilder
       "   - When a workflow requires multiple dependent creates and/or edits (e.g. creating or updating a master/reference entity → creating dependent parent/child records → EDITING existing records to link them to the newly created IDs), emit all `<air_proposal>` blocks in topological order (prerequisites first, dependents after)."
     );
     sb.AppendLine(
-      "   - Assign each prerequisite `<air_proposal>` a unique `\"key\": \"<stepKey>\"` (e.g. `\"cp_1\"`, `\"doc_1\"`, `\"item_1\"`) and reference it in any downstream proposal's reference field (or `lines` reference field) via `\"$ref:<stepKey>\"` (e.g. `\"counterpartyId\": \"$ref:cp_1\"`). If two distinct records have the same title or amount, give them distinct keys (`\"doc_1\"`, `\"doc_2\"`) so each dependent links to the exact intended record. You may also set `\"dependsOn\": [\"<stepKey>\"]` when an edit must run after an earlier step."
+      "   - Assign each prerequisite `<air_proposal>` a unique `\"key\": \"<stepKey>\"` (e.g. `\"ref_1\"`, `\"doc_1\"`, `\"item_1\"`) and reference it in any downstream proposal's reference field (or `lines` reference field) via `\"$ref:<stepKey>\"`. If two distinct records have the same title or amount, give them distinct keys (`\"doc_1\"`, `\"doc_2\"`) so each dependent links to the exact intended record. You may also set `\"dependsOn\": [\"<stepKey>\"]` when an edit must run after an earlier step."
     );
     sb.AppendLine(
       "   - All `<air_proposal>` blocks emitted in a single turn are presented as a numbered step chain with a single **Confirm All** button and committed together in one atomic database transaction."
@@ -84,7 +89,7 @@ public static class AgentPromptBuilder
           "<field.path>": "<value, numeric id, or \"$ref:<stepKey>\">"
         },
         "lines": [
-          { "name": "Item name", "qty": 1, "price": 100.00, "amount": 100.00 }
+          { "<lineField.path>": "<value>" }
         ],
         "linesMode": "replace",
         "multiSelectMode": "replace",
@@ -119,9 +124,9 @@ public static class AgentPromptBuilder
     sb.AppendLine(
       "   - Allowed `color` values: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`."
     );
-    sb.AppendLine("11. PERSISTENT MEMORY & RULES (`<air_memory>`):");
+    sb.AppendLine("11. PERSONAL USER MEMORY (`<air_memory>`):");
     sb.AppendLine(
-      "   - When the user explicitly asks you to remember a rule, policy, preference, or domain fact for future sessions, confirm in your message AND emit `<air_memory>{\"kind\": \"Rule\", \"title\": \"Short title\", \"content\": \"Clear rule or fact\"}</air_memory>` (where `kind` is `\"Rule\"`, `\"Preference\"`, or `\"Fact\"`)."
+      "   - When the user explicitly asks you to remember a personal preference or domain fact for future sessions, confirm in your message AND emit `<air_memory>{\"kind\": \"Preference\", \"title\": \"Short title\", \"content\": \"Clear preference or fact\"}</air_memory>` (where `kind` is `\"Preference\"` or `\"Fact\"`)."
     );
 
     if (request.Attachments.Count > 0)
@@ -147,7 +152,7 @@ public static class AgentPromptBuilder
     {
       var syncBytes = Encoding.UTF8.GetByteCount(request.SyncContext);
       var currentSyncPrefixBytes = Encoding.UTF8.GetByteCount(sb.ToString());
-      if (currentSyncPrefixBytes + syncBytes + 8192 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
+      if (currentSyncPrefixBytes + syncBytes + 8192 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(turnWorkspaceDir))
       {
         sb.AppendLine();
         sb.AppendLine("[SYNC CONTEXT JSON]");
@@ -155,8 +160,8 @@ public static class AgentPromptBuilder
       }
       else
       {
-        var syncPath = AgentStore.GetSyncContextFilePath(workspaceDir, request.Owner, request.SessionId);
-        File.WriteAllText(syncPath, request.SyncContext, Encoding.UTF8);
+        var syncPath = AgentStore.GetSyncContextFilePath(turnWorkspaceDir);
+        await File.WriteAllTextAsync(syncPath, request.SyncContext, Encoding.UTF8, ct);
         sb.AppendLine();
         sb.AppendLine($"[SYNC CONTEXT JSON — FULL CONTEXT SAVED IN \"{syncPath}\" (USE read_file IF NEEDED)]");
         var syncBudgetBytes = Math.Min(24_000, Math.Max(4096, MaxInlinePromptBytes - currentSyncPrefixBytes - 8192));
@@ -172,17 +177,17 @@ public static class AgentPromptBuilder
         : request.Message
     );
 
-    AppendDatabaseMemoryAndDomainKnowledge(sb, request);
+    await AppendDatabaseMemoryAndDomainKnowledgeAsync(sb, request, ct);
 
     if (!string.IsNullOrWhiteSpace(contextJson))
     {
       var currentBytes = Encoding.UTF8.GetByteCount(sb.ToString());
       var contextBytes = Encoding.UTF8.GetByteCount(contextJson);
-      var fullContextFile = !string.IsNullOrWhiteSpace(workspaceDir)
-        ? AgentStore.GetContextFilePath(workspaceDir, request.Owner, request.SessionId)
+      var fullContextFile = !string.IsNullOrWhiteSpace(turnWorkspaceDir)
+        ? AgentStore.GetContextFilePath(turnWorkspaceDir)
         : null;
 
-      if (currentBytes + contextBytes + 128 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(workspaceDir))
+      if (currentBytes + contextBytes + 128 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(turnWorkspaceDir))
       {
         sb.AppendLine();
         if (fullContextFile != null && File.Exists(fullContextFile))
@@ -201,7 +206,7 @@ public static class AgentPromptBuilder
         var contextPath = fullContextFile!;
         if (!File.Exists(contextPath))
         {
-          File.WriteAllText(contextPath, contextJson, Encoding.UTF8);
+          await File.WriteAllTextAsync(contextPath, contextJson, Encoding.UTF8, ct);
         }
 
         sb.AppendLine();
@@ -216,7 +221,11 @@ public static class AgentPromptBuilder
     return sb.ToString();
   }
 
-  private static void AppendDatabaseMemoryAndDomainKnowledge(StringBuilder sb, AgentTurnRequest request)
+  private static async Task AppendDatabaseMemoryAndDomainKnowledgeAsync(
+    StringBuilder sb,
+    AgentTurnRequest request,
+    CancellationToken ct
+  )
   {
     var options = request.Services?.GetService<AgentOptions>();
     var maxChars = options?.MaxMemoryChars ?? 12_000;
@@ -227,14 +236,19 @@ public static class AgentPromptBuilder
     {
       try
       {
-        var memories = db.AppAgentMemory
+        var ownerTenantId = request.Owner.TenantId;
+        var ownerUserId = request.Owner.UserId;
+        var memories = await db.AppAgentMemory
+          .IgnoreQueryFilters()
           .AsNoTracking()
-          .Where(m => m.IsActive)
-          .OrderByDescending(m => m.Kind == AgentMemoryKinds.Rule)
+          .Where(m => m.IsActive &&
+                      (m.TenantId == null || ownerTenantId != null && m.TenantId == ownerTenantId) &&
+                      (m.UserId == null || ownerUserId != null && m.UserId == ownerUserId))
+          .OrderByDescending(m => m.Kind == AgentMemoryKinds.Rule && m.UserId == null)
           .ThenByDescending(m => m.IsPinned)
           .ThenByDescending(m => m.Priority)
           .ThenBy(m => m.Id)
-          .ToList();
+          .ToListAsync(ct);
 
         if (memories.Count > 0)
         {
@@ -251,7 +265,7 @@ public static class AgentPromptBuilder
             }
 
             usedChars += entryLen;
-            if (string.Equals(mem.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase))
+            if (mem.UserId == null && string.Equals(mem.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase))
             {
               rules.Add(mem);
             }
@@ -294,12 +308,29 @@ public static class AgentPromptBuilder
       }
     }
 
-    var domainKnowledge = options?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
-    if (!hasDbSeed && !string.IsNullOrWhiteSpace(domainKnowledge))
+    if (!hasDbSeed)
     {
-      sb.AppendLine();
-      sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE]");
-      sb.AppendLine(domainKnowledge);
+      var registeredEntries = AgentMemoryCatalog.DomainKnowledgeEntries;
+      if (registeredEntries.Count > 0)
+      {
+        sb.AppendLine();
+        sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE]");
+        foreach (var entry in registeredEntries)
+        {
+          sb.AppendLine($"### {entry.Title}");
+          sb.AppendLine(entry.Content);
+        }
+      }
+      else
+      {
+        var domainKnowledge = options?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement;
+        if (!string.IsNullOrWhiteSpace(domainKnowledge))
+        {
+          sb.AppendLine();
+          sb.AppendLine("[APPLICATION DOMAIN KNOWLEDGE]");
+          sb.AppendLine(domainKnowledge);
+        }
+      }
     }
   }
 
@@ -378,7 +409,7 @@ public static class AgentPromptBuilder
     return Encoding.UTF8.GetString(bytes, 0, len);
   }
 
-  public static async Task StageInlineProposalsAsync(
+  public static async Task<IReadOnlyList<string>> StageInlineProposalsAsync(
     string text,
     AgentTurnRequest request,
     CancellationToken ct
@@ -386,6 +417,8 @@ public static class AgentPromptBuilder
   {
     const string startTag = "<air_proposal>";
     const string endTag = "</air_proposal>";
+    var warnings = new List<string>();
+    var L = Localizer.Instance;
     var fallbackAttIds = request.Attachments.Select(a => a.Id).ToList();
     var jsonOpts = new JsonDocumentOptions
     {
@@ -419,19 +452,19 @@ public static class AgentPromptBuilder
           using var doc = JsonDocument.Parse(json, jsonOpts);
           elements.Add(doc.RootElement.Clone());
         }
-        catch
+        catch (JsonException)
         {
-          // Ignore malformed JSON block
+          warnings.Add(L["AgentProposalStageWarning", L["RequestInvalid"]]);
         }
       }
     }
 
-    if (elements.Count > 0)
+    if (elements.Count > 0 && request.Services is not null)
     {
       elements = AgentStepGraphHelper.SortInlineProposalsTopologically(elements);
 
       var turnId = Guid.NewGuid().ToString("N")[..10];
-      var store = request.Services?.GetService<AgentStore>();
+      var store = request.Services.GetService<AgentStore>();
       var sessionId = AgentStore.NormalizeSessionId(request.SessionId);
       var stagedInTurn = new List<AgentProposalDto>();
 
@@ -441,16 +474,26 @@ public static class AgentPromptBuilder
         {
           var staged = await AgentProposalBuilder.StageProposalAsync(
             el,
-            request.Services!,
+            request.Services,
             ct,
             fallbackAttIds,
             turnId
           );
           stagedInTurn.Add(staged);
         }
-        catch
+        catch (FormRefusedException refusedEx)
         {
-          // Ignore staging errors for invalid inline blocks
+          var firstMsg = refusedEx.Messages.FirstOrDefault();
+          var reason = firstMsg?.Detail ?? firstMsg?.Title ?? refusedEx.Title;
+          warnings.Add(L["AgentProposalStageWarning", reason]);
+        }
+        catch (InvalidOperationException invEx)
+        {
+          warnings.Add(L["AgentProposalStageWarning", invEx.Message]);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          warnings.Add(L["AgentProposalStageWarning", L["AgentErrorSave"]]);
         }
       }
 
@@ -484,6 +527,7 @@ public static class AgentPromptBuilder
     }
 
     await SaveInlineMemoriesAsync(text, request, ct);
+    return warnings;
   }
 
   public static async Task SaveInlineMemoriesAsync(
@@ -506,20 +550,17 @@ public static class AgentPromptBuilder
       return;
     }
 
+    var userId = app.User.UserId.Value;
     var tenantId = db.TenantContext.TenantId;
     if (db.SetOfBase<BaseAppTenant>() != null && tenantId is null or <= 0)
     {
       return;
     }
 
-    var memoryFeature = ModuleCatalog.Instance.AllFeatures.FirstOrDefault(f =>
-      f.ServiceType != null &&
-      IsEntityServiceFor(f.ServiceType, typeof(AppAgentMemory))
-    );
-    if (memoryFeature is null || !AgentFeatureRegistry.CanEditFeature(memoryFeature, app))
-    {
-      return;
-    }
+    const int maxPersonalMemories = 100;
+    var personalCount = await db.AppAgentMemory
+      .IgnoreQueryFilters()
+      .CountAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);
 
     var jsonOpts = new JsonDocumentOptions
     {
@@ -580,24 +621,27 @@ public static class AgentPromptBuilder
           title = title[..200];
         }
 
-        if (content.Length > 4000)
+        if (content.Length > 8000)
         {
-          content = content[..4000];
+          content = content[..8000];
         }
 
-        var kind = string.Equals(rawKind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase)
-          ? AgentMemoryKinds.Rule
-          : string.Equals(rawKind, AgentMemoryKinds.Preference, StringComparison.OrdinalIgnoreCase)
-            ? AgentMemoryKinds.Preference
-            : AgentMemoryKinds.Fact;
+        // Inline <air_memory> from assistant turns is strictly personal (Preference or Fact) — never tenant/global Rule or Seed.
+        var kind = string.Equals(rawKind, AgentMemoryKinds.Fact, StringComparison.OrdinalIgnoreCase)
+          ? AgentMemoryKinds.Fact
+          : AgentMemoryKinds.Preference;
 
         var existing = await db.AppAgentMemory
           .IgnoreQueryFilters()
-          .FirstOrDefaultAsync(m => m.Title == title && m.TenantId == tenantId, ct);
+          .FirstOrDefaultAsync(
+            m => m.Title == title && m.TenantId == tenantId && m.UserId == userId,
+            ct
+          );
         if (existing is not null)
         {
           if (existing.IsPinned ||
-              string.Equals(existing.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase))
+              string.Equals(existing.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(existing.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase))
           {
             continue;
           }
@@ -608,14 +652,21 @@ public static class AgentPromptBuilder
         }
         else
         {
+          if (personalCount >= maxPersonalMemories)
+          {
+            continue;
+          }
+
+          personalCount++;
           db.AppAgentMemory.Add(
             new AppAgentMemory
             {
               TenantId = tenantId,
+              UserId = userId,
               Kind = kind,
               Title = title,
               Content = content,
-              Priority = kind == AgentMemoryKinds.Rule ? 200 : 100,
+              Priority = 100,
               IsPinned = false,
               IsActive = true
             }
@@ -641,18 +692,5 @@ public static class AgentPromptBuilder
         // Ignore persistence errors if table is unavailable
       }
     }
-  }
-
-  private static bool IsEntityServiceFor(Type serviceType, Type entityType)
-  {
-    for (var cur = serviceType; cur != null && cur != typeof(object); cur = cur.BaseType)
-    {
-      if (cur.IsGenericType && cur.GetGenericArguments() is [var firstArg, ..] && firstArg == entityType)
-      {
-        return true;
-      }
-    }
-
-    return false;
   }
 }

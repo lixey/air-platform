@@ -2,7 +2,42 @@ namespace Platform.Data;
 
 public static class AgentMemoryCatalog
 {
+  private static readonly ConcurrentDictionary<string, AgentDomainKnowledgeEntry> RegisteredKnowledge =
+    new(StringComparer.OrdinalIgnoreCase);
+
   public static string? DefaultDomainKnowledge { get; set; }
+
+  public static IReadOnlyList<AgentDomainKnowledgeEntry> DomainKnowledgeEntries =>
+    RegisteredKnowledge.Values
+      .OrderByDescending(e => e.Priority)
+      .ThenBy(e => e.Module ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+      .ThenBy(e => e.Title, StringComparer.OrdinalIgnoreCase)
+      .ToList();
+
+  public static void RegisterDomainKnowledge(
+    string? module,
+    string title,
+    string content,
+    int priority = 150)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(title);
+    ArgumentException.ThrowIfNullOrWhiteSpace(content);
+    var normalizedModule = string.IsNullOrWhiteSpace(module) ? null : module.Trim();
+    if (normalizedModule is not null)
+    {
+      CodeRows.EnsurePascalCaseHandle(normalizedModule, nameof(module));
+    }
+
+    var normalizedTitle = title.Trim();
+    var key = $"{normalizedModule ?? string.Empty}:{normalizedTitle}";
+    RegisteredKnowledge[key] = new AgentDomainKnowledgeEntry(
+      normalizedModule,
+      normalizedTitle,
+      content.Trim(),
+      priority);
+  }
+
+  public static void ClearDomainKnowledge() => RegisteredKnowledge.Clear();
 
   public static AppAgentMemory[] DefaultRows() =>
   [
@@ -10,7 +45,7 @@ public static class AgentMemoryCatalog
     {
       Kind = AgentMemoryKinds.Rule,
       Title = "Document & Image Line Extraction",
-      Content = "When reading attached document or image files, extract every individual line item with its exact name, quantity, unit price, and line total, and match reference fields from the available dictionaries.",
+      Content = "When reading attached document or image files, extract every individual line item using the child form's declared fields, and match reference fields from the available dictionaries.",
       Priority = 200,
       IsPinned = true,
       IsActive = true
@@ -54,7 +89,7 @@ public static class AgentMemoryCatalog
     {
       var existing = await db.AppAgentMemory
         .IgnoreQueryFilters()
-        .Where(m => m.TenantId == null)
+        .Where(m => m.TenantId == null && m.UserId == null)
         .ToListAsync(ct);
 
       var changed = false;
@@ -63,9 +98,9 @@ public static class AgentMemoryCatalog
         var match = existing.FirstOrDefault(e =>
           string.Equals(e.Title, seed.Title, StringComparison.OrdinalIgnoreCase) ||
           string.Equals(e.Kind, seed.Kind, StringComparison.OrdinalIgnoreCase) &&
-           e.Priority == seed.Priority &&
-           e.UpdatedAt == null &&
-           e.Ver <= 1);
+          e.Priority == seed.Priority &&
+          e.UpdatedAt == null &&
+          e.Ver <= 1);
         if (match is null)
         {
           db.AppAgentMemory.Add(seed);
@@ -83,33 +118,56 @@ public static class AgentMemoryCatalog
         }
       }
 
+      var entries = new List<AgentDomainKnowledgeEntry>(DomainKnowledgeEntries);
       if (!string.IsNullOrWhiteSpace(seedDomainKnowledge))
       {
-        var trimmed = seedDomainKnowledge.Trim();
-        if (trimmed.Length > 3800)
+        const string legacyTitle = "Application Domain Knowledge & Workflows";
+        if (!entries.Any(e => e.Module is null && string.Equals(e.Title, legacyTitle, StringComparison.OrdinalIgnoreCase)))
         {
-          trimmed = trimmed[..3800];
+          entries.Add(new AgentDomainKnowledgeEntry(null, legacyTitle, seedDomainKnowledge.Trim(), 150));
         }
-
-        var existingSeed = existing.FirstOrDefault(e => e.Kind == AgentMemoryKinds.Seed);
-        if (existingSeed is null)
+      }
+      else if (entries.Count > 0)
+      {
+        var obsoleteLegacySeed = existing.FirstOrDefault(e =>
+          e.Kind == AgentMemoryKinds.Seed &&
+          e.Module == null &&
+          string.Equals(e.Title, "Application Domain Knowledge & Workflows", StringComparison.OrdinalIgnoreCase));
+        if (obsoleteLegacySeed is not null)
         {
-          db.AppAgentMemory.Add(new AppAgentMemory
-          {
-            Kind = AgentMemoryKinds.Seed,
-            Title = "Application Domain Knowledge & Workflows",
-            Content = trimmed,
-            Priority = 150,
-            IsPinned = true,
-            IsActive = true
-          });
+          db.AppAgentMemory.Remove(obsoleteLegacySeed);
+          existing.Remove(obsoleteLegacySeed);
           changed = true;
         }
-        else if (existingSeed.UpdatedAt == null &&
-                 existingSeed.Ver <= 1 &&
-                 !string.Equals(existingSeed.Content, trimmed, StringComparison.Ordinal))
+      }
+
+      foreach (var entry in entries)
+      {
+        var existingSeed = existing.FirstOrDefault(e =>
+          e.Kind == AgentMemoryKinds.Seed &&
+          string.Equals(e.Module ?? string.Empty, entry.Module ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+          string.Equals(e.Title, entry.Title, StringComparison.OrdinalIgnoreCase));
+        if (existingSeed is null)
         {
-          existingSeed.Content = trimmed;
+          var added = new AppAgentMemory
+          {
+            Kind = AgentMemoryKinds.Seed,
+            Module = entry.Module,
+            Title = entry.Title,
+            Content = entry.Content,
+            Priority = entry.Priority,
+            IsPinned = true,
+            IsActive = true
+          };
+          db.AppAgentMemory.Add(added);
+          existing.Add(added);
+          changed = true;
+        }
+        else if (!string.Equals(existingSeed.Content, entry.Content, StringComparison.Ordinal) ||
+                 existingSeed.Priority != entry.Priority)
+        {
+          existingSeed.Content = entry.Content;
+          existingSeed.Priority = entry.Priority;
           changed = true;
         }
       }

@@ -64,11 +64,13 @@ public static partial class AgentProposalBuilder
     var owner = AgentStore.ResolveOwner(services);
 
     var argSessionId = TryGetString(args, "sessionId");
-    var sessionId = AgentStore.NormalizeSessionId(
-      argSessionId
-      ?? bridge?.GetContext(argSessionId, owner.TenantId, owner.UserId)?.SessionId
-      ?? "default"
-    );
+    var sessionId = bridge?.Active is { TurnToken.Length: > 0, SessionId.Length: > 0 } tokenBound
+      ? AgentStore.NormalizeSessionId(tokenBound.SessionId)
+      : AgentStore.NormalizeSessionId(
+        argSessionId
+        ?? bridge?.GetContext(argSessionId, owner.TenantId, owner.UserId)?.SessionId
+        ?? "default"
+      );
 
     var descriptors = AgentFeatureRegistry.DiscoverForms(db, app);
     if (descriptors.Count == 0)
@@ -84,7 +86,7 @@ public static partial class AgentProposalBuilder
     var isEdit = recordId is > 0;
 
     var requestedService = TryGetString(args, "service") ?? TryGetString(args, "kind");
-    var targetDesc = AgentFeatureRegistry.ResolveFormDescriptor(descriptors, requestedService, db, app) ?? descriptors[0];
+    var targetDesc = ResolveInitialDescriptor(descriptors, requestedService, db, app);
     if (isEdit)
     {
       targetDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(
@@ -164,11 +166,13 @@ public static partial class AgentProposalBuilder
     }
 
     if (ModuleCatalog.Instance.CreateServiceInstance(targetDesc.FormServiceType, db, app) is not IFormService formInst ||
+        !formInst.Feature.AllowsAgentWrite ||
         !AgentFeatureRegistry.CanEditFeature(formInst.Feature, app))
     {
       throw new InvalidOperationException($"Access denied or form service '{targetDesc.ServicePath}' is unavailable.");
     }
 
+    formInst.SetRequest(new FormRequest { Id = isEdit ? recordId : null });
     var initialDraft = await formInst.PrepareDraftAsync(isEdit ? recordId : null, ct: ct);
     var originalFormValues = initialDraft.OriginalValues;
     var formValues = initialDraft.Values;
@@ -661,6 +665,7 @@ public static partial class AgentProposalBuilder
                        linesProp.ValueKind == JsonValueKind.Array;
     if (childFormDesc != null &&
         childFormInst != null &&
+        resolvedChildLine is { } childLineMeta &&
         hasLinesProp)
     {
       (proposalLines, rawLineDicts) = await ParseChildLinesAsync(
@@ -669,10 +674,10 @@ public static partial class AgentProposalBuilder
         isEdit,
         recordId,
         targetDesc,
-        resolvedChildLine?.ChildGrid,
+        childLineMeta.Child,
+        childLineMeta.ChildGrid,
         childFormInst,
         childEditableElements,
-        editableElements,
         formValues,
         explicitlyProvided,
         newReferences,
@@ -964,5 +969,26 @@ public static partial class AgentProposalBuilder
 
     store.StageProposal(proposal, owner);
     return proposal;
+  }
+
+  private static GridCreateDescriptor ResolveInitialDescriptor(
+    IReadOnlyList<GridCreateDescriptor> descriptors,
+    string? requestedService,
+    PlatformDbContext db,
+    PlatformAppService app
+  )
+  {
+    if (!string.IsNullOrWhiteSpace(requestedService))
+    {
+      return AgentFeatureRegistry.ResolveFormDescriptor(descriptors, requestedService, db, app)
+        ?? throw new InvalidOperationException($"Form service '{requestedService}' is not available or not enabled for AI mutations.");
+    }
+
+    if (descriptors.Count == 1)
+    {
+      return descriptors[0];
+    }
+
+    throw new InvalidOperationException("Proposal must specify a valid 'service' from available forms.");
   }
 }

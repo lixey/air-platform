@@ -1,10 +1,22 @@
 import type { AgentBlockPlugin, AgentContentBlock } from './agent-block-models';
 import { splitMarkdownAndGfmTables } from './agent-markdown';
 
+/**
+ * Removes inline `<air_proposal>` and `<air_memory>` XML blocks (including incomplete trailing tags while streaming)
+ * from raw assistant text before displaying or copying prose.
+ */
+export function stripAgentControlBlocks(raw: string): string {
+  return raw
+    .replace(/```(?:json|xml)?\s*<air_proposal\b[^>]*>[\s\S]*?(?:<\/air_proposal>\s*```|<\/air_proposal>|$)/gi, '')
+    .replace(/<air_proposal\b[^>]*>[\s\S]*?(?:<\/air_proposal>|$)/gi, '')
+    .replace(/```(?:json|xml)?\s*<air_memory\b[^>]*>[\s\S]*?(?:<\/air_memory>\s*```|<\/air_memory>|$)/gi, '')
+    .replace(/<air_memory\b[^>]*>[\s\S]*?(?:<\/air_memory>|$)/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function stripProposalAndIncompleteBlocks(raw: string, plugins: readonly AgentBlockPlugin[]): string {
-  let text = raw
-    .replace(/```(?:json|xml)?\s*<air_proposal>[\s\S]*?(?:<\/air_proposal>\s*```|<\/air_proposal>|$)/gi, '')
-    .replace(/<air_proposal>[\s\S]*?(?:<\/air_proposal>|$)/gi, '');
+  let text = stripAgentControlBlocks(raw);
 
   for (const plugin of plugins) {
     const openTagRegex = new RegExp(`<${plugin.tag}\\b[^>]*>(?![\\s\\S]*<\\/${plugin.tag}>)[\\s\\S]*$`, 'i');

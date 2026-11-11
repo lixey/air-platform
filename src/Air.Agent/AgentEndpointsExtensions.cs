@@ -179,6 +179,10 @@ public static class AgentEndpointsExtensions
     }
 
     services.AddAirMcp();
+    services.AddMcpTool<CatalogListMcpTool>();
+    services.AddMcpTool<CatalogDescribeMcpTool>();
+    services.AddMcpTool<RecordsQueryMcpTool>();
+    services.AddMcpTool<ProposalStageMcpTool>();
     services.TryAddSingleton(options);
     services.TryAddSingleton<AgentStore>();
     services.AddSingleton<IAgentProvider, AgyCliAgentProvider>();
@@ -199,6 +203,8 @@ public static class AgentEndpointsExtensions
 
   public static void MapAirAgent(this IEndpointRouteBuilder app)
   {
+    app.MapAirMcp();
+
     try
     {
       using var scope = app.ServiceProvider.CreateScope();
@@ -597,6 +603,7 @@ public static class AgentEndpointsExtensions
           ProviderHandle = provider.Handle,
           Model = selectedModel,
           ModelName = selectedModelName,
+          McpServerUrl = ResolveLoopbackMcpUrl(ctx),
           Services = ctx.RequestServices
         };
 
@@ -829,6 +836,7 @@ public static class AgentEndpointsExtensions
           Model = selectedModel,
           ModelName = selectedModelName,
           SyncContext = syncResult.SyncContextJson,
+          McpServerUrl = ResolveLoopbackMcpUrl(ctx),
           Services = ctx.RequestServices
         };
 
@@ -840,5 +848,16 @@ public static class AgentEndpointsExtensions
         }
       }
     );
+  }
+
+  private static string? ResolveLoopbackMcpUrl(HttpContext ctx)
+  {
+    var port = ctx.Connection.LocalPort;
+    if (port <= 0 && ctx.Request.Host.Port is > 0 and var hostPort)
+    {
+      port = hostPort;
+    }
+
+    return port > 0 ? $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}/api/mcp" : null;
   }
 }

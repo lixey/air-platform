@@ -28,7 +28,10 @@ internal sealed class PlatformModelConvention(PlatformDbContext db) : IModelFina
 
         if (typeof(IInheritedByChildTenants).IsAssignableFrom(clrType))
         {
-          entityType.SetQueryFilter(TenantFilterExtensions.Inherited, BuildInheritedTenantFilter(clrType));
+          var filter = clrType == typeof(AppAgentMemory)
+            ? BuildAgentMemoryFilter()
+            : BuildInheritedTenantFilter(clrType);
+          entityType.SetQueryFilter(TenantFilterExtensions.Inherited, filter);
           entityType.FindProperty(nameof(IInheritedByChildTenants.TenantId))?.SetIsConcurrencyToken(true);
         }
 
@@ -95,6 +98,42 @@ internal sealed class PlatformModelConvention(PlatformDbContext db) : IModelFina
     var nullCheck = Expression.Equal(property, Expression.Constant(null, typeof(long?)));
     var equality = Expression.Equal(property, currentTenantId);
     return Expression.Lambda(Expression.OrElse(isSystemScope, Expression.OrElse(nullCheck, equality)), parameter);
+  }
+
+  private LambdaExpression BuildAgentMemoryFilter()
+  {
+    var parameter = Expression.Parameter(typeof(AppAgentMemory), "e");
+    var tenantProp = Expression.Call(
+      typeof(EF),
+      nameof(EF.Property),
+      [typeof(long?)],
+      parameter,
+      Expression.Constant(nameof(AppAgentMemory.TenantId)));
+    var userProp = Expression.Call(
+      typeof(EF),
+      nameof(EF.Property),
+      [typeof(long?)],
+      parameter,
+      Expression.Constant(nameof(AppAgentMemory.UserId)));
+
+    var tenantCtx = Expression.Property(Expression.Constant(db), nameof(PlatformDbContext.TenantContext));
+    var isSystemScope = Expression.Property(tenantCtx, nameof(ITenantContext.IsSystemScope));
+    var currentTenantId = Expression.Property(tenantCtx, nameof(ITenantContext.TenantId));
+    var currentUserId = Expression.Property(tenantCtx, nameof(ITenantContext.UserId));
+
+    var nullLong = Expression.Constant(null, typeof(long?));
+    var tenantAllowed = Expression.OrElse(
+      Expression.Equal(tenantProp, nullLong),
+      Expression.Equal(tenantProp, currentTenantId));
+    var userAllowed = Expression.OrElse(
+      Expression.Equal(userProp, nullLong),
+      Expression.AndAlso(
+        Expression.NotEqual(currentUserId, nullLong),
+        Expression.Equal(userProp, currentUserId)));
+
+    return Expression.Lambda(
+      Expression.OrElse(isSystemScope, Expression.AndAlso(tenantAllowed, userAllowed)),
+      parameter);
   }
 
   private LambdaExpression BuildChangeJournalFilter()

@@ -1,4 +1,15 @@
+import type { UiColor } from '../core/generated/contracts';
+import { UI_COLORS } from '../theme/ui-color';
+
 const MAX_PROMPT_HEIGHT = 160;
+
+export function asAgentUiColor(color: string | null | undefined): UiColor | null {
+  if (!color) {
+    return null;
+  }
+  const lower = color.toLowerCase();
+  return UI_COLORS.find(c => c === lower) ?? null;
+}
 
 export function fitPromptToText(area: HTMLTextAreaElement): void {
   if (!area.value) {

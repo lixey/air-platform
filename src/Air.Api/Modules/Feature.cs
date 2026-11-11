@@ -41,7 +41,7 @@ public class Feature
     HasDelete = source.HasDelete;
     HasExport = source.HasExport;
     HasHistory = source.HasHistory;
-    AllowsAgent = source.AllowsAgent;
+    AgentAccess = source.AgentAccess;
 
     (View, MenuView, Edit, Delete, Export, History, All) = CreateStandardRights();
 
@@ -113,7 +113,9 @@ public class Feature
   public bool HasDelete { get; private set; } = true;
   public bool HasExport { get; private set; } = true;
   public bool HasHistory { get; private set; } = true;
-  public bool AllowsAgent { get; private set; }
+  public AgentAccess AgentAccess { get; private set; }
+  public bool AllowsAgent => AgentAccess != AgentAccess.None;
+  public bool AllowsAgentWrite => AgentAccess == AgentAccess.ReadWrite && !IsReadOnly;
   public bool IsFrozen { get; private set; }
 
   public Right View { get; }
@@ -183,12 +185,15 @@ public class Feature
     return this;
   }
 
-  public Feature AllowAgent(bool allow = true)
+  public Feature AllowAgent(AgentAccess access = AgentAccess.ReadWrite)
   {
     EnsureMutable();
-    AllowsAgent = allow;
+    AgentAccess = access;
     return this;
   }
+
+  public Feature AllowAgent(bool allow) =>
+    AllowAgent(allow ? AgentAccess.ReadWrite : AgentAccess.None);
 
   public static string FormatSourceTitle(string uiSource, string dbSource) =>
     Localizer.Instance["LegacyTitleFormat", uiSource, dbSource];

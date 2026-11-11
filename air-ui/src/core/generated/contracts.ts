@@ -487,9 +487,9 @@ export interface AgentProposalFieldDto {
 
 export interface AgentProposalLineDto {
   name: string;
-  qty: number;
-  price: number;
-  amount: number;
+  qty?: number | null;
+  price?: number | null;
+  amount?: number | null;
   category?: string | null;
   fields?: AgentProposalFieldDto[] | null;
 }

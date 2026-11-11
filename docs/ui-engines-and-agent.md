@@ -147,16 +147,18 @@ protected override void Configure()
 
 ШІ-асистент працює повністю на основі метаданих платформи й не містить жодної специфіки конкретних застосунків:
 
-1. **Як увімкнути:** Додайте `.AllowAgent()` до фічі в описі модуля:
+1. **Гранулярний доступ (`AgentAccess`):** Додайте `.AllowAgent()` (`AgentAccess.ReadWrite`, за замовчуванням) або `.AllowAgent(AgentAccess.Read)` до фічі в описі модуля (зокрема на звітах `ReportService`, які мають потрапляти в аналітичний контекст ШІ):
    ```csharp
    public static readonly Feature Order = new Feature(Handle, nameof(Order)).AllowAgent();
+   public static readonly Feature SalesReport = new Feature(Handle, nameof(SalesReport)).AllowAgent(AgentAccess.Read);
    ```
-2. **Як формується контекст (`AgentContextQueryService`):**
-   - Реєстр `AgentFeatureRegistry` знаходить усі фічі з `.AllowAgent()`, до яких поточний користувач має право `CanView` / `CanEdit` (включно з формами над `ReadOnly`-таблицями та першою редагованою дочірньою таблицею рядків).
-   - Невеликі довідники (`<= 50` записів) підвантажуються в контекст одразу, а великі (`> 50` записів) шукаються на льоту через серверний пошук.
-3. **Картки пропозицій `<air_proposal>` (`AgentProposalBuilder` / `AgentProposalExecutor`):**
-   - Коли користувач просить створити або змінити запис (чи розпізнати прикріплене зображення або документ), ШІ повертає структурований блок `<air_proposal>`.
-   - Бекенд проганяє його через `PrepareDraftAsync` цільової `FormService` (при редагуванні спочатку завантажує запис, щоб бачити edit-only поля), резолвить посилання за `ReferenceLabelPaths` і показує користувачу інтерактивну картку підтвердження в чаті.
+2. **Як формується контекст та предметні знання (`AgentContextQueryService` / `AgentMemoryCatalog`):**
+   - Реєстр `AgentFeatureRegistry` знаходить фічі за рівнем `AgentAccess`: читання таблиць і звітів вимагає `AllowsAgent` + `CanView`, а генерація та виконання мутацій через форми — `AllowsAgentWrite` + `CanEdit`.
+   - Модулі реєструють свої предметні правила адитивно без обрізання через `AgentMemoryCatalog.RegisterDomainKnowledge(moduleHandle, title, content)` (або `options.AddDomainKnowledge(...)` у `AddAirAgent`).
+   - Невеликі довідники (`<= 50` записів) підвантажуються в контекст одразу, а великі (`> 50` записів) опитуються через серверний пошук або вбудовані MCP-інструменти (`POST /api/mcp`: `air_catalog_list`, `air_catalog_describe`, `air_records_query`, `air_proposal_stage`).
+3. **Картки пропозицій `<air_proposal>` та декларативне підсумовування (`SumTo`):**
+   - Коли користувач просить створити або змінити запис (чи розпізнати прикріплене зображення або документ), ШІ формує картку `<air_proposal>` (напряму або через `air_proposal_stage`), а якщо дочірня таблиця оголосила `.AddChild<TLineGrid>().SumTo("total", "amount")`, сума батьківського документа перераховується декларативно за метаданими форми.
    - Запис у БД відбувається **виключно після натискання кнопки підтвердження користувачем** через стандартний `FormService.SaveAsync`.
-4. **Сувора ізоляція (`TenantId`, `UserId`, `SessionId`):**
-   - Робоча директорія CLI-провайдера (`--add-dir`), сесії `McpExecutionBridge`, завантажені вкладення та пам'ять `AppAgentMemory` суворо ізольовані за `(TenantId, UserId, SessionId)`. Жоден тенант чи користувач не може прочитати контекст або сесію іншого.
+4. **Сувора ізоляція процесу, пам'яті та сесій (`TenantId`, `UserId`, `SessionId`):**
+   - CLI-провайдери отримують промпт виключно через `stdin`, працюють в очищеному списку змінних оточення та одноразовій директорії ходу з правами `0700`, а виклики Loopback MCP прив'язані до криптографічного токена поточного ходу й сесії.
+   - Пам'ять `AppAgentMemory` ізольована на рівні глобального фільтра та конвенцій запису `PlatformDbContext` за `(TenantId, UserId)`: глобальні правила/зерна (`TenantId == null`), спільні правила тенанта (`Kind == "Rule"`, `UserId == null`) та приватні нотатки користувача (`Preference` / `Fact`, `UserId == currentUserId`).

@@ -183,7 +183,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId) =>
+      (psi, prompt, existingConvId, _) =>
       {
         psi.ArgumentList.Add("exec");
 
@@ -207,8 +207,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
           psi.ArgumentList.Add("-c");
           psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
           psi.ArgumentList.Add(existingConvId);
-          psi.ArgumentList.Add("--");
-          psi.ArgumentList.Add(prompt);
+          psi.ArgumentList.Add("-");
         }
         else
         {
@@ -244,9 +243,10 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
             }
           }
 
-          psi.ArgumentList.Add("--");
-          psi.ArgumentList.Add(prompt);
+          psi.ArgumentList.Add("-");
         }
+
+        return prompt;
       },
       (root, fullAssistantText, pendingEvents) =>
       {

@@ -3,9 +3,12 @@ namespace Platform.Data.Entities;
 /// <summary>
 /// Persistent memory and rules entry for the built-in AI assistant (mandatory rules, seeded domain knowledge, and learned facts/preferences).
 /// </summary>
+[Index(nameof(TenantId), nameof(UserId), nameof(IsActive))]
 public class AppAgentMemory : BaseEntity, IHasIsActive, IInheritedByChildTenants
 {
   public long? TenantId { get; set; }
+
+  public long? UserId { get; set; }
 
   [MaxLength(64)]
   public string Kind { get; set; } = AgentMemoryKinds.Rule;
@@ -16,7 +19,6 @@ public class AppAgentMemory : BaseEntity, IHasIsActive, IInheritedByChildTenants
   [MaxLength(200)]
   public string Title { get; set; } = string.Empty;
 
-  [MaxLength(4000)]
   public string Content { get; set; } = string.Empty;
 
   public int Priority { get; set; } = 100;

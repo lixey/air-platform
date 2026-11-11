@@ -42,7 +42,7 @@ const ALLOWED_TAGS = new Set([
   'ul',
 ]);
 
-const ALLOWED_ATTRS = new Set(['class', 'href', 'title', 'target', 'rel', 'colspan', 'rowspan', 'align', 'open']);
+const ALLOWED_ATTRS = new Set(['href', 'title', 'target', 'rel', 'colspan', 'rowspan', 'align', 'open']);
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

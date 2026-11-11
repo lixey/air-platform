@@ -1342,4 +1342,13 @@
   <data name="Ok" xml:space="preserve">
     <value>OK</value>
   </data>
+  <data name="AgentProposalStageWarning" xml:space="preserve">
+    <value>Не вдалося підготувати картку пропозиції: {0}</value>
+  </data>
+  <data name="AgentErrorSessionBusy" xml:space="preserve">
+    <value>У цій сесії чату вже виконується інший запит. Дочекайтеся його завершення або зупиніть його.</value>
+  </data>
+  <data name="AgentErrorTurnTimeout" xml:space="preserve">
+    <value>Час очікування відповіді ШІ-асистента вичерпано.</value>
+  </data>
 </root>

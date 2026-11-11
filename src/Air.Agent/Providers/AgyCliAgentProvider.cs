@@ -32,6 +32,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       CreateNoWindow = true,
       StandardOutputEncoding = Encoding.UTF8
     };
+    CliTurnRunner.ScrubStartInfoEnvironment(psi);
     psi.ArgumentList.Add("models");
 
     using var proc = Process.Start(psi);
@@ -102,6 +103,18 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       "/opt/homebrew/bin/agy");
   }
 
+  internal static string FormatStdinTurnLine(string prompt) =>
+    JsonSerializer.Serialize(
+      new
+      {
+        @event = "user",
+        message = new
+        {
+          role = "user",
+          content = prompt
+        }
+      }) + "\n";
+
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
@@ -121,14 +134,15 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId) =>
+      (psi, prompt, existingConvId, _) =>
       {
-        psi.ArgumentList.Add("--print");
-        psi.ArgumentList.Add(prompt);
+        psi.ArgumentList.Add("--input-format");
+        psi.ArgumentList.Add("stream-json");
         psi.ArgumentList.Add("--output-format");
         psi.ArgumentList.Add("stream-json");
         psi.ArgumentList.Add("--sandbox");
         psi.ArgumentList.Add("--disable-slash-commands");
+        psi.ArgumentList.Add("--print=");
         if (!string.IsNullOrWhiteSpace(selectedModel))
         {
           psi.ArgumentList.Add("--model");
@@ -143,6 +157,8 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
           psi.ArgumentList.Add("--conversation");
           psi.ArgumentList.Add(existingConvId);
         }
+
+        return FormatStdinTurnLine(prompt);
       },
       (root, fullAssistantText, pendingEvents) =>
       {

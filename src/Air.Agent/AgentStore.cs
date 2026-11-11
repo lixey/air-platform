@@ -4,37 +4,73 @@ namespace Platform.Agent;
 
 public sealed class AgentStore
 {
-  private sealed record OwnedAttachment(AgentAttachmentDto Dto, AgentOwnerScope Owner, DateTimeOffset LastAccessUtc);
-
-  private sealed record OwnedProposal(AgentProposalDto Dto, AgentOwnerScope Owner, DateTimeOffset LastAccessUtc);
-
-  private sealed class SessionState(AgentOwnerScope owner)
-  {
-    public AgentOwnerScope Owner { get; } = owner;
-    public DateTimeOffset LastAccessUtc { get; set; } = DateTimeOffset.UtcNow;
-    public ConcurrentDictionary<string, string> ConversationIds { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public List<AgentProposalDto> Proposals { get; } = [];
-    public ConcurrentQueue<AgentProposalDto> PendingProposals { get; } = new();
-    public ConcurrentQueue<string> SupersededProposalIds { get; } = new();
-    public Dictionary<string, int> TurnStepCounters { get; } = new(StringComparer.OrdinalIgnoreCase);
-  }
-
-  private readonly AgentOptions _options;
   private readonly ConcurrentDictionary<string, OwnedAttachment> _attachments = new(StringComparer.OrdinalIgnoreCase);
   private readonly ConcurrentDictionary<string, OwnedProposal> _proposals = new(StringComparer.OrdinalIgnoreCase);
-  private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.OrdinalIgnoreCase);
+  private readonly ConcurrentDictionary<string, AgentSessionState> _sessions = new(StringComparer.OrdinalIgnoreCase);
   private readonly SemaphoreSlim _seedLock = new(1, 1);
+  private readonly SemaphoreSlim _globalTurnSemaphore;
   private bool _catalogsSeeded;
   private long _lastCleanupTicks = DateTimeOffset.UtcNow.UtcTicks;
 
+  public AgentOptions Options { get; }
   public string WorkspaceDirectory { get; }
 
   public AgentStore(AgentOptions? options = null)
   {
-    _options = options ?? new AgentOptions();
-    WorkspaceDirectory = Path.Combine(Path.GetTempPath(), "air-agent-workspace");
-    Directory.CreateDirectory(WorkspaceDirectory);
+    Options = options ?? new AgentOptions();
+    var maxTurns = Math.Max(1, Options.MaxConcurrentTurns);
+    _globalTurnSemaphore = new SemaphoreSlim(maxTurns, maxTurns);
+
+    var appHash = Convert.ToHexStringLower(
+      SHA256.HashData(Encoding.UTF8.GetBytes($"{AppContext.BaseDirectory}|{Environment.UserName}")))[..12];
+    WorkspaceDirectory = Path.Combine(Path.GetTempPath(), $"air-agent-{appHash}");
+    EnsurePrivateDirectory(WorkspaceDirectory);
     CleanupStaleDiskFiles();
+  }
+
+  internal static void EnsurePrivateDirectory(string path)
+  {
+    const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    const UnixFileMode nonOwnerMask = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+                                      UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
+    if (!OperatingSystem.IsWindows() && !Directory.Exists(path))
+    {
+      Directory.CreateDirectory(path, ownerOnly);
+      return;
+    }
+
+    Directory.CreateDirectory(path);
+    if (!OperatingSystem.IsWindows())
+    {
+      var currentMode = File.GetUnixFileMode(path);
+      if ((currentMode & nonOwnerMask) != 0)
+      {
+        File.SetUnixFileMode(path, ownerOnly);
+      }
+    }
+  }
+
+  public bool TryAcquireSessionTurn(string? sessionId, AgentOwnerScope owner, out IDisposable? lease)
+  {
+    var safeSessionId = NormalizeSessionId(sessionId);
+    var sKey = SessionKey(owner, safeSessionId);
+    var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
+    session.LastAccessUtc = DateTimeOffset.UtcNow;
+    if (!session.TurnGate.Wait(0))
+    {
+      lease = null;
+      return false;
+    }
+
+    lease = new AgentTurnLease(session.TurnGate);
+    return true;
+  }
+
+  public async Task<IDisposable> AcquireGlobalTurnSlotAsync(CancellationToken ct = default)
+  {
+    await _globalTurnSemaphore.WaitAsync(ct);
+    return new AgentTurnLease(_globalTurnSemaphore);
   }
 
   public async Task EnsureCatalogsSeededAsync(PlatformDbContext db, string? domainKnowledge, CancellationToken ct = default)
@@ -86,8 +122,14 @@ public sealed class AgentStore
   private static bool MatchesOwner(AgentOwnerScope entryOwner, AgentOwnerScope caller) =>
     entryOwner.TenantId == caller.TenantId && entryOwner.UserId == caller.UserId;
 
+  private static string FormatTenantSegment(long? tenantId) =>
+    tenantId.HasValue ? $"t_{tenantId.Value.ToString(CultureInfo.InvariantCulture)}" : "t_global";
+
+  private static string FormatUserSegment(long? userId) =>
+    userId.HasValue ? $"u_{userId.Value.ToString(CultureInfo.InvariantCulture)}" : "u_anon";
+
   private static string SessionKey(AgentOwnerScope owner, string sessionId) =>
-    $"{owner.TenantId ?? 0}:{owner.UserId ?? 0}:{sessionId}";
+    $"{FormatTenantSegment(owner.TenantId)}:{FormatUserSegment(owner.UserId)}:{sessionId}";
 
   public string GetSessionWorkspaceDirectory(AgentOwnerScope owner, string? sessionId) =>
     GetSessionWorkspaceDirectory(WorkspaceDirectory, owner, sessionId);
@@ -95,9 +137,17 @@ public sealed class AgentStore
   public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId)
   {
     var safeSessionId = NormalizeSessionId(sessionId);
-    var dir = Path.Combine(workspaceDirectory, $"t_{owner.TenantId ?? 0}", $"u_{owner.UserId ?? 0}", safeSessionId);
-    Directory.CreateDirectory(dir);
+    var dir = Path.Combine(workspaceDirectory, FormatTenantSegment(owner.TenantId), FormatUserSegment(owner.UserId), safeSessionId);
+    EnsurePrivateDirectory(dir);
     return dir;
+  }
+
+  public string CreateTurnWorkspaceDirectory(AgentOwnerScope owner, string? sessionId)
+  {
+    var sessionDir = GetSessionWorkspaceDirectory(owner, sessionId);
+    var turnDir = Path.Combine(sessionDir, $"turn-{Guid.NewGuid():N}");
+    EnsurePrivateDirectory(turnDir);
+    return turnDir;
   }
 
   public static bool IsValidSessionId(string? sessionId)
@@ -119,7 +169,7 @@ public sealed class AgentStore
   }
 
   public static string NormalizeSessionId(string? sessionId) =>
-    IsValidSessionId(sessionId) ? sessionId! : Guid.NewGuid().ToString("N")[..12];
+    IsValidSessionId(sessionId) ? sessionId! : Guid.NewGuid().ToString("N");
 
   public async Task<AgentAttachmentDto> SaveAttachmentAsync(
     AgentOwnerScope owner,
@@ -131,7 +181,7 @@ public sealed class AgentStore
   {
     CleanupExpiredIfNeeded();
 
-    var id = Guid.NewGuid().ToString("N")[..12];
+    var id = Guid.NewGuid().ToString("N")[..16];
     var ext = Path.GetExtension(fileName);
     if (!string.IsNullOrWhiteSpace(ext) && BlockedAttachmentExtensions.Contains(ext))
     {
@@ -159,8 +209,8 @@ public sealed class AgentStore
     }
 
     var safeFileName = $"attachment-{id}{ext}";
-    var dir = Path.Combine(WorkspaceDirectory, $"t_{owner.TenantId ?? 0}", $"u_{owner.UserId ?? 0}", "uploads");
-    Directory.CreateDirectory(dir);
+    var dir = Path.Combine(WorkspaceDirectory, FormatTenantSegment(owner.TenantId), FormatUserSegment(owner.UserId), "uploads");
+    EnsurePrivateDirectory(dir);
     var localPath = Path.Combine(dir, safeFileName);
 
     await using (var fs = File.Create(localPath))
@@ -217,7 +267,7 @@ public sealed class AgentStore
     _proposals[proposal.Id] = new OwnedProposal(proposal, owner, now);
 
     var sKey = SessionKey(owner, proposal.SessionId);
-    var session = _sessions.GetOrAdd(sKey, _ => new SessionState(owner));
+    var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
     session.LastAccessUtc = now;
     lock (session.Proposals)
     {
@@ -435,7 +485,7 @@ public sealed class AgentStore
   public void SetConversationId(string sessionId, AgentOwnerScope owner, string conversationId, string providerHandle)
   {
     var sKey = SessionKey(owner, sessionId);
-    var session = _sessions.GetOrAdd(sKey, _ => new SessionState(owner));
+    var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
     session.LastAccessUtc = DateTimeOffset.UtcNow;
     session.ConversationIds[providerHandle] = conversationId;
   }
@@ -453,6 +503,11 @@ public sealed class AgentStore
   public void ResetSession(string sessionId, AgentOwnerScope owner)
   {
     var sKey = SessionKey(owner, sessionId);
+    if (_sessions.TryGetValue(sKey, out var existing) && existing.TurnGate.CurrentCount == 0)
+    {
+      return;
+    }
+
     if (_sessions.TryRemove(sKey, out var session))
     {
       lock (session.Proposals)
@@ -479,11 +534,11 @@ public sealed class AgentStore
       return;
     }
 
-    var cutoff = now - _options.SessionTtl;
+    var cutoff = now - Options.SessionTtl;
 
     foreach (var (key, session) in _sessions)
     {
-      if (session.LastAccessUtc < cutoff)
+      if (session.LastAccessUtc < cutoff && session.TurnGate.CurrentCount > 0)
       {
         _sessions.TryRemove(key, out _);
       }
@@ -506,18 +561,18 @@ public sealed class AgentStore
     }
   }
 
-  public static string GetContextFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
-    Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"context-{NormalizeSessionId(sessionId)}.json");
+  public static string GetContextFilePath(string turnOrSessionDirectory) =>
+    Path.Combine(turnOrSessionDirectory, "context.json");
 
-  public static string GetRecordsFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
-    Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"records-{NormalizeSessionId(sessionId)}.json");
+  public static string GetRecordsFilePath(string turnOrSessionDirectory) =>
+    Path.Combine(turnOrSessionDirectory, "records.json");
 
-  public static string GetSyncContextFilePath(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
-    Path.Combine(GetSessionWorkspaceDirectory(workspaceDirectory, owner, sessionId), $"sync-context-{NormalizeSessionId(sessionId)}.json");
+  public static string GetSyncContextFilePath(string turnOrSessionDirectory) =>
+    Path.Combine(turnOrSessionDirectory, "sync-context.json");
 
   private void CleanupStaleDiskFiles()
   {
-    var cutoff = (DateTimeOffset.UtcNow - _options.SessionTtl).UtcDateTime;
+    var cutoff = (DateTimeOffset.UtcNow - Options.SessionTtl).UtcDateTime;
 
     try
     {

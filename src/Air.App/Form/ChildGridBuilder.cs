@@ -11,6 +11,8 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
   public bool IsFiles { get; private set; }
   public bool IsReadOnly { get; private set; }
   public string Look { get; private set; } = FilesLook.Tiles;
+  public string? SumTargetPath { get; private set; }
+  public string? SumSourcePath { get; private set; }
   internal Type? ChildEntityType { get; set; }
   internal Func<PlatformDbContext, long, IQueryable, IQueryable>? FilterProvider { get; set; }
   internal Action<PlatformDbContext, long, object>? PresetProvider { get; set; }
@@ -46,6 +48,15 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
   {
     IsFiles = true;
     Look = look;
+    return this;
+  }
+
+  public ChildGridBuilder SumTo(string parentFieldPath, string childFieldPath)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(parentFieldPath);
+    ArgumentException.ThrowIfNullOrWhiteSpace(childFieldPath);
+    SumTargetPath = parentFieldPath;
+    SumSourcePath = childFieldPath;
     return this;
   }
 }

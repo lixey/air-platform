@@ -24,7 +24,7 @@ public static class AgentFeatureRegistry
 
     foreach (var feat in ModuleCatalog.Instance.AllFeatures)
     {
-      if (!feat.AllowsAgent || !CanEditFeature(feat, app) || feat.ServiceType == null)
+      if (!feat.AllowsAgentWrite || !CanEditFeature(feat, app) || feat.ServiceType == null)
       {
         continue;
       }
@@ -37,7 +37,7 @@ public static class AgentFeatureRegistry
           foreach (var desc in grid.GetAgentForms())
           {
             if (ModuleCatalog.Instance.CreateServiceInstance(desc.FormServiceType, db, app) is IFormService descForm &&
-                (descForm.Feature.IsReadOnly || !CanEditFeature(descForm.Feature, app)))
+                (!descForm.Feature.AllowsAgentWrite || !CanEditFeature(descForm.Feature, app)))
             {
               continue;
             }
@@ -48,7 +48,7 @@ public static class AgentFeatureRegistry
             }
           }
         }
-        else if (inst is IFormService form && !form.Feature.IsReadOnly)
+        else if (inst is IFormService form && form.Feature.AllowsAgentWrite)
         {
           if (seen.Add(form.Service))
           {
@@ -100,7 +100,7 @@ public static class AgentFeatureRegistry
       {
         if (typeof(IGridService).IsAssignableFrom(directType) &&
             ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IGridService grid &&
-            grid.Feature.AllowsAgent &&
+            grid.Feature.AllowsAgentWrite &&
             CanEditFeature(grid.Feature, app))
         {
           var agentForms = grid.GetAgentForms();
@@ -118,8 +118,7 @@ public static class AgentFeatureRegistry
 
         if (typeof(IFormService).IsAssignableFrom(directType) &&
             ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IFormService form &&
-            form.Feature.AllowsAgent &&
-            !form.Feature.IsReadOnly &&
+            form.Feature.AllowsAgentWrite &&
             CanEditFeature(form.Feature, app))
         {
           if (form.Feature.ServiceType != null &&
@@ -252,7 +251,7 @@ public static class AgentFeatureRegistry
       try
       {
         if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, app) is IGridService refGrid &&
-            (refGrid.Feature.AllowsAgent || element.AllowsCreate) &&
+            refGrid.Feature.AllowsAgentWrite &&
             CanEditFeature(refGrid.Feature, app))
         {
           var gridCreate = refGrid.GetAgentForms().FirstOrDefault();

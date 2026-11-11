@@ -1,3 +1,5 @@
+using Platform.Mcp.Internals;
+
 namespace Platform.Mcp;
 
 /// <summary>
@@ -7,11 +9,30 @@ public sealed class McpExecutionBridge
 {
   private static readonly AsyncLocal<McpCallContext?> CurrentContext = new();
   private readonly ConcurrentDictionary<string, McpCallContext> _sessions = new(StringComparer.OrdinalIgnoreCase);
+  private readonly ConcurrentDictionary<string, McpCallContext> _turnTokens = new(StringComparer.Ordinal);
 
   public McpCallContext? Active => CurrentContext.Value;
 
   private static string BuildSessionKey(long? tenantId, long? userId, string sessionId) =>
-    $"{tenantId ?? 0}:{userId ?? 0}:{sessionId}";
+    $"{(tenantId.HasValue ? tenantId.Value.ToString(CultureInfo.InvariantCulture) : "global")}:{(userId.HasValue ? userId.Value.ToString(CultureInfo.InvariantCulture) : "anon")}:{sessionId}";
+
+  public McpCallContext? ResolveByTurnToken(string? turnToken)
+  {
+    if (string.IsNullOrWhiteSpace(turnToken))
+    {
+      return null;
+    }
+
+    var trimmed = turnToken.Trim();
+    if (!_turnTokens.TryGetValue(trimmed, out var ctx) || string.IsNullOrEmpty(ctx.TurnToken))
+    {
+      return null;
+    }
+
+    var expectedBytes = Encoding.ASCII.GetBytes(ctx.TurnToken);
+    var actualBytes = Encoding.ASCII.GetBytes(trimmed);
+    return CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes) ? ctx : null;
+  }
 
   public McpCallContext? GetContext(string? sessionId, long? tenantId = null, long? userId = null)
   {
@@ -36,45 +57,44 @@ public sealed class McpExecutionBridge
       return active;
     }
 
+    if (!userId.HasValue)
+    {
+      return null;
+    }
+
     var effectiveTenantId = tenantId ?? active?.TenantId;
-    var effectiveUserId = userId ?? active?.UserId;
-    if (_sessions.TryGetValue(BuildSessionKey(effectiveTenantId, effectiveUserId, sessionId), out var scopedCtx) &&
+    if (_sessions.TryGetValue(BuildSessionKey(effectiveTenantId, userId.Value, sessionId), out var scopedCtx) &&
         (!tenantId.HasValue || scopedCtx.TenantId == tenantId.Value) &&
-        (!userId.HasValue || scopedCtx.UserId == userId.Value))
+        scopedCtx.UserId == userId.Value)
     {
       return scopedCtx;
     }
 
-    McpCallContext? matched = null;
-    foreach (var (_, candidate) in _sessions)
+    return null;
+  }
+
+  public IDisposable UseTurnContext(McpCallContext context)
+  {
+    ArgumentNullException.ThrowIfNull(context);
+    var prev = CurrentContext.Value;
+    CurrentContext.Value = context;
+    return new McpTurnScope(() =>
     {
-      if (!string.Equals(candidate.SessionId, sessionId, StringComparison.OrdinalIgnoreCase))
+      if (ReferenceEquals(CurrentContext.Value, context))
       {
-        continue;
+        CurrentContext.Value = prev;
       }
-
-      if (tenantId.HasValue && candidate.TenantId != tenantId.Value ||
-          userId.HasValue && candidate.UserId != userId.Value)
-      {
-        continue;
-      }
-
-      if (matched is not null)
-      {
-        return null;
-      }
-
-      matched = candidate;
-    }
-
-    return matched;
+    });
   }
 
   public IDisposable BeginTurn(long? tenantId, long? userId, IReadOnlySet<string>? rights, string? sessionId)
   {
     var prev = CurrentContext.Value;
-    var ctx = new McpCallContext(tenantId, userId, rights, sessionId);
+    var turnToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+    var ctx = new McpCallContext(tenantId, userId, rights, sessionId, turnToken);
     CurrentContext.Value = ctx;
+    _turnTokens[turnToken] = ctx;
+
     var sessionKey = !string.IsNullOrWhiteSpace(sessionId)
       ? BuildSessionKey(tenantId, userId, sessionId)
       : null;
@@ -83,8 +103,10 @@ public sealed class McpExecutionBridge
       _sessions[sessionKey] = ctx;
     }
 
-    return new Scope(() =>
+    return new McpTurnScope(() =>
     {
+      _turnTokens.TryRemove(KeyValuePair.Create(turnToken, ctx));
+
       if (sessionKey is not null)
       {
         _sessions.TryRemove(KeyValuePair.Create(sessionKey, ctx));
@@ -99,10 +121,5 @@ public sealed class McpExecutionBridge
           : null;
       }
     });
-  }
-
-  private sealed class Scope(Action onDispose) : IDisposable
-  {
-    public void Dispose() => onDispose();
   }
 }
