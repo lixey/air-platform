@@ -531,7 +531,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
                 dto.ReferenceService != null ||
                 dto.Options is { Count: > 0 } ||
                 typeof(Reference).IsAssignableFrom(dto.MemberType);
-    dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : $"{dto.Path}Color";
+    dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : dto.Path;
   }
 
   internal static string? ExtractNavigationPath(Expression expr) =>

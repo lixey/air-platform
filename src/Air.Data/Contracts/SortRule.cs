@@ -3,6 +3,7 @@ namespace Platform.Data.Contracts;
 /// <summary>
 /// Sorting rule for a column/field.
 /// </summary>
+[UiContract]
 public sealed class SortRule
 {
   public string Field { get; set; } = string.Empty;

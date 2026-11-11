@@ -11,12 +11,35 @@ internal static class AgentValueHelpers
 
   public static Dictionary<string, object?>? CleanGridRow(object? rawRow, bool stripZeroMoney = false)
   {
-    if (rawRow is not IDictionary<string, object?> dict)
+    IDictionary<string, object?> dict;
+    long? rowDtoId = null;
+    string? rowDtoForm = null;
+    if (rawRow is RowDto rowDto)
+    {
+      dict = rowDto.Cells;
+      rowDtoId = rowDto.Id;
+      rowDtoForm = rowDto.Open?.Service;
+    }
+    else if (rawRow is IDictionary<string, object?> rawDict)
+    {
+      dict = rawDict;
+    }
+    else
     {
       return null;
     }
 
     var clean = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+    if (rowDtoId.HasValue)
+    {
+      clean["id"] = rowDtoId.Value;
+    }
+
+    if (!string.IsNullOrWhiteSpace(rowDtoForm))
+    {
+      clean["form"] = rowDtoForm;
+    }
+
     foreach (var (k, v) in dict)
     {
       if (v == null ||

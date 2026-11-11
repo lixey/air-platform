@@ -7,6 +7,7 @@ internal sealed class TestAppModule : ModuleDefinition<TestAppModule>
   public static readonly Feature OrderDocs = Feature<TestOrderMasterGridService>();
   public static readonly Feature SiblingInvoices = Feature<TestSiblingInvoiceFormService>();
   public static readonly Feature DirectLines = Feature<TestDirectBoundChildGridService>();
+  public static readonly Feature PatchedLines = Feature<TestDisabledPatchLineGridService>();
   public static readonly Right ApproveInvoice = Invoices.Action("Approve");
   public static readonly Feature Tags = Feature<TestTagGridService>();
   public static readonly Feature Changes = Feature<TestChangeGridService>().ReadOnly();

@@ -476,7 +476,7 @@ internal static class FormValueBinder
     }
   }
 
-  private static HashSet<string> CreateSystemProtectedSet(PropertyInfo? boundProperty, bool isParentOptional, bool isNew)
+  public static HashSet<string> CreateSystemProtectedSet(PropertyInfo? boundProperty, bool isParentOptional, bool isNew)
   {
     var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {

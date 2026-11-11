@@ -35,11 +35,11 @@ const cover: GridCoverDto = {
   thumbUrl: '/api/platform-files/site-thumb',
 };
 
-const files = [
-  { id: 11, ver: 1, name: 'plan.pdf', contentType: 'application/pdf', size: 2000, url: '/f/11' },
-  { id: 12, ver: 1, name: 'site.jpg', contentType: 'image/jpeg', size: 3000, url: '/f/12', thumbUrl: '/f/12t', isCover: true },
-  { id: 13, ver: 1, name: 'wall.png', contentType: 'image/png', size: 4000, url: '/f/13' },
-  { id: 14, ver: 1, name: 'act.pdf', contentType: 'application/pdf', size: 5000, url: '/f/14' },
+const files: GridRow[] = [
+  { id: 11, ver: 1, cells: { name: 'plan.pdf', contentType: 'application/pdf', size: 2000, url: '/f/11' } },
+  { id: 12, ver: 1, cells: { name: 'site.jpg', contentType: 'image/jpeg', size: 3000, url: '/f/12', thumbUrl: '/f/12t', isCover: true } },
+  { id: 13, ver: 1, cells: { name: 'wall.png', contentType: 'image/png', size: 4000, url: '/f/13' } },
+  { id: 14, ver: 1, cells: { name: 'act.pdf', contentType: 'application/pdf', size: 5000, url: '/f/14' } },
 ];
 
 async function settle(): Promise<void> {
@@ -57,7 +57,7 @@ describe('GridCellCoverComponent', () => {
 
   function drawn(row: GridRow, target: GridColumnDto = column): HTMLElement {
     fixture = TestBed.createComponent(GridCellCoverComponent);
-    fixture.componentRef.setInput('cell', { row, column: target, value: row[target.path ?? ''], index: 0 });
+    fixture.componentRef.setInput('cell', { row, column: target, value: row.cells[target.path ?? ''], index: 0 });
     fixture.componentRef.setInput('model', cellModel);
     fixture.detectChanges();
     return host();
@@ -73,7 +73,7 @@ describe('GridCellCoverComponent', () => {
   });
 
   it("draws the cover's thumbnail as a button that names it, and an empty cell for a row without a cover", () => {
-    const cell = drawn({ id: 7, name: 'Site', idCover: cover });
+    const cell = drawn({ id: 7, cells: { name: 'Site', idCover: cover } });
     const open = cell.querySelector('[data-cover-open]');
 
     expect(open?.tagName).toBe('BUTTON');
@@ -81,25 +81,25 @@ describe('GridCellCoverComponent', () => {
     expect(open?.querySelector('img')?.getAttribute('src')).toBe('/api/platform-files/site-thumb');
     expect(open?.querySelector('img')?.getAttribute('loading')).toBe('lazy');
 
-    const empty = drawn({ id: 8, name: 'Bare', idCover: null });
+    const empty = drawn({ id: 8, cells: { name: 'Bare', idCover: null } });
     expect(empty.textContent?.trim()).toBe('');
     expect(empty.querySelector('button, img')).toBeNull();
   });
 
   it('draws an image without a thumbnail from its url, and any other file as the badge of its extension', () => {
     expect(
-      drawn({ id: 7, idCover: { ...cover, thumbUrl: null } })
+      drawn({ id: 7, cells: { idCover: { ...cover, thumbUrl: null } } })
         .querySelector('img')
         ?.getAttribute('src'),
     ).toBe('/api/platform-files/site');
 
-    const pdf = drawn({ id: 7, idCover: { ...cover, name: 'act.pdf', contentType: 'application/pdf', thumbUrl: null } });
+    const pdf = drawn({ id: 7, cells: { idCover: { ...cover, name: 'act.pdf', contentType: 'application/pdf', thumbUrl: null } } });
     expect(pdf.querySelector('img')).toBeNull();
     expect(pdf.querySelector('[data-cover-open]')?.textContent?.trim()).toBe('PDF');
   });
 
   it('draws the picture and opens nothing in a disabled column', () => {
-    const cell = drawn({ id: 7, idCover: cover }, { ...column, isDisabled: true });
+    const cell = drawn({ id: 7, cells: { idCover: cover } }, { ...column, isDisabled: true });
 
     expect(cell.querySelector('button')).toBeNull();
     expect(cell.querySelector('img')).not.toBeNull();
@@ -107,7 +107,7 @@ describe('GridCellCoverComponent', () => {
 
   it("asks the file grid's page under the row's record and opens the viewer at the cover over the record's files", async () => {
     const open = vi.spyOn(TestBed.inject(OverlayService), 'open');
-    drawn({ id: 7, name: 'Site', idCover: cover });
+    drawn({ id: 7, cells: { name: 'Site', idCover: cover } });
 
     host().querySelector<HTMLElement>('[data-cover-open]')?.click();
     fixture.detectChanges();
@@ -136,9 +136,15 @@ describe('GridCellCoverComponent', () => {
     // A failed image asks the page again, for fresh links
     source.refresh();
     expect(source.isRefreshing()).toBe(true);
-    http
-      .expectOne(`/api/${service}/get-data`)
-      .flush({ data: { rows: files.map(f => ({ ...f, url: `${f.url}?fresh` })), page: 1, pageSize: 300, hasMore: false, total: 4 } });
+    http.expectOne(`/api/${service}/get-data`).flush({
+      data: {
+        rows: files.map(f => ({ ...f, cells: { ...f.cells, url: `${String(f.cells['url'])}?fresh` } })),
+        page: 1,
+        pageSize: 300,
+        hasMore: false,
+        total: 4,
+      },
+    });
     await settle();
     expect(source.isRefreshing()).toBe(false);
     expect(source.files()[1].url).toBe('/f/12?fresh');
@@ -146,7 +152,7 @@ describe('GridCellCoverComponent', () => {
 
   it('reads the key of the member the column stands on', async () => {
     const open = vi.spyOn(TestBed.inject(OverlayService), 'open').mockImplementation(() => ({}) as ReturnType<OverlayService['open']>);
-    drawn({ id: 1, projectId: 9, projectIdCover: cover }, { ...column, path: 'projectIdCover' });
+    drawn({ id: 1, cells: { projectId: 9, projectIdCover: cover } }, { ...column, path: 'projectIdCover' });
 
     host().querySelector<HTMLElement>('[data-cover-open]')?.click();
 
@@ -158,7 +164,7 @@ describe('GridCellCoverComponent', () => {
   });
 
   it('passes axe with a cover and without one', async () => {
-    await expectAccessible(drawn({ id: 7, idCover: cover }));
-    await expectAccessible(drawn({ id: 8, idCover: null }));
+    await expectAccessible(drawn({ id: 7, cells: { idCover: cover } }));
+    await expectAccessible(drawn({ id: 8, cells: { idCover: null } }));
   });
 });

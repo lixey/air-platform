@@ -579,21 +579,16 @@ public static class AgentProposalExecutor
           var maxSortOrder = 0;
           foreach (var rowObj in existingPage.Rows)
           {
-            if (rowObj is IDictionary<string, object?> rowDict)
+            if (rowObj.Id is > 0 and var lid)
             {
-              if (rowDict.TryGetValue("id", out var idObj) &&
-                  TryConvertToLong(idObj, out var lid) &&
-                  lid > 0)
-              {
-                existingLineIds.Add(lid);
-              }
+              existingLineIds.Add(lid);
+            }
 
-              if (rowDict.TryGetValue("sortOrder", out var soObj) &&
-                  TryConvertToLong(soObj, out var soVal) &&
-                  soVal > maxSortOrder)
-              {
-                maxSortOrder = (int)soVal;
-              }
+            if (rowObj.Cells.TryGetValue("sortOrder", out var soObj) &&
+                TryConvertToLong(soObj, out var soVal) &&
+                soVal > maxSortOrder)
+            {
+              maxSortOrder = (int)soVal;
             }
           }
 

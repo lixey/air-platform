@@ -25,10 +25,16 @@ internal static class FormDraftEngine
     where TEntity : class, IEntity, new()
   {
     var editableElements = GetDraftEditableElements(typeof(TEntity), allElements);
+    var snapshotElements = GetDraftSnapshotElements(typeof(TEntity), allElements, editableElements);
+    var nonEditablePaths = allElements
+      .Where(el => el.IsDisabled || el.IsServerOwned || el.IsHidden || el.IsSecret || el.Model is FormInfoModel)
+      .Select(el => el.Path)
+      .Where(p => !string.IsNullOrEmpty(p))
+      .ToHashSet(StringComparer.OrdinalIgnoreCase);
     var sensitiveKeys = GetSensitiveKeys(typeof(TEntity));
 
     var recordVer = (currentEntity as IHasVersion)?.Ver;
-    var baseValues = SerializeDraftSnapshot(modelObj, editableElements, ignoreZeroNumbers: !isEdit);
+    var baseValues = SerializeDraftSnapshot(modelObj, snapshotElements, ignoreZeroNumbers: !isEdit);
     var originalValues = isEdit
       ? CloneDraftValues(baseValues)
       : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -51,7 +57,7 @@ internal static class FormDraftEngine
     {
       foreach (var (k, v) in overrides)
       {
-        if (!k.Contains('.'))
+        if (!k.Contains('.') && !nonEditablePaths.Contains(k))
         {
           values[k] = v;
           explicitlyProvided.Add(k);
@@ -59,10 +65,11 @@ internal static class FormDraftEngine
       }
     }
 
-    await ApplyDraftSelectPatchesAsync(
+    await FormSelectPatcher.ApplyDraftSelectPatchesAsync(
       db,
       app,
       editableElements,
+      snapshotElements,
       originalValues,
       values,
       explicitlyProvided,
@@ -83,7 +90,7 @@ internal static class FormDraftEngine
     ApplyMergedValuesToDraftEntity(values, draftEntity);
 
     var preComputeSnapshot = hasComputeHooks
-      ? SerializeDraftSnapshot(draftEntity, editableElements, ignoreZeroNumbers: false)
+      ? SerializeDraftSnapshot(draftEntity, snapshotElements, ignoreZeroNumbers: false)
       : null;
 
     List<MessageDto> messages = [];
@@ -106,7 +113,7 @@ internal static class FormDraftEngine
 
     if (preComputeSnapshot != null)
     {
-      var afterComputeSnapshot = SerializeDraftSnapshot(draftEntity, editableElements, ignoreZeroNumbers: false);
+      var afterComputeSnapshot = SerializeDraftSnapshot(draftEntity, snapshotElements, ignoreZeroNumbers: false);
       MergeComputedChanges(preComputeSnapshot, afterComputeSnapshot, explicitlyProvided, values);
     }
 
@@ -131,27 +138,51 @@ internal static class FormDraftEngine
     _ => null
   };
 
-  public static List<FormElementDto> GetDraftEditableElements(Type entityType, IReadOnlyList<FormElementDto> allElements)
+  public static bool CanReceiveSelectPatch(Type entityType, FormElementDto el)
   {
-    return allElements
-      .Where(el =>
-      {
-        if (string.IsNullOrEmpty(el.Path) ||
-            el.Path.Contains('.') ||
-            el.IsDisabled ||
-            el.IsServerOwned ||
-            el.IsHidden ||
-            el.IsSecret ||
-            string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase) ||
-            el.Model is FormInfoModel)
-        {
-          return false;
-        }
+    if (string.IsNullOrEmpty(el.Path) ||
+        el.Path.Contains('.') ||
+        el.IsServerOwned ||
+        el.IsHidden ||
+        el.IsSecret ||
+        string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase) ||
+        el.Model is FormInfoModel)
+    {
+      return false;
+    }
 
-        var prop = PropertyAccessorCache.GetProperty(entityType, el.Path);
-        return prop == null || !Attribute.IsDefined(prop, typeof(SensitiveAttribute));
-      })
-      .ToList();
+    var prop = PropertyAccessorCache.GetProperty(entityType, el.Path);
+    return prop == null || !Attribute.IsDefined(prop, typeof(SensitiveAttribute));
+  }
+
+  public static List<FormElementDto> GetDraftEditableElements(Type entityType, IReadOnlyList<FormElementDto> allElements) =>
+    allElements.Where(el => !el.IsDisabled && CanReceiveSelectPatch(entityType, el)).ToList();
+
+  public static List<FormElementDto> GetDraftSnapshotElements(
+    Type entityType,
+    IReadOnlyList<FormElementDto> allElements,
+    IReadOnlyList<FormElementDto> editableElements)
+  {
+    var patchTargets = editableElements
+      .Where(e => e.SelectPatches is { Count: > 0 })
+      .SelectMany(e => e.SelectPatches!.Select(p => p.TargetField))
+      .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (patchTargets.Count == 0)
+    {
+      return [.. editableElements];
+    }
+
+    var snapshot = new List<FormElementDto>(editableElements);
+    var seen = snapshot.Select(e => e.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    foreach (var el in allElements)
+    {
+      if (patchTargets.Contains(el.Path) && seen.Add(el.Path) && CanReceiveSelectPatch(entityType, el))
+      {
+        snapshot.Add(el);
+      }
+    }
+
+    return snapshot;
   }
 
   public static HashSet<string> GetSensitiveKeys(Type entityType)
@@ -251,160 +282,6 @@ internal static class FormDraftEngine
     }
   }
 
-  public static async Task ApplyDraftSelectPatchesAsync(
-    PlatformDbContext db,
-    PlatformAppService? app,
-    IReadOnlyList<FormElementDto> editableElements,
-    Dictionary<string, object?> originalValues,
-    Dictionary<string, object?> values,
-    HashSet<string> explicitlyProvided,
-    ISet<string>? pendingReferencePaths,
-    bool isEdit,
-    string? triggerField,
-    CancellationToken ct)
-  {
-    var hasTriggerField = !string.IsNullOrWhiteSpace(triggerField);
-    foreach (var el in editableElements)
-    {
-      if (hasTriggerField)
-      {
-        if (!string.Equals(el.Path, triggerField, StringComparison.OrdinalIgnoreCase))
-        {
-          continue;
-        }
-      }
-      else if (isEdit && !explicitlyProvided.Contains(el.Path))
-      {
-        continue;
-      }
-
-      if (el.SelectPatches is not { Count: > 0 } patches ||
-          el.Model is not FormSelectModel { ReferenceService: { Length: > 0 } refSvc } ||
-          !values.TryGetValue(el.Path, out var curVal) ||
-          !FilterNodeEvaluator.TryConvertToDecimal(curVal, out var selectedDec) ||
-          selectedDec <= 0)
-      {
-        continue;
-      }
-
-      var selectedId = (long)selectedDec;
-      if (isEdit &&
-          !hasTriggerField &&
-          originalValues.TryGetValue(el.Path, out var oldSrcVal) &&
-          FilterNodeEvaluator.TryConvertToDecimal(oldSrcVal, out var oldSrcDec) &&
-          (long)oldSrcDec == selectedId)
-      {
-        continue;
-      }
-
-      var svcType = ModuleCatalog.Instance.FindServiceType(refSvc);
-      if (svcType == null ||
-          !typeof(IGridService).IsAssignableFrom(svcType) ||
-          ModuleCatalog.Instance.CreateServiceInstance(svcType, db, app) is not IGridService refGrid)
-      {
-        continue;
-      }
-
-      object? rawRow;
-      try
-      {
-        rawRow = await refGrid.ReadRowAsync(selectedId, ct);
-      }
-      catch
-      {
-        continue;
-      }
-
-      if (rawRow is not IDictionary<string, object?> selectedRow)
-      {
-        continue;
-      }
-
-      foreach (var patch in patches)
-      {
-        if (!hasTriggerField && explicitlyProvided.Contains(patch.TargetField) ||
-            pendingReferencePaths?.Contains(patch.TargetField) == true)
-        {
-          continue;
-        }
-
-        if ((!isEdit && !hasTriggerField || patch.OnlyWhenEmpty) &&
-            values.TryGetValue(patch.TargetField, out var existingTarget) &&
-            existingTarget != null &&
-            !(FilterNodeEvaluator.TryConvertToDecimal(existingTarget, out var existingDec) && existingDec == 0m) &&
-            existingTarget.ToString() is { Length: > 0 } existingStr &&
-            existingStr != "0")
-        {
-          continue;
-        }
-
-        if (!selectedRow.TryGetValue(patch.SourceColumn, out var patchVal) || patchVal == null)
-        {
-          continue;
-        }
-
-        var targetEl = editableElements.FirstOrDefault(e => string.Equals(e.Path, patch.TargetField, StringComparison.OrdinalIgnoreCase));
-        var isReferenceTarget = targetEl?.ValueKind == FormValueKind.Reference || targetEl?.Model is FormSelectModel;
-        if (isReferenceTarget)
-        {
-          var patchId = ExtractReferenceId(patchVal);
-          if (patchId is not > 0)
-          {
-            continue;
-          }
-
-          if (targetEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } targetRefSvc, ReferenceFilter: { } targetFilter })
-          {
-            var targetSvcType = ModuleCatalog.Instance.FindServiceType(targetRefSvc);
-            if (targetSvcType != null &&
-                typeof(IGridService).IsAssignableFrom(targetSvcType) &&
-                ModuleCatalog.Instance.CreateServiceInstance(targetSvcType, db, app) is IGridService targetGrid)
-            {
-              try
-              {
-                if (await targetGrid.ReadRowAsync(patchId.Value, ct) is IDictionary<string, object?> targetRow &&
-                    !MatchesRowFilter(targetRow, targetFilter))
-                {
-                  continue;
-                }
-              }
-              catch
-              {
-              }
-            }
-          }
-
-          values[patch.TargetField] = patchId.Value;
-          continue;
-        }
-
-        if (FilterNodeEvaluator.TryConvertToDecimal(patchVal, out var decVal))
-        {
-          values[patch.TargetField] = patchVal is int or long ? patchVal : decVal;
-        }
-        else if (patchVal is bool bVal)
-        {
-          values[patch.TargetField] = bVal;
-        }
-        else if (patchVal is string sVal && !string.IsNullOrWhiteSpace(sVal))
-        {
-          values[patch.TargetField] = sVal;
-        }
-        else if (patchVal is JsonElement je)
-        {
-          if (je.ValueKind is JsonValueKind.True or JsonValueKind.False)
-          {
-            values[patch.TargetField] = je.GetBoolean();
-          }
-          else if (je.ValueKind == JsonValueKind.String && je.GetString() is { Length: > 0 } jeStr && !string.IsNullOrWhiteSpace(jeStr))
-          {
-            values[patch.TargetField] = jeStr;
-          }
-        }
-      }
-    }
-  }
-
   public static void ApplyDefaultRequiredSelectOptions(
     IReadOnlyList<FormElementDto> editableElements,
     HashSet<string> explicitlyProvided,
@@ -427,8 +304,10 @@ internal static class FormDraftEngine
       }
 
       if (!values.TryGetValue(el.Path, out var curVal) ||
+          curVal is null or "" ||
           !FilterNodeEvaluator.TryConvertToDecimal(curVal, out var curId) ||
-          curId <= 0)
+          curId < 0m && !select.Options.Any(o => o.Id == (long)curId) ||
+          curId == 0m && !select.Options.Any(static o => o.Id == 0))
       {
         values[el.Path] = select.Options[0].Id;
       }
@@ -460,25 +339,6 @@ internal static class FormDraftEngine
 
     return Equals(left, right);
   }
-
-  private static bool MatchesRowFilter(IDictionary<string, object?> row, FilterNode filter) =>
-    FilterNodeEvaluator.Evaluate(filter, field =>
-    {
-      if (row.TryGetValue(field, out var cellVal) && cellVal != null)
-      {
-        return ExtractReferenceId(cellVal) ?? cellVal;
-      }
-
-      if (field.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
-          field.Length > 2 &&
-          row.TryGetValue(field[..^2], out cellVal) &&
-          cellVal != null)
-      {
-        return ExtractReferenceId(cellVal) ?? cellVal;
-      }
-
-      return null;
-    });
 
   private static void PopulateDraftValuesFromJson(
     JsonElement jsonEl,
@@ -570,7 +430,7 @@ internal static class FormDraftEngine
     }
   }
 
-  private static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+  public static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
   {
     if (element.ValueKind == JsonValueKind.Object)
     {

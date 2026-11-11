@@ -1,5 +1,6 @@
 namespace Platform.Data.Contracts;
 
+[UiContract]
 public static class FilterLogic
 {
   public const string And = "and";

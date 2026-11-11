@@ -3,6 +3,7 @@ namespace Platform.Data.Contracts;
 /// <summary>
 /// A node in the filter tree: FilterGroup or FilterRule, with polymorphic kind discriminator.
 /// </summary>
+[UiContract]
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(FilterGroup), nameof(FilterGroup))]
 [JsonDerivedType(typeof(FilterRule), nameof(FilterRule))]

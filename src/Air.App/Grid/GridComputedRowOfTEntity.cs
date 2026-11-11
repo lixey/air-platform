@@ -2,7 +2,7 @@ using Platform.App.Internals;
 
 namespace Platform.App.Grid;
 
-public readonly struct GridComputedRow<TEntity>(TEntity record, Dictionary<string, object?> values)
+public readonly struct GridComputedRow<TEntity>(TEntity record, RowDto row)
   where TEntity : class
 {
   /// <summary>
@@ -13,11 +13,13 @@ public readonly struct GridComputedRow<TEntity>(TEntity record, Dictionary<strin
 
   public long Id => record is IEntity entity ? entity.Id : 0;
 
-  public Dictionary<string, object?> Values => values;
+  public RowDto Row => row;
+
+  public Dictionary<string, object?> Values => row.Cells;
 
   public object? this[string columnPath]
   {
-    get => PropertyAccessorCache.GetPathValue(values, columnPath);
+    get => PropertyAccessorCache.GetPathValue(row.Cells, columnPath);
     set
     {
       if (string.IsNullOrWhiteSpace(columnPath))
@@ -27,12 +29,12 @@ public readonly struct GridComputedRow<TEntity>(TEntity record, Dictionary<strin
 
       if (!columnPath.Contains('.'))
       {
-        values[PropertyAccessorCache.ToCamel(columnPath)] = value;
+        row.Cells[PropertyAccessorCache.ToCamel(columnPath)] = value;
         return;
       }
 
       var segments = PropertyAccessorCache.GetCamelPathSegments(columnPath);
-      var current = values;
+      var current = row.Cells;
       for (var i = 0; i < segments.Length - 1; i++)
       {
         var key = segments[i];

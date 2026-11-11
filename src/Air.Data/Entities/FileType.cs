@@ -1,5 +1,6 @@
 namespace Platform.Data.Entities;
 
+[UiContract]
 public static class FileType
 {
   public const string Png = "image/png";

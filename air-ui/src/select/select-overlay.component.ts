@@ -35,7 +35,7 @@ import { SelectService } from './select.service';
           [attr.aria-label]="select.model().label"
           [attr.aria-multiselectable]="select.isMultiple() || null"
         >
-          @for (option of select.options(); track option.id; let index = $index) {
+          @for (option of select.options(); track option.id ?? '__empty__'; let index = $index) {
             <button
               type="button"
               role="option"

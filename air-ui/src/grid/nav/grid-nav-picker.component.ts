@@ -251,7 +251,7 @@ export class GridNavPickerComponent {
     const picker = this.model();
     this.menu.close();
     this.box()?.focus();
-    if (!picker || !option || !this.actions) {
+    if (!picker || !option || option.id === null || !this.actions) {
       return;
     }
     if ((await this.actions.pick(picker, option.id)) && !this.destroyRef.destroyed) {

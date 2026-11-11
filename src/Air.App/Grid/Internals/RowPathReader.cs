@@ -1,10 +1,11 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Grid.Internals;
 
 /// <summary>
-/// Reads a dotted column path out of a row, whatever the row is: a typed projection, the entity itself, or the
-/// dictionary ShapeRow made of it. A segment walks a public property when the type has one, a key when the
-/// type is a dictionary, and a path the static type does not show is walked on the value at run time, reading null
-/// where the value has no such member.
+/// Reads a dotted column path out of a row, whatever the row is: a <see cref="RowDto"/>, a dictionary, a typed
+/// projection, or an entity. Dictionary keys and <see cref="RowDto.Cells"/> are always inspected before CLR properties
+/// so column names like <c>count</c>, <c>item</c>, <c>keys</c>, or <c>values</c> never collide with dictionary members.
 /// </summary>
 internal static class RowPathReader
 {
@@ -15,6 +16,12 @@ internal static class RowPathReader
     if (string.IsNullOrWhiteSpace(path))
     {
       return null;
+    }
+
+    var segments = path.Split('.');
+    if (rowType == typeof(RowDto))
+    {
+      return row => ReadRowDto((RowDto)row, segments);
     }
 
     try
@@ -29,11 +36,27 @@ internal static class RowPathReader
       expressions.Add(Expression.Assign(typed, Expression.Convert(parameter, rowType)));
 
       Expression current = typed;
-      var segments = path.Split('.');
       for (var i = 0; i < segments.Length; i++)
       {
         var segment = segments[i];
-        var member = current.Type.GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        var generic = current.Type.GetInterfaces()
+          .Concat([current.Type])
+          .FirstOrDefault(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IDictionary<,>) &&
+                               t.GetGenericArguments()[0] == typeof(string));
+        if (generic is not null || typeof(IDictionary).IsAssignableFrom(current.Type))
+        {
+          var rest = segments[i..];
+          var walker = Expression.Call(
+            typeof(RowPathReader).GetMethod(nameof(Walk), BindingFlags.NonPublic | BindingFlags.Static)!,
+            Expression.Convert(current, typeof(object)),
+            Expression.Constant(rest)
+          );
+          expressions.Add(Expression.Return(returnTarget, walker));
+          expressions.Add(Expression.Label(returnTarget, Expression.Constant(null, typeof(object))));
+          return Expression.Lambda<Func<object, object?>>(Expression.Block(variables, expressions), parameter).Compile();
+        }
+
+        var member = FindScalarProperty(current.Type, segment);
         if (member is not null)
         {
           var step = Expression.Variable(member.PropertyType, $"step_{i}");
@@ -53,55 +76,13 @@ internal static class RowPathReader
           continue;
         }
 
-        if (typeof(IDictionary).IsAssignableFrom(current.Type))
-        {
-          var value = Expression.Variable(typeof(object), $"entry_{i}");
-          variables.Add(value);
-          var map = Expression.Convert(current, typeof(IDictionary));
-          var contains = typeof(IDictionary).GetMethod(nameof(IDictionary.Contains), [typeof(object)])!;
-          var item = typeof(IDictionary).GetMethod("get_Item", [typeof(object)])!;
-          var key = Expression.Constant(segment, typeof(object));
-
-          expressions.Add(
-            Expression.IfThen(
-              Expression.Not(Expression.Call(map, contains, key)),
-              Expression.Return(returnTarget, Expression.Constant(null, typeof(object)))
-            )
-          );
-          expressions.Add(Expression.Assign(value, Expression.Call(map, item, key)));
-          current = value;
-          continue;
-        }
-
-        var generic = current.Type.GetInterfaces()
-          .Concat([current.Type])
-          .FirstOrDefault(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IDictionary<,>) &&
-                               t.GetGenericArguments()[0] == typeof(string));
-        if (generic is not null)
-        {
-          var valueType = generic.GetGenericArguments()[1];
-          var tryGetValue = generic.GetMethod("TryGetValue")!;
-          var value = Expression.Variable(valueType, $"entry_{i}");
-          variables.Add(value);
-          var key = Expression.Constant(segment, typeof(string));
-
-          expressions.Add(
-            Expression.IfThen(
-              Expression.Not(Expression.Call(Expression.Convert(current, generic), tryGetValue, key, value)),
-              Expression.Return(returnTarget, Expression.Constant(null, typeof(object)))
-            )
-          );
-          current = value;
-          continue;
-        }
-
-        var rest = segments[i..];
-        var walker = Expression.Call(
+        var remaining = segments[i..];
+        var dynamicWalker = Expression.Call(
           typeof(RowPathReader).GetMethod(nameof(Walk), BindingFlags.NonPublic | BindingFlags.Static)!,
           Expression.Convert(current, typeof(object)),
-          Expression.Constant(rest)
+          Expression.Constant(remaining)
         );
-        expressions.Add(Expression.Return(returnTarget, walker));
+        expressions.Add(Expression.Return(returnTarget, dynamicWalker));
         expressions.Add(Expression.Label(returnTarget, Expression.Constant(null, typeof(object))));
         return Expression.Lambda<Func<object, object?>>(Expression.Block(variables, expressions), parameter).Compile();
       }
@@ -121,6 +102,35 @@ internal static class RowPathReader
     }
   }
 
+  private static object? ReadRowDto(RowDto row, string[] segments)
+  {
+    if (segments.Length == 0)
+    {
+      return null;
+    }
+
+    var first = segments[0];
+    if (!TryGetMapEntry(row.Cells, first, out var current))
+    {
+      if (segments.Length == 1)
+      {
+        if (string.Equals(first, "id", StringComparison.OrdinalIgnoreCase))
+        {
+          return row.Id;
+        }
+
+        if (string.Equals(first, "ver", StringComparison.OrdinalIgnoreCase))
+        {
+          return row.Ver;
+        }
+      }
+
+      return null;
+    }
+
+    return segments.Length == 1 ? current : Walk(current, segments[1..]);
+  }
+
   private static object? Walk(object? value, string[] segments)
   {
     var current = value;
@@ -131,23 +141,123 @@ internal static class RowPathReader
         return null;
       }
 
+      if (current is RowDto rowDto)
+      {
+        current = ReadRowDto(rowDto, [segment]);
+        continue;
+      }
+
       if (current is IDictionary<string, object?> map)
       {
-        current = map.TryGetValue(segment, out var entry) ? entry : null;
+        current = TryGetMapEntry(map, segment, out var entry) ? entry : null;
         continue;
       }
 
       if (current is IDictionary weak)
       {
-        current = weak.Contains(segment) ? weak[segment] : null;
+        current = TryGetWeakEntry(weak, segment, out var entry) ? entry : null;
         continue;
       }
 
-      current = current.GetType()
-        .GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
-        ?.GetValue(current);
+      current = PropertyAccessorCache.GetGetter(current.GetType(), segment)?.Invoke(current);
     }
 
     return current;
+  }
+
+  private static bool TryGetMapEntry(IDictionary<string, object?> map, string key, out object? value)
+  {
+    if (map.TryGetValue(key, out value))
+    {
+      return true;
+    }
+
+    var camel = PropertyAccessorCache.ToCamel(key);
+    if (!string.Equals(camel, key, StringComparison.Ordinal) && map.TryGetValue(camel, out value))
+    {
+      return true;
+    }
+
+    if (camel.Length > 0)
+    {
+      var pascal = char.ToUpperInvariant(camel[0]) + camel[1..];
+      if (!string.Equals(pascal, key, StringComparison.Ordinal) && map.TryGetValue(pascal, out value))
+      {
+        return true;
+      }
+    }
+
+    value = null;
+    return false;
+  }
+
+  private static bool TryGetWeakEntry(IDictionary map, string key, out object? value)
+  {
+    if (map.Contains(key))
+    {
+      value = map[key];
+      return true;
+    }
+
+    var camel = PropertyAccessorCache.ToCamel(key);
+    if (!string.Equals(camel, key, StringComparison.Ordinal) && map.Contains(camel))
+    {
+      value = map[camel];
+      return true;
+    }
+
+    if (camel.Length > 0)
+    {
+      var pascal = char.ToUpperInvariant(camel[0]) + camel[1..];
+      if (!string.Equals(pascal, key, StringComparison.Ordinal) && map.Contains(pascal))
+      {
+        value = map[pascal];
+        return true;
+      }
+    }
+
+    value = null;
+    return false;
+  }
+
+  private static PropertyInfo? FindScalarProperty(Type type, string name)
+  {
+    var properties = PropertyAccessorCache.GetProperties(type);
+    PropertyInfo? exact = null;
+    for (var i = 0; i < properties.Length; i++)
+    {
+      var p = properties[i];
+      if (p.GetIndexParameters().Length == 0 && string.Equals(p.Name, name, StringComparison.Ordinal))
+      {
+        if (exact is not null)
+        {
+          throw new AmbiguousMatchException($"Multiple properties match '{name}' on '{type.Name}'.");
+        }
+
+        exact = p;
+      }
+    }
+
+    if (exact is not null)
+    {
+      return exact;
+    }
+
+    PropertyInfo? ciMatch = null;
+    for (var i = 0; i < properties.Length; i++)
+    {
+      var p = properties[i];
+      if (p.GetIndexParameters().Length == 0 && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+      {
+        if (ciMatch is not null)
+        {
+          throw new AmbiguousMatchException($"Multiple properties match '{name}' on '{type.Name}'.");
+        }
+
+        ciMatch = p;
+      }
+    }
+
+    return ciMatch;
   }
 }

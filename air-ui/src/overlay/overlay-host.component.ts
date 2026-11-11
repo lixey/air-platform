@@ -84,7 +84,7 @@ const MENU_OFFSET_REM = 0.75;
     @for (entry of entries(); track entry.ref) {
       <div
         class="fixed inset-0 z-50"
-        [class.bg-scrim]="entry.box.presentation !== 'menu'"
+        [class.bg-scrim]="entry.box.presentation !== 'menu' || entry.box.isNarrow"
         (pointerdown)="overlay.closeOutside(entry.ref)"
       ></div>
 
@@ -246,7 +246,12 @@ export class OverlayHostComponent {
   }
 
   protected windowClasses(box: OverlayBox): string {
-    return box.isNarrow ? `${BOX} bg-surface` : `${BOX} ${CARD}`;
+    if (box.isNarrow) {
+      return box.presentation === 'menu'
+        ? `${BOX} bg-surface border-t border-frame rounded-t-2xl shadow-lg shadow-shade`
+        : `${BOX} bg-surface`;
+    }
+    return `${BOX} ${CARD}`;
   }
 
   protected layerStyle(box: OverlayBox): Record<string, string> {

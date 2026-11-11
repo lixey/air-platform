@@ -1,5 +1,6 @@
 namespace Platform.App.Overlay.Contracts;
 
+[UiContract]
 public static class OverlayPresentation
 {
   public const string Dialog = "dialog";

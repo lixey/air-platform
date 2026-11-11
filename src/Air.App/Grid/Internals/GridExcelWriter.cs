@@ -383,9 +383,11 @@ internal static partial class GridExcelWriter
         DateTimeOffset instant => StampCell(at, _columns[column], TimeZoneInfo.ConvertTime(instant, _zone).DateTime),
         TimeOnly time => NumberCell(at, time.ToTimeSpan().TotalDays, TimeStyle),
         TimeSpan span => NumberCell(at, span.TotalDays, TimeStyle),
-        decimal number => NumberCell(at, (double)number, _numberStyles[column]),
-        sbyte or byte or short or ushort or int or uint or long or ulong or float or double =>
-          NumberCell(at, Convert.ToDouble(value, CultureInfo.InvariantCulture), _numberStyles[column]),
+        decimal number => RawNumberCell(at, number.ToString(CultureInfo.InvariantCulture), _numberStyles[column]),
+        sbyte or byte or short or ushort or int or uint or long or ulong =>
+          RawNumberCell(at, Convert.ToString(value, CultureInfo.InvariantCulture)!, _numberStyles[column]),
+        float single => NumberCell(at, single, _numberStyles[column]),
+        double dbl => NumberCell(at, dbl, _numberStyles[column]),
         _ => TextCell(at, Convert.ToString(value, CultureInfo.CurrentCulture) ?? string.Empty, PlainStyle)
       };
 
@@ -394,14 +396,17 @@ internal static partial class GridExcelWriter
         ? NumberCell(reference, stamp.Date.ToOADate(), DateStyle)
         : NumberCell(reference, stamp.ToOADate(), DateTimeStyle);
 
+    private static Xl.Cell RawNumberCell(string reference, string rawNumber, uint style) => new()
+    {
+      CellReference = reference,
+      StyleIndex = style,
+      DataType = Xl.CellValues.Number,
+      CellValue = new Xl.CellValue(rawNumber)
+    };
+
     private static Xl.Cell NumberCell(string reference, double number, uint style) =>
       double.IsFinite(number)
-        ? new Xl.Cell
-        {
-          CellReference = reference,
-          StyleIndex = style,
-          CellValue = new Xl.CellValue(number.ToString("R", CultureInfo.InvariantCulture))
-        }
+        ? RawNumberCell(reference, number.ToString("R", CultureInfo.InvariantCulture), style)
         : TextCell(reference, number.ToString(CultureInfo.InvariantCulture), PlainStyle);
 
     private static Xl.Cell TextCell(string reference, string text, uint style) => new()

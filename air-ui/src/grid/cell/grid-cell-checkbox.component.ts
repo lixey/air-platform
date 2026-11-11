@@ -24,6 +24,7 @@ import { GridCellBase } from './grid-cell-base';
         type="checkbox"
         class="${GRID_CHECKBOX_CLASSES}"
         [checked]="isChecked()"
+        [disabled]="isRowSelectionDisabled()"
         [attr.aria-label]="texts.of('SelectRow', key() ?? '')"
         (click)="onClick($event)"
       />
@@ -46,10 +47,12 @@ export class GridCellCheckboxComponent extends GridCellBase<GridCellCheckboxMode
 
   protected readonly isChecked = computed(() => !!this.grid?.selection.isSelected(this.cell().row));
 
+  protected readonly isRowSelectionDisabled = computed(() => this.cell().column.isDisabled || Boolean(this.cell().row?.disabled));
+
   protected onClick(event: MouseEvent): void {
     event.stopPropagation();
     const row = this.cell().row;
-    if (this.cell().column.isDisabled) {
+    if (this.cell().column.isDisabled || row?.disabled) {
       event.preventDefault();
       return;
     }

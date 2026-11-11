@@ -37,7 +37,7 @@ export const errorAlertInterceptor: HttpInterceptorFn = (req, next) => {
       if (!skipAlert) {
         const title = `${texts.of('Error')} ${err.status || ''}`.trim();
         const problem = problemOf(err);
-        alert.error(title, problem?.title || problem?.detail || texts.of('RequestFailed'));
+        alert.error(title, problem?.detail || problem?.title || texts.of('RequestFailed'));
       }
       return throwError(() => err);
     }),

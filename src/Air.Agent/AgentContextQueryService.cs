@@ -594,8 +594,8 @@ public static class AgentContextQueryService
               {
                 title = data.Table.Title,
                 columns = data.Table.Columns,
-                rows = data.Table.Rows.Take(20).ToList(),
-                bottomRows = data.Table.BottomRows
+                rows = data.Table.Rows.Take(20).Select(r => CleanGridRow(r)).Where(r => r != null).ToList(),
+                bottomRows = data.Table.BottomRows?.Select(r => CleanGridRow(r)).Where(r => r != null).ToList()
               }
           };
         }

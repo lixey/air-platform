@@ -1,12 +1,16 @@
 import { UI_COLORS } from '../../theme/ui-color';
 import type { GridCellContext } from '../cell/grid-cell-context';
-import type { GridRow } from '../grid-row';
+import { asRowUiColor, type GridRow } from '../grid-row';
 import { cellClassOf, rowClassesOf } from './grid-table-classes';
 
 const FLAG_HUES = new Set<string>(UI_COLORS);
 
 function rowFlagHueOf(row: GridRow): string | null {
-  const flags = row['flags'];
+  const direct = asRowUiColor(row.color);
+  if (direct) {
+    return direct;
+  }
+  const flags = row.flags;
   if (!Array.isArray(flags)) {
     return null;
   }

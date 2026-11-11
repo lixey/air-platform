@@ -238,9 +238,8 @@ public sealed class FormAndGridMutationTests : IDisposable
     var lineGrid = new TestInvoiceLineGridService(db, fullApp);
     var page = await lineGrid.GetDataAsync(new GridRequest { ParentId = inv.Id, IsDataOnly = true }, CancellationToken.None);
     Assert.NotNull(page.BottomRows);
-    var sumRow = Assert.Single(page.BottomRows) as IDictionary<string, object?>;
-    Assert.NotNull(sumRow);
-    Assert.Equal(40.0m, Convert.ToDecimal(sumRow["amount"]));
+    var sumRow = Assert.Single(page.BottomRows);
+    Assert.Equal(40.0m, Convert.ToDecimal(sumRow.Cells["amount"]));
 
     var editOnlyApp = new TestPlatformAppService(db, new FixedUser(10, "Test.Invoices.Edit"));
     var editOnlyForm = new TestInvoiceFormService(db, editOnlyApp);

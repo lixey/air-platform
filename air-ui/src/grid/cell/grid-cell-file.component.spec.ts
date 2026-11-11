@@ -36,20 +36,25 @@ const column: GridColumnDto = {
   isRequired: false,
 };
 
-const file = (name: string, contentType: string, extra: Partial<Record<string, unknown>> = {}): GridRow => ({
-  id: 1,
-  name,
-  contentType,
-  size: 20000,
-  createdAt: '2026-09-25T10:00:00Z',
-  url: `/api/platform-files/token-${name}`,
-  ...extra,
-});
+const file = (name: string, contentType: string, extra: Partial<Record<string, unknown>> = {}): GridRow => {
+  const { id, ...rest } = extra;
+  return {
+    id: typeof id === 'number' ? id : 1,
+    cells: {
+      name,
+      contentType,
+      size: 20000,
+      createdAt: '2026-09-25T10:00:00Z',
+      url: `/api/platform-files/token-${name}`,
+      ...rest,
+    },
+  };
+};
 
 /** The file cell drawn for the row, under the column. */
 function drawn(row: GridRow, target: GridColumnDto = column): HTMLElement {
   const fixture = TestBed.createComponent(GridCellFileComponent);
-  fixture.componentRef.setInput('cell', { row, column: target, value: row['name'], index: 0 });
+  fixture.componentRef.setInput('cell', { row, column: target, value: row.cells['name'], index: 0 });
   fixture.componentRef.setInput('model', cellModel);
   fixture.detectChanges();
   return fixture.nativeElement as HTMLElement;
@@ -128,9 +133,9 @@ describe("GridCellFileComponent painted by the row's hue", () => {
       providers: [provideDynamicComponents(UI_COMPONENTS), GridService, provideHttpClient(), provideHttpClientTesting()],
     });
     const model: GridCellFileModel = { kind: 'GridCellFile', colorPath: 'color' };
-    const row = file('logo.png', 'image/png', { color: 'teal' });
+    const row: GridRow = { ...file('logo.png', 'image/png'), colors: { color: 'teal' } };
     const fixture = TestBed.createComponent(OutletHostComponent);
-    fixture.componentRef.setInput('cell', { row, column: { ...column, cell: model }, value: row['name'], index: 0 });
+    fixture.componentRef.setInput('cell', { row, column: { ...column, cell: model }, value: row.cells['name'], index: 0 });
     fixture.componentRef.setInput('model', model);
     fixture.detectChanges();
     const pill = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[class*="hue-"]');
@@ -162,7 +167,7 @@ describe('GridCellFileComponent opening the viewer', () => {
     const open = vi.spyOn(TestBed.inject(OverlayService), 'open');
     const cell = drawn(row);
     const thumbnail = cell.querySelector<HTMLElement>('[data-file-view]');
-    expect(thumbnail?.getAttribute('aria-label')).toBe(`Open ${String(row['name'])}`);
+    expect(thumbnail?.getAttribute('aria-label')).toBe(`Open ${String(row.cells['name'])}`);
     thumbnail?.click();
     expect(open).toHaveBeenCalledTimes(1);
     const [model, , injector] = open.mock.calls[0];

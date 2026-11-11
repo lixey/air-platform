@@ -187,7 +187,7 @@ import { FormFilesActions } from './form-files-actions';
                     [deletable]="canDelete()"
                     [deleting]="actions.isDeletingAll() || (item.file.key !== null && actions.deleting() === item.file.key)"
                     [coverable]="canSetCover() && !!item.row"
-                    [isCover]="item.row?.['isCover'] === true"
+                    [isCover]="item.row?.cells?.['isCover'] === true"
                     [settingCover]="item.file.key !== null && actions.settingCover() === item.file.key"
                     cancelable
                     [movable]="canMove() && !!item.row"

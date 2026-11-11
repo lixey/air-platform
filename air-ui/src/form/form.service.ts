@@ -42,11 +42,14 @@ import {
   canonicalJson,
   frozenCopy,
   hasSecret,
+  indexFormElements,
   inputModelOf,
   isFormData,
   isSecret,
+  retainFieldMessages,
   type SplitDraft,
   splitDraft,
+  splitInputDraft,
   stableJson,
   stripUntouchedSecrets,
 } from './form-value';
@@ -94,14 +97,7 @@ export class FormService {
   /** What the form of input alone opens with: its elements and the value they hold before the first edit. */
   private readonly opening = computed<(FormInput & SplitDraft) | null>(() => {
     const input = this.given();
-    if (!input) {
-      return null;
-    }
-    const unchecked = Object.fromEntries(
-      input.elements.filter(element => element.type === 'checkbox').map(element => [element.path, false]),
-    );
-    const split = splitDraft({ ...unchecked, ...input.value }, input.elements);
-    return { elements: input.elements, ...split };
+    return input ? { elements: input.elements, ...splitInputDraft(input.elements, input.value) } : null;
   });
 
   private readonly _model = linkedSignal<FormInput | null, FormModel | null>({
@@ -146,7 +142,7 @@ export class FormService {
   private readonly _messages = linkedSignal<Record<string, unknown>, readonly MessageDto[]>({
     source: this.value,
     computation: (value, previous) =>
-      previous?.source ? previous.value.filter(m => !m.path || value[m.path] === (previous.source as Record<string, unknown>)[m.path]) : [],
+      previous?.source ? retainFieldMessages(value, previous.value, previous.source as Record<string, unknown>) : [],
   });
   readonly messages = this._messages.asReadonly();
   private readonly _pageToOpen = signal<string | null>(null);
@@ -259,18 +255,7 @@ export class FormService {
       (this.id() !== null || (this.outcome() === 'unknown' && this.keptCreate() !== null)),
   );
 
-  private readonly elementsByPath = computed(() => {
-    const map = new Map<string, FormElementDto>();
-    for (const element of this.model()?.elements ?? []) {
-      if (element.path) {
-        map.set(element.path, element);
-      }
-      if (element.referencePath) {
-        map.set(element.referencePath, element);
-      }
-    }
-    return map;
-  });
+  private readonly elementsByPath = computed(() => indexFormElements(this.model()?.elements ?? []));
 
   private readonly tree = form(
     this._fields,
@@ -383,6 +368,32 @@ export class FormService {
       return;
     }
     state.value.set(frozenCopy(value));
+  }
+
+  /**
+   * Writes a declarative patch (`PatchOnSelect`) into a target field or reference caption, including statically
+   * disabled (`isDisabled`) fields (whose authentic values are re-derived on the server), while refusing read-only,
+   * busy, locked, conditionally locked (`disabledWhen`), server-owned, or display-only (`FormInfo`) elements.
+   */
+  patchValueAt(path: string, value: unknown): void {
+    if (this.isReadOnly() || this.isBusy() || !!this.lifecycle?.isLocked()) {
+      return;
+    }
+    const element = this.elementOf(path);
+    if (!element || element.isServerOwned || element.model.kind === 'FormInfo') {
+      return;
+    }
+    if (!element.isDisabled && element.disabledWhen && evaluateFilterNode(element.disabledWhen, this.value())) {
+      return;
+    }
+    if (element.referencePath === path && element.path !== path) {
+      this._references.update(refs => frozenCopy({ ...refs, [path]: frozenCopy(value) }));
+      return;
+    }
+    const field = this.tree[path];
+    if (field) {
+      field().value.set(frozenCopy(value));
+    }
   }
 
   /** Only a confirmed commit replaces the draft or permits save-driven closure. */

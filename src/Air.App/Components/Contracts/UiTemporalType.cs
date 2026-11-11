@@ -1,5 +1,6 @@
 namespace Platform.App.Components.Contracts;
 
+[UiContract]
 public static class UiTemporalType
 {
   public const string DateOnly = "dateOnly";

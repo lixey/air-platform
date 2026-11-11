@@ -1,5 +1,6 @@
 import { Component, computed, DestroyRef, inject, linkedSignal } from '@angular/core';
 import { RECORD_AUTOCOMPLETE, RECORD_NAME } from '../../controls/record-autocomplete';
+import type { GridColumnDto } from '../../core/generated/contracts';
 import { TextsService } from '../../core/texts.service';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { GRID_HEADER_CLEAR, GRID_HEADER_HOST, GRID_HEADER_STRIP } from '../../theme/css-classes';
@@ -41,6 +42,8 @@ const DEBOUNCE_MS = 400;
       [disabled]="!canType()"
       [readonly]="showsClause()"
       [value]="text()"
+      (focus)="onFocus()"
+      (blur)="onBlur()"
       (input)="onInput($event)"
       (keydown.enter)="applyNow()"
       (keydown.escape)="clearOnEscape($event)"
@@ -73,6 +76,8 @@ export class GridHeaderDefaultComponent extends GridCellBase<GridHeaderDefaultMo
   protected readonly texts = inject(TextsService);
   private readonly clauseOf = injectClauseText();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private hasPendingTimer = false;
+  private isFocused = false;
 
   protected readonly label = computed(() => columnLabelOf(this.column()));
   protected readonly title = computed(() => columnTitleOf(this.column()));
@@ -108,35 +113,59 @@ export class GridHeaderDefaultComponent extends GridCellBase<GridHeaderDefaultMo
 
   /**
    * What the box shows: the filter's value while its operator is the
-   * one the box writes, its clause otherwise, and what was typed since.
+   * one the box writes, its clause otherwise, and what was typed since — keeping in-progress raw input
+   * (`"12."`, `"-"`, trailing space) untouched while focused if its parsed value already matches the filter.
    */
-  protected readonly text = linkedSignal<string>(() => {
-    const filter = this.filter();
-    if (!filter) {
-      return '';
-    }
-    if (this.showsClause()) {
-      return this.clauseOf(filter, this.column());
-    }
-    const value = rulesOf(filter)[0]?.value;
-    return value === null || value === undefined ? '' : String(value);
+  protected readonly text = linkedSignal<{ filter: GridFilter | undefined; showsClause: boolean; type: GridColumnDto['type'] }, string>({
+    source: () => ({ filter: this.filter(), showsClause: this.showsClause(), type: this.column().type }),
+    computation: (source, previous) => {
+      if (source.showsClause && source.filter) {
+        return this.clauseOf(source.filter, this.column());
+      }
+      const ruleValue = source.filter ? rulesOf(source.filter)[0]?.value : undefined;
+      const normalizedRule = ruleValue === undefined ? null : ruleValue;
+      if (this.isFocused && previous !== undefined) {
+        const prevTyped = typedFilterValue(source.type, previous.value);
+        const normalizedPrev = prevTyped === undefined || prevTyped === '' ? null : prevTyped;
+        if (Object.is(normalizedPrev, normalizedRule)) {
+          return previous.value;
+        }
+      }
+      return normalizedRule === null ? '' : String(normalizedRule);
+    },
   });
 
   protected readonly hasText = computed(() => this.text() !== '');
 
   constructor() {
     super();
-    inject(DestroyRef).onDestroy(() => clearTimeout(this.timer));
+    inject(DestroyRef).onDestroy(() => this.clearPendingTimer());
+  }
+
+  protected onFocus(): void {
+    this.isFocused = true;
+  }
+
+  protected onBlur(): void {
+    this.isFocused = false;
+    if (this.hasPendingTimer) {
+      this.applyNow();
+    }
+    if (!this.showsClause()) {
+      const ruleValue = this.filter() ? rulesOf(this.filter()!)[0]?.value : undefined;
+      this.text.set(ruleValue === null || ruleValue === undefined ? '' : String(ruleValue));
+    }
   }
 
   protected onInput(event: Event): void {
     this.text.set((event.target as HTMLInputElement).value);
-    clearTimeout(this.timer);
+    this.clearPendingTimer();
+    this.hasPendingTimer = true;
     this.timer = setTimeout(() => this.applyNow(), DEBOUNCE_MS);
   }
 
   protected applyNow(): void {
-    clearTimeout(this.timer);
+    this.clearPendingTimer();
     const column = this.column();
     // The text of a box that shows the menu's filter is its formula, nothing typed: Enter and a pause's end apply none of it.
     if (!this.grid || !column.path || this.showsClause()) {
@@ -158,11 +187,16 @@ export class GridHeaderDefaultComponent extends GridCellBase<GridHeaderDefaultMo
 
   protected clear(): void {
     this.text.set('');
-    clearTimeout(this.timer);
+    this.clearPendingTimer();
     const path = this.column().path;
     if (this.grid && path) {
       this.grid.clearColumnFilter(path);
     }
+  }
+
+  private clearPendingTimer(): void {
+    clearTimeout(this.timer);
+    this.hasPendingTimer = false;
   }
 
   /** `Escape` clears a box that holds a text, and says it handled the key, so no overlay closes with it. */

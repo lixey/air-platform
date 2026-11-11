@@ -37,8 +37,8 @@ public sealed class ReportTableDto
   public List<ReportFilterItemDto>? FilterChips { get; init; }
 
   public List<ReportColumnDto> Columns { get; init; } = [];
-  public List<Dictionary<string, object?>> Rows { get; init; } = [];
+  public List<RowDto> Rows { get; init; } = [];
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public List<Dictionary<string, object?>>? BottomRows { get; init; }
+  public List<RowDto>? BottomRows { get; init; }
 }

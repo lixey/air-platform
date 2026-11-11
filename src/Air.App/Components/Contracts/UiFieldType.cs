@@ -1,5 +1,6 @@
 namespace Platform.App.Components.Contracts;
 
+[UiContract]
 public static class UiFieldType
 {
   public const string Text = "text";

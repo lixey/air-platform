@@ -4,7 +4,7 @@ public interface IGridService : IPlatformService
 {
   Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
-  Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default);
+  Task<GridPageDto<RowDto>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
   Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
@@ -15,7 +15,7 @@ public interface IGridService : IPlatformService
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task<bool> BindParentAsync(string? parentService, long? parentId, CancellationToken ct = default) => Task.FromResult(true);
-  Task<object?> ReadRowAsync(long id, CancellationToken ct = default);
+  Task<RowDto?> ReadRowAsync(long id, CancellationToken ct = default);
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   IReadOnlyList<string>? GetLabelNavigationPaths() => null;
   string? GetRecordLabel(object? entity) => null;

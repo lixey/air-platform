@@ -3,6 +3,7 @@ namespace Platform.Data.Contracts;
 /// <summary>
 /// A single filter condition on a field.
 /// </summary>
+[UiContract]
 public sealed class FilterRule : FilterNode
 {
   public string Field { get; set; } = string.Empty;

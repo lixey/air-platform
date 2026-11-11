@@ -4,7 +4,7 @@ import type { SelectSource } from '../../select/select-source';
 import type { GridRow } from '../grid-row';
 import { columnLabelOf } from './grid-column-label';
 
-/** The label of the synthetic empty filter option (`id: 0`) for non-required reference/select columns. */
+/** The label of the synthetic empty filter option (`id: null`) for non-required reference/select columns. */
 export const EMPTY_SELECT_LABEL = '—';
 
 /**
@@ -31,7 +31,7 @@ export function selectSourceOf(column: GridColumnDto): SelectSource | null {
     }));
     return {
       label,
-      options: !column.isRequired && !options.some(o => o.id === 0) ? [{ id: 0, label: EMPTY_SELECT_LABEL }, ...options] : options,
+      options: !column.isRequired ? [{ id: null, label: EMPTY_SELECT_LABEL }, ...options] : options,
     };
   }
   return null;
@@ -42,9 +42,9 @@ export function optionOf(column: GridColumnDto, id: number): OptionDto | null {
   return column.options?.find(option => option.id === id) ?? null;
 }
 
-/** Synthetic top row (`id: 0`, `'—'`) for a select over a non-required reference column on page 1 without search. */
+/** Synthetic top row (`id: null`, `'—'`) for a select over a non-required reference column on page 1 without search. */
 export function emptySelectRowOf(labelPaths: readonly string[] | null | undefined, columns: readonly GridColumnDto[]): GridRow {
-  const row: Record<string, unknown> = { id: 0, name: EMPTY_SELECT_LABEL };
+  const cells: Record<string, unknown> = { name: EMPTY_SELECT_LABEL };
   const paths = new Set<string>([labelPathsOf(labelPaths)[0] ?? 'name']);
   const firstColPath = columns.find(c => c.path && c.path !== 'id')?.path;
   if (firstColPath) {
@@ -53,9 +53,9 @@ export function emptySelectRowOf(labelPaths: readonly string[] | null | undefine
   for (const path of paths) {
     const segments = path.split('.').filter(Boolean);
     if (segments.length === 1) {
-      row[segments[0]] = EMPTY_SELECT_LABEL;
+      cells[segments[0]] = EMPTY_SELECT_LABEL;
     } else if (segments.length > 1) {
-      let current = row;
+      let current = cells;
       for (let i = 0; i < segments.length - 1; i++) {
         const key = segments[i];
         const next = current[key];
@@ -67,5 +67,5 @@ export function emptySelectRowOf(labelPaths: readonly string[] | null | undefine
       current[segments[segments.length - 1]] = EMPTY_SELECT_LABEL;
     }
   }
-  return row;
+  return { id: null, cells };
 }

@@ -202,9 +202,7 @@ public static class AgentFeatureRegistry
             CanViewFeature(ownerGrid.Feature, app))
         {
           var rowObj = await ownerGrid.ReadRowAsync(recordId, ct);
-          if (rowObj is IDictionary<string, object?> rowDict &&
-              rowDict.TryGetValue("form", out var formVal) &&
-              formVal is string rowFormPath &&
+          if (rowObj?.Open?.Service is { Length: > 0 } rowFormPath &&
               !string.IsNullOrWhiteSpace(rowFormPath))
           {
             var matched = ResolveFormDescriptor(descriptors, rowFormPath, db, app);

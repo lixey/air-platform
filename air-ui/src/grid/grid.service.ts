@@ -283,17 +283,14 @@ export class GridService {
     const baseRows = this.data()?.rows ?? [];
     const select = this.select;
     const rows =
-      select?.model().allowEmpty && this.page() === 1 && !this.search() && !baseRows.some(r => keyOf(r) === 0)
+      select?.model().allowEmpty && this.page() === 1 && !this.search() && !baseRows.some(r => keyOf(r) === null)
         ? [emptySelectRowOf(select.model().labelPaths, this.allColumns()), ...baseRows]
         : baseRows;
     if (!select || !select.isMultiple()) {
       return rows;
     }
     const picked = new Set(select.draft().map(o => o.id));
-    return rows.filter(row => {
-      const key = keyOf(row);
-      return key === null || !picked.has(key);
-    });
+    return rows.filter(row => !picked.has(keyOf(row)));
   });
   readonly topRows = computed<readonly GridRow[]>(() => (this.shortOf() !== null ? NO_ROWS : (this.data()?.topRows ?? [])));
   readonly bottomRows = computed<readonly GridRow[]>(() => (this.shortOf() !== null ? NO_ROWS : (this.data()?.bottomRows ?? [])));
@@ -610,12 +607,13 @@ export class GridService {
       if (row) this.select.pickRow(row);
       return row !== null;
     }
-    const row = id !== null ? (this.rows().find(r => keyOf(r) === id) as Record<string, unknown> | undefined) : undefined;
-    const rowForm = typeof row?.['form'] === 'string' ? row['form'] : null;
+    const row = id !== null ? this.rows().find(r => keyOf(r) === id) : undefined;
+    const rowForm = row?.open?.service ?? null;
     const targetService = formService ?? rowForm;
     // The page's overlay is the row's alone: a form opened by a name the row does not carry takes none
     const rowOverlay =
-      customOverlay ?? (targetService !== null && targetService === rowForm ? (this.data()?.forms?.[targetService] ?? null) : null);
+      customOverlay ??
+      (targetService !== null && targetService === rowForm ? (row?.open?.overlay ?? this.data()?.forms?.[targetService] ?? null) : null);
     return this.forms.open(id, anchor, targetService, rowOverlay);
   }
 

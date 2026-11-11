@@ -29,5 +29,5 @@ export function pickOf<T>(select: FixedSelect<T>, value: T): readonly SelectOpti
 /** The value a pick stands for; `undefined` for no pick. */
 export function valueOfPick<T>(select: FixedSelect<T>, picked: readonly SelectOption[]): T | undefined {
   const option = picked[0];
-  return option ? select.values[option.id] : undefined;
+  return option && option.id !== null ? select.values[option.id] : undefined;
 }

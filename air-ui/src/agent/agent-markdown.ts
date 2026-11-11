@@ -1,4 +1,4 @@
-import type { ReportColumnDto, ReportTableDto } from '../core/generated/contracts';
+import type { ReportColumnDto, ReportTableDto, RowDto } from '../core/generated/contracts';
 
 const ALLOWED_TAGS = new Set([
   'a',
@@ -429,7 +429,7 @@ export function splitMarkdownAndGfmTables(
           };
         });
 
-        const mapCellsToRow = (cells: string[]): Record<string, unknown> => {
+        const mapCellsToRow = (cells: string[]): RowDto => {
           const rowObj: Record<string, unknown> = {};
           columns.forEach((col, colIdx) => {
             const rawCell = cells[colIdx] ?? '';
@@ -440,11 +440,11 @@ export function splitMarkdownAndGfmTables(
               rowObj[col.key] = rawCell;
             }
           });
-          return rowObj;
+          return { cells: rowObj };
         };
 
         let bodyCells = rawDataRows;
-        let bottomRows: Record<string, unknown>[] | null = null;
+        let bottomRows: RowDto[] | null = null;
         if (rawDataRows.length > 1) {
           const lastFirstCell = (rawDataRows[rawDataRows.length - 1][0] ?? '').toLowerCase();
           if (

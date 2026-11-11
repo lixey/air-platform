@@ -1,5 +1,5 @@
 import { isRecord } from '../core/json';
-import type { GridRow, GridRowKey } from '../grid/grid-row';
+import { cellValueAt, type GridRow, type GridRowKey, isRowDto, keyOf } from '../grid/grid-row';
 
 /** The raster images a file link serves inline, the only ones drawn from their own content; SVG is an attachment. */
 export const INLINE_IMAGE_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -44,26 +44,27 @@ export function downloadLinkOf(url: string): string {
 
 /** A file grid's row as a file: its `id`, `name`, `size`, `contentType`, `url` and `thumbUrl`. */
 export function fileViewOf(row: GridRow, key: GridRowKey | null): FileView {
+  const size = cellValueAt(row, 'size');
   return {
     key,
-    name: textOf(row['name']),
-    size: typeof row['size'] === 'number' ? row['size'] : null,
-    contentType: textOf(row['contentType']),
-    url: linkOf(row['url']),
-    thumbUrl: linkOf(row['thumbUrl']),
+    name: textOf(cellValueAt(row, 'name')),
+    size: typeof size === 'number' ? size : null,
+    contentType: textOf(cellValueAt(row, 'contentType')),
+    url: linkOf(cellValueAt(row, 'url')),
+    thumbUrl: linkOf(cellValueAt(row, 'thumbUrl')),
   };
 }
 
 /** The rows of a file grid's page of data; none where the answer holds no page. */
 export function rowsOfPage(data: unknown): readonly GridRow[] {
   const rows = isRecord(data) ? data['rows'] : null;
-  return Array.isArray(rows) ? rows.filter(isRecord) : [];
+  return Array.isArray(rows) ? rows.filter(isRowDto) : [];
 }
 
 /** The files of a file grid's page of data: each row that carries a key, as a file. */
 export function filesOfPage(data: unknown): readonly FileView[] {
   return rowsOfPage(data).flatMap(row => {
-    const key = typeof row['id'] === 'number' ? row['id'] : null;
+    const key = keyOf(row);
     return key === null ? [] : [fileViewOf(row, key)];
   });
 }

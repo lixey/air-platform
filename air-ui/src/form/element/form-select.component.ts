@@ -1,7 +1,8 @@
 import { Component, computed, effect, linkedSignal, untracked } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 import type { FilterNode, FormSelectModel, OverlayDto, Reference } from '../../core/generated/contracts';
-import { valueAt } from '../../core/json';
+import { isRecord, valueAt } from '../../core/json';
+import { isRowDto } from '../../grid/grid-row';
 import type { SelectOption } from '../../select/select-option';
 import { labelPathsOf, optionOfReference, referenceOfOption } from '../../select/select-option';
 import type { SelectSource } from '../../select/select-source';
@@ -211,14 +212,14 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
 
   /** The caption of a reference picked, beside the key the field received: fixed options have none to write. */
   protected caption(options: readonly SelectOption[]): void {
-    const picked = options[0] ?? null;
+    const valid = options.filter((o): o is SelectOption & { readonly id: number } => o.id !== null);
+    const picked = valid[0] ?? null;
     const path = this.element().referencePath;
     if (path && !this.options()) {
-      this.form.setValueAt(path, this.isMultiple() ? options.map(referenceOfOption) : picked ? referenceOfOption(picked) : null);
+      this.form.setValueAt(path, this.isMultiple() ? valid.map(referenceOfOption) : picked ? referenceOfOption(picked) : null);
     }
     const patches = this.element().selectPatches;
     if (patches && patches.length > 0 && picked?.row && typeof picked.row === 'object') {
-      const row = picked.row as Record<string, unknown>;
       for (const patch of patches) {
         if (patch.onlyWhenEmpty) {
           const cur = this.form.valueOf(patch.targetField);
@@ -226,20 +227,20 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
             continue;
           }
         }
-        const val = valueAt(row, patch.sourceColumn);
+        const val = readPatchValue(picked.row, patch.sourceColumn);
         if (val !== undefined) {
           const targetEl = this.form.model()?.elements?.find(e => e.path === patch.targetField);
           if (val === null) {
-            this.form.setValueAt(patch.targetField, null);
+            this.form.patchValueAt(patch.targetField, null);
             if (targetEl?.referencePath) {
-              this.form.setValueAt(targetEl.referencePath, null);
+              this.form.patchValueAt(targetEl.referencePath, null);
             }
           } else if (targetEl?.referencePath && typeof val === 'object' && 'id' in val) {
             const refVal = val as { id: number; name?: string };
-            this.form.setValueAt(targetEl.path, refVal.id);
-            this.form.setValueAt(targetEl.referencePath, { id: refVal.id, name: refVal.name ?? '' });
+            this.form.patchValueAt(targetEl.path, refVal.id);
+            this.form.patchValueAt(targetEl.referencePath, { id: refVal.id, name: refVal.name ?? '' });
           } else {
-            this.form.setValueAt(patch.targetField, val);
+            this.form.patchValueAt(patch.targetField, val);
           }
         }
       }
@@ -249,6 +250,24 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
       void this.form.save();
     }
   }
+}
+
+function readPatchValue(row: unknown, sourceColumn: string): unknown {
+  if (isRowDto(row)) {
+    const fromCells = valueAt(row.cells, sourceColumn);
+    if (fromCells !== undefined) {
+      return fromCells;
+    }
+    const lower = sourceColumn.toLowerCase();
+    if (lower === 'id') {
+      return row.id;
+    }
+    if (lower === 'ver') {
+      return row.ver;
+    }
+    return undefined;
+  }
+  return isRecord(row) ? valueAt(row, sourceColumn) : undefined;
 }
 
 /** Whether two lists of dependency values hold the same value at every place. */

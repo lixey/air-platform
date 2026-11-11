@@ -145,7 +145,7 @@ export function referenceFilterOf(field: string, options: readonly SelectOption[
         kind: 'FilterRule',
         field,
         operator: 'in',
-        value: options.map(o => (o.id === 0 ? null : o.id)),
+        value: options.map(o => o.id),
         picked: options.map(pickedValueOf),
       };
 }

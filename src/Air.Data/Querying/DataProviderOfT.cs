@@ -100,6 +100,38 @@ public sealed class DataProvider<TEntity, TRow>
     return EnumerateAsync(Project(plan.Order(plan.Filter(Source)).Take(limit)), cancellationToken);
   }
 
+  public async IAsyncEnumerable<IReadOnlyList<TRow>> StreamChunksAsync(
+    ListRequest request,
+    int limit,
+    int chunkSize = 500,
+    [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+  {
+    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSize);
+    var plan = Map.Plan(request);
+    var ordered = Project(plan.Order(plan.Filter(Source)));
+    var remaining = limit;
+    var offset = 0;
+    while (remaining > 0)
+    {
+      var take = Math.Min(chunkSize, remaining);
+      var chunk = await ExecuteListAsync(ordered.Skip(offset).Take(take), cancellationToken);
+      if (chunk.Count == 0)
+      {
+        yield break;
+      }
+
+      yield return chunk;
+      if (chunk.Count < take)
+      {
+        yield break;
+      }
+
+      offset += chunk.Count;
+      remaining -= chunk.Count;
+    }
+  }
+
   private IQueryable<TRow> Project(IQueryable<TEntity> query) =>
     _selector is not null ? query.Select(_selector) : (IQueryable<TRow>)query;
 

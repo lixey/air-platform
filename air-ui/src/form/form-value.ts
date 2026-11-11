@@ -1,5 +1,5 @@
 import { hasZone, temporalText } from '../controls/temporal-text';
-import type { FormDataDto, FormElementDto, FormModel } from '../core/generated/contracts';
+import type { FormDataDto, FormElementDto, FormModel, MessageDto } from '../core/generated/contracts';
 import { isRecord } from '../core/json';
 
 /**
@@ -178,6 +178,39 @@ export function canonicalJson(value: Record<string, unknown>, elements: readonly
 
 export function stableJson(value: unknown): string {
   return JSON.stringify(stable(value));
+}
+
+export function sameFieldValue(a: unknown, b: unknown): boolean {
+  return Object.is(a, b) || (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null && stableJson(a) === stableJson(b));
+}
+
+/** Keeps field messages whose target field value has not structurally changed since `previousSource`. */
+export function retainFieldMessages(
+  value: Readonly<Record<string, unknown>>,
+  previousValue: readonly MessageDto[],
+  previousSource: Readonly<Record<string, unknown>>,
+): readonly MessageDto[] {
+  return previousValue.filter(m => !m.path || sameFieldValue(value[m.path], previousSource[m.path]));
+}
+
+/** Indexes form elements by both `path` and `referencePath` for O(1) lookup. */
+export function indexFormElements(elements: readonly FormElementDto[]): ReadonlyMap<string, FormElementDto> {
+  const map = new Map<string, FormElementDto>();
+  for (const element of elements) {
+    if (element.path) {
+      map.set(element.path, element);
+    }
+    if (element.referencePath) {
+      map.set(element.referencePath, element);
+    }
+  }
+  return map;
+}
+
+/** Prepares the initial split draft for an input-only form, defaulting missing checkboxes to `false`. */
+export function splitInputDraft(elements: readonly FormElementDto[], value: Readonly<Record<string, unknown>>): SplitDraft {
+  const unchecked = Object.fromEntries(elements.filter(element => element.type === 'checkbox').map(element => [element.path, false]));
+  return splitDraft({ ...unchecked, ...value }, elements);
 }
 
 /**

@@ -13,7 +13,7 @@ import { AuthService } from '../../app/auth/auth.service';
 import type { CloseApproval } from '../../core/close-decision';
 import { SAVE_FILE, type saveFile } from '../../core/download';
 import { provideDynamicComponents } from '../../core/dynamic-component/provide-dynamic-components';
-import type { FileUploadLimitsDto, FormFilesModel, FormModel } from '../../core/generated/contracts';
+import type { FileUploadLimitsDto, FormFilesModel, FormModel, RowDto } from '../../core/generated/contracts';
 import { FILE_VIEWER_SOURCE, type FileViewerSource } from '../../file/file-viewer';
 import { ConfirmationService } from '../../overlay/confirmation.service';
 import { OverlayRef } from '../../overlay/overlay-ref';
@@ -45,9 +45,9 @@ const files: FormFilesModel = {
 
 /** The files element with its limits changed as given. */
 const limitedTo = (limits: Partial<FileUploadLimitsDto>): FormFilesModel => ({ ...files, limits: { ...files.limits, ...limits } });
-const rows = [
-  { id: 1, ver: 3, name: 'logo.png', contentType: 'image/png', size: 100, url: '/files/1?sig=a', thumbUrl: '/files/1t?sig=c' },
-  { id: 2, ver: 1, name: 'plan.pdf', contentType: 'application/pdf', size: 2000, url: '/files/2?sig=b' },
+const rows: RowDto[] = [
+  { id: 1, ver: 3, cells: { name: 'logo.png', contentType: 'image/png', size: 100, url: '/files/1?sig=a', thumbUrl: '/files/1t?sig=c' } },
+  { id: 2, ver: 1, cells: { name: 'plan.pdf', contentType: 'application/pdf', size: 2000, url: '/files/2?sig=b' } },
 ];
 
 async function settle(): Promise<void> {
@@ -230,11 +230,13 @@ describe('FormFilesComponent', () => {
       {
         id: 5,
         ver: 1,
-        name: 'catalog-retro.webp',
-        contentType: 'image/webp',
-        size: 2.2 * 1024 * 1024,
-        url: '/files/5?sig=g',
-        isCover: true,
+        cells: {
+          name: 'catalog-retro.webp',
+          contentType: 'image/webp',
+          size: 2.2 * 1024 * 1024,
+          url: '/files/5?sig=g',
+          isCover: true,
+        },
       },
     ]);
 
@@ -282,8 +284,12 @@ describe('FormFilesComponent', () => {
   it("draws a video's first frame as its tile's picture, and a video without one as the badge of its extension", async () => {
     mount();
     await answerPage([
-      { id: 3, ver: 1, name: 'clip.mp4', contentType: 'video/mp4', size: 3000, url: '/files/3?sig=d', thumbUrl: '/files/3t?sig=e' },
-      { id: 4, ver: 1, name: 'raw.mp4', contentType: 'video/mp4', size: 4000, url: '/files/4?sig=f' },
+      {
+        id: 3,
+        ver: 1,
+        cells: { name: 'clip.mp4', contentType: 'video/mp4', size: 3000, url: '/files/3?sig=d', thumbUrl: '/files/3t?sig=e' },
+      },
+      { id: 4, ver: 1, cells: { name: 'raw.mp4', contentType: 'video/mp4', size: 4000, url: '/files/4?sig=f' } },
     ]);
 
     const [clip, raw] = [...host().querySelectorAll('[data-file]')];
@@ -459,10 +465,10 @@ describe('FormFilesComponent', () => {
     expect(statuses()).toEqual(['uploaded', 'uploaded', 'uploading', 'refused', null, null]);
     uploads()[0].flush({ id: 5, count: 1, outcome: 'committed' });
     await settle();
-    const added = [
-      { id: 5, ver: 1, name: 'c.pdf', contentType: 'application/pdf', size: 10, url: '/files/5' },
-      { id: 3, ver: 1, name: 'a.png', contentType: 'image/png', size: 100, url: '/files/3' },
-      { id: 4, ver: 1, name: 'b.pdf', contentType: 'application/pdf', size: 200, url: '/files/4' },
+    const added: RowDto[] = [
+      { id: 5, ver: 1, cells: { name: 'c.pdf', contentType: 'application/pdf', size: 10, url: '/files/5' } },
+      { id: 3, ver: 1, cells: { name: 'a.png', contentType: 'image/png', size: 100, url: '/files/3' } },
+      { id: 4, ver: 1, cells: { name: 'b.pdf', contentType: 'application/pdf', size: 200, url: '/files/4' } },
     ];
     await answerPage([...added, ...rows]);
 
@@ -483,7 +489,7 @@ describe('FormFilesComponent', () => {
     // The queue has no post left and the page is asked again: the file the server named no key for still counts
     expect(count()).toBe('3 of 5');
 
-    await answerPage([{ id: 5, ver: 1, name: 'c.pdf', contentType: 'application/pdf', size: 10, url: '/files/5' }, ...rows]);
+    await answerPage([{ id: 5, ver: 1, cells: { name: 'c.pdf', contentType: 'application/pdf', size: 10, url: '/files/5' } }, ...rows]);
     expect(count()).toBe('3 of 5');
     expect(statuses()).toEqual([null, null, null]);
   });
@@ -512,9 +518,9 @@ describe('FormFilesComponent', () => {
     await settle();
     fixture.detectChanges();
 
-    const added = [
-      { id: 3, ver: 1, name: 'a.png', contentType: 'image/png', size: 100, url: '/files/3' },
-      { id: 4, ver: 1, name: 'b.pdf', contentType: 'application/pdf', size: 200, url: '/files/4' },
+    const added: RowDto[] = [
+      { id: 3, ver: 1, cells: { name: 'a.png', contentType: 'image/png', size: 100, url: '/files/3' } },
+      { id: 4, ver: 1, cells: { name: 'b.pdf', contentType: 'application/pdf', size: 200, url: '/files/4' } },
     ];
     await answerPage([...added, ...rows]);
     expect(names()).toEqual(['Open a.png', 'Open b.pdf', 'Open logo.png', 'Open plan.pdf']);
@@ -723,7 +729,7 @@ describe('FormFilesComponent', () => {
 
   it("makes a file the record's cover by its pin, and clears the cover by the cover's pin", async () => {
     mount({ ...files, canSetCover: true });
-    await answerPage([{ ...rows[0], isCover: true }, rows[1]]);
+    await answerPage([{ ...rows[0], cells: { ...rows[0].cells, isCover: true } }, rows[1]]);
 
     const pins = [...host().querySelectorAll<HTMLElement>('[data-file-cover]')];
     expect(pins.map(pin => pin.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
@@ -736,7 +742,7 @@ describe('FormFilesComponent', () => {
     expect(set.request.body).toEqual({ parentService: 'sample-folder-form', parentId: 7, selectedIds: [2], selectedVersions: [1] });
     set.flush({ count: 2, outcome: 'committed' });
     await settle();
-    await answerPage([rows[0], { ...rows[1], isCover: true }]);
+    await answerPage([rows[0], { ...rows[1], cells: { ...rows[1].cells, isCover: true } }]);
     expect(host().querySelectorAll('[data-file-cover]')[1].getAttribute('aria-pressed')).toBe('true');
 
     (host().querySelectorAll('[data-file-cover]')[1] as HTMLElement).dispatchEvent(new MouseEvent('click'));
@@ -768,7 +774,7 @@ describe('FormFilesComponent', () => {
 
   it('offers no pin where the model offers no cover', async () => {
     mount();
-    await answerPage([{ ...rows[0], isCover: true }]);
+    await answerPage([{ ...rows[0], cells: { ...rows[0].cells, isCover: true } }]);
 
     expect(host().querySelector('[data-file-cover]')).toBeNull();
   });
@@ -1003,13 +1009,15 @@ describe('FormFilesComponent', () => {
   });
 
   /** Five files of the record, `a.png` to `e.png`, at version 2. */
-  const five = ['a', 'b', 'c', 'd', 'e'].map((name, index) => ({
+  const five: RowDto[] = ['a', 'b', 'c', 'd', 'e'].map((name, index) => ({
     id: index + 1,
     ver: 2,
-    name: `${name}.png`,
-    contentType: 'image/png',
-    size: 100,
-    url: `/files/${index + 1}?sig=a`,
+    cells: {
+      name: `${name}.png`,
+      contentType: 'image/png',
+      size: 100,
+      url: `/files/${index + 1}?sig=a`,
+    },
   }));
   const handleOf = (key: number): HTMLElement => host().querySelector(`[data-reorder-handle="${key}"]`) as HTMLElement;
   const reorderSaid = (): string => host().querySelector('[data-files-reorder-status]')?.textContent?.trim() ?? '';
@@ -1157,7 +1165,7 @@ describe('FormFilesComponent', () => {
     save.flush({ count: 1, outcome: 'committed' });
     expect(await saved).toBe(true);
     await settle();
-    await answerPage([{ ...rows[0], name: 'Facade.png' }, rows[1]]);
+    await answerPage([{ ...rows[0], cells: { ...rows[0].cells, name: 'Facade.png' } }, rows[1]]);
     expect(source.files()[0].name).toBe('Facade.png');
     expect(names()).toEqual(['Open Facade.png', 'Open plan.pdf']);
 
@@ -1204,7 +1212,7 @@ describe('FormFilesComponent', () => {
 
   it('passes axe with the pins of the cover', async () => {
     mount({ ...files, canSetCover: true });
-    await answerPage([{ ...rows[0], isCover: true }, rows[1]]);
+    await answerPage([{ ...rows[0], cells: { ...rows[0].cells, isCover: true } }, rows[1]]);
 
     await expectAccessible(host());
   });

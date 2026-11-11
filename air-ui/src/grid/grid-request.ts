@@ -62,7 +62,7 @@ export function buildGridRequest(state: GridQueryState): GridRequest {
 export function withSelection(params: GridRequest, selected: readonly GridRow[]): GridRequest {
   const keyed = selected.flatMap(row => {
     const key = keyOf(row);
-    return key === null ? [] : [{ key, ver: row['ver'] }];
+    return key === null ? [] : [{ key, ver: row.ver }];
   });
   const selectedIds: GridRowKey[] = keyed.map(row => row.key);
   const versions = keyed.map(row => row.ver);

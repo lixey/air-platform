@@ -64,11 +64,9 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
 
     // 3. UseActionsOf projects row-level unavailable map on Grid rows when .When(...) is unsatisfied
     var page = await grid.GetDataAsync(new GridRequest { IsDataOnly = true }, CancellationToken.None);
-    var closedRow = page.Rows
-      .Cast<IDictionary<string, object?>>()
-      .First(r => Convert.ToInt64(r["id"]) == closedOrder.Id);
-    var unavailable = Assert.IsAssignableFrom<IReadOnlyDictionary<string, int>>(closedRow["unavailable"]);
-    Assert.Contains("stampnote", unavailable.Keys);
+    var closedRow = page.Rows.First(r => r.Id == closedOrder.Id);
+    Assert.NotNull(closedRow.Unavailable);
+    Assert.Contains("stampnote", closedRow.Unavailable.Keys);
 
     // 4. Ask<TInput> enforces async AsReference DB validation (inactive tag rejected with field path)
     var badTagPayload = JsonSerializer.SerializeToElement(new { tagId = inactiveTag.Id, note = "Test" });

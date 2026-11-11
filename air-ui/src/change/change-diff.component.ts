@@ -1,9 +1,11 @@
-import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, Injector, input } from '@angular/core';
 import { BadgeComponent } from '../badge/badge.component';
 import { BtnComponent } from '../btn/btn.component';
-import type { ChangeDiffModel, ChangeDiffRelatedItemDto, UiColor } from '../core/generated/contracts';
+import type { ChangeDiffModel, ChangeDiffRelatedItemDto, OpenTargetDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { OverlayService } from '../overlay/overlay.service';
+import { canOpenTarget, openRecord } from '../report/report-row-open';
+import { ScreenMutations } from '../screen/screen-mutations';
 
 @Component({
   selector: 'ui-change-diff',
@@ -72,14 +74,14 @@ import { OverlayService } from '../overlay/overlay.service';
                 </div>
                 <div class="flex shrink-0 items-center gap-1.5">
                   <ui-badge [label]="item.operation" [color]="asColor(item.operationColor)" />
-                  @if (item.formService && item.recordId > 0) {
+                  @if (canOpen(item.open)) {
                     <ui-btn
                       size="small"
                       variant="ghost"
                       color="blue"
                       icon="external"
                       [label]="texts.of('Open')"
-                      (click)="openRelatedRecord(item)"
+                      (click)="openRelatedRecord(item, $event)"
                     />
                   }
                 </div>
@@ -94,6 +96,8 @@ import { OverlayService } from '../overlay/overlay.service';
 export class ChangeDiffComponent {
   protected readonly texts = inject(TextsService);
   private readonly overlay = inject(OverlayService);
+  private readonly injector = inject(Injector);
+  private readonly mutations = inject(ScreenMutations, { optional: true });
 
   readonly model = input<ChangeDiffModel | null>();
 
@@ -101,25 +105,23 @@ export class ChangeDiffComponent {
     return (color as UiColor) || 'slate';
   }
 
-  protected openRelatedRecord(item: ChangeDiffRelatedItemDto): void {
-    if (!item.formService || item.recordId <= 0) {
+  protected canOpen(target: OpenTargetDto | null | undefined): boolean {
+    return canOpenTarget(target);
+  }
+
+  protected openRelatedRecord(item: ChangeDiffRelatedItemDto, event: Event): void {
+    if (!canOpenTarget(item.open)) {
       return;
     }
 
-    const baseOverlay = item.overlay ?? {
-      key: item.formService,
+    const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const defaultOverlay = {
+      key: item.open.service,
       presentation: 'drawer' as const,
       width: '720px',
       closesOnEscape: true,
     };
 
-    this.overlay.open({
-      ...baseOverlay,
-      screen: {
-        ...(baseOverlay.screen ?? {}),
-        service: item.formService,
-        params: { id: item.recordId },
-      },
-    });
+    openRecord({ ...item.open, overlay: item.open.overlay ?? defaultOverlay }, this.overlay, anchor, this.injector, this.mutations);
   }
 }

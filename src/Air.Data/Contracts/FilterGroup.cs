@@ -3,6 +3,7 @@ namespace Platform.Data.Contracts;
 /// <summary>
 /// A collection of filter nodes combined with AND / OR logic.
 /// </summary>
+[UiContract]
 public sealed class FilterGroup : FilterNode
 {
   [OneOf(typeof(FilterLogic))]

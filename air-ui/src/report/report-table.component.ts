@@ -2,14 +2,14 @@ import { Component, computed, inject, Injector, input, linkedSignal } from '@ang
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
 import { SearchBoxComponent } from '../controls/search-box.component';
-import type { ReportColumnDto, ReportFilterItemDto, ReportTableDto, UiColor } from '../core/generated/contracts';
+import type { ReportColumnDto, ReportFilterItemDto, ReportTableDto, RowDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayService } from '../overlay/overlay.service';
 import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
-import { openReportRow, openTargetOfRow } from './report-row-open';
+import { canOpenTarget, openReportRow } from './report-row-open';
 
 @Component({
   selector: 'ui-report-table',
@@ -161,14 +161,14 @@ export class ReportTableComponent {
   protected readonly sortDir = linkedSignal<ReportTableDto, 'asc' | 'desc'>({ source: this.table, computation: () => 'asc' });
   protected readonly currentLocale = computed(() => this.locale());
 
-  protected readonly displayedRows = computed<readonly Record<string, unknown>[]>(() => {
+  protected readonly displayedRows = computed<readonly RowDto[]>(() => {
     const t = this.table();
-    let rows = (t.rows ?? []) as Record<string, unknown>[];
+    let rows: readonly RowDto[] = t.rows ?? [];
 
     const chip = this.activeChip();
     if (chip && chip !== 'all' && t.filterField) {
       const field = t.filterField;
-      rows = rows.filter(r => String(r[field] ?? '').toLowerCase() === chip.toLowerCase());
+      rows = rows.filter(r => String(r.cells[field] ?? '').toLowerCase() === chip.toLowerCase());
     }
 
     const q = this.searchText().trim().toLowerCase();
@@ -176,7 +176,7 @@ export class ReportTableComponent {
       const cols = t.columns;
       rows = rows.filter(r =>
         cols.some(c => {
-          const val = r[c.key];
+          const val = r.cells[c.key];
           return val !== null && val !== undefined && String(val).toLowerCase().includes(q);
         }),
       );
@@ -185,7 +185,7 @@ export class ReportTableComponent {
     const sKey = this.sortKey();
     if (sKey) {
       const dir = this.sortDir() === 'asc' ? 1 : -1;
-      rows = [...rows].sort((a, b) => compareValues(a[sKey], b[sKey], dir));
+      rows = [...rows].sort((a, b) => compareValues(a.cells[sKey], b.cells[sKey], dir));
     }
 
     return rows;
@@ -259,31 +259,30 @@ export class ReportTableComponent {
     return 'text-right tabular-nums';
   }
 
-  protected rowClass(row: Record<string, unknown>, idx: number, clickable = false): string {
+  protected rowClass(row: RowDto, idx: number, clickable = false): string {
     const cursor = clickable ? ' cursor-pointer' : '';
-    const rowHue = asUiColor(row['rowColor'] as string | undefined);
+    const rowHue = asUiColor(row.color);
     if (rowHue) {
       return `group/row hue-${rowHue} bg-(--hue-cell) hover:bg-(--hue-cell-hover)${cursor}`;
     }
     return `group/row ${idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover'}${cursor}`;
   }
 
-  protected canOpenRow(row: Record<string, unknown>): boolean {
-    return openTargetOfRow(row) !== null;
+  protected canOpenRow(row: RowDto): boolean {
+    return canOpenTarget(row.open);
   }
 
-  protected onRowSpace(row: Record<string, unknown>, event: Event): void {
+  protected onRowSpace(row: RowDto, event: Event): void {
     event.preventDefault();
     this.openRow(row, event);
   }
 
-  protected openRow(row: Record<string, unknown>, event: Event): void {
+  protected openRow(row: RowDto, event: Event): void {
     openReportRow(row, event, this.overlay, this.injector, this.mutations);
   }
 
-  protected badgePillClass(col: ReportColumnDto, row: Record<string, unknown>): string {
-    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (row['color'] as string | undefined);
-    const hue = asUiColor(cellColor) ?? 'slate';
+  protected badgePillClass(col: ReportColumnDto, row: RowDto): string {
+    const hue = asUiColor(row.colors?.[col.key]) ?? 'slate';
     return `inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold hue-${hue} bg-(--btn-ground) text-(--btn-ink) border border-(--btn-edge)`;
   }
 
@@ -300,10 +299,10 @@ export class ReportTableComponent {
     return `${pad} border-r border-line whitespace-nowrap ${align} ${cursor} ${sticky}`;
   }
 
-  protected bodyCellClass(t: ReportTableDto, col: ReportColumnDto, row: Record<string, unknown>, idx = 0): string {
+  protected bodyCellClass(t: ReportTableDto, col: ReportColumnDto, row: RowDto, idx = 0): string {
     const align = this.alignClass(col, true);
     const pad = t.compact || t.columns.length > 10 ? 'px-2 text-xs h-8' : 'px-3 h-9';
-    const rowHue = asUiColor(row['rowColor'] as string | undefined);
+    const rowHue = asUiColor(row.color);
     const stickyBg = rowHue
       ? 'bg-(--hue-cell) group-hover/row:bg-(--hue-cell-hover)'
       : idx % 2 === 0
@@ -315,15 +314,12 @@ export class ReportTableComponent {
         : col.sticky === 'right'
           ? `sticky right-0 z-10 ${stickyBg} border-l border-line font-medium`
           : '';
-    const cellColor =
-      (row[`${col.key}Color`] as string | undefined) ??
-      (col.kind !== 'text' && col.kind !== 'badge' ? (row['color'] as string | undefined) : undefined);
-    const hue = asUiColor(cellColor);
+    const hue = asUiColor(row.colors?.[col.key]);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink) font-semibold` : 'text-ink';
     return `${pad} border-r border-b border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
   }
 
-  protected footerCellClass(t: ReportTableDto, col: ReportColumnDto, row: Record<string, unknown>): string {
+  protected footerCellClass(t: ReportTableDto, col: ReportColumnDto, row: RowDto): string {
     const align = this.alignClass(col, false);
     const pad = t.compact || t.columns.length > 10 ? 'px-2 text-xs h-8' : 'px-3 h-9';
     const sticky =
@@ -332,15 +328,13 @@ export class ReportTableComponent {
         : col.sticky === 'right'
           ? 'sticky right-0 z-10 bg-surface-2 border-l border-line'
           : '';
-    const cellColor =
-      (row[`${col.key}Color`] as string | undefined) ?? (col.kind !== 'text' ? (row['color'] as string | undefined) : undefined);
-    const hue = asUiColor(cellColor);
+    const hue = asUiColor(row.colors?.[col.key]);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `${pad} border-r border-t border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
   }
 
-  protected formatCell(col: ReportColumnDto, row: Record<string, unknown>): string {
-    const raw = row[col.key];
+  protected formatCell(col: ReportColumnDto, row: RowDto): string {
+    const raw = row.cells[col.key];
     if (raw === null || raw === undefined || raw === '') {
       return '';
     }
@@ -353,7 +347,7 @@ export class ReportTableComponent {
     }
     const decimals = col.decimals ?? (col.kind === 'percent' ? 1 : 0);
     if (col.kind === 'money') {
-      const currency = (row[`${col.key}Currency`] as string | undefined) ?? (row['currency'] as string | undefined) ?? col.currency;
+      const currency = row.currencies?.[col.key] ?? col.currency;
       return currency ? formatCellAmount(raw, loc, moneyFormatOf({ decimals, currency })) : formatCellNumber(raw, loc, decimals, true);
     }
     if (col.kind === 'number') {

@@ -43,7 +43,7 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
     <div [class]="boxClasses()">
       @if (multiple() && picked().length > 0) {
         <div class="flex flex-wrap gap-1 min-w-0 max-h-24 overflow-y-auto px-1 py-1">
-          @for (option of picked(); track option.id) {
+          @for (option of picked(); track option.id ?? '__empty__') {
             <span
               class="inline-flex items-center gap-1 max-w-48 px-2 py-0.5 rounded text-sm leading-5 ${PICK_CHIP} truncate"
               [title]="option.label"
@@ -278,8 +278,9 @@ export class SelectComponent implements FormValueControl<unknown> {
     if (this.refusesInput()) {
       return;
     }
-    this.value.set(this.multiple() ? options.map(option => option.id) : (options[0]?.id ?? null));
-    this.picked.set([...options]);
-    this.select.setPicked(options);
+    const effective = this.multiple() ? options : options.filter(option => option.id !== null);
+    this.value.set(this.multiple() ? effective.map(option => option.id) : (effective[0]?.id ?? null));
+    this.picked.set([...effective]);
+    this.select.setPicked(effective);
   }
 }

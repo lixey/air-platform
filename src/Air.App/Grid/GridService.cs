@@ -282,13 +282,11 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   private bool HasCustomShapeRow =>
     CustomShapeRowTypes.GetOrAdd(GetType(), static t =>
     {
-      var m1 = t.GetMethod("ShapeRow", BindingFlags.Instance | BindingFlags.NonPublic, [typeof(TRow)]);
-      var m3 = t.GetMethod(
+      var m = t.GetMethod(
         "ShapeRow",
         BindingFlags.Instance | BindingFlags.NonPublic,
         [typeof(TRow), typeof(IReadOnlyList<GridColumnDto>), typeof(IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>)]);
-      return m1 != null && m1.DeclaringType != typeof(GridService<TEntity, TRow>) ||
-             m3 != null && m3.DeclaringType != typeof(GridService<TEntity, TRow>);
+      return m != null && m.DeclaringType != typeof(GridService<TEntity, TRow>);
     });
 
   private (string? ParentService, long? ParentId, Query Value)? _cachedQuery;

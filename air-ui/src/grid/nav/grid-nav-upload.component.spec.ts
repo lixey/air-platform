@@ -81,8 +81,8 @@ describe('GridNavUploadComponent', () => {
     bindGrid(grid).model.set(gridModel);
     bindGrid(grid).data.set({
       rows: [
-        { id: 4, name: 'plan.pdf', size: 20000 },
-        { id: 3, name: 'logo.png', size: 5000 },
+        { id: 4, cells: { name: 'plan.pdf', size: 20000 } },
+        { id: 3, cells: { name: 'logo.png', size: 5000 } },
       ],
       total: 2,
       page: 1,

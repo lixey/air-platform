@@ -453,10 +453,12 @@ public abstract partial class FormService<TEntity>
           [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
       }
 
-      var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase));
-      presentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cp.Path };
+      var targetElement = elements.List.FirstOrDefault(e => string.Equals(e.Path, cp.Path, StringComparison.OrdinalIgnoreCase))
+                          ?? elements.List.FirstOrDefault(e => !string.IsNullOrEmpty(e.ReferencePath) && string.Equals(e.ReferencePath, cp.Path, StringComparison.OrdinalIgnoreCase));
+      var effectiveCellPath = targetElement?.Path ?? cp.Path;
+      presentPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { effectiveCellPath };
       FormValueBinder.CopyMatchingProperties(entity, input);
-      FormValueBinder.SetPropertyValue(input, cp.Path, cp.Value);
+      FormValueBinder.SetPropertyValue(input, effectiveCellPath, cp.Value);
       FormValueBinder.NormalizeNullableStrings(elements.List, input);
       disabledElementPaths = FormValueBinder.ComputeDisabledElementPaths(
         elements.List,
@@ -475,7 +477,7 @@ public abstract partial class FormService<TEntity>
         entity,
         input,
         disabledElementPaths);
-      var propName = PropertyAccessorCache.GetProperty(typeof(TEntity), cp.Path)?.Name ?? cp.Path;
+      var propName = PropertyAccessorCache.GetProperty(typeof(TEntity), effectiveCellPath)?.Name ?? effectiveCellPath;
       if (targetElement == null ||
           targetElement.IsHidden ||
           targetElement.IsDisabled ||
@@ -490,8 +492,33 @@ public abstract partial class FormService<TEntity>
           [new MessageDto { Detail = L["FormReadOnly"], Path = cp.Path, Type = MessageType.Error }]);
       }
 
-      FormValueBinder.SetPropertyValue(entity, cp.Path, cp.Value);
+      FormValueBinder.SetPropertyValue(entity, effectiveCellPath, cp.Value);
       FormValueBinder.NormalizeNullableStrings(elements.List, entity);
+      if (await FormSelectPatcher.ApplyServerSelectPatchesAsync(
+            db,
+            PlatformApp,
+            elements.List,
+            parent.BoundProperty,
+            parent.IsOptional,
+            IsNew,
+            entity,
+            originalValues,
+            presentPaths,
+            protectedPaths,
+            disabledElementPaths,
+            effectiveCellPath,
+            ct) &&
+          elements.List.Any(e => e.DisabledWhen != null))
+      {
+        disabledElementPaths = FormValueBinder.ComputeDisabledElementPaths(
+          elements.List,
+          parent.BoundProperty,
+          parent.IsOptional,
+          IsNew,
+          entity,
+          entity,
+          presentPaths);
+      }
     }
     else
     {
@@ -516,6 +543,32 @@ public abstract partial class FormService<TEntity>
         disabledElementPaths);
       FormValueBinder.CopyMatchingProperties(input, entity, protectedPaths);
       FormValueBinder.NormalizeNullableStrings(elements.List, entity);
+      if (await FormSelectPatcher.ApplyServerSelectPatchesAsync(
+            db,
+            PlatformApp,
+            elements.List,
+            parent.BoundProperty,
+            parent.IsOptional,
+            IsNew,
+            entity,
+            originalValues,
+            presentPaths,
+            protectedPaths,
+            disabledElementPaths,
+            cellPatchPath: null,
+            ct) &&
+          elements.List.Any(e => e.DisabledWhen != null))
+      {
+        disabledElementPaths = FormValueBinder.ComputeDisabledElementPaths(
+          elements.List,
+          parent.BoundProperty,
+          parent.IsOptional,
+          IsNew,
+          entity,
+          entity,
+          presentPaths);
+      }
+
       if (id is > 0)
       {
         entity.Id = id.Value;
@@ -629,7 +682,7 @@ public abstract partial class FormService<TEntity>
     string path,
     JsonElement value,
     FormRequest request,
-    Func<CancellationToken, Task<object?>> readRow,
+    Func<CancellationToken, Task<RowDto?>> readRow,
     CancellationToken ct = default)
   {
     request.Id ??= id;

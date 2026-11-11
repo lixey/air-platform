@@ -10,7 +10,7 @@ import { GRID_DELETE, GridActionsService } from './grid-actions.service';
 
 /** What a row says it does not offer, its `unavailable`: the keys with their indexes; null for a row that says none. */
 function unavailableOf(row: GridRow): Unavailable | null {
-  const value = row['unavailable'];
+  const value = row.unavailable;
   return isRecord(value)
     ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
     : null;

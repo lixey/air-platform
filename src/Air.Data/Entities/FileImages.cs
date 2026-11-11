@@ -1,5 +1,6 @@
 namespace Platform.Data.Entities;
 
+[UiContract]
 public static class FileImages
 {
   public const string Keep = "keep";

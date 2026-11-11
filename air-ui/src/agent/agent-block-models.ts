@@ -1,12 +1,15 @@
 import { type EnvironmentProviders, InjectionToken, makeEnvironmentProviders, type Type } from '@angular/core';
 import type {
+  OpenTargetDto,
   ReportChartDto,
   ReportColumnDto,
   ReportKpiDto,
   ReportPieSliceDto,
   ReportSeriesDto,
   ReportTableDto,
+  RowDto,
 } from '../core/generated/contracts';
+import { asRowUiColor, isRowDto } from '../grid/grid-row';
 
 export interface AgentMarkdownBlock {
   readonly id: string;
@@ -172,15 +175,76 @@ function normalizeTable(raw: Record<string, unknown>): ReportTableDto | null {
     };
   });
 
-  const mapRow = (r: unknown): Record<string, unknown> => {
+  const mapRow = (r: unknown): RowDto => {
     if (Array.isArray(r)) {
-      const out: Record<string, unknown> = {};
+      const cells: Record<string, unknown> = {};
       columns.forEach((col, i) => {
-        out[col.key] = r[i];
+        cells[col.key] = r[i];
       });
-      return out;
+      return { cells };
     }
-    return r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+    if (isRowDto(r)) {
+      return r;
+    }
+    if (!r || typeof r !== 'object') {
+      return { cells: {} };
+    }
+    const obj = r as Record<string, unknown>;
+    const cells: Record<string, unknown> = {};
+    const colors: Record<string, string> = {};
+    const currencies: Record<string, string> = {};
+    const defaultCurrency = typeof obj['currency'] === 'string' ? obj['currency'] : null;
+
+    for (const col of columns) {
+      if (col.key in obj) {
+        cells[col.key] = obj[col.key];
+      }
+      const colColor = obj[`${col.key}Color`];
+      if (typeof colColor === 'string' && colColor) {
+        colors[col.key] = colColor;
+      }
+      const colCurrency = obj[`${col.key}Currency`] ?? (col.kind === 'money' ? defaultCurrency : null);
+      if (typeof colCurrency === 'string' && colCurrency) {
+        currencies[col.key] = colCurrency;
+      }
+    }
+
+    const rowColor = asRowUiColor(
+      typeof obj['rowColor'] === 'string' ? obj['rowColor'] : typeof obj['color'] === 'string' ? obj['color'] : null,
+    );
+    const extractRefreshServices = (val: unknown): string[] | undefined => {
+      if (!Array.isArray(val)) {
+        return undefined;
+      }
+      const list = val.filter((s): s is string => typeof s === 'string' && s.length > 0);
+      return list.length > 0 ? list : undefined;
+    };
+
+    let open: OpenTargetDto | null = null;
+    if (obj['open'] && typeof obj['open'] === 'object') {
+      const rawOpen = obj['open'] as Record<string, unknown>;
+      const service = rawOpen['service'];
+      const id = typeof rawOpen['id'] === 'number' ? rawOpen['id'] : Number(rawOpen['id']);
+      if (typeof service === 'string' && service && Number.isFinite(id) && id > 0) {
+        const refreshServices = extractRefreshServices(rawOpen['refreshServices']);
+        open = { service, id, ...(refreshServices ? { refreshServices } : {}) };
+      }
+    } else if (typeof obj['openForm'] === 'string' && obj['openForm']) {
+      const id = typeof obj['openId'] === 'number' ? obj['openId'] : Number(obj['openId']);
+      if (Number.isFinite(id) && id > 0) {
+        const refreshServices = extractRefreshServices(obj['refreshServices']);
+        open = { service: obj['openForm'], id, ...(refreshServices ? { refreshServices } : {}) };
+      }
+    }
+
+    return {
+      ...(typeof obj['id'] === 'number' ? { id: obj['id'] } : {}),
+      cells,
+      ...(rowColor ? { color: rowColor } : {}),
+      ...(Object.keys(colors).length > 0 ? { colors } : {}),
+      ...(Object.keys(currencies).length > 0 ? { currencies } : {}),
+      ...(open ? { open } : {}),
+    };
   };
 
   const rows = rawRows.map(mapRow);

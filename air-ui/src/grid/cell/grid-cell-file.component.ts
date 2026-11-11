@@ -5,7 +5,7 @@ import { type FileView, fileViewOf, pictureOf } from '../../file/file-view';
 import { fileInfoSourceOf, type FileViewerSource, openFileViewer } from '../../file/file-viewer';
 import { OverlayService } from '../../overlay/overlay.service';
 import { FOCUS_RING } from '../../theme/css-classes';
-import { type GridRow, keyOf } from '../grid-row';
+import { cellValueAt, type GridRow, keyOf } from '../grid-row';
 import { GridCellBase } from './grid-cell-base';
 
 /**
@@ -59,7 +59,7 @@ export class GridCellFileComponent extends GridCellBase<GridCellFileModel> {
 
   /** The row's signed link; null where there is none to follow or the column acts on nothing. */
   protected readonly url = computed(() => {
-    const url = this.row()?.['url'];
+    const url = cellValueAt(this.row(), 'url');
     return typeof url === 'string' && url !== '' && !this.isDisabled() ? url : null;
   });
 

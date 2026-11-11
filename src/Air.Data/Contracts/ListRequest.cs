@@ -4,6 +4,7 @@ namespace Platform.Data.Contracts;
 /// Standard list request containing pagination, sorting, filters, and fulltext search.
 /// </summary>
 [ClientOptional]
+[UiContract]
 public class ListRequest
 {
   public int Page { get; set; } = 1;

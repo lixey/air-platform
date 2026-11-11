@@ -34,9 +34,9 @@ const model: FormFilesModel = {
 
 const rows = fileRowsOf({
   rows: [
-    { id: 1, ver: 3, name: 'logo.png', contentType: 'image/png', size: 100 },
-    { name: 'no-key.pdf', size: 5 },
-    { id: 2, ver: 1, name: 'plan.pdf', contentType: 'application/pdf', size: 2000 },
+    { id: 1, ver: 3, cells: { name: 'logo.png', contentType: 'image/png', size: 100 } },
+    { id: null, cells: { name: 'no-key.pdf', size: 5 } },
+    { id: 2, ver: 1, cells: { name: 'plan.pdf', contentType: 'application/pdf', size: 2000 } },
   ],
 });
 

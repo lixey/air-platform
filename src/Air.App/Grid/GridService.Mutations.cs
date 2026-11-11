@@ -384,7 +384,7 @@ public abstract partial class GridService<TEntity, TRow>
     }).ToList();
   }
 
-  public virtual async Task<object?> ReadRowAsync(long id, CancellationToken ct = default)
+  public virtual async Task<RowDto?> ReadRowAsync(long id, CancellationToken ct = default)
   {
     var queryDeclaration = GetQueryDeclaration();
     var cols = CreateColumns();
@@ -427,7 +427,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var shapedEntity = ShapeRow((entity as TRow)!, cols.List, queryDeclaration.RowFlags);
-    List<object> singleShapedList = [shapedEntity];
+    List<RowDto> singleShapedList = [shapedEntity];
     if (queryDeclaration.RowComputeAction != null)
     {
       await InvokeRowComputeActionAsync([entity], singleShapedList, cols.List, queryDeclaration.RowComputeAction, ct);
@@ -461,7 +461,8 @@ public abstract partial class GridService<TEntity, TRow>
 
     var cols = CreateColumns();
 
-    var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase));
+    var col = cols.List.FirstOrDefault(c => string.Equals(c.Path, request.Path, StringComparison.OrdinalIgnoreCase))
+              ?? cols.List.FirstOrDefault(c => !string.IsNullOrEmpty(c.FilterPath) && string.Equals(c.FilterPath, request.Path, StringComparison.OrdinalIgnoreCase));
     if (IsReadOnly ||
         col == null ||
         !col.IsEditable ||
@@ -523,10 +524,10 @@ public abstract partial class GridService<TEntity, TRow>
     var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.Cell is not AddOns.Covers.Contracts.GridCellCoverModel).ToList();
 
     const int limit = 100_000;
-    IAsyncEnumerable<object> rowStream;
+    IAsyncEnumerable<RowDto> rowStream;
     if (!parentScopeValid)
     {
-      rowStream = AsyncEnumerable.Empty<object>();
+      rowStream = AsyncEnumerable.Empty<RowDto>();
     }
     else
     {
@@ -549,7 +550,7 @@ public abstract partial class GridService<TEntity, TRow>
       {
         var dataProvider = DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector);
         rowStream = queryDeclaration.ComputeAction != null
-          ? ShapeComputedStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), queryDeclaration.ComputeAction, exportColumns, ct)
+          ? ShapeComputedChunksAsync(dataProvider.StreamChunksAsync(request, limit + 1, 500, ct), queryDeclaration.ComputeAction, exportColumns, ct)
           : ShapeStreamAsync(dataProvider.StreamAsync(request, limit + 1, ct), exportColumns, ct);
       }
       else
@@ -560,18 +561,35 @@ public abstract partial class GridService<TEntity, TRow>
         var defaultDataProvider = exportSelector != null
           ? DataProvider.Create(query.AsNoTracking(), queryMap, exportSelector)
           : DataProvider.Create(IncludeColumnNavigations(query.AsNoTracking(), exportColumns), queryMap);
-        rowStream = ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), exportColumns, queryDeclaration.RowComputeAction, ct);
+        var hasSubqueryCols = exportColumns.Any(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null);
+        rowStream = queryDeclaration.ComputeAction != null || queryDeclaration.RowComputeAction != null || hasSubqueryCols
+          ? ShapeEntityChunksAsync(
+            defaultDataProvider.StreamChunksAsync(request, limit + 1, 500, ct),
+            exportColumns,
+            queryDeclaration.ComputeAction,
+            queryDeclaration.RowComputeAction,
+            hasSubqueryCols,
+            ct)
+          : ShapeEntityStreamAsync(defaultDataProvider.StreamAsync(request, limit + 1, ct), exportColumns, ct);
       }
     }
 
     var tempFilePath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
     var fileStream = new FileStream(tempFilePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
-    var label = L.TryGetString(Feature.Name, out var l) ? l : (string.IsNullOrEmpty(Feature.Name) ? typeof(TEntity).Name : Feature.Name);
-    var cleanName = Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
-    TimeZones.TryFind(User?.TimeZone, out var exportTimeZone);
-    var fileName = $"{cleanName}_{TimeZoneInfo.ConvertTime(Time.UtcNow, exportTimeZone):yyyyMMdd_HHmm}.xlsx";
-    await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => col.MemberType ?? PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
-    fileStream.Position = 0;
-    return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
+    try
+    {
+      var label = L.TryGetString(Feature.Name, out var l) ? l : (string.IsNullOrEmpty(Feature.Name) ? typeof(TEntity).Name : Feature.Name);
+      var cleanName = Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
+      TimeZones.TryFind(User?.TimeZone, out var exportTimeZone);
+      var fileName = $"{cleanName}_{TimeZoneInfo.ConvertTime(Time.UtcNow, exportTimeZone):yyyyMMdd_HHmm}.xlsx";
+      await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => col.MemberType ?? PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
+      fileStream.Position = 0;
+      return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
+    }
+    catch
+    {
+      await fileStream.DisposeAsync();
+      throw;
+    }
   }
 }

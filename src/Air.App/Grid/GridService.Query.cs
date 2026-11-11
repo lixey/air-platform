@@ -137,7 +137,7 @@ public abstract partial class GridService<TEntity, TRow>
     return ApplyActiveNamedFilters(query, gridReq, queryDeclaration);
   }
 
-  public virtual async Task<GridPageDto<object>> GetDataAsync(ListRequest request, CancellationToken ct = default)
+  public virtual async Task<GridPageDto<RowDto>> GetDataAsync(ListRequest request, CancellationToken ct = default)
   {
     var gridReq = request as GridRequest;
     ParentService = gridReq?.ParentService;
@@ -146,7 +146,7 @@ public abstract partial class GridService<TEntity, TRow>
     var isSelect = isReferenceSelect || (gridReq?.IsReferencePicker ?? false);
     if (!await EnsureParentScopeAsync(lockParent: false, ct))
     {
-      return new GridPageDto<object> { Rows = [], Total = 0, Number = request.Page, Size = request.PageSize, HasMore = false };
+      return new GridPageDto<RowDto> { Rows = [], Total = 0, Number = request.Page, Size = request.PageSize, HasMore = false };
     }
 
     var filteredQuery = BuildFilteredEntityQuery(gridReq, out _, out var queryDeclaration);
@@ -196,7 +196,7 @@ public abstract partial class GridService<TEntity, TRow>
       await PopulateRowAvailabilityAsync(shapedRows, cols, ct);
       var filteredEntities = DataProvider.Create(noTrackingFiltered, queryMap, queryDeclaration.Selector).Filter(request);
       var bottomRows = !isSelect ? await ComputeSumRowsAsync(filteredEntities, queryDeclaration.Selector, cols.List, ct) : null;
-      return new GridPageDto<object>
+      return new GridPageDto<RowDto>
       {
         Rows = shapedRows,
         BottomRows = bottomRows,
@@ -242,7 +242,7 @@ public abstract partial class GridService<TEntity, TRow>
     var sumSourceQuery = DataProvider.Create(filteredQuery.AsNoTracking(), queryMap).Filter(request);
     var defaultBottomRows = !isSelect ? await ComputeSumRowsAsync(sumSourceQuery, null, cols.List, ct) : null;
 
-    return new GridPageDto<object>
+    return new GridPageDto<RowDto>
     {
       Rows = defaultShapedRows,
       BottomRows = defaultBottomRows,
@@ -310,7 +310,7 @@ public abstract partial class GridService<TEntity, TRow>
     return new GridCountDto { Total = total };
   }
 
-  private async Task PopulateRowAvailabilityAsync(List<object> shapedRows, Columns columns, CancellationToken ct)
+  private async Task PopulateRowAvailabilityAsync(List<RowDto> shapedRows, Columns columns, CancellationToken ct)
   {
     if (shapedRows.Count == 0)
     {
@@ -397,27 +397,22 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var evaluated = await OfferBatchEvaluator.EvaluateAsync(db, rowIds, offers, ct);
-    foreach (var rowObj in shapedRows)
+    foreach (var row in shapedRows)
     {
-      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
+      if (row.Id is not { } rowId || !evaluated.TryGetValue(rowId, out var rowUnav) || rowUnav.Count == 0)
       {
         continue;
       }
 
-      if (!long.TryParse(idVal.ToString(), out var parsedId) || !evaluated.TryGetValue(parsedId, out var rowUnav) || rowUnav.Count == 0)
+      if (row.Unavailable is null)
       {
-        continue;
-      }
-
-      if (!dict.TryGetValue("unavailable", out var unavObj) || unavObj is not Dictionary<string, int> unav)
-      {
-        dict["unavailable"] = rowUnav;
+        row.Unavailable = rowUnav;
       }
       else
       {
         foreach (var kvp in rowUnav)
         {
-          unav.TryAdd(kvp.Key, kvp.Value);
+          row.Unavailable.TryAdd(kvp.Key, kvp.Value);
         }
       }
     }
@@ -437,7 +432,7 @@ public abstract partial class GridService<TEntity, TRow>
       return method.CreateDelegate<Func<IQueryable<TEntity>, IReadOnlyList<long>, LambdaExpression, Func<object?, object?>?, CancellationToken, Task<Dictionary<long, object?>>>>();
     });
 
-  private async Task PopulateComputedColumnsAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  private async Task PopulateComputedColumnsAsync(List<RowDto> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
     if (typeof(TRow) != typeof(TEntity) || shapedRows.Count == 0)
     {
@@ -461,14 +456,9 @@ public abstract partial class GridService<TEntity, TRow>
     {
       var evaluator = GetComputedColumnEvaluator(col.ValueExpression!.ReturnType);
       var valuesById = await evaluator(baseQuery, rowIds, col.ValueExpression, col.ValueFormatter, ct);
-      foreach (var rowObj in shapedRows)
+      foreach (var row in shapedRows)
       {
-        if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
-        {
-          continue;
-        }
-
-        if (!long.TryParse(idVal.ToString(), out var parsedId) || !valuesById.TryGetValue(parsedId, out var computedVal) || computedVal == null)
+        if (row.Id is not { } rowId || !valuesById.TryGetValue(rowId, out var computedVal) || computedVal == null)
         {
           continue;
         }
@@ -479,20 +469,24 @@ public abstract partial class GridService<TEntity, TRow>
           var opt = options.FirstOrDefault(o => o.Id == optId);
           var optName = opt != null ? L[opt.Name] : optId.ToString(CultureInfo.InvariantCulture);
           string? hue = null;
-          if (dict.Remove($"{col.Path}Color", out var colorObj))
+          if (row.Colors != null && row.Colors.Remove(col.Path!, out var colorStr))
           {
-            hue = colorObj?.ToString();
+            hue = colorStr;
+            if (row.Colors.Count == 0)
+            {
+              row.Colors = null;
+            }
           }
 
           computedVal = new Reference { Id = optId, Name = optName, Color = hue };
         }
 
-        PutValue(dict, col.Path!, computedVal);
+        PutValue(row.Cells, col.Path!, computedVal);
       }
     }
   }
 
-  private async Task PopulateCoversAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  private async Task PopulateCoversAsync(List<RowDto> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
     var coverCol = columns.FirstOrDefault(c => !c.IsHidden && c.Cell is AddOns.Covers.Contracts.GridCellCoverModel);
     if (coverCol == null || shapedRows.Count == 0)
@@ -520,14 +514,11 @@ public abstract partial class GridService<TEntity, TRow>
           }
 
           var covers = await coverSource.CoversAsync(ownerIds, ct);
-          foreach (var rowObj in shapedRows)
+          foreach (var row in shapedRows)
           {
-            if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+            if (row.Id is { } rowId && covers.TryGetValue(rowId, out var coverDto))
             {
-              if (long.TryParse(idVal.ToString(), out var parsedId) && covers.TryGetValue(parsedId, out var coverDto))
-              {
-                dict[coverCol.Path ?? "idCover"] = coverDto;
-              }
+              row.Cells[coverCol.Path ?? "idCover"] = coverDto;
             }
           }
         }
@@ -538,7 +529,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private async Task PopulateProjectedColorsAsync(List<object> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
+  private async Task PopulateProjectedColorsAsync(List<RowDto> shapedRows, IReadOnlyList<GridColumnDto> columns, CancellationToken ct)
   {
     if (typeof(TRow) == typeof(TEntity) || shapedRows.Count == 0)
     {
@@ -561,14 +552,9 @@ public abstract partial class GridService<TEntity, TRow>
       .Where(e => rowIds.Contains(e.Id));
     var entitiesById = await entityQuery.ToDictionaryAsync(e => e.Id, ct);
 
-    foreach (var rowObj in shapedRows)
+    foreach (var row in shapedRows)
     {
-      if (rowObj is not Dictionary<string, object?> dict || !dict.TryGetValue("id", out var idVal) || idVal == null)
-      {
-        continue;
-      }
-
-      if (!long.TryParse(idVal.ToString(), out var parsedId) || !entitiesById.TryGetValue(parsedId, out var entity))
+      if (row.Id is not { } rowId || !entitiesById.TryGetValue(rowId, out var entity))
       {
         continue;
       }
@@ -581,7 +567,7 @@ public abstract partial class GridService<TEntity, TRow>
           continue;
         }
 
-        var val = PropertyAccessorCache.GetPathValue(dict, PropertyAccessorCache.ToCamel(col.Path));
+        var val = PropertyAccessorCache.GetPathValue(row.Cells, PropertyAccessorCache.ToCamel(col.Path));
         if (val is Reference r)
         {
           r.Color = hue;
@@ -592,7 +578,7 @@ public abstract partial class GridService<TEntity, TRow>
         }
         else
         {
-          PutValue(dict, $"{col.Path}Color", hue);
+          (row.Colors ??= new Dictionary<string, string>(StringComparer.Ordinal))[col.Path] = hue;
         }
       }
     }
@@ -604,21 +590,14 @@ public abstract partial class GridService<TEntity, TRow>
     !((queryDeclaration.ComputeAction != null || queryDeclaration.RowComputeAction != null || queryDeclaration.RowFlags.Count > 0) &&
       GridProjectionBuilder.HasIncludeExpressions(query.Expression));
 
-  private static List<long> ExtractRowIds(List<object> shapedRows)
+  private static List<long> ExtractRowIds(List<RowDto> shapedRows)
   {
     var ids = new List<long>(shapedRows.Count);
-    foreach (var rowObj in shapedRows)
+    foreach (var row in shapedRows)
     {
-      if (rowObj is Dictionary<string, object?> dict && dict.TryGetValue("id", out var idVal) && idVal != null)
+      if (row.Id is { } rowId)
       {
-        if (idVal is long l)
-        {
-          ids.Add(l);
-        }
-        else if (long.TryParse(idVal.ToString(), out var parsedId))
-        {
-          ids.Add(parsedId);
-        }
+        ids.Add(rowId);
       }
     }
 
@@ -709,15 +688,12 @@ public abstract partial class GridService<TEntity, TRow>
     return validProps.Count > 0 ? string.Join('.', validProps) : null;
   }
 
-  private async Task<Dictionary<string, OverlayDto>?> CollectRowFormOverlaysAsync(List<object> shapedRows, CancellationToken ct = default)
+  private async Task<Dictionary<string, OverlayDto>?> CollectRowFormOverlaysAsync(List<RowDto> shapedRows, CancellationToken ct = default)
   {
     Dictionary<string, OverlayDto>? forms = null;
-    foreach (var rowObj in shapedRows)
+    foreach (var row in shapedRows)
     {
-      if (rowObj is Dictionary<string, object?> dict &&
-          dict.TryGetValue("form", out var formObj) &&
-          formObj is string formHandle &&
-          !string.IsNullOrEmpty(formHandle) &&
+      if (row.Open?.Service is { Length: > 0 } formHandle &&
           (forms == null || !forms.ContainsKey(formHandle)))
       {
         if (_cachedFormOverlays.TryGetValue(formHandle, out var cached))

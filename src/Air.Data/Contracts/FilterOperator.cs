@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 
 namespace Platform.Data.Contracts;
 
+[UiContract]
 public static class FilterOperator
 {
   public new const string Equals = "equals";

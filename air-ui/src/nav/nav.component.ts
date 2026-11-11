@@ -5,6 +5,7 @@ import { BtnComponent } from '../btn/btn.component';
 import type { NavDirection, NavElementModel, NavModel, NavOverflow, OverlayDto } from '../core/generated/contracts';
 import { resolveModel } from '../core/resolve-model';
 import { TextsService } from '../core/texts.service';
+import { OVERLAY_NARROW_WIDTH } from '../overlay/overlay-box';
 import { OverlayService } from '../overlay/overlay.service';
 import { singlePanelLayout } from '../panels/single-panel-layout';
 import { NavElementOutletComponent } from './nav-element-outlet.component';
@@ -191,10 +192,17 @@ export class NavComponent {
       return;
     }
 
+    const doc = anchor.ownerDocument;
+    const viewportWidth = doc.getElementById('host')?.getBoundingClientRect().width || doc.defaultView?.innerWidth || 0;
+    const isNarrow = viewportWidth > 0 && viewportWidth < OVERLAY_NARROW_WIDTH;
     const model: OverlayDto = {
       key: `${NAV_MORE_OVERLAY}.${this.model()?.key ?? ''}`,
       presentation: 'menu',
-      layout: singlePanelLayout(NAV_MORE_OVERLAY, { kind: 'NavMenuBody', elements: this.more() }),
+      layout: singlePanelLayout(NAV_MORE_OVERLAY, {
+        kind: 'NavMenuBody',
+        elements: this.more(),
+        ...(isNarrow ? { closesOnAction: true } : {}),
+      }),
     };
     this.moreMenu.open(model, anchor, this.injector, this.texts.of('More'));
   }

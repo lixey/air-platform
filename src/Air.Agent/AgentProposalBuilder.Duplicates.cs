@@ -99,7 +99,7 @@ public static partial class AgentProposalBuilder
           ? cpId
           : (long?)null;
 
-        GridPageDto<object> dayPage;
+        GridPageDto<RowDto> dayPage;
         try
         {
           dayPage = await ownerGrid.GetDataAsync(new ListRequest

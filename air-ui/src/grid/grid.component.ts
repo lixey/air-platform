@@ -2,7 +2,6 @@ import { Component, computed, inject, input, viewChild } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
 import type { GridModel } from '../core/generated/contracts';
-import { valueAt } from '../core/json';
 import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { NavComponent } from '../nav/nav.component';
@@ -13,6 +12,7 @@ import { conjunctsOf, fieldOf, type GridFilter } from './filter/grid-filter-set'
 import { chipLabel, connectorOf } from './filter/grid-filter-text';
 import { GridDeleteOutcomeComponent } from './grid-delete-outcome.component';
 import { GridPagerComponent } from './grid-pager.component';
+import { cellValueAt, rowColorAt } from './grid-row';
 import { GridService } from './grid.service';
 import { GridActionsService } from './nav/grid-actions.service';
 import { GridTableComponent } from './table/grid-table.component';
@@ -166,14 +166,14 @@ export class GridComponent {
       .filter(col => col.selectionSumUnit !== undefined && col.selectionSumUnit !== null && !!col.path)
       .map(col => {
         const path = col.path!;
-        const colorPath = col.cell?.colorPath ?? `${path}Color`;
+        const colorPath = col.cell && 'colorPath' in col.cell ? col.cell.colorPath : null;
         const excludeColor = col.selectionSumExcludeColor ?? null;
-        const primaryRows = excludeColor ? rows.filter(r => valueAt(r, colorPath) !== excludeColor) : rows;
+        const primaryRows = excludeColor ? rows.filter(r => rowColorAt(r, path, colorPath) !== excludeColor) : rows;
         const activeRows = primaryRows.length > 0 ? primaryRows : rows;
         const isExcludedOnly = excludeColor !== null && primaryRows.length === 0;
         let sum = 0;
         for (const r of activeRows) {
-          const val = valueAt(r, path);
+          const val = cellValueAt(r, path);
           const num = typeof val === 'number' ? val : Number(val);
           if (Number.isFinite(num)) {
             sum += num;

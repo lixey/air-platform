@@ -1,11 +1,9 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { DynamicOutletDirective } from '../../core/dynamic-component/dynamic-outlet.directive';
 import type { CellModel, HeaderModel } from '../../core/generated/contracts';
-import { valueAt } from '../../core/json';
 import type { UiColor } from '../../theme/ui-color';
-import { UI_COLORS } from '../../theme/ui-color';
 import { SELECTION_PATH } from '../column/grid-selection-column';
-import type { GridRow } from '../grid-row';
+import { asRowUiColor, type GridRow, rowColorAt } from '../grid-row';
 import { GridService } from '../grid.service';
 import type { GridCellContext } from './grid-cell-context';
 
@@ -55,7 +53,9 @@ export class GridCellOutletComponent {
   protected readonly inputs = computed(() => ({ cell: this.cell(), model: this.model() ?? undefined }));
 
   /** The hue the cell is painted in: the row's at the model's hue path, else a flag's; null for none. */
-  protected readonly hue = computed(() => hueOf(this.cell().row, this.model()) ?? flagHueOf(this.cell(), this.model()));
+  protected readonly hue = computed(
+    () => hueOf(this.cell().row, this.cell().column.path, this.model()) ?? flagHueOf(this.cell(), this.model()),
+  );
 
   /** Whether the cell needs its own bottom line: every body row except the last, which shares the table's bottom border. */
   private readonly hasBottomLine = computed(() => {
@@ -84,13 +84,16 @@ export class GridCellOutletComponent {
  * The row's value at the model's `colorPath` when it is one of `UI_COLORS`; null for no path, no row or any other value,
  * and for a select cell, whose colour is its badge's.
  */
-function hueOf(row: GridRow | null, model: CellModel | HeaderModel | null | undefined): UiColor | null {
+function hueOf(
+  row: GridRow | null,
+  columnPath: string | null | undefined,
+  model: CellModel | HeaderModel | null | undefined,
+): UiColor | null {
   const path = model && model.kind !== 'GridCellSelect' && 'colorPath' in model ? model.colorPath : null;
   if (typeof path !== 'string') {
     return null;
   }
-  const value = valueAt(row, path);
-  return UI_COLORS.find(color => color === value) ?? null;
+  return asRowUiColor(rowColorAt(row, columnPath, path));
 }
 
 /** The hue of a checkbox cell of a data column: `green` for true, `red` for false; null for any other value or cell. */

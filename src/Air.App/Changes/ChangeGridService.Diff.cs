@@ -548,8 +548,7 @@ public abstract partial class ChangeGridService
         _ => UiColor.Slate
       };
 
-      string? formService = null;
-      OverlayDto? overlay = null;
+      OpenTargetDto? open = null;
       if (sib.Operation != ChangeOperations.Deleted &&
           sib.RowId > 0 &&
           sibFeat != null &&
@@ -558,7 +557,8 @@ public abstract partial class ChangeGridService
         var formServiceType = ResolvePrimaryFormServiceType(sibFeat, sibClr);
         if (formServiceType != null)
         {
-          formService = ServicePathResolver.Resolve(formServiceType);
+          var formService = ServicePathResolver.Resolve(formServiceType);
+          OverlayDto? overlay = null;
           var sp = services ?? PlatformApp?.Services;
           var formInst = sp?.GetService(formServiceType) as IFormService
                          ?? ModuleCatalog.Instance.CreateServiceInstance(formServiceType, sibDb, PlatformApp, sp) as IFormService;
@@ -566,6 +566,13 @@ public abstract partial class ChangeGridService
           {
             overlay = await formInst.OverlayAsync(formService, ct);
           }
+
+          open = new OpenTargetDto
+          {
+            Service = formService,
+            Id = sib.RowId,
+            Overlay = overlay
+          };
         }
       }
 
@@ -576,9 +583,7 @@ public abstract partial class ChangeGridService
           Title = itemTitle,
           Operation = loc[sib.Operation],
           OperationColor = sibOpColor,
-          FormService = formService,
-          Overlay = overlay,
-          RecordId = sib.RowId,
+          Open = open,
           IsCurrent = sib.Id == current.Id
         }
       );

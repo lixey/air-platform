@@ -4,7 +4,7 @@ import type { GridNavUploadModel } from '../../core/generated/contracts';
 import { uploadOverlayOf } from '../../file/file-upload-overlay.component';
 import type { ShownFile } from '../../file/file-upload-queue';
 import { OverlayService } from '../../overlay/overlay.service';
-import { keyOf, type GridRow } from '../grid-row';
+import { cellValueAt, type GridRow, keyOf } from '../grid-row';
 import { GridService } from '../grid.service';
 import { isOwnerCurrent } from './grid-nav-mutation';
 
@@ -64,7 +64,7 @@ export class GridNavUploadComponent {
 function shownFilesOf(rows: readonly GridRow[]): ShownFile[] {
   return rows.flatMap(row => {
     const id = keyOf(row);
-    const size = row['size'];
+    const size = cellValueAt(row, 'size');
     return id === null ? [] : [{ id, size: typeof size === 'number' ? size : 0 }];
   });
 }

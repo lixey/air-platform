@@ -21,6 +21,7 @@ import { NumberBoxComponent } from '../../controls/number-box.component';
 import { TextBoxComponent } from '../../controls/text-box.component';
 import type { GridNumberEditDto } from '../../core/generated/contracts';
 import { TemporalBoxComponent } from '../../datepicker/temporal-box.component';
+import { OverlayService } from '../../overlay/overlay.service';
 import type { SelectOption } from '../../select/select-option';
 import { optionOfReference } from '../../select/select-option';
 import type { SelectSource } from '../../select/select-source';
@@ -152,8 +153,10 @@ export class GridCellEditorComponent {
   private static next = 0;
 
   private readonly grid = inject(GridService);
+  private readonly overlay = inject(OverlayService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   protected readonly locale = inject(LocaleService).current;
+  private destroyed = false;
 
   /** The cell being edited. */
   readonly cell = input.required<GridCellContext>();
@@ -232,8 +235,10 @@ export class GridCellEditorComponent {
     // The table the focus returns to, found while the editor stands in it
     let table: HTMLElement | null = null;
     const onKeyDown = (event: KeyboardEvent) => this.onKeyDown(event);
+    const onFocusOut = (event: FocusEvent) => this.onFocusOut(event);
     // Capturing: the editor's keys are taken before its control opens a picker on `Enter` and before the table moves
     this.host.addEventListener('keydown', onKeyDown, true);
+    this.host.addEventListener('focusout', onFocusOut);
     afterNextRender(
       () => {
         table = this.host.closest<HTMLElement>('[role="grid"]');
@@ -242,7 +247,9 @@ export class GridCellEditorComponent {
       { injector: inject(Injector) },
     );
     inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
       this.host.removeEventListener('keydown', onKeyDown, true);
+      this.host.removeEventListener('focusout', onFocusOut);
       const focused = this.host.ownerDocument.activeElement;
       if (!focused || focused === this.host.ownerDocument.body || this.host.contains(focused)) {
         table?.focus({ preventScroll: true });
@@ -253,6 +260,31 @@ export class GridCellEditorComponent {
   /** What the control holds now, for the edit to keep. */
   protected keep(value: unknown): void {
     this.grid.edits.update(value);
+  }
+
+  private onFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && this.host.contains(next)) {
+      return;
+    }
+    queueMicrotask(() => {
+      if (
+        this.destroyed ||
+        this.host.contains(this.host.ownerDocument.activeElement) ||
+        this.hasChildOverlay() ||
+        this.grid.edits.isConfirming ||
+        this.isSaving() ||
+        this.edit() === null ||
+        this.hasParseErrors()
+      ) {
+        return;
+      }
+      void this.grid.edits.commit('stay');
+    });
+  }
+
+  private hasChildOverlay(): boolean {
+    return this.overlay.stack().some(ref => ref.anchor !== null && this.host.contains(ref.anchor));
   }
 
   private onKeyDown(event: KeyboardEvent): void {

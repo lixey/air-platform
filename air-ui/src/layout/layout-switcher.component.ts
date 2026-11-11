@@ -131,7 +131,7 @@ export class LayoutSwitcherComponent {
   /** Posts the picked option unless it is the current one; reloads on success, reports and keeps the page on a refusal. */
   private switchTo(option: SelectOption | undefined): void {
     const switcher = this.model();
-    if (!switcher?.service || !switcher.method || !option || option.id === switcher.current.id || this.isBusy()) {
+    if (!switcher?.service || !switcher.method || !option || option.id === null || option.id === switcher.current.id || this.isBusy()) {
       return;
     }
     const request: SwitchRequest = { id: option.id };

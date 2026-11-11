@@ -24,7 +24,7 @@ describe('postFileAction', () => {
   let setBusy: ReturnType<typeof vi.fn<(busy: boolean) => void>>;
   let requestOf: ReturnType<typeof vi.fn<FileActionOpener['requestOf']>>;
   let isCurrent: boolean;
-  const rows: readonly GridRow[] = [{ id: 12, ver: 3 }];
+  const rows: readonly GridRow[] = [{ id: 12, ver: 3, cells: {} }];
   const request: FileActionRequest = { service, body: { parentService: 'sample-report-form', parentId: 7, selectedIds: [12] } };
 
   const openerOf = (injector: Injector = TestBed.inject(Injector)): FileActionOpener => ({

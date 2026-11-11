@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Platform.App.Form.Internals;
 using Platform.App.Internals;
 
 namespace Platform.App.Grid;
@@ -7,41 +8,35 @@ public abstract partial class GridService<TEntity, TRow>
   where TEntity : class, IEntity, new()
   where TRow : class
 {
-  protected virtual object ShapeRow(TRow row) => row;
-
-  protected virtual object ShapeRow(
+  protected virtual RowDto ShapeRow(
     TRow row,
     IReadOnlyList<GridColumnDto> columns,
     IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null)
   {
     if (row is null)
     {
-      return new Dictionary<string, object?>(StringComparer.Ordinal);
+      return new RowDto();
     }
 
-    if (columns.Count == 0)
+    var shaped = new RowDto
     {
-      return ShapeRow(row);
-    }
+      Cells = new Dictionary<string, object?>(Math.Max(4, columns.Count), StringComparer.Ordinal)
+    };
 
-    if (HasCustomShapeRow)
-    {
-      _ = ShapeRow(row);
-    }
-
-    var shaped = new Dictionary<string, object?>(columns.Count + 4, StringComparer.Ordinal);
     if (row is IEntity entityRow)
     {
-      shaped["id"] = entityRow.Id;
+      shaped.Id = entityRow.Id;
     }
-    else if (PropertyAccessorCache.GetValue(row, "Id") is { } idVal)
+    else if (PropertyAccessorCache.GetValue(row, "Id") is { } idVal &&
+             FormValidator.TryExtractIntegralOrEnumId(idVal, out var parsedId))
     {
-      shaped["id"] = idVal;
+      shaped.Id = parsedId;
     }
 
-    if (PropertyAccessorCache.GetValue(row, "Ver") is { } verVal)
+    if (PropertyAccessorCache.GetValue(row, "Ver") is { } verVal &&
+        FormValidator.TryExtractIntegralOrEnumId(verVal, out var parsedVer))
     {
-      shaped["ver"] = verVal;
+      shaped.Ver = parsedVer;
     }
 
     if (rowFlags is { Count: > 0 })
@@ -62,8 +57,29 @@ public abstract partial class GridService<TEntity, TRow>
 
       if (matchedFlags is { Count: > 0 })
       {
-        shaped["flags"] = matchedFlags;
+        shaped.Flags = matchedFlags;
       }
+    }
+
+    if (columns.Count == 0)
+    {
+      foreach (var prop in PropertyAccessorCache.GetProperties(row.GetType()))
+      {
+        if (!prop.CanRead ||
+            FormValueBinder.IsIgnoredNavigationProperty(prop.PropertyType) ||
+            Attribute.IsDefined(prop, typeof(SensitiveAttribute)) ||
+            prop.GetCustomAttribute<JsonIgnoreAttribute>() is { Condition: JsonIgnoreCondition.Always })
+        {
+          continue;
+        }
+
+        if (PropertyAccessorCache.GetValue(row, prop.Name) is { } propVal)
+        {
+          shaped.Cells[PropertyAccessorCache.ToCamel(prop.Name)] = propVal;
+        }
+      }
+
+      return shaped;
     }
 
     for (var cIdx = 0; cIdx < columns.Count; cIdx++)
@@ -160,24 +176,28 @@ public abstract partial class GridService<TEntity, TRow>
           }
           else
           {
-            PutValue(shaped, $"{column.Path}Color", hue);
+            (shaped.Colors ??= new Dictionary<string, string>(StringComparer.Ordinal))[column.Path] = hue;
           }
         }
       }
 
-      if (column.FormServiceResolver is not null && !shaped.ContainsKey("form"))
+      if (column.FormServiceResolver is not null && shaped.Open is null)
       {
         var formType = column.FormServiceResolver(row);
         if (formType is not null)
         {
           ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, $"OpenForm on '{column.Path}'");
-          shaped["form"] = ServicePathResolver.Resolve(formType);
+          shaped.Open = new OpenTargetDto
+          {
+            Service = ServicePathResolver.Resolve(formType),
+            Id = shaped.Id ?? 0
+          };
         }
       }
 
       if (value is not null)
       {
-        PutValue(shaped, column.Path, value);
+        PutValue(shaped.Cells, column.Path, value);
       }
     }
 
@@ -249,7 +269,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private async IAsyncEnumerable<object> ShapeStreamAsync(
+  private async IAsyncEnumerable<RowDto> ShapeStreamAsync(
     IAsyncEnumerable<TRow> source,
     IReadOnlyList<GridColumnDto> columns,
     [EnumeratorCancellation] CancellationToken ct)
@@ -260,73 +280,69 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private async IAsyncEnumerable<object> ShapeEntityStreamAsync(
+  private async IAsyncEnumerable<RowDto> ShapeEntityStreamAsync(
     IAsyncEnumerable<TEntity> source,
     IReadOnlyList<GridColumnDto> columns,
-    Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? rowComputeAction,
     [EnumeratorCancellation] CancellationToken ct)
   {
-    var hasSubqueryCols = columns.Any(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null);
-    if (!hasSubqueryCols && rowComputeAction == null)
-    {
-      await foreach (var item in source.WithCancellation(ct))
-      {
-        yield return ShapeRow((item as TRow)!, columns);
-      }
-
-      yield break;
-    }
-
-    var entities = new List<TEntity>(500);
-    var batch = new List<object>(500);
     await foreach (var item in source.WithCancellation(ct))
     {
-      entities.Add(item);
-      batch.Add(ShapeRow((item as TRow)!, columns));
-      if (batch.Count >= 500)
-      {
-        if (rowComputeAction != null)
-        {
-          await InvokeRowComputeActionAsync(entities, batch, columns, rowComputeAction, ct);
-        }
-
-        if (hasSubqueryCols)
-        {
-          await PopulateComputedColumnsAsync(batch, columns, ct);
-        }
-
-        foreach (var shaped in batch)
-        {
-          yield return shaped;
-        }
-
-        entities.Clear();
-        batch.Clear();
-      }
+      yield return ShapeRow((item as TRow)!, columns);
     }
+  }
 
-    if (batch.Count > 0)
+  private async IAsyncEnumerable<RowDto> ShapeEntityChunksAsync(
+    IAsyncEnumerable<IReadOnlyList<TEntity>> chunks,
+    IReadOnlyList<GridColumnDto> columns,
+    Func<IReadOnlyList<TRow>, CancellationToken, Task>? computeAction,
+    Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? rowComputeAction,
+    bool hasSubqueryCols,
+    [EnumeratorCancellation] CancellationToken ct)
+  {
+    await foreach (var chunk in chunks.WithCancellation(ct))
     {
-      if (rowComputeAction != null)
-      {
-        await InvokeRowComputeActionAsync(entities, batch, columns, rowComputeAction, ct);
-      }
-
-      if (hasSubqueryCols)
-      {
-        await PopulateComputedColumnsAsync(batch, columns, ct);
-      }
-
-      foreach (var shaped in batch)
+      foreach (var shaped in await ShapeEntityBatchAsync(chunk, columns, computeAction, rowComputeAction, hasSubqueryCols, ct))
       {
         yield return shaped;
       }
     }
   }
 
+  private async Task<List<RowDto>> ShapeEntityBatchAsync(
+    IReadOnlyList<TEntity> entities,
+    IReadOnlyList<GridColumnDto> columns,
+    Func<IReadOnlyList<TRow>, CancellationToken, Task>? computeAction,
+    Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? rowComputeAction,
+    bool hasSubqueryCols,
+    CancellationToken ct)
+  {
+    if (computeAction != null && entities is IReadOnlyList<TRow> typedEntities)
+    {
+      await computeAction(typedEntities, ct);
+    }
+
+    var batch = new List<RowDto>(entities.Count);
+    foreach (var entity in entities)
+    {
+      batch.Add(ShapeRow((entity as TRow)!, columns));
+    }
+
+    if (rowComputeAction != null)
+    {
+      await InvokeRowComputeActionAsync(entities, batch, columns, rowComputeAction, ct);
+    }
+
+    if (hasSubqueryCols)
+    {
+      await PopulateComputedColumnsAsync(batch, columns, ct);
+    }
+
+    return batch;
+  }
+
   private static async Task InvokeRowComputeActionAsync(
     IReadOnlyList<TEntity> entities,
-    List<object> shapedRows,
+    List<RowDto> shapedRows,
     IReadOnlyList<GridColumnDto> columns,
     Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task> rowComputeAction,
     CancellationToken ct)
@@ -340,15 +356,7 @@ public abstract partial class GridService<TEntity, TRow>
     var computedRows = new List<GridComputedRow<TEntity>>(count);
     for (var i = 0; i < count; i++)
     {
-      if (shapedRows[i] is Dictionary<string, object?> dict)
-      {
-        computedRows.Add(new GridComputedRow<TEntity>(entities[i], dict));
-      }
-    }
-
-    if (computedRows.Count == 0)
-    {
-      return;
+      computedRows.Add(new GridComputedRow<TEntity>(entities[i], shapedRows[i]));
     }
 
     await rowComputeAction(computedRows, ct);
@@ -370,21 +378,14 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private async IAsyncEnumerable<object> ShapeComputedStreamAsync(
-    IAsyncEnumerable<TRow> source,
+  private async IAsyncEnumerable<RowDto> ShapeComputedChunksAsync(
+    IAsyncEnumerable<IReadOnlyList<TRow>> chunks,
     Func<IReadOnlyList<TRow>, CancellationToken, Task> computeAction,
     IReadOnlyList<GridColumnDto> columns,
     [EnumeratorCancellation] CancellationToken ct)
   {
-    var rows = new List<TRow>();
-    await foreach (var item in source.WithCancellation(ct))
+    await foreach (var batch in chunks.WithCancellation(ct))
     {
-      rows.Add(item);
-    }
-
-    for (var i = 0; i < rows.Count; i += 500)
-    {
-      var batch = rows.GetRange(i, Math.Min(500, rows.Count - i));
       await computeAction(batch, ct);
       foreach (var row in batch)
       {

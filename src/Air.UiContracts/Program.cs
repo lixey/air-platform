@@ -10,6 +10,6 @@ var textsJson = JsonSerializer.Serialize(UiTexts.English, new JsonSerializerOpti
 {
   WriteIndented = true
 });
-await File.WriteAllTextAsync(textsFile, textsJson);
+await File.WriteAllTextAsync(textsFile, textsJson + "\n");
 
 Console.WriteLine($"[Air.UiContracts] Successfully exported contracts to {targetDir}");

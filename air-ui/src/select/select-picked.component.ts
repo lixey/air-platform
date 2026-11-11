@@ -19,7 +19,7 @@ import { SelectService } from './select.service';
       <ui-btn size="small" variant="ghost" color="blue" [label]="texts.of('ClearAll')" (click)="select.clearDraft()" />
     </div>
     <div class="flex flex-col gap-1 p-1 overflow-auto min-h-0">
-      @for (option of picked(); track option.id) {
+      @for (option of picked(); track option.id ?? '__empty__') {
         <ui-btn
           size="small"
           color="blue"

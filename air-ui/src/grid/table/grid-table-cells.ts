@@ -1,8 +1,7 @@
 import type { GridColumnDto } from '../../core/generated/contracts';
-import { valueAt } from '../../core/json';
 import type { GridCellContext } from '../cell/grid-cell-context';
 import { SELECTION_PATH } from '../column/grid-selection-column';
-import type { GridRow } from '../grid-row';
+import { cellValueAt, type GridRow } from '../grid-row';
 import type { GridHeaderRowCell } from '../header/grid-header-rows';
 
 /**
@@ -13,7 +12,7 @@ export function rowCells(row: GridRow, columns: readonly GridColumnDto[], index:
   return columns.map(column => ({
     row,
     column,
-    value: column.path === SELECTION_PATH ? undefined : valueAt(row, column.path),
+    value: column.path === SELECTION_PATH ? undefined : cellValueAt(row, column.path),
     index,
     ...(pinned ? { pinned } : {}),
   }));

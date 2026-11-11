@@ -62,28 +62,23 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   public override bool CanDelete() => !IsReadOnly;
 
-  protected override object ShapeRow(
+  protected override RowDto ShapeRow(
     TFile row,
     IReadOnlyList<GridColumnDto> columns,
     IReadOnlyList<(string Name, Func<TFile, bool> Predicate)>? rowFlags = null)
   {
-    var baseResult = base.ShapeRow(row, columns, rowFlags);
-    if (baseResult is not Dictionary<string, object?> dict)
-    {
-      return baseResult;
-    }
-
+    var shaped = base.ShapeRow(row, columns, rowFlags);
     if (Links.TryUrl(row) is { } url)
     {
-      dict["url"] = url;
+      shaped.Cells["url"] = url;
     }
 
     if (Links.TryThumbnailUrl(row) is { } thumbUrl)
     {
-      dict["thumbUrl"] = thumbUrl;
+      shaped.Cells["thumbUrl"] = thumbUrl;
     }
 
-    return dict;
+    return shaped;
   }
 
   public static FileUploadLimitsDto LimitsOf(FileRulesAttribute rules) =>

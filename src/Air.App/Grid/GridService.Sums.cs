@@ -6,7 +6,7 @@ namespace Platform.App.Grid;
 
 public abstract partial class GridService<TEntity, TRow>
 {
-  private async Task<List<object>?> ComputeSumRowsAsync(
+  private async Task<List<RowDto>?> ComputeSumRowsAsync(
     IQueryable<TEntity> filteredEntities,
     Expression<Func<TEntity, TRow>>? selector,
     IReadOnlyList<GridColumnDto> columns,
@@ -18,7 +18,7 @@ public abstract partial class GridService<TEntity, TRow>
       return null;
     }
 
-    var sumRow = new Dictionary<string, object?>(StringComparer.Ordinal);
+    var sumRow = new RowDto();
     var rowType = selector != null ? typeof(TRow) : typeof(TEntity);
     var rowParam = Expression.Parameter(rowType, "r");
     var convertDecimalToDouble = db.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true;
@@ -81,7 +81,7 @@ public abstract partial class GridService<TEntity, TRow>
         resolved.All(r => !r.Col.IsSubqueryExpression) &&
         await TryComputeBatchSumsAsync(filteredEntities, selector, rowParam, resolved, sumRow, ct))
     {
-      return sumRow.Count > 0 ? [sumRow] : null;
+      return sumRow.Cells.Count > 0 ? [sumRow] : null;
     }
 
     foreach (var (col, current, currentType, underlying) in resolved)
@@ -133,7 +133,7 @@ public abstract partial class GridService<TEntity, TRow>
       catch { }
     }
 
-    return sumRow.Count > 0 ? [sumRow] : null;
+    return sumRow.Cells.Count > 0 ? [sumRow] : null;
   }
 
   private static async Task<bool> TryComputeBatchSumsAsync(
@@ -141,7 +141,7 @@ public abstract partial class GridService<TEntity, TRow>
     Expression<Func<TEntity, TRow>>? selector,
     ParameterExpression rowParam,
     List<(GridColumnDto Col, Expression Expr, Type ValueType, Type UnderlyingType)> resolved,
-    Dictionary<string, object?> sumRow,
+    RowDto sumRow,
     CancellationToken ct)
   {
     try
@@ -159,7 +159,8 @@ public abstract partial class GridService<TEntity, TRow>
     }
     catch
     {
-      sumRow.Clear();
+      sumRow.Cells.Clear();
+      sumRow.Colors = null;
       return false;
     }
   }
@@ -168,7 +169,7 @@ public abstract partial class GridService<TEntity, TRow>
     IQueryable<TSource> sourceQuery,
     ParameterExpression rowParam,
     List<(GridColumnDto Col, Expression Expr, Type ValueType, Type UnderlyingType)> resolved,
-    Dictionary<string, object?> sumRow,
+    RowDto sumRow,
     CancellationToken ct)
   {
     var dCount = 0;
@@ -254,14 +255,14 @@ public abstract partial class GridService<TEntity, TRow>
     return true;
   }
 
-  private static void PutSumValue(Dictionary<string, object?> sumRow, GridColumnDto col, object total)
+  private static void PutSumValue(RowDto sumRow, GridColumnDto col, object total)
   {
     if (string.IsNullOrEmpty(col.Path))
     {
       return;
     }
 
-    PutValue(sumRow, col.Path, total);
+    PutValue(sumRow.Cells, col.Path, total);
 
     if (col.ColorEvaluator == null)
     {
@@ -291,7 +292,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (!string.IsNullOrEmpty(hue))
     {
-      PutValue(sumRow, $"{col.Path}Color", hue.ToLowerInvariant());
+      (sumRow.Colors ??= new Dictionary<string, string>(StringComparer.Ordinal))[col.Path] = hue.ToLowerInvariant();
     }
   }
 

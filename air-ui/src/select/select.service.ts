@@ -2,6 +2,7 @@ import { computed, inject, Injector, Service, type Signal, signal, untracked } f
 import { type Observable, Subject } from 'rxjs';
 import type { OverlayDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import type { GridRow } from '../grid/grid-row';
 import type { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
 import { serviceMenu } from '../panels/service-menu';
@@ -26,7 +27,7 @@ export interface SelectGridLink {
 
   setActive(index: number): void;
 
-  activeRow(): Readonly<Record<string, unknown>> | null;
+  activeRow(): GridRow | null;
 
   rowCount(): number;
 
@@ -260,7 +261,7 @@ export class SelectService {
     return true;
   }
 
-  pickRow(row: Readonly<Record<string, unknown>>): void {
+  pickRow(row: GridRow | Readonly<Record<string, unknown>>): void {
     this.pick(optionOfRow(row, this.model().labelPaths));
   }
 

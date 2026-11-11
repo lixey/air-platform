@@ -25,7 +25,7 @@ export class GridSelection {
     this.write(
       new Map(
         rows.flatMap(row => {
-          const key = keyOf(row);
+          const key = selectableKeyOf(row);
           return key !== null && selected.has(key) ? [[key, row] as const] : [];
         }),
       ),
@@ -33,7 +33,7 @@ export class GridSelection {
   }
 
   isSelected(row: GridRow | null | undefined): boolean {
-    const key = keyOf(row);
+    const key = selectableKeyOf(row);
     return key !== null && this.rows().has(key);
   }
 
@@ -53,7 +53,7 @@ export class GridSelection {
    * `rows` is the page, for the range.
    */
   toggle(row: GridRow, rows: readonly GridRow[], shift = false): void {
-    const key = keyOf(row);
+    const key = selectableKeyOf(row);
     if (key === null) {
       return;
     }
@@ -63,7 +63,7 @@ export class GridSelection {
 
     const anchor = this.state().anchor;
     if (shift && anchor !== null) {
-      const keys = rows.map(r => keyOf(r));
+      const keys = rows.map(r => selectableKeyOf(r));
       const from = keys.indexOf(anchor);
       const to = keys.indexOf(key);
       if (from >= 0 && to >= 0) {
@@ -101,7 +101,7 @@ export class GridSelection {
 
     const next = new Map<GridRowKey, GridRow>();
     for (const row of rows) {
-      const key = keyOf(row);
+      const key = selectableKeyOf(row);
       if (key !== null) {
         next.set(key, row);
       }
@@ -114,7 +114,7 @@ export class GridSelection {
     let selectable = 0;
     let selected = 0;
     for (const row of rows) {
-      const key = keyOf(row);
+      const key = selectableKeyOf(row);
       if (key !== null) {
         selectable += 1;
         if (this.rows().has(key)) {
@@ -130,4 +130,11 @@ export class GridSelection {
     const anchor = this.state().anchor;
     this.state.set({ rows, anchor: anchor !== null && rows.has(anchor) ? anchor : null });
   }
+}
+
+function selectableKeyOf(row: GridRow | null | undefined): GridRowKey | null {
+  if (!row || row.disabled) {
+    return null;
+  }
+  return keyOf(row);
 }

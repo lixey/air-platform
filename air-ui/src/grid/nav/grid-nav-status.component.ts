@@ -1,7 +1,8 @@
 import { Component, computed, inject, model } from '@angular/core';
 import type { GridNavStatusModel, NavMenuModel } from '../../core/generated/contracts';
-import { isRecord, valueAt } from '../../core/json';
+import { isRecord } from '../../core/json';
 import { NavMenuComponent } from '../../nav/element/nav-menu.component';
+import { cellValueAt } from '../grid-row';
 import { GridService } from '../grid.service';
 
 /** The status a row holds at the button's path: the key of a select column's reference, or the key itself. */
@@ -36,7 +37,7 @@ export class GridNavStatusComponent {
     }
 
     const { kind: _kind, path, emptyTitle, moves, ...look } = model;
-    const statuses = this.grid.selection.selected().map(row => statusOf(valueAt(row, path)));
+    const statuses = this.grid.selection.selected().map(row => statusOf(cellValueAt(row, path)));
     const elements = moves.filter(move => statuses.every(status => move.from.some(from => from === status))).map(move => move.action);
     return elements.length > 0
       ? { ...look, kind: 'NavMenu', elements }

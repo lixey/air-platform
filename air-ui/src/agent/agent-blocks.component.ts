@@ -3,14 +3,14 @@ import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
 import { ChartComponent } from '../chart/chart.component';
-import type { ReportChartDto, ReportColumnDto, ReportKpiDto, ReportTableDto, UiColor } from '../core/generated/contracts';
+import type { ReportChartDto, ReportColumnDto, ReportKpiDto, ReportTableDto, RowDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
 import { singlePanelLayout } from '../panels/single-panel-layout';
-import { openReportRow, openTargetOfRow } from '../report/report-row-open';
+import { canOpenTarget, openReportRow } from '../report/report-row-open';
 import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
 import { renderMarkdownToSafeHtml, sanitizeAgentHtml } from './agent-markdown';
@@ -251,16 +251,21 @@ export class AgentTableBlockComponent {
     );
   }
 
-  protected isRowClickable(row: Record<string, unknown>): boolean {
-    return openTargetOfRow(row) !== null;
+  protected isRowClickable(row: RowDto): boolean {
+    return canOpenTarget(row.open);
   }
 
-  protected rowClass(idx: number, row: Record<string, unknown>): string {
+  protected rowClass(idx: number, row: RowDto): string {
+    const cursor = this.isRowClickable(row) ? ' cursor-pointer' : '';
+    const rowHue = asUiColor(row.color);
+    if (rowHue) {
+      return `hue-${rowHue} bg-(--hue-cell) hover:bg-(--hue-cell-hover)${cursor}`;
+    }
     const base = idx % 2 === 0 ? 'bg-row-stripe hover:bg-row-hover' : 'bg-surface hover:bg-row-hover';
-    return this.isRowClickable(row) ? `${base} cursor-pointer` : base;
+    return `${base}${cursor}`;
   }
 
-  protected onRowSpace(row: Record<string, unknown>, event: Event): void {
+  protected onRowSpace(row: RowDto, event: Event): void {
     if (!this.isRowClickable(row)) {
       return;
     }
@@ -268,18 +273,18 @@ export class AgentTableBlockComponent {
     this.openRow(row, event);
   }
 
-  protected openRow(row: Record<string, unknown>, event: Event): void {
+  protected openRow(row: RowDto, event: Event): void {
     openReportRow(row, event, this.overlay, this.injector, this.mutations);
   }
 
-  protected badgePillClass(col: ReportColumnDto, row: Record<string, unknown>): string {
-    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (row['color'] as string | undefined);
+  protected badgePillClass(col: ReportColumnDto, row: RowDto): string {
+    const cellColor = row.colors?.[col.key] ?? row.color;
     const hue = asUiColor(cellColor) ?? 'slate';
     return `inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold hue-${hue} bg-(--btn-ground) text-(--btn-ink) border border-(--btn-edge)`;
   }
 
-  protected formatCell(col: ReportColumnDto, row: Record<string, unknown>): string {
-    const raw = row[col.key];
+  protected formatCell(col: ReportColumnDto, row: RowDto): string {
+    const raw = row.cells[col.key];
     if (raw === null || raw === undefined || raw === '') {
       return '';
     }
@@ -293,7 +298,7 @@ export class AgentTableBlockComponent {
     if (typeof raw === 'number' || (typeof raw === 'string' && /^[+-]?\d+(?:\.\d+)?$/.test(raw.trim()))) {
       const decimals = col.decimals ?? (col.kind === 'percent' ? 1 : null);
       if (col.kind === 'money') {
-        const currency = (row[`${col.key}Currency`] as string | undefined) ?? (row['currency'] as string | undefined) ?? col.currency;
+        const currency = row.currencies?.[col.key] ?? col.currency;
         return currency
           ? formatCellAmount(raw, loc, moneyFormatOf({ decimals: col.decimals ?? 0, currency }))
           : formatCellNumber(raw, loc, decimals, true);
@@ -314,20 +319,20 @@ export class AgentTableBlockComponent {
     return `h-8 px-2.5 border-r border-line whitespace-nowrap last:border-r-0 ${align}`;
   }
 
-  protected bodyCellClass(col: ReportColumnDto, row: Record<string, unknown>): string {
+  protected bodyCellClass(col: ReportColumnDto, row: RowDto): string {
     const isLeft = col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime';
     const align =
       col.kind === 'text' || col.kind === 'badge' ? 'text-left font-medium' : isLeft ? 'text-left tabular-nums' : 'text-right tabular-nums';
-    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (!isLeft ? (row['color'] as string | undefined) : undefined);
+    const cellColor = row.colors?.[col.key] ?? (!isLeft ? row.color : undefined);
     const hue = asUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `h-8 px-2.5 border-r border-b border-line whitespace-nowrap last:border-r-0 ${align} ${colorCls}`;
   }
 
-  protected footerCellClass(col: ReportColumnDto, row: Record<string, unknown>): string {
+  protected footerCellClass(col: ReportColumnDto, row: RowDto): string {
     const isLeft = col.kind === 'text' || col.kind === 'badge' || col.kind === 'date' || col.kind === 'datetime';
     const align = isLeft ? 'text-left' : 'text-right tabular-nums';
-    const cellColor = (row[`${col.key}Color`] as string | undefined) ?? (!isLeft ? (row['color'] as string | undefined) : undefined);
+    const cellColor = row.colors?.[col.key] ?? (!isLeft ? row.color : undefined);
     const hue = asUiColor(cellColor);
     const colorCls = hue ? `hue-${hue} text-(--hue-ink)` : 'text-ink';
     return `h-8 px-2.5 border-r border-t border-line whitespace-nowrap last:border-r-0 ${align} ${colorCls}`;

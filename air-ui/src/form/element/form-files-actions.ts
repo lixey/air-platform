@@ -8,7 +8,7 @@ import { TextsService } from '../../core/texts.service';
 import { type FileActionOpener, isCommitted, postFileAction, reportFileRefusal } from '../../file/file-actions';
 import type { FileReorderMove } from '../../file/file-reorder.directive';
 import type { FileView } from '../../file/file-view';
-import type { GridRow, GridRowKey } from '../../grid/grid-row';
+import { cellValueAt, type GridRow, type GridRowKey } from '../../grid/grid-row';
 import { ConfirmationService } from '../../overlay/confirmation.service';
 import { FormService } from '../form.service';
 import { fileActionRequestOf, type FileItem, type FileRow } from './form-files';
@@ -100,7 +100,7 @@ export class FormFilesActions {
     if (!this.options.model()?.canSetCover || this.options.isNew() || !item.row || key === null || this._settingCover() !== null) {
       return;
     }
-    const rows = item.row['isCover'] === true ? [] : [item.row];
+    const rows = cellValueAt(item.row, 'isCover') === true ? [] : [item.row];
     const outcome = await postFileAction(this.opener, 'set-cover', rows, {}, busy => this._settingCover.set(busy ? key : null));
     if (outcome === 'failed') {
       this.options.reload();

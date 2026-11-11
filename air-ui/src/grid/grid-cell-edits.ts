@@ -13,7 +13,6 @@ import type {
   GridServiceEndpoints,
   MessageDto,
 } from '../core/generated/contracts';
-import { valueAt } from '../core/json';
 import type { IsCurrent } from '../core/lifetime';
 import { classifyMutationFailure, type MutationFailure, refusalDetailOf, refusalOf } from '../core/mutation-failure';
 import { TextsService } from '../core/texts.service';
@@ -21,7 +20,7 @@ import { ConfirmationService } from '../overlay/confirmation.service';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
 import { referenceOf } from './cell/grid-cell-format';
 import { cellQuestionOf } from './grid-cell-question';
-import { type GridRow, type GridRowKey, keyOf } from './grid-row';
+import { cellValueAt, type GridRow, type GridRowKey, isRowDto, keyOf } from './grid-row';
 
 /** The cell's method of every grid: its own key of the grid's endpoint map. */
 export const GRID_SAVE_CELL = 'save-cell' satisfies keyof GridServiceEndpoints;
@@ -136,6 +135,14 @@ export class GridCellEdits {
   /** Whether the question before a confirmed save is open: no second commit, toggle or start is taken meanwhile. */
   private isAsking = false;
 
+  /** A cell edit queued behind an in-flight commit on the same row or a confirmation dialog. */
+  private pendingStart: { readonly key: GridRowKey; readonly column: GridColumnDto; readonly typed?: string } | null = null;
+
+  /** Whether a confirmation dialog for an edited cell is currently open. */
+  get isConfirming(): boolean {
+    return this.isAsking;
+  }
+
   /** The edit held while its row is on the page; a reload that drops the row leaves none. */
   readonly current: Signal<GridCellEdit | null> = computed(() => {
     const edit = this.edit();
@@ -157,23 +164,35 @@ export class GridCellEdits {
 
   /**
    * Starts the edit of the row's cell in the column, with the cell's value and the key `typed` into a box that takes
-   * text; false for a column not edited in place, a checkbox, a row without a key, a row whose save runs, in a
-   * select's list, and while a question is open.
+   * text; auto-commits any dirty edit held on another cell first so edits are never silently discarded.
    */
   start(row: GridRow, column: GridColumnDto, typed?: string): boolean {
     const key = keyOf(row);
     const kind = editKindOf(column, row);
-    if (
-      this.isAsking ||
-      key === null ||
-      !column.path ||
-      kind === null ||
-      kind === 'checkbox' ||
-      this.options.isPicking() ||
-      untracked(() => this.isSaving(key))
-    ) {
+    if (this.isAsking || key === null || !column.path || kind === null || kind === 'checkbox' || this.options.isPicking()) {
       return false;
     }
+    const held = untracked(this.current);
+    if (held && held.key === key && held.path === column.path) {
+      return !held.isSaving;
+    }
+    if (untracked(() => this.isSaving(key))) {
+      if (held && held.key === key && held.isSaving) {
+        this.pendingStart = { key, column, ...(typed !== undefined ? { typed } : {}) };
+        return true;
+      }
+      return false;
+    }
+    if (held && !held.isSaving) {
+      const heldRow = this.rowOf(held.key);
+      const heldColumn = untracked(this.options.columns).find(c => c.path === held.path);
+      if (heldRow && heldColumn && !sameValue(held.value, cellEditValueOf(heldRow, heldColumn))) {
+        this.pendingStart = { key, column, ...(typed !== undefined ? { typed } : {}) };
+        void this.commit('stay');
+        return true;
+      }
+    }
+    this.pendingStart = null;
     const takesTyped = typed !== undefined && TYPED_KINDS.has(kind);
     this.edit.set({
       key,
@@ -213,18 +232,32 @@ export class GridCellEdits {
       return;
     }
     if (sameValue(edit.value, cellEditValueOf(row, column))) {
+      const nextStart = this.pendingStart;
+      this.pendingStart = null;
       this.end(edit);
-      this.move(move, row, edit.path);
+      if (nextStart) {
+        const targetRow = this.rowOf(nextStart.key);
+        if (targetRow) {
+          this.start(targetRow, nextStart.column, nextStart.typed);
+        }
+      } else {
+        this.move(move, row, edit.path);
+      }
       return;
     }
-    if (column.confirmsEdit && !((await this.ask(column, valueAt(row, edit.path), edit.value)) && untracked(this.edit) === edit)) {
-      return;
+    if (column.confirmsEdit) {
+      const confirmed = (await this.ask(column, cellValueAt(row, edit.path), edit.value)) && untracked(this.edit) === edit;
+      if (!confirmed) {
+        this.pendingStart = null;
+        return;
+      }
     }
 
     const saving: GridCellEdit = { key: edit.key, path: edit.path, value: edit.value, isSaving: true, messages: [] };
     this.edit.set(saving);
     const result = await this.save(row, edit.path, edit.value, true);
     if (result.kind === 'refused' && untracked(this.edit) === saving) {
+      this.pendingStart = null;
       this.edit.set({ ...saving, isSaving: false, messages: result.messages });
       return;
     }
@@ -232,8 +265,15 @@ export class GridCellEdits {
     if (isHeld) {
       this.end(saving);
     }
+    const nextStart = this.pendingStart;
+    this.pendingStart = null;
     if (result.kind === 'committed') {
-      if (isHeld) {
+      if (nextStart) {
+        const targetRow = (nextStart.key === edit.key ? result.row : null) ?? this.rowOf(nextStart.key);
+        if (targetRow) {
+          this.start(targetRow, nextStart.column, nextStart.typed);
+        }
+      } else if (isHeld) {
         this.move(move, result.row ?? row, edit.path);
       }
       this.options.reload();
@@ -256,7 +296,7 @@ export class GridCellEdits {
     ) {
       return;
     }
-    const before = valueAt(row, column.path);
+    const before = cellValueAt(row, column.path);
     const after = before !== true;
     if (column.confirmsEdit && !(await this.ask(column, before, after))) {
       return;
@@ -269,6 +309,7 @@ export class GridCellEdits {
 
   /** Ends the edit with nothing posted. */
   cancel(): void {
+    this.pendingStart = null;
     this.edit.set(null);
   }
 
@@ -316,7 +357,7 @@ export class GridCellEdits {
     if (!service || id === null) {
       return { kind: 'failed' };
     }
-    const ver = row['ver'];
+    const ver = row.ver;
     const body: GridCellRequest = { ...untracked(this.options.params), id, path, value, ...(typeof ver === 'number' ? { ver } : {}) };
     const isCurrent = this.options.capture();
     const operation = this.options.beginMutation();
@@ -329,7 +370,7 @@ export class GridCellEdits {
         return { kind: 'failed' };
       }
       this.adopt(answer, id, service, operation);
-      return { kind: 'committed', row: isRow(answer.row) ? answer.row : null };
+      return { kind: 'committed', row: isRowDto(answer.row) ? answer.row : null };
     } catch (error: unknown) {
       return isCurrent() ? this.fail(classifyMutationFailure(error), keepsRefusal ? path : null) : { kind: 'failed' };
     } finally {
@@ -344,7 +385,7 @@ export class GridCellEdits {
 
   /** A committed answer: the row adopted, the screen told, the commit's warnings shown. */
   private adopt(answer: GridCellDto, id: GridRowKey, service: string, operation: ScreenOperation | undefined): void {
-    this.options.adoptRow(id, isRow(answer.row) ? answer.row : null);
+    this.options.adoptRow(id, isRowDto(answer.row) ? answer.row : null);
     if (operation) {
       this.mutations?.publish(operation, {
         service,
@@ -379,15 +420,11 @@ export class GridCellEdits {
 
 /** The value an editor starts with and compares against: the option's key for a select column, the cell's value otherwise. */
 function cellEditValueOf(row: GridRow, column: GridColumnDto): unknown {
-  const raw = valueAt(row, column.path);
+  const raw = cellValueAt(row, column.path);
   return column.cell.kind === 'GridCellSelect' ? (referenceOf(raw)?.id ?? raw ?? null) : raw;
 }
 
 /** Whether two values of a cell are the same, by structure. */
 function sameValue(one: unknown, other: unknown): boolean {
   return JSON.stringify(one ?? null) === JSON.stringify(other ?? null);
-}
-
-function isRow(value: unknown): value is GridRow {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
 }

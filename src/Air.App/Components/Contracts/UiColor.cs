@@ -1,5 +1,6 @@
 namespace Platform.App.Components.Contracts;
 
+[UiContract]
 public static class UiColor
 {
   public const string Primary = "primary";

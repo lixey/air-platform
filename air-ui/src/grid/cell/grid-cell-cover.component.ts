@@ -8,6 +8,7 @@ import { badgeOf, filesOfPage, type FileView, pictureOf } from '../../file/file-
 import { fileInfoSourceOf, type FileViewerSource, openFileViewer } from '../../file/file-viewer';
 import { OverlayService } from '../../overlay/overlay.service';
 import { FOCUS_RING } from '../../theme/css-classes';
+import { cellValueAt } from '../grid-row';
 import { GridCellBase } from './grid-cell-base';
 
 /** The suffix of the path a cover column takes after the member holding the record's key: `idCover` for `id`. */
@@ -99,7 +100,8 @@ export class GridCellCoverComponent extends GridCellBase<GridCellCoverModel> {
   private readonly parentId = computed(() => {
     const path = this.column().path ?? '';
     const member = path.length > COVER_SUFFIX.length && path.endsWith(COVER_SUFFIX) ? path.slice(0, -COVER_SUFFIX.length) : 'id';
-    const key = this.row()?.[member];
+    const row = this.row();
+    const key = member === 'id' ? (row?.id ?? cellValueAt(row, 'id')) : cellValueAt(row, member);
     return typeof key === 'number' ? key : null;
   });
 

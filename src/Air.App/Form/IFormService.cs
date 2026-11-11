@@ -19,7 +19,7 @@ public interface IFormService : IPlatformService
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default);
   Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) => Task.FromResult(false);
   Task<FormActionDto?> ExecuteDeclaredActionAsync(string actionKey, FormRequest request, JsonElement? body, CancellationToken ct = default) => Task.FromResult<FormActionDto?>(null);
-  Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
+  Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<RowDto?>> readRow, CancellationToken ct = default);
   Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default);

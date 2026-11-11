@@ -1,8 +1,7 @@
 import { Component, computed, ElementRef, inject, type Signal } from '@angular/core';
 import type { GridCellOpenFormModel } from '../../core/generated/contracts';
-import { valueAt } from '../../core/json';
 import { TextsService } from '../../core/texts.service';
-import { keyOf } from '../grid-row';
+import { cellValueAt, keyOf } from '../grid-row';
 import { GridCellBase } from './grid-cell-base';
 import { formatCellText } from './grid-cell-format';
 
@@ -33,21 +32,19 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
   private readonly elementRef = inject(ElementRef<HTMLElement>);
   protected readonly texts = inject(TextsService);
 
+  private readonly isPickableRow = computed(() => Boolean(this.grid?.isPicking() && !this.cell().pinned && this.cell().row !== null));
+
   private readonly targetKey = computed<number | null>(() => {
     const row = this.cell().row;
     if (this.grid?.isPicking()) {
-      const key = keyOf(row);
-      if (key === 0 && !this.cell().pinned) {
-        return 0;
-      }
-      return key !== null && key !== 0 ? key : null;
+      return !this.cell().pinned && row !== null ? keyOf(row) : null;
     }
     const keyPath = this.model()?.keyPath;
     if (keyPath) {
-      if (!row || typeof row !== 'object') {
+      if (!row) {
         return null;
       }
-      const val = valueAt(row as Record<string, unknown>, keyPath);
+      const val = keyPath === 'id' ? row.id : cellValueAt(row, keyPath);
       if (typeof val === 'number' && val !== 0) {
         return val;
       }
@@ -57,14 +54,21 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
       }
       return null;
     }
+    const openId = row?.open?.id;
+    if (typeof openId === 'number' && openId !== 0) {
+      return openId;
+    }
     const key = keyOf(row);
     return key !== null && key !== 0 ? key : null;
   });
 
-  /** Whether the row has something to open: a key that is not zero. */
+  /** Whether the row has something to open or pick. */
   protected readonly canOpen = computed(() => {
     if (this.cell().column.isDisabled) {
       return false;
+    }
+    if (this.isPickableRow()) {
+      return true;
     }
     return this.targetKey() !== null;
   });
@@ -75,7 +79,7 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
     if (!grid) {
       return false;
     }
-    if (grid.isPicking() || typeof this.cell().row?.['form'] === 'string') {
+    if (grid.isPicking() || Boolean(this.cell().row?.open?.service)) {
       return true;
     }
     return Boolean(grid.model()?.form?.screen?.service);
@@ -84,7 +88,7 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
   protected readonly text = computed(() => {
     const value = this.cell().value;
     const key = keyOf(this.cell().row);
-    const hasRow = key !== null && (key !== 0 || (this.grid?.isPicking() === true && !this.cell().pinned));
+    const hasRow = this.isPickableRow() || (key !== null && key !== 0);
     return hasRow ? formatCellText(value) : '';
   });
 
@@ -97,20 +101,28 @@ export class GridCellOpenFormComponent extends GridCellBase<GridCellOpenFormMode
   protected open(event: MouseEvent): void {
     event.stopPropagation();
     const grid = this.grid;
+    if (!grid || !this.canOpen()) {
+      return;
+    }
+    const row = this.cell().row;
+    const rowKey = keyOf(row);
+    const index = grid.rows().findIndex(r => keyOf(r) === rowKey);
+    if (index >= 0) {
+      grid.setActive(index);
+    }
+    if (this.isPickableRow()) {
+      grid.openForm(rowKey, this.elementRef.nativeElement);
+      return;
+    }
     const targetId = this.targetKey();
-    if (grid && this.canOpen() && targetId !== null) {
-      const rowKey = keyOf(this.cell().row);
-      const index = grid.rows().findIndex(row => keyOf(row) === rowKey);
-      if (index >= 0) {
-        grid.setActive(index);
-      }
-      const row = this.cell().row as Record<string, unknown> | null;
-      const targetForm = row && typeof row === 'object' && typeof row['form'] === 'string' ? (row['form'] as string) : null;
-      if (targetForm) {
-        grid.openForm(targetId, this.elementRef.nativeElement, targetForm);
-      } else {
-        grid.openForm(targetId, this.elementRef.nativeElement);
-      }
+    if (targetId === null) {
+      return;
+    }
+    const openTarget = row?.open;
+    if (openTarget?.service) {
+      grid.openForm(targetId, this.elementRef.nativeElement, openTarget.service, openTarget.overlay ?? null);
+    } else {
+      grid.openForm(targetId, this.elementRef.nativeElement);
     }
   }
 }

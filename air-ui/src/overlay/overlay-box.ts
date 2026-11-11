@@ -108,6 +108,10 @@ export function resolveOverlay(
   const isOutOfSight = !anchor || !overlaps(anchor, viewport);
   const anchored: OverlayPresentation = isAnchored(model.presentation) && isOutOfSight ? 'dialog' : model.presentation;
 
+  if (viewport.width < OVERLAY_NARROW_WIDTH && model.presentation === 'menu') {
+    return bottomSheet(viewport);
+  }
+
   if (viewport.width < OVERLAY_NARROW_WIDTH || (model.key === 'layout.agent' && viewport.width < 1024)) {
     return fill(anchored, viewport);
   }
@@ -262,7 +266,7 @@ function isAnchored(presentation: OverlayPresentation): boolean {
   return presentation === 'menu' || presentation === 'popover';
 }
 
-/** On a narrow window every presentation is the window itself, edge to edge. */
+/** On a narrow window every non-menu presentation is the window itself, edge to edge. */
 function fill(presentation: OverlayPresentation, viewport: OverlayRect): OverlayBox {
   return {
     presentation,
@@ -274,6 +278,22 @@ function fill(presentation: OverlayPresentation, viewport: OverlayRect): Overlay
     minWidth: 0,
     maxWidth: viewport.width,
     maxHeight: viewport.height,
+    isNarrow: true,
+  };
+}
+
+/** On a narrow window a menu rises from the bottom edge as a dismissible sheet up to 85% of the viewport height. */
+function bottomSheet(viewport: OverlayRect): OverlayBox {
+  return {
+    presentation: 'menu',
+    layer: viewport,
+    align: { x: 'start', y: 'end' },
+    offset: { x: 0, y: 0 },
+    width: viewport.width,
+    height: null,
+    minWidth: 0,
+    maxWidth: viewport.width,
+    maxHeight: Math.max(120, Math.round(viewport.height * 0.85)),
     isNarrow: true,
   };
 }

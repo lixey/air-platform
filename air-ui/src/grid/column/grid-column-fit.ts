@@ -1,7 +1,6 @@
 import type { GridColumnDto } from '../../core/generated/contracts';
-import { valueAt } from '../../core/json';
 import { formatCellValue } from '../cell/grid-cell-format';
-import { type GridRow } from '../grid-row';
+import { cellValueAt, type GridRow } from '../grid-row';
 import { columnLabelOf } from './grid-column-label';
 import { boundedWidth, CELL_EDGES, CELL_PADDING, HEADER_CONTROLS, MAX_COLUMN_WIDTH } from './grid-column-width';
 
@@ -141,5 +140,5 @@ export function headerWidthOf(column: Pick<GridColumnDto, 'path' | 'label' | 'is
  * on the clock of `zone`, the rest as text.
  */
 export function cellTextOf(column: Pick<GridColumnDto, 'path' | 'type' | 'cell'>, row: GridRow, locale: string, zone: string): string {
-  return formatCellValue(valueAt(row, column.path), column, locale, zone);
+  return formatCellValue(cellValueAt(row, column.path), column, locale, zone);
 }

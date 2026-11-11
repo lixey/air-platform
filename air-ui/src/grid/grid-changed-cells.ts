@@ -1,8 +1,7 @@
 import { linkedSignal, untracked } from '@angular/core';
 import type { GridColumnDto } from '../core/generated/contracts';
-import { valueAt } from '../core/json';
 import { SELECTION_PATH } from './column/grid-selection-column';
-import { type GridRow, type GridRowKey, keyOf } from './grid-row';
+import { cellValueAt, type GridRow, type GridRowKey, keyOf, rowColorAt } from './grid-row';
 
 /** The marked cells: by row key, the paths of the columns whose cells are marked. */
 type Marks = ReadonlyMap<GridRowKey, ReadonlySet<string>>;
@@ -95,16 +94,18 @@ function changedPaths(before: GridRow | null, after: GridRow, columns: readonly 
       return [];
     }
     if (before === null) {
-      return isEmpty(valueAt(after, path)) ? [] : [path];
+      return isEmpty(cellValueAt(after, path)) ? [] : [path];
     }
     const colorPath = 'colorPath' in column.cell ? column.cell.colorPath : null;
-    const changed = differs(before, after, path) || (!!colorPath && differs(before, after, colorPath));
+    const changed =
+      differs(cellValueAt(before, path), cellValueAt(after, path)) ||
+      rowColorAt(before, path, colorPath) !== rowColorAt(after, path, colorPath);
     return changed ? [path] : [];
   });
 }
 
-function differs(before: GridRow, after: GridRow, path: string): boolean {
-  return JSON.stringify(valueAt(before, path)) !== JSON.stringify(valueAt(after, path));
+function differs(before: unknown, after: unknown): boolean {
+  return JSON.stringify(before) !== JSON.stringify(after);
 }
 
 function isEmpty(value: unknown): boolean {
