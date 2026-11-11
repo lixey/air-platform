@@ -41,4 +41,5 @@ demo/src/Demo.Api/appsettings.Development.json
 *.db-wal
 *.sqlite*
 demo/web/skills/
+**/skills/system/
 tmp_*.md

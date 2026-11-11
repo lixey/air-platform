@@ -46,7 +46,9 @@ contracts-check: ## Verify generated TypeScript contracts and UI texts match C# 
 gate: format-check check-paths check-arch contracts-check check-ts build test ## Run unified verification gate (format, paths, arch, contracts, ts, build, test)
 
 audit: ## Run controlled code audit on Claude Fable 5.2 (High) via claude CLI with automatic fallback to agy CLI
-	@if [ "$(AUDIT_CLI)" = "claude" ]; then \
+	@had_skills=0; [ -d skills/system ] && had_skills=1; \
+	trap 'if [ "$$had_skills" = "0" ]; then rm -rf skills/system && rmdir skills 2>/dev/null || true; fi' EXIT INT TERM; \
+	if [ "$(AUDIT_CLI)" = "claude" ]; then \
 		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' claude --model $(AUDIT_CLAUDE_MODEL) --effort high --strict-mcp-config --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
 	elif [ "$(AUDIT_CLI)" = "agy" ]; then \
 		perl -e 'alarm $(AUDIT_TIMEOUT); exec @ARGV' agy --model $(AUDIT_MODEL) --dangerously-skip-permissions -p "$(AUDIT_PROMPT)"; \
