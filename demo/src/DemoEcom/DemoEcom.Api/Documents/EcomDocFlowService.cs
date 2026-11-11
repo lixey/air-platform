@@ -1,6 +1,6 @@
 namespace DemoEcom.Documents;
 
-public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<EcomDoc>(db)
+public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<EcomDbContext, EcomDoc>(db)
 {
   private const int NoteMaxLength = 2000;
   private IReadOnlyList<EcomDocStatus>? _statuses;

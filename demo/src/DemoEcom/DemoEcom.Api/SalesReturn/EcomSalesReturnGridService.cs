@@ -27,29 +27,21 @@ public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturn
     columns.Add(r => r.PaidAmount).Label("Refunded").AsMoney();
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetActions(Actions actions)
   {
-    base.SetNav(nav);
     _ = EcomDocTexts.Of(L);
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon(UiIcon.Plus)).InMenu();
-  }
-
-  [RequireRight<EcomOutgoingPaymentGridService>(EndpointAction.Edit)]
-  public async Task<GridActionDto> CreateOutgoingPayment(GridRequest request, CancellationToken cancellationToken)
-  {
-    var date = Time.Today;
-    return await ExecuteBatchAsync(
-      request,
-      (c, token) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
+    actions.Add("CreateOutgoingPayment")
+      .Allow(Ecom.OutgoingPayment.Edit)
+      .Label("Create outgoing payment")
+      .Icon(UiIcon.Plus)
+      .InMenu()
+      .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
         db,
-        c,
+        ctx,
         EcomData.DocType.OutgoingPaymentId,
         EcomData.DocStatus.OutgoingPaymentDraftId,
-        date,
+        Time.Today,
         EcomDocTexts.Of(L),
-        token
-      ),
-      cancellationToken
-    );
+        ct));
   }
 }

@@ -493,98 +493,11 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  public sealed class NavActionEntry
-  {
-    public required GridNavActionModel Model { get; init; }
-    public bool IsInMenu { get; set; }
-    public bool IsAllowedInReadOnly { get; set; }
-    public Delegate Method { get; init; } = null!;
-    public Screens.RecordAsk? Ask { get; set; }
-    public Func<CancellationToken, Task<object?>>? DefaultProvider { get; set; }
-    public List<Screens.RecordAvailability> Offers { get; } = [];
-  }
+  public sealed class Actions : GridActions<TEntity>;
 
-  public class NavActionBuilder(NavActionEntry entry, Nav nav)
-  {
-    public Nav InMenu()
-    {
-      entry.IsInMenu = true;
-      return nav;
-    }
-
-    public NavActionBuilder AllowReadOnly(bool allow = true)
-    {
-      entry.IsAllowedInReadOnly = allow;
-      return this;
-    }
-
-    public NavActionBuilder Single(bool single = true)
-    {
-      entry.Model.IsSingle = single;
-      return this;
-    }
-  }
-
-  public sealed class NavActionBuilder<TRequest>(NavActionEntry entry, Nav nav) : NavActionBuilder(entry, nav)
-    where TRequest : class, new()
-  {
-    public NavActionBuilder<TRequest> Ask(Action<Form.Actions.ActionInput<TRequest>> elements)
-    {
-      entry.Ask = Form.Actions.TransitionAsk.Of(elements);
-      return this;
-    }
-
-    public NavActionBuilder<TRequest> Default(Func<CancellationToken, Task<TRequest>> provider)
-    {
-      entry.DefaultProvider = async ct => await provider(ct);
-      return this;
-    }
-
-    public NavActionBuilder<TRequest> Default(Func<TRequest> provider)
-    {
-      entry.DefaultProvider = _ => Task.FromResult<object?>(provider());
-      return this;
-    }
-
-    public NavActionBuilder<TRequest> Default(Func<TRequest, CancellationToken, Task> provider)
-    {
-      entry.DefaultProvider = async ct =>
-      {
-        var req = new TRequest();
-        await provider(req, ct);
-        return req;
-      };
-      return this;
-    }
-
-    public NavActionBuilder<TRequest> Default(Action<TRequest> provider)
-    {
-      entry.DefaultProvider = _ =>
-      {
-        var req = new TRequest();
-        provider(req);
-        return Task.FromResult<object?>(req);
-      };
-      return this;
-    }
-
-    public new NavActionBuilder<TRequest> AllowReadOnly(bool allow = true)
-    {
-      base.AllowReadOnly(allow);
-      return this;
-    }
-
-    public new NavActionBuilder<TRequest> Single(bool single = true)
-    {
-      base.Single(single);
-      return this;
-    }
-  }
-
-  public sealed class Nav(string servicePath = "", Localizer? localizer = null)
+  public sealed class Nav(Localizer? localizer = null)
   {
     private readonly Localizer _l = localizer ?? Localizer.Instance;
-    internal List<NavActionEntry> Actions { get; } = [];
     internal List<GridNavPickerModel> Pickers { get; } = [];
     internal List<(Type SourceType, MethodInfo Method, GridNavPickerModel Model)> PickerEntries { get; } = [];
     internal List<NavElementModel> CustomStart { get; } = [];
@@ -608,77 +521,6 @@ public abstract partial class GridService<TEntity, TRow>
         Color = b.ColorHandle ?? UiColor.Orange,
         Variant = b.VariantHandle ?? ButtonVariant.Soft
       }));
-    }
-
-    public NavActionBuilder AddAction(
-      Delegate method,
-      Action<ButtonBuilder>? look = null,
-      string? confirm = null,
-      bool needsSelection = true) =>
-      new(CreateActionEntry(method, look, confirm, needsSelection), this);
-
-    public NavActionBuilder<TRequest> AddAction<TRequest>(
-      Delegate method,
-      Action<ButtonBuilder>? look = null,
-      string? confirm = null,
-      bool needsSelection = true)
-      where TRequest : class, new() =>
-      new(CreateActionEntry(method, look, confirm, needsSelection), this);
-
-    private NavActionEntry CreateActionEntry(
-      Delegate method,
-      Action<ButtonBuilder>? look,
-      string? confirm,
-      bool needsSelection)
-    {
-      var b = new ButtonBuilder();
-      look?.Invoke(b);
-      var rawLabel = b.LabelText ?? method.Method.Name;
-      var action = new GridNavActionModel
-      {
-        Service = servicePath,
-        Key = method.Method.Name.ToLowerInvariant(),
-        Method = method.Method.Name,
-        Label = _l[rawLabel],
-        Title = b.TitleText != null ? _l[b.TitleText] : null,
-        Icon = b.IconHandle,
-        Color = b.ColorHandle ?? UiColor.Blue,
-        Variant = b.VariantHandle ?? ButtonVariant.Soft,
-        NeedsSelection = needsSelection,
-        IsSingle = b.IsSingle,
-        Confirm = confirm != null ? new OverlayConfirmModel { Message = _l[confirm], Color = b.ColorHandle ?? UiColor.Red } : null
-      };
-      var entry = new NavActionEntry
-      {
-        Model = action,
-        IsInMenu = b.IsInMenu,
-        Method = method
-      };
-      Actions.Add(entry);
-      return entry;
-    }
-
-    public void AvailableWhen(
-      Delegate action,
-      Expression<Func<TEntity, bool>> condition,
-      string reason) =>
-      AvailableWhen(condition, reason, action);
-
-    public void AvailableWhen(
-      Expression<Func<TEntity, bool>> condition,
-      string reason,
-      params Delegate[] actions)
-    {
-      var methodNames = actions.Select(a => a.Method.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-      foreach (var entry in Actions)
-      {
-        if (methodNames.Count == 0 || methodNames.Contains(entry.Method.Method.Name))
-        {
-          entry.Offers.Add(new Screens.RecordAvailability { Condition = condition, Reason = reason });
-          entry.Model.UnavailableReasons ??= [];
-          entry.Model.UnavailableReasons.Add(_l[reason]);
-        }
-      }
     }
 
     public NavPickerBuilder AddPicker<TSource>(

@@ -204,7 +204,14 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          return PlatformEndpointsExtensions.ToMutationResult(await grid.Delete(req, ct));
+          try
+          {
+            return PlatformEndpointsExtensions.ToMutationResult(await grid.Delete(req, ct));
+          }
+          catch (IdempotencyConflictException ex)
+          {
+            return ToIdempotencyConflictResult(ex);
+          }
         }
 
       case "save-cell":
@@ -250,8 +257,15 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
-          return PlatformEndpointsExtensions.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", body, ct));
+          ApplyGridMutationContext(httpRequest, body, req);
+          try
+          {
+            return PlatformEndpointsExtensions.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", body, ct));
+          }
+          catch (IdempotencyConflictException ex)
+          {
+            return ToIdempotencyConflictResult(ex);
+          }
         }
 
       case "export":
@@ -327,6 +341,36 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
           break;
         }
+    }
+
+    if (subMethod == null && ServiceRequestBinder.ResolveCallableActionMethod(serviceType, method) == null)
+    {
+      if (userContext is null or { IsAuthenticated: false })
+      {
+        return await grid.HasActionAsync(method, ct) ? Results.Unauthorized() : Results.NotFound();
+      }
+
+      var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+      if (isMalformed || !TryDeserializeOptional(body, out GridRequest req))
+      {
+        return Results.BadRequest(new { detail = "Malformed JSON request body." });
+      }
+
+      ApplyGridMutationContext(httpRequest, body, req);
+      try
+      {
+        var res = await grid.ExecuteDeclaredActionAsync(method, req, body, ct);
+        if (res != null)
+        {
+          return PlatformEndpointsExtensions.ToMutationResult(res);
+        }
+      }
+      catch (IdempotencyConflictException ex)
+      {
+        return ToIdempotencyConflictResult(ex);
+      }
+
+      return Results.NotFound();
     }
 
     return await DispatchCustomServiceMethodAsync(serviceType, grid, method, feat, httpRequest, services, ct);
@@ -468,12 +512,64 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           }
 
           form.SetRequest(req);
-          var result = await form.MoveStatusAsync(req.Id.Value, subMethod, body, req.Ver, ct);
-          return PlatformEndpointsExtensions.ToMutationResult(result);
+          try
+          {
+            var result = await form.MoveStatusAsync(req.Id.Value, subMethod, body, req.Ver, ct);
+            return PlatformEndpointsExtensions.ToMutationResult(result);
+          }
+          catch (IdempotencyConflictException ex)
+          {
+            return ToIdempotencyConflictResult(ex);
+          }
+          catch (FormRefusedException ex)
+          {
+            return ex.Outcome == MutationOutcome.Conflict
+              ? Results.Conflict(new MutationResultDto { Outcome = ex.Outcome, Title = ex.Title, Messages = ex.Messages.ToList() })
+              : Results.UnprocessableEntity(new MutationResultDto { Outcome = ex.Outcome, Title = ex.Title, Messages = ex.Messages.ToList() });
+          }
         }
 
       default:
-        return await DispatchCustomServiceMethodAsync(serviceType, form, method, feat, httpRequest, services, ct);
+        {
+          if (subMethod == null && ServiceRequestBinder.ResolveCallableActionMethod(serviceType, method) == null)
+          {
+            if (userContext is null or { IsAuthenticated: false })
+            {
+              return await form.HasActionAsync(method, ct) ? Results.Unauthorized() : Results.NotFound();
+            }
+
+            var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+            if (isMalformed)
+            {
+              return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            }
+
+            var req = BindFormRequest(httpRequest, body ?? default);
+            form.SetRequest(req);
+            try
+            {
+              var result = await form.ExecuteDeclaredActionAsync(method, req, body, ct);
+              if (result != null)
+              {
+                return PlatformEndpointsExtensions.ToMutationResult(result);
+              }
+            }
+            catch (IdempotencyConflictException ex)
+            {
+              return ToIdempotencyConflictResult(ex);
+            }
+            catch (FormRefusedException ex)
+            {
+              return ex.Outcome == MutationOutcome.Conflict
+                ? Results.Conflict(new MutationResultDto { Outcome = ex.Outcome, Title = ex.Title, Messages = ex.Messages.ToList() })
+                : Results.UnprocessableEntity(new MutationResultDto { Outcome = ex.Outcome, Title = ex.Title, Messages = ex.Messages.ToList() });
+            }
+
+            return Results.NotFound();
+          }
+
+          return await DispatchCustomServiceMethodAsync(serviceType, form, method, feat, httpRequest, services, ct);
+        }
     }
   }
 
@@ -577,8 +673,32 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       req.IdempotencyKey = idemVals.ToString().Trim();
     }
 
+    if (root.ValueKind != JsonValueKind.Undefined)
+    {
+      req.RawPayload = root.GetRawText();
+    }
+
     return req;
   }
+
+  private static void ApplyGridMutationContext(HttpRequest httpRequest, JsonElement? body, GridRequest req)
+  {
+    ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
+    if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
+    {
+      req.IdempotencyKey = idemVals.ToString().Trim();
+    }
+
+    req.RawPayload = body?.GetRawText();
+  }
+
+  private static IResult ToIdempotencyConflictResult(IdempotencyConflictException ex) =>
+    Results.UnprocessableEntity(new MutationResultDto
+    {
+      Outcome = MutationOutcome.Refused,
+      Title = Localizer.Instance["MutationRefused"],
+      Messages = [new MessageDto { Detail = ex.Message, Type = MessageType.Error }]
+    });
 
   private static bool TryDeserializeOptional<T>(JsonElement? body, out T result)
     where T : class, new()
@@ -656,9 +776,14 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
   private static async Task<(T Request, bool IsMalformed)> ReadGridRequestAsync<T>(HttpRequest httpRequest, CancellationToken ct)
     where T : GridRequest, new()
   {
-    var (req, isMalformed) = await ReadJsonOrDefaultAsync<T>(httpRequest, ct);
-    ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
-    return (req, isMalformed);
+    var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+    if (isMalformed || !TryDeserializeOptional(body, out T req))
+    {
+      return (new T(), true);
+    }
+
+    ApplyGridMutationContext(httpRequest, body, req);
+    return (req, false);
   }
 
   private static async Task<(FormRequest Request, bool IsMalformed)> ReadFormRequestAsync(HttpRequest httpRequest, CancellationToken ct)

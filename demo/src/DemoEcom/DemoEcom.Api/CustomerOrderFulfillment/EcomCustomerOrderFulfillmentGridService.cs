@@ -42,28 +42,20 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
       : 0m).Label("To purchase").Sum();
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetActions(Actions actions)
   {
-    base.SetNav(nav);
     _ = EcomDocTexts.Of(L);
-    nav.AddAction(CreatePurchaseOrder, b => b.Label(L["Create purchase order"]).Icon(UiIcon.Plus)).AllowReadOnly();
-  }
-
-  [RequireRight<EcomPurchaseOrderGridService>(EndpointAction.Edit)]
-  public async Task<GridActionDto> CreatePurchaseOrder(GridRequest request, CancellationToken cancellationToken)
-  {
-    var date = Time.Today;
-    return await ExecuteBatchAsync(
-      request,
-      (c, token) => EcomDocActions.PurchaseAsync(
+    actions.Add("CreatePurchaseOrder")
+      .Allow(Ecom.PurchaseOrder.Edit)
+      .Label("Create purchase order")
+      .Icon(UiIcon.Plus)
+      .AllowReadOnly()
+      .Do((ctx, ct) => EcomDocActions.PurchaseAsync(
         db,
-        c,
+        ctx,
         User?.UserId,
-        date,
+        Time.Today,
         EcomDocTexts.Of(L),
-        token
-      ),
-      cancellationToken
-    );
+        ct));
   }
 }

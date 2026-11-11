@@ -319,7 +319,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return cached.Value;
     }
 
-    var nav = new Nav(effectivePath, L);
+    var nav = new Nav(L);
     SetNav(nav);
     foreach (var (createFormType, _) in nav.Creates)
     {
@@ -337,17 +337,104 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   protected virtual void SetQuery(Query query) { }
   protected virtual void SetNav(Nav nav) { }
+  protected virtual void SetActions(Actions actions) { }
+
+  protected virtual Task SetActionsAsync(Actions actions, CancellationToken ct = default)
+  {
+    SetActions(actions);
+    return Task.CompletedTask;
+  }
+
+  IEnumerable<string> IPlatformService.GetDeclaredActions()
+  {
+    var actions = new Actions();
+    try
+    {
+      SetActionsAsync(actions).GetAwaiter().GetResult();
+    }
+    catch (NullReferenceException) when (db == null)
+    {
+      actions = new Actions();
+      SetActions(actions);
+    }
+
+    return actions.Entries
+      .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
+      .Where(n => !string.IsNullOrWhiteSpace(n))!;
+  }
 
   public virtual async Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default)
   {
-    ParentService = request.ParentService;
-    ParentId = request.ParentId;
-    SelectedIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
-    var nav = GetNav(ServicePathResolver.Resolve(GetType()));
-    var entry = nav.Actions.FirstOrDefault(a =>
-      string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
-      string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
-    return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(entry?.DefaultProvider, entry?.Ask, db, PlatformApp, ct);
+    if (!await BindParentAsync(request.ParentService, request.ParentId, ct))
+    {
+      return null;
+    }
+
+    var normalizedIds = NormalizeSelection(request).Ids;
+    if (normalizedIds.Count > 0)
+    {
+      var reachableSet = (await RestrictedQuery()
+        .Where(e => normalizedIds.Contains(e.Id))
+        .Select(e => e.Id)
+        .ToListAsync(ct)).ToHashSet();
+      SelectedIds = normalizedIds.Where(reachableSet.Contains).ToList();
+      if (SelectedIds.Count != normalizedIds.Count)
+      {
+        return null;
+      }
+    }
+    else
+    {
+      SelectedIds = [];
+    }
+
+    var isParentReadOnly = ResolveParentChildBuilder()?.IsReadOnly == true;
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    var entry = actions.Entries.FirstOrDefault(a => a.Matches(actionKey));
+    if (entry != null)
+    {
+      if (!entry.Permission.IsPermitted(Feature, User, entry.Handle, IsReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly) ||
+          entry.NeedsSelection && SelectedIds.Count == 0 ||
+          entry.IsSingle && SelectedIds.Count != 1)
+      {
+        return null;
+      }
+
+      var defaultProvider = entry.DefaultProvider != null
+        ? (Func<CancellationToken, Task<object?>>)(token => entry.DefaultProvider(SelectedIds, token))
+        : null;
+      return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(defaultProvider, entry.Ask, db, PlatformApp, ct);
+    }
+
+    if (isParentReadOnly)
+    {
+      return null;
+    }
+
+    foreach (var formType in actions.InheritedFormServiceTypes)
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService form)
+      {
+        if (PlatformApp != null)
+        {
+          form.AttachPlatformApp(PlatformApp);
+        }
+
+        if (await form.HasActionAsync(actionKey, ct))
+        {
+          var formReq = new FormRequest
+          {
+            Id = SelectedIds.Count == 1 ? SelectedIds[0] : request.Id,
+            ParentId = ParentId,
+            ParentService = ParentService
+          };
+          return await form.GetActionInputAsync(actionKey, formReq, ct);
+        }
+      }
+    }
+
+    return null;
   }
 
   protected virtual void SetHooks(Hooks hooks) { }
@@ -370,21 +457,46 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     var nav = GetNav();
-    foreach (var entry in nav.Actions)
-    {
-      if (!ServiceEndpointsExtensions.IsCallableServiceAction(entry.Method.Method))
-      {
-        throw new InvalidOperationException(
-          $"Grid action method '{GetType().FullName}.{entry.Method.Method.Name}' registered via Nav.AddAction must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
-      }
-    }
-
     foreach (var (_, pickerMethod, _) in nav.PickerEntries)
     {
       if (!ServiceEndpointsExtensions.IsCallableServiceAction(pickerMethod))
       {
         throw new InvalidOperationException(
           $"Grid picker method '{GetType().FullName}.{pickerMethod.Name}' registered via Nav.AddPicker must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
+      }
+    }
+
+    var actions = new Actions();
+    try
+    {
+      SetActionsAsync(actions).GetAwaiter().GetResult();
+    }
+    catch when (db == null)
+    {
+      actions = new Actions();
+      SetActions(actions);
+    }
+
+    var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in actions.Entries)
+    {
+      if (!seenHandles.Add(entry.Handle))
+      {
+        throw new InvalidOperationException(
+          $"Grid '{GetType().FullName}' declares duplicate action handle '{entry.Handle}'.");
+      }
+
+      entry.ValidateConfiguration(GetType(), Feature);
+    }
+
+    foreach (var formType in actions.InheritedFormServiceTypes)
+    {
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, "Actions.UseActionsOf");
+      var formEntityType = ParentScopeValidator.GetFormEntityType(formType);
+      if (formEntityType != typeof(TEntity))
+      {
+        throw new InvalidOperationException(
+          $"Grid '{GetType().FullName}' cannot call UseActionsOf<{formType.Name}>() because entity type '{formEntityType?.Name}' does not match '{typeof(TEntity).Name}'.");
       }
     }
   }

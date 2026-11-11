@@ -35,42 +35,33 @@ public sealed class AppAgentMemoryGridService(AppDbContext db, AppService? app =
       .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetActions(Actions actions)
   {
-    base.SetNav(nav);
-    nav.AddAction(
-      TogglePinned,
-      b => b.Label(L["Toggle pinned"]).Icon(UiIcon.Checkmark).Color(UiColor.Amber),
-      needsSelection: true);
-    nav.AddAction(
-      ToggleActive,
-      b => b.Label(L["Toggle active"]).Icon(UiIcon.Edit),
-      needsSelection: true);
+    actions.Add("TogglePinned")
+      .AllowEdit()
+      .Label("Toggle pinned")
+      .Icon(UiIcon.Checkmark)
+      .Color(UiColor.Amber)
+      .Do(ctx =>
+      {
+        foreach (var rec in ctx.Records)
+        {
+          rec.IsPinned = !rec.IsPinned;
+          rec.UpdatedAt = Time.UtcNow;
+        }
+      });
+
+    actions.Add("ToggleActive")
+      .AllowEdit()
+      .Label("Toggle active")
+      .Icon(UiIcon.Edit)
+      .Do(ctx =>
+      {
+        foreach (var rec in ctx.Records)
+        {
+          rec.IsActive = !rec.IsActive;
+          rec.UpdatedAt = Time.UtcNow;
+        }
+      });
   }
-
-  [RequireAction(EndpointAction.Edit)]
-  public Task<GridActionDto> TogglePinned(GridRequest request, CancellationToken ct = default) =>
-    ExecuteBatchAsync(request, (context, _) =>
-    {
-      foreach (var rec in context.Records)
-      {
-        rec.IsPinned = !rec.IsPinned;
-        rec.UpdatedAt = Time.UtcNow;
-      }
-
-      return Task.CompletedTask;
-    }, ct);
-
-  [RequireAction(EndpointAction.Edit)]
-  public Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default) =>
-    ExecuteBatchAsync(request, (context, _) =>
-    {
-      foreach (var rec in context.Records)
-      {
-        rec.IsActive = !rec.IsActive;
-        rec.UpdatedAt = Time.UtcNow;
-      }
-
-      return Task.CompletedTask;
-    }, ct);
 }

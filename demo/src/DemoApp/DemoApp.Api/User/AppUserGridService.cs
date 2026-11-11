@@ -44,37 +44,35 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
     });
   }
 
-  protected override void SetNav(Nav nav)
-  {
-    base.SetNav(nav);
-    nav.AddAction(Deactivate, b => b.Label(L["Deactivate"]).Icon(UiIcon.Ban), L["Deactivate the selected users and end their sessions?"]);
-  }
-
-  [RequireRight<AppUserGridService>(EndpointAction.Edit)]
-  public Task<GridActionDto> Deactivate(GridRequest request, CancellationToken cancellationToken) =>
-    ExecuteBatchAsync(request, async (context, token) =>
-    {
-      if (context.Records.Any(u => u.Id == 1 || u.IsRoot))
+  protected override void SetActions(Actions actions) =>
+    actions.Add("Deactivate")
+      .AllowEdit()
+      .Label("Deactivate")
+      .Icon(UiIcon.Ban)
+      .Confirm("Deactivate the selected users and end their sessions?")
+      .Do(async (ctx, ct) =>
       {
-        context.Refuse(L["The root user cannot be deactivated."]);
-        return;
-      }
-
-      foreach (var u in context.Records)
-      {
-        if (!await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, token))
+        if (ctx.Records.Any(u => u.Id == 1 || u.IsRoot))
         {
-          context.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
+          ctx.Refuse(L["The root user cannot be deactivated."]);
           return;
         }
-      }
 
-      foreach (var user in context.Records)
-      {
-        user.IsActive = false;
-      }
+        foreach (var u in ctx.Records)
+        {
+          if (!await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, ct))
+          {
+            ctx.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
+            return;
+          }
+        }
 
-      await PlatformAppService.RevokeUserSessionsAsync(db, [.. context.Records.Select(u => u.Id)], "app-user-deactivated", token, app);
-    }, cancellationToken);
+        foreach (var user in ctx.Records)
+        {
+          user.IsActive = false;
+        }
+
+        await PlatformAppService.RevokeUserSessionsAsync(db, [.. ctx.Records.Select(u => u.Id)], "app-user-deactivated", ct, app);
+      });
 }
 

@@ -17,18 +17,18 @@ public sealed class EcomPurchaseOrderFlowService(EcomDbContext db) : EcomDocFlow
   protected override void SetFlow(Flow flow)
   {
     base.SetFlow(flow);
-    flow.Status(New, L["New"], UiColor.Sky);
-    flow.Status(Sent, L["Sent"], UiColor.Blue);
-    flow.Status(Completed, L["Completed"], UiColor.Green);
-    flow.Status(Canceled, L["Canceled"], UiColor.Red);
+    flow.Status(New, "New", UiColor.Sky);
+    flow.Status(Sent, "Sent", UiColor.Blue);
+    flow.FinalStatus(Completed, "Completed", UiColor.Green);
+    flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
     flow.Initial(New);
   }
 
-  public Transition Reopen => From(Sent).To(New).Do(PostAsync);
+  public Transition Reopen => FromOpen().To(New).Do(PostAsync);
 
-  public Transition Send => From(New).To(Sent).Do(PostAsync);
+  public Transition Send => FromOpen().To(Sent).Do(PostAsync);
 
-  public Transition Complete => From(New, Sent).To(Completed).Do(PostAsync);
+  public Transition Complete => FromOpen().To(Completed).Do(PostAsync);
 
-  public Transition Cancel => From(New, Sent).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
+  public Transition Cancel => FromOpen().To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
 }

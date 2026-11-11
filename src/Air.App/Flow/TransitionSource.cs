@@ -4,13 +4,17 @@ namespace Platform.App.Flow;
 
 public sealed class TransitionSource<TEntity>(
   IReadOnlyList<long> from,
-  Func<StatusFlowService<TEntity>.Transition, StatusFlowService<TEntity>.Transition> register
+  Func<StatusFlowService<TEntity>.Transition, StatusFlowService<TEntity>.Transition> register,
+  bool excludeTarget = false
 )
   where TEntity : class, IEntity, new()
 {
   public StatusFlowService<TEntity>.Transition To(long status, [CallerMemberName] string name = "")
   {
-    var transition = new StatusFlowService<TEntity>.Transition(name, from, status);
+    var effectiveFrom = excludeTarget
+      ? from.Where(id => id != status).ToArray()
+      : from;
+    var transition = new StatusFlowService<TEntity>.Transition(name, effectiveFrom, status);
     return register(transition);
   }
 }

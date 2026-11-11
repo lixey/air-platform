@@ -95,6 +95,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
   public FormElement<TEntity, TProp> Range(double min, double max)
   {
     dto.Constraints.Min = JsonSerializer.SerializeToElement(min);
+    dto.Constraints.ExclusiveMin = null;
     dto.Constraints.Max = JsonSerializer.SerializeToElement(max);
     return this;
   }
@@ -102,6 +103,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
   public FormElement<TEntity, TProp> Min(decimal min)
   {
     dto.Constraints.Min = JsonSerializer.SerializeToElement(min);
+    dto.Constraints.ExclusiveMin = null;
     return this;
   }
 
@@ -329,10 +331,24 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     return this;
   }
 
-  public FormElement<TEntity, TProp> Rules(Action<Actions.ActionInputRuleBuilder<TProp>> configure)
+  public FormElement<TEntity, TProp> MaxLength(int maxLength)
   {
-    var builder = new Actions.ActionInputRuleBuilder<TProp>(dto);
-    configure(builder);
+    dto.Constraints.MaxLength = maxLength;
+    dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> MinLength(int minLength)
+  {
+    dto.Constraints.MinLength = minLength;
+    dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
+    return this;
+  }
+
+  public FormElement<TEntity, TProp> GreaterThan(decimal value)
+  {
+    dto.Constraints.Min = JsonSerializer.SerializeToElement(value);
+    dto.Constraints.ExclusiveMin = true;
     return this;
   }
 

@@ -346,7 +346,12 @@ export class GridCellEdits {
   private adopt(answer: GridCellDto, id: GridRowKey, service: string, operation: ScreenOperation | undefined): void {
     this.options.adoptRow(id, isRow(answer.row) ? answer.row : null);
     if (operation) {
-      this.mutations?.publish(operation, { service, operation: 'save', selectedIds: [id] });
+      this.mutations?.publish(operation, {
+        service,
+        operation: 'save',
+        selectedIds: [id],
+        affected: answer.affected ?? undefined,
+      });
     }
     this.alert.warnings(answer.warnings, untracked(this.options.model)?.mutationTexts.committedWarningTitle);
   }

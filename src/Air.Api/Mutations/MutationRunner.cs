@@ -165,4 +165,44 @@ public static class MutationRunner
 
     return created;
   }
+
+  public static async Task<TResult> RunIdempotentMutationAsync<TResult>(
+    PlatformDbContext db,
+    string serviceKey,
+    string? idempotencyKey,
+    string? rawPayload,
+    Func<CancellationToken, Task<TResult>> executeMutation,
+    CancellationToken ct = default,
+    IServiceProvider? services = null,
+    bool transactional = true)
+    where TResult : MutationResultDto, new()
+  {
+    if (string.IsNullOrWhiteSpace(idempotencyKey))
+    {
+      return transactional ? await RunAsync(db, executeMutation, ct) : await executeMutation(ct);
+    }
+
+    var store = services?.GetService<IdempotencyStore>() ?? IdempotencyStore.Default;
+    var trimmedKey = idempotencyKey.Trim();
+    var tenantId = db.TenantContext.TenantId;
+    var userId = db.TenantContext.UserId;
+    var payloadHash = IdempotencyStore.ComputePayloadHash(rawPayload ?? string.Empty);
+
+    using var keyLock = await store.AcquireLockAsync(tenantId, userId, trimmedKey, ct);
+    if (store.TryGetCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, out _, out var cachedResult))
+    {
+      return cachedResult is TResult replayed
+        ? replayed
+        : new TResult { Outcome = MutationOutcome.Committed };
+    }
+
+    var result = transactional ? await RunAsync(db, executeMutation, ct) : await executeMutation(ct);
+    if (result.Outcome is not null and not MutationOutcome.Committed)
+    {
+      return result;
+    }
+
+    store.SaveCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, 0, result);
+    return result;
+  }
 }

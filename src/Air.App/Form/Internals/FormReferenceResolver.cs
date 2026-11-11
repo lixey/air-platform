@@ -16,23 +16,23 @@ internal static class FormReferenceResolver
     bool isReadOnly,
     Elements elements,
     CancellationToken ct = default)
-    where TEntity : class, IEntity
+    where TEntity : class
   {
     foreach (var child in elements.Children)
     {
       ModuleCatalog.EnsureModuleServiceAccessAllowed(formServiceType, child.ServiceType, $"AddChild '{child.DeclaredKey}'");
     }
 
-    if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
+    if (elements.StatusFlow is IRecordStatuses statusFlow)
     {
-      var statusMemberName = StatusMoveNavBuilder.ExtractStatusMemberName(statusFlow.StatusMember);
+      var statusMemberName = StatusMoveNavBuilder.ExtractStatusMemberName(statusFlow.StatusMemberExpression);
 
       var statusOptions = statusFlow.Statuses.Select(s => new OptionDto
       {
         Id = s.Id,
-        Name = l[s.Name],
+        Name = s.Name,
         Color = s.Color,
-        Title = s.Title != null ? l[s.Title] : null
+        Title = s.Title
       }).ToList();
 
       foreach (var el in elements.List)

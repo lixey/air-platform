@@ -4,6 +4,7 @@ public class Flow<TEntity>
 {
   internal Expression<Func<TEntity, long>>? StateMember { get; private set; }
   internal List<OptionDto> DeclaredStatuses { get; } = [];
+  internal HashSet<long> FinalStatusIds { get; } = [];
   internal long? InitialStatusId { get; private set; }
   internal List<Type> FollowerTypes { get; } = [];
 
@@ -12,7 +13,16 @@ public class Flow<TEntity>
     StateMember = member;
   }
 
-  public void Status(long id, string name, string color, string? title = null)
+  public void State<TStatus>(Expression<Func<TEntity, TStatus>> member)
+    where TStatus : struct
+  {
+    ArgumentNullException.ThrowIfNull(member);
+    StateMember = typeof(TStatus) == typeof(long)
+      ? (Expression<Func<TEntity, long>>)(LambdaExpression)member
+      : Expression.Lambda<Func<TEntity, long>>(Expression.Convert(member.Body, typeof(long)), member.Parameters);
+  }
+
+  public void Status(long id, string name, string color, string? title = null, bool isFinal = false)
   {
     DeclaredStatuses.Add(new OptionDto
     {
@@ -21,10 +31,20 @@ public class Flow<TEntity>
       Color = color,
       Title = title
     });
+    if (isFinal)
+    {
+      FinalStatusIds.Add(id);
+    }
   }
 
-  public void Status(long id, string name, string color, string uiSource, string dbSource) =>
-    Status(id, name, color, Feature.FormatSourceTitle(uiSource, dbSource));
+  public void Status(long id, string name, string color, string uiSource, string dbSource, bool isFinal = false) =>
+    Status(id, name, color, Feature.FormatSourceTitle(uiSource, dbSource), isFinal);
+
+  public void FinalStatus(long id, string name, string color, string? title = null) =>
+    Status(id, name, color, title, isFinal: true);
+
+  public void FinalStatus(long id, string name, string color, string uiSource, string dbSource) =>
+    Status(id, name, color, uiSource, dbSource, isFinal: true);
 
   public void Initial(long id)
   {

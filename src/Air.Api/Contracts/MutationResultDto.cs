@@ -15,4 +15,7 @@ public class MutationResultDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<MessageDto>? Warnings { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<AffectedDto>? Affected { get; set; }
 }

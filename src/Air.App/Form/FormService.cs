@@ -14,6 +14,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   private Hooks? _cachedHooks;
   private TEntity? _lastSavedEntity;
   private List<MessageDto>? _lastSaveWarnings;
+  private List<AffectedDto>? _lastAffectedParents;
   private object? _preloadedParent;
   private long? _preloadedParentId;
   private bool _parentRecordLoaded;
@@ -244,11 +245,11 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected static FormSaveContext<TEntity> SaveContextOf(RuleContext<TEntity> context) => context.SaveContext;
 
   protected virtual void SetParent(Parent parent) { }
-  protected virtual void SetNav(Nav nav) { }
+  protected virtual void SetActions(Actions actions) { }
 
-  protected virtual Task SetNavAsync(Nav nav, CancellationToken ct = default)
+  protected virtual Task SetActionsAsync(Actions actions, CancellationToken ct = default)
   {
-    SetNav(nav);
+    SetActions(actions);
     return Task.CompletedTask;
   }
 
@@ -264,24 +265,55 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected virtual void SetRules(Rules rules) { }
   protected virtual void SetHooks(Hooks hooks) { }
 
+  IEnumerable<string> IPlatformService.GetDeclaredActions()
+  {
+    var actions = new Actions();
+    try
+    {
+      SetActionsAsync(actions).GetAwaiter().GetResult();
+    }
+    catch (NullReferenceException) when (db == null)
+    {
+      actions = new Actions();
+      SetActions(actions);
+    }
+
+    return actions.Entries
+      .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
+      .Where(n => !string.IsNullOrWhiteSpace(n))!;
+  }
+
   public virtual async Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default)
   {
     SetRequest(request);
-    await EnsureEntityAndParentLoadedAsync(ct);
-    var nav = new Nav(Service, L);
-    await SetNavAsync(nav, ct);
-    var entry = nav.Actions.FirstOrDefault(a =>
-      string.Equals(a.Model.Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
-      string.Equals(a.Model.Method, actionKey, StringComparison.OrdinalIgnoreCase));
-    return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(entry?.DefaultProvider, entry?.Ask, db, PlatformApp, ct);
-  }
+    try
+    {
+      await EnsureEntityAndParentLoadedAsync(ct);
+    }
+    catch (KeyNotFoundException)
+    {
+      return null;
+    }
 
-  protected Task<FormActionDto> ExecuteActionAsync(
-    FormRequest request,
-    Func<FormActionContext<TEntity>, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default,
-    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null) =>
-    ExecuteActionAsync(request, (ctx, _, ct) => handler(ctx, ct), cancellationToken, actionName);
+    if (!IsNew && CurrentEntity == null)
+    {
+      return null;
+    }
+
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    var entry = actions.Entries.FirstOrDefault(a => a.Matches(actionKey));
+    var isParentReadOnly = (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
+    if (entry == null || !entry.Permission.IsPermitted(Feature, User, entry.Handle, IsReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
+    {
+      return null;
+    }
+
+    var defaultProvider = entry.DefaultProvider != null
+      ? (Func<CancellationToken, Task<object?>>)(token => entry.DefaultProvider(CurrentEntity, token))
+      : null;
+    return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(defaultProvider, entry.Ask, db, PlatformApp, ct);
+  }
 
   protected IQueryable<TEntity> Reachable(bool asTracking = false)
   {
@@ -333,15 +365,27 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       }
     }
 
-    var nav = new Nav(Service, L);
-    SetNav(nav);
-    foreach (var entry in nav.Actions)
+    var actions = new Actions();
+    try
     {
-      if (!ServiceEndpointsExtensions.IsCallableServiceAction(entry.Method.Method))
+      SetActionsAsync(actions).GetAwaiter().GetResult();
+    }
+    catch when (db == null)
+    {
+      actions = new Actions();
+      SetActions(actions);
+    }
+
+    var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in actions.Entries)
+    {
+      if (!seenHandles.Add(entry.Handle))
       {
         throw new InvalidOperationException(
-          $"Form action method '{GetType().FullName}.{entry.Method.Method.Name}' registered via Nav.AddAction must be public and decorated with [RequireAction], [RequireRight], or [ServiceAction].");
+          $"Form '{GetType().FullName}' declares duplicate action handle '{entry.Handle}'.");
       }
+
+      entry.ValidateConfiguration(GetType(), Feature);
     }
   }
 

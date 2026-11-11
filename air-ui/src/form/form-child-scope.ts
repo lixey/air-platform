@@ -1,7 +1,7 @@
 import type { CloseApproval, CloseAttempt, CloseDecision } from '../core/close-decision';
 import { Lifetime } from '../core/lifetime';
 import type { OverlayRef } from '../overlay/overlay-ref';
-import { ScreenMutations } from '../screen/screen-mutations';
+import { ScreenMutations, type ScreenMutationEvent } from '../screen/screen-mutations';
 
 /**
  * One child screen owns its requests, notifications and descendant overlays. Its lifetime, the child page's
@@ -13,7 +13,7 @@ export class FormChildScope {
   private readonly overlays = new Map<OverlayRef, boolean>();
   private readonly heldAttempts = new Map<OverlayRef, CloseDecision>();
   readonly mutations: ScreenMutations;
-  private readonly changes = new Set<() => void>();
+  private readonly changes = new Set<(event: ScreenMutationEvent) => void>();
   private suppressChanges = false;
 
   constructor(parent: Lifetime) {
@@ -23,10 +23,10 @@ export class FormChildScope {
   }
 
   /**
-   * Tells `changed` of every committed mutation published in the child's scope and of every tracked close in it; the
-   * registration outlives the scope's resets. Answers what cancels it.
+   * Tells `changed` of every committed mutation published in the child's scope; the registration outlives the scope's
+   * resets. Closing an untouched child overlay (`event === undefined`) notifies nobody. Answers what cancels it.
    */
-  onChange(changed: () => void): () => void {
+  onChange(changed: (event: ScreenMutationEvent) => void): () => void {
     this.changes.add(changed);
     return () => this.changes.delete(changed);
   }
@@ -116,16 +116,16 @@ export class FormChildScope {
     this.changes.clear();
   }
 
-  /** Hears every mutation of the scope, one call a mutation and the close it causes; a reset of the scope subscribes again. */
+  /** Hears every committed mutation published in the scope; an untouched overlay close (`!event`) is ignored. */
   private listen(): void {
     this.mutations.subscribe({
       accepts: () => true,
-      refresh: () => {
-        if (this.suppressChanges) {
+      refresh: event => {
+        if (this.suppressChanges || !event) {
           return;
         }
         for (const changed of [...this.changes]) {
-          changed();
+          changed(event);
         }
       },
       invalidate: () => this.listen(),

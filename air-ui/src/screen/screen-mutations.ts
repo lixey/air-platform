@@ -1,7 +1,7 @@
 import { DestroyRef, inject, type Provider } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService, identityOf } from '../app/auth/auth.service';
-import type { FormDataDto } from '../core/generated/contracts';
+import type { AffectedDto, FormDataDto } from '../core/generated/contracts';
 import { type IsCurrent, Lifetime } from '../core/lifetime';
 import type { OverlayRef } from '../overlay/overlay-ref';
 import { followedLifetime } from './followed-lifetime';
@@ -12,6 +12,7 @@ export interface ScreenMutationEvent {
   readonly recordId?: number | null;
   readonly selectedIds?: readonly (number | string)[];
   readonly data?: FormDataDto;
+  readonly affected?: readonly AffectedDto[];
 }
 
 /**

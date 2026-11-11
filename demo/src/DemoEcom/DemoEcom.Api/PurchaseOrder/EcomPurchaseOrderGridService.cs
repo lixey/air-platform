@@ -47,12 +47,36 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
     columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetActions(Actions actions)
   {
-    base.SetNav(nav);
     _ = EcomDocTexts.Of(L);
-    nav.AddAction(CreateSupplierInvoice, b => b.Label(L["Create supplier invoice"]).Icon(UiIcon.Plus)).InMenu();
-    nav.AddAction(CreateOutgoingPayment, b => b.Label(L["Create outgoing payment"]).Icon(UiIcon.Plus)).InMenu();
+    actions.Add("CreateSupplierInvoice")
+      .Allow(Ecom.SupplierInvoice.Edit)
+      .Label("Create supplier invoice")
+      .Icon(UiIcon.Plus)
+      .InMenu()
+      .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSupplierInvoiceFormService>(
+        db,
+        ctx,
+        EcomData.DocType.SupplierInvoiceId,
+        EcomData.DocStatus.SupplierInvoiceDraftId,
+        Time.Today,
+        EcomDocTexts.Of(L),
+        ct));
+
+    actions.Add("CreateOutgoingPayment")
+      .Allow(Ecom.OutgoingPayment.Edit)
+      .Label("Create outgoing payment")
+      .Icon(UiIcon.Plus)
+      .InMenu()
+      .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
+        db,
+        ctx,
+        EcomData.DocType.OutgoingPaymentId,
+        EcomData.DocStatus.OutgoingPaymentDraftId,
+        Time.Today,
+        EcomDocTexts.Of(L),
+        ct));
   }
 
   protected override void SetHooks(Hooks hooks)
@@ -64,43 +88,5 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
       var gone = await db.EcomDocLine.Where(line => orders.Contains(line.DocId)).Select(line => line.Id).ToListAsync(cancellationToken);
       await EcomDocEntering.PurchasedAsync(db, gone, gone, cancellationToken);
     });
-  }
-
-  [RequireRight<EcomSupplierInvoiceGridService>(EndpointAction.Edit)]
-  public async Task<GridActionDto> CreateSupplierInvoice(GridRequest request, CancellationToken cancellationToken)
-  {
-    var date = Time.Today;
-    return await ExecuteBatchAsync(
-      request,
-      (c, token) => EcomDocActions.EnterAsync<EcomSupplierInvoiceFormService>(
-        db,
-        c,
-        EcomData.DocType.SupplierInvoiceId,
-        EcomData.DocStatus.SupplierInvoiceDraftId,
-        date,
-        EcomDocTexts.Of(L),
-        token
-      ),
-      cancellationToken
-    );
-  }
-
-  [RequireRight<EcomOutgoingPaymentGridService>(EndpointAction.Edit)]
-  public async Task<GridActionDto> CreateOutgoingPayment(GridRequest request, CancellationToken cancellationToken)
-  {
-    var date = Time.Today;
-    return await ExecuteBatchAsync(
-      request,
-      (c, token) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
-        db,
-        c,
-        EcomData.DocType.OutgoingPaymentId,
-        EcomData.DocStatus.OutgoingPaymentDraftId,
-        date,
-        EcomDocTexts.Of(L),
-        token
-      ),
-      cancellationToken
-    );
   }
 }

@@ -15,9 +15,19 @@ public sealed class GridBatchContext<TEntity> : GridSelectionContext<TEntity> wh
 
   public long? OpenId { get; private set; }
 
+  public string? NoticeTitle { get; private set; }
+
+  public List<MessageDto>? NoticeMessages { get; private set; }
+
   public void Open<TFormService>(long? id = null) where TFormService : class
   {
     OpenScreen = ServicePathResolver.Resolve(typeof(TFormService));
     OpenId = id;
+  }
+
+  public void ShowNotice(string title, IEnumerable<MessageDto> messages)
+  {
+    NoticeTitle = title;
+    NoticeMessages = [.. messages];
   }
 }

@@ -180,6 +180,77 @@ export function stableJson(value: unknown): string {
   return JSON.stringify(stable(value));
 }
 
+/**
+ * Merges a server-answered record (`serverValue`) into an open form's current draft (`currentValue`) relative to its
+ * previous confirmed `baselineValue`: server-owned and disabled elements, as well as editable elements whose current
+ * value still matches `baselineValue` in `zone` (and carry no parse error), adopt `serverValue`, while user-edited
+ * elements and typed secrets stay as the user holds them.
+ */
+export function absorbDraft(
+  currentValue: Readonly<Record<string, unknown>>,
+  baselineValue: Readonly<Record<string, unknown>>,
+  serverValue: Readonly<Record<string, unknown>>,
+  elements: readonly FormElementDto[],
+  zone: string,
+  hasParseError: (element: FormElementDto) => boolean,
+): { readonly baseline: SplitDraft; readonly merged: SplitDraft } {
+  const baseline = splitDraft(serverValue, elements);
+  const mergedRaw: Record<string, unknown> = { ...baseline.fields, ...baseline.references };
+  const elementPaths = new Set(elements.map(e => e.path));
+  const referencePaths = new Set(elements.map(e => e.referencePath).filter((p): p is string => Boolean(p) && !elementPaths.has(p!)));
+
+  for (const element of elements) {
+    if (element.isDisabled || element.isServerOwned) {
+      continue;
+    }
+    if (isSecret(element)) {
+      if (hasSecret(currentValue[element.path])) {
+        mergedRaw[element.path] = currentValue[element.path];
+      }
+      continue;
+    }
+    const isElementDirty =
+      hasParseError(element) ||
+      canonicalJson(pickElementValue(currentValue, element.path), [element], zone) !==
+        canonicalJson(pickElementValue(baselineValue, element.path), [element], zone);
+    if (isElementDirty) {
+      mergedRaw[element.path] = currentValue[element.path];
+      if (element.referencePath && !elementPaths.has(element.referencePath) && Object.hasOwn(currentValue, element.referencePath)) {
+        mergedRaw[element.referencePath] = currentValue[element.referencePath];
+      }
+    }
+  }
+
+  for (const key of Object.keys(currentValue)) {
+    if (elementPaths.has(key) || referencePaths.has(key)) {
+      continue;
+    }
+    if (stableJson(currentValue[key]) !== stableJson(baselineValue[key])) {
+      mergedRaw[key] = currentValue[key];
+    }
+  }
+
+  const mergedFields: Record<string, unknown> = {};
+  const mergedRefs: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(mergedRaw)) {
+    if (referencePaths.has(key)) {
+      mergedRefs[key] = item;
+    } else {
+      mergedFields[key] = item;
+    }
+  }
+  const fields = frozenCopy(mergedFields);
+  const references = frozenCopy(mergedRefs);
+  return {
+    baseline,
+    merged: { fields, references, value: frozenCopy({ ...fields, ...references }) },
+  };
+}
+
+function pickElementValue(source: Readonly<Record<string, unknown>>, path: string): Record<string, unknown> {
+  return Object.hasOwn(source, path) ? { [path]: source[path] } : {};
+}
+
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) {
     return ['array', ...value.map(stable)];

@@ -112,25 +112,21 @@ public abstract partial class FormService<TEntity>
 
     if (elements.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
-      ConfigureStatusFlowAndActions(servicePath, statusFlow, elements.StatusFlowAllowsReadOnly, entity, id, actionStart);
+      await ConfigureStatusFlowAndActionsAsync(servicePath, statusFlow, elements.StatusFlowAllowsReadOnly, entity, id, actionStart, ct);
     }
 
     if (entity != null && id is > 0)
     {
-      var customNav = new Nav(servicePath, L);
-      await SetNavAsync(customNav, ct);
+      var isParentReadOnly = (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
+      var actions = new Actions();
+      await SetActionsAsync(actions, ct);
       var permittedActions = new List<(NavElementModel Model, bool IsInMenu)>();
-      foreach (var entry in customNav.Actions)
+      foreach (var entry in actions.Entries)
       {
-        if (ScreenBuilderHelpers.IsActionPermitted(entry.Method.Method, Feature, User, IsReadOnly, entry.IsAllowedInReadOnly))
+        if (entry.Permission.IsPermitted(Feature, User, entry.Handle, IsReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
         {
-          if (entry.Ask != null)
-          {
-            entry.Model.Ask = ScreenBuilderHelpers.BuildActionAsk(entry.Model, entry.Ask, entry.DefaultProvider != null, L);
-            entry.Model.Confirm = null;
-          }
-
-          permittedActions.Add((entry.Model, entry.IsInMenu));
+          var model = await entry.BuildModelAsync(GetType(), Feature, servicePath, db, PlatformApp, User, L, ct);
+          permittedActions.Add((model, entry.IsInMenu));
         }
       }
 
@@ -424,13 +420,14 @@ public abstract partial class FormService<TEntity>
     return childFeat != null && ServiceEndpointsExtensions.CanView(childFeat, User);
   }
 
-  private void ConfigureStatusFlowAndActions(
+  private async Task ConfigureStatusFlowAndActionsAsync(
     string servicePath,
     IRecordStatuses<TEntity> statusFlow,
     bool allowReadOnly,
     TEntity? entity,
     long? id,
-    List<NavElementModel> actionStart)
+    List<NavElementModel> actionStart,
+    CancellationToken ct)
   {
     if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
     {
@@ -447,7 +444,7 @@ public abstract partial class FormService<TEntity>
           continue;
         }
 
-        var meta = StatusMoveNavBuilder.BuildTransitionMeta(Feature, L, statusFlow, transition);
+        var meta = await StatusMoveNavBuilder.BuildTransitionMetaAsync(GetType(), Feature, db, PlatformApp, User, L, statusFlow, transition, ct);
         actionStart.Add(new FormNavActionModel
         {
           Key = meta.Key,
@@ -500,15 +497,15 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    var customNav = new Nav(Service, L);
-    await SetNavAsync(customNav, ct);
-    foreach (var entry in customNav.Actions)
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    foreach (var entry in actions.Entries)
     {
       for (var i = 0; i < entry.Offers.Count; i++)
       {
         if (entry.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
-          offers.Add((entry.Model.Key, i, cond));
+          offers.Add((entry.Key, i, cond));
         }
       }
     }
@@ -520,6 +517,64 @@ public abstract partial class FormService<TEntity>
 
     var evaluated = await OfferBatchEvaluator.EvaluateAsync(db, [id.Value], offers, ct);
     return evaluated.TryGetValue(id.Value, out var unav) && unav.Count > 0 ? unav : null;
+  }
+
+  async Task<IReadOnlyList<(GridNavActionModel Model, bool IsInMenu, bool IsAllowedInReadOnly, IReadOnlyList<RecordAvailability> Offers)>> IFormService.BuildInheritedGridActionsAsync(
+    string gridServicePath,
+    long? parentId,
+    string? parentService,
+    bool isGridReadOnly,
+    bool isParentReadOnly,
+    CancellationToken ct)
+  {
+    SetRequest(new FormRequest { ParentId = parentId, ParentService = parentService });
+    if (parentId.HasValue || !string.IsNullOrEmpty(parentService))
+    {
+      await PreloadParentRecordAsync(GetParent(), ct);
+    }
+
+    var effectiveParentReadOnly = isParentReadOnly || (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    var list = new List<(GridNavActionModel, bool, bool, IReadOnlyList<RecordAvailability>)>();
+    foreach (var entry in actions.Entries)
+    {
+      var isReadOnly = isGridReadOnly || IsReadOnly;
+      if (entry.Permission.IsPermitted(Feature, User, entry.Handle, isReadOnly, entry.IsAllowedInReadOnly, effectiveParentReadOnly))
+      {
+        var gridModel = await entry.BuildGridModelAsync(GetType(), Feature, gridServicePath, db, PlatformApp, User, L, ct);
+        list.Add((gridModel, entry.IsInMenu, entry.IsAllowedInReadOnly, entry.Offers));
+      }
+    }
+
+    return list;
+  }
+
+  async Task<IReadOnlyList<(string Key, IReadOnlyList<RecordAvailability> Offers)>> IFormService.GetActionOffersAsync(
+    long? parentId,
+    string? parentService,
+    CancellationToken ct)
+  {
+    SetRequest(new FormRequest { ParentId = parentId, ParentService = parentService });
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    return actions.Entries
+      .Where(e => e.Offers.Count > 0)
+      .Select(e => (e.Key, (IReadOnlyList<RecordAvailability>)e.Offers))
+      .ToList();
+  }
+
+  async Task<bool> IFormService.IsActionPermittedForGridAsync(
+    string actionKey,
+    bool isGridReadOnly,
+    bool isParentReadOnly,
+    CancellationToken ct)
+  {
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    var entry = actions.Entries.FirstOrDefault(a => a.Matches(actionKey));
+    var effectiveParentReadOnly = isParentReadOnly || (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
+    return entry != null && entry.Permission.IsPermitted(Feature, User, entry.Handle, isGridReadOnly || IsReadOnly, entry.IsAllowedInReadOnly, effectiveParentReadOnly);
   }
 
   private void BuildChildPagePanels(PanelLayoutBuilder layout, string servicePath, long id, List<ChildGridBuilder> pageChildren)

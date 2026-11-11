@@ -88,13 +88,19 @@ export class FormChildScreenComponent {
       reset: () => this.scope.reset(),
     });
 
-    // A new model, which a read in place does not hand a page it leaves as it is, closes what the child opened for the
-    // former one and starts the child's new epoch
+    // Only a change of the child screen's target (service, parentService, or parentId) closes open child overlays and
+    // starts a new epoch; a read-in-place of the same parent record keeps open child drawers intact.
     const form = injectForm();
     let seenRevision = untracked(() => form()?.dataRevision() ?? 0);
+    let prevScopeKey: string | null = null;
 
     effect(() => {
-      this.model();
+      const m = this.model();
+      const scopeKey = `${m.service}|${m.parentService ?? ''}|${m.parentId ?? ''}`;
+      if (scopeKey === prevScopeKey) {
+        return;
+      }
+      prevScopeKey = scopeKey;
       untracked(() => {
         seenRevision = form()?.dataRevision() ?? 0;
         this.scope.reset();
@@ -102,10 +108,10 @@ export class FormChildScreenComponent {
     });
 
     // The form of the layout and its sibling child screens refresh for a change under this page
-    const unregisterChange = this.scope.onChange(() => {
+    const unregisterChange = this.scope.onChange(event => {
       const parentForm = form();
       if (parentForm) {
-        parentForm.notifyChildMutated();
+        parentForm.notifyChildMutated(event);
         seenRevision = untracked(() => parentForm.dataRevision());
       }
     });

@@ -6,16 +6,16 @@ namespace Platform.App.Form.Internals;
 internal static class FormValidator
 {
   public static void ValidateElementConstraints<TEntity>(
-    PlatformDbContext db,
+    PlatformDbContext? db,
     Localizer l,
     IReadOnlyList<FormElementDto> elements,
     TEntity entity,
     RuleContext<TEntity> ruleCtx,
     bool onlyAcceptingInput,
     IReadOnlySet<string>? disabledElementPaths = null)
-    where TEntity : class, IEntity
+    where TEntity : class
   {
-    var efEntityType = db.Model.FindEntityType(typeof(TEntity));
+    var efEntityType = db?.Model.FindEntityType(typeof(TEntity));
 
     foreach (var el in elements)
     {
@@ -144,7 +144,9 @@ internal static class FormValidator
           !(isHiddenNow && decVal == 0m && !isRequiredNow))
       {
         var outOfRange = false;
-        if (el.Constraints.Min is { ValueKind: JsonValueKind.Number } minEl && minEl.TryGetDecimal(out var minDec) && decVal < minDec)
+        if (el.Constraints.Min is { ValueKind: JsonValueKind.Number } minEl &&
+            minEl.TryGetDecimal(out var minDec) &&
+            (el.Constraints.ExclusiveMin == true ? decVal <= minDec : decVal < minDec))
         {
           outOfRange = true;
         }
@@ -355,7 +357,7 @@ internal static class FormValidator
     RuleContext<TEntity> ruleCtx,
     CancellationToken ct,
     IReadOnlySet<string>? disabledElementPaths = null)
-    where TEntity : class, IEntity
+    where TEntity : class
   {
     foreach (var el in elements)
     {

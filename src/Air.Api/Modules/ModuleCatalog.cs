@@ -17,6 +17,7 @@ public sealed class ModuleCatalog
 
   public IReadOnlyList<IPlatformModule> Modules => _modules;
   public IReadOnlyList<Type> DbContextTypes => _dbContextTypes;
+  public int ServiceCount => _servicesByPath.Count;
   public IEnumerable<Feature> AllFeatures => _featuresByKey.Values;
   public IEnumerable<Type> AllServiceTypes => _servicesByPath.Values.Distinct();
 

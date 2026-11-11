@@ -217,7 +217,8 @@ public abstract partial class FormService<TEntity>
       Value = dict,
       Outcome = outcome,
       Unavailable = unavailable,
-      Warnings = !string.IsNullOrEmpty(outcome) ? GetLastSaveWarnings()?.ToList() : null
+      Warnings = !string.IsNullOrEmpty(outcome) ? GetLastSaveWarnings()?.ToList() : null,
+      Affected = !string.IsNullOrEmpty(outcome) ? _lastAffectedParents : null
     };
   }
 
@@ -290,6 +291,7 @@ public abstract partial class FormService<TEntity>
     IsNew = id is null or 0;
     _lastSavedEntity = null;
     _lastSaveWarnings = null;
+    _lastAffectedParents = null;
 
     var savedResult = IsNew
       ? await MutationRunner.RunIdempotentCreateAsync<object>(
@@ -606,14 +608,15 @@ public abstract partial class FormService<TEntity>
         ? oldPid
         : (long?)null;
       var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
-      await ParentScopeValidator.RecalculateBoundParentsAsync(
+      _lastAffectedParents = await ParentScopeValidator.RecalculateBoundParentsAsync(
         db,
         PlatformApp,
         Request.ParentService,
         parent.BoundParentService,
         parent.BoundParentServiceType,
         [oldParentId, newParentId],
-        ct);
+        ct,
+        requestParentId: Request.ParentId);
     }
 
     _lastSavedEntity = entity;
@@ -634,6 +637,7 @@ public abstract partial class FormService<TEntity>
     IsNew = false;
     _lastSavedEntity = null;
     _lastSaveWarnings = null;
+    _lastAffectedParents = null;
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
@@ -667,7 +671,8 @@ public abstract partial class FormService<TEntity>
       {
         Row = row,
         Outcome = MutationOutcome.Committed,
-        Warnings = _lastSaveWarnings?.ToList()
+        Warnings = _lastSaveWarnings?.ToList(),
+        Affected = _lastAffectedParents
       };
     }, ct: ct);
 

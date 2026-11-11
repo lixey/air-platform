@@ -317,8 +317,38 @@ public abstract partial class GridService<TEntity, TRow>
       return;
     }
 
-    var nav = GetNav();
-    var actionsWithOffers = nav.Actions.Where(a => a.Offers.Count > 0).ToList();
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    var actionOfferGroups = new List<(string Key, IReadOnlyList<Screens.RecordAvailability> Offers)>();
+    var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in actions.Entries)
+    {
+      seenKeys.Add(entry.Key);
+      if (entry.Offers.Count > 0)
+      {
+        actionOfferGroups.Add((entry.Key, entry.Offers));
+      }
+    }
+
+    foreach (var formType in actions.InheritedFormServiceTypes)
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is Form.IFormService form)
+      {
+        if (PlatformApp != null)
+        {
+          form.AttachPlatformApp(PlatformApp);
+        }
+
+        foreach (var (key, inheritedOffers) in await form.GetActionOffersAsync(ParentId, ParentService, ct))
+        {
+          if (seenKeys.Add(key) && inheritedOffers.Count > 0)
+          {
+            actionOfferGroups.Add((key, inheritedOffers));
+          }
+        }
+      }
+    }
+
     var statusFlow = columns.StatusFlow as Screens.IRecordStatuses<TEntity>;
     if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
     {
@@ -326,7 +356,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var transitionsWithOffers = statusFlow?.Transitions.Where(t => t.Offers.Count > 0).ToList() ?? [];
-    if (transitionsWithOffers.Count == 0 && actionsWithOffers.Count == 0)
+    if (transitionsWithOffers.Count == 0 && actionOfferGroups.Count == 0)
     {
       return;
     }
@@ -350,12 +380,11 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    foreach (var action in actionsWithOffers)
+    foreach (var (actionKey, actionOffers) in actionOfferGroups)
     {
-      var actionKey = action.Model.Key;
-      for (var i = 0; i < action.Offers.Count; i++)
+      for (var i = 0; i < actionOffers.Count; i++)
       {
-        if (action.Offers[i].Condition is Expression<Func<TEntity, bool>> cond)
+        if (actionOffers[i].Condition is Expression<Func<TEntity, bool>> cond)
         {
           offers.Add((actionKey, i, cond));
         }

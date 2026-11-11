@@ -78,25 +78,46 @@ public abstract partial class GridService<TEntity, TRow>
 
     navStart.AddRange(nav.CustomStart);
 
-    var permittedActions = new List<NavActionEntry>();
-    foreach (var entry in nav.Actions)
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+
+    var isParentReadOnly = parentChild?.IsReadOnly == true;
+    var permittedActions = new List<(GridNavActionModel Model, bool IsInMenu)>();
+    var declaredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in actions.Entries)
     {
-      if (ScreenBuilderHelpers.IsActionPermitted(entry.Method.Method, Feature, User, parentChild?.IsReadOnly == true, entry.IsAllowedInReadOnly))
+      declaredKeys.Add(entry.Key);
+      if (entry.Permission.IsPermitted(Feature, User, entry.Handle, isGridReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
       {
-        if (entry.Ask != null)
+        var model = await entry.BuildModelAsync(GetType(), Feature, servicePath, db, PlatformApp, User, L, ct);
+        permittedActions.Add((model, entry.IsInMenu));
+      }
+    }
+
+    foreach (var formType in actions.InheritedFormServiceTypes)
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService form)
+      {
+        if (PlatformApp != null)
         {
-          entry.Model.Ask = ScreenBuilderHelpers.BuildActionAsk(entry.Model, entry.Ask, entry.DefaultProvider != null, L);
-          entry.Model.Confirm = null;
+          form.AttachPlatformApp(PlatformApp);
         }
 
-        permittedActions.Add(entry);
+        var inherited = await form.BuildInheritedGridActionsAsync(servicePath, ParentId, ParentService, isGridReadOnly, isParentReadOnly, ct);
+        foreach (var item in inherited)
+        {
+          if (declaredKeys.Add(item.Model.Key))
+          {
+            permittedActions.Add((item.Model, item.IsInMenu));
+          }
+        }
       }
     }
 
     var navElements = new List<NavElementModel>();
-    foreach (var entry in permittedActions.Where(a => !a.Model.NeedsSelection))
+    foreach (var (model, _) in permittedActions.Where(a => !a.Model.NeedsSelection))
     {
-      navElements.Add(entry.Model);
+      navElements.Add(model);
     }
 
     navElements.Add(new GridNavSearchModel { Key = "search", Label = L["Search"] });
@@ -163,7 +184,7 @@ public abstract partial class GridService<TEntity, TRow>
     var actionElements = new List<NavElementModel>();
     if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && (!isGridReadOnly || columns.StatusFlowAllowsReadOnly))
     {
-      var statusButton = BuildStatusNavElement(servicePath, statusFlow);
+      var statusButton = await BuildStatusNavElementAsync(servicePath, statusFlow, ct);
       if (statusButton != null)
       {
         actionElements.Add(statusButton);
@@ -475,7 +496,10 @@ public abstract partial class GridService<TEntity, TRow>
     return fallback;
   }
 
-  private GridNavStatusModel? BuildStatusNavElement(string servicePath, IRecordStatuses<TEntity> statusFlow)
+  private async Task<GridNavStatusModel?> BuildStatusNavElementAsync(
+    string servicePath,
+    IRecordStatuses<TEntity> statusFlow,
+    CancellationToken ct)
   {
     if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
     {
@@ -483,30 +507,34 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var statusPath = StatusMoveNavBuilder.ResolveStatusPath(statusFlow.StatusMember);
+    var statusMoves = new List<GridNavStatusMoveDto>();
 
-    var statusMoves = statusFlow.Transitions
-      .Where(t => StatusMoveNavBuilder.CanMove(Feature, User, t.Name))
-      .Select(t =>
+    foreach (var t in statusFlow.Transitions)
+    {
+      if (!StatusMoveNavBuilder.CanMove(Feature, User, t.Name))
       {
-        var meta = StatusMoveNavBuilder.BuildTransitionMeta(Feature, L, statusFlow, t);
-        return new GridNavStatusMoveDto
+        continue;
+      }
+
+      var meta = await StatusMoveNavBuilder.BuildTransitionMetaAsync(GetType(), Feature, db, PlatformApp, User, L, statusFlow, t, ct);
+      statusMoves.Add(new GridNavStatusMoveDto
+      {
+        From = [.. t.From],
+        Action = new GridNavActionModel
         {
-          From = [.. t.From],
-          Action = new GridNavActionModel
-          {
-            Key = meta.Key,
-            Label = meta.Label,
-            Title = meta.Title,
-            Color = meta.Color,
-            Service = servicePath,
-            Method = meta.Method,
-            NeedsSelection = true,
-            Confirm = meta.Confirm,
-            Ask = meta.Ask,
-            UnavailableReasons = meta.UnavailableReasons
-          }
-        };
-      }).ToList();
+          Key = meta.Key,
+          Label = meta.Label,
+          Title = meta.Title,
+          Color = meta.Color,
+          Service = servicePath,
+          Method = meta.Method,
+          NeedsSelection = true,
+          Confirm = meta.Confirm,
+          Ask = meta.Ask,
+          UnavailableReasons = meta.UnavailableReasons
+        }
+      });
+    }
 
     if (statusMoves.Count == 0)
     {

@@ -45,51 +45,39 @@ public sealed class AppAgentProviderGridService(AppDbContext db, AppService? app
       }
     });
 
-  protected override void SetNav(Nav nav)
-  {
-    base.SetNav(nav);
-    nav.AddAction(
-      ToggleActive,
-      b => b.Label(L["Toggle active"]).Icon(UiIcon.Edit),
-      needsSelection: true);
-  }
-
-  [RequireAction(EndpointAction.Edit)]
-  public async Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default)
-  {
-    var res = await ExecuteBatchAsync(request, async (context, token) =>
-    {
-      var activeIds = (await db.AppAgentProvider
-          .AsNoTracking()
-          .Where(p => p.IsActive)
-          .Select(p => p.Id)
-          .ToListAsync(token))
-        .ToHashSet();
-
-      foreach (var rec in context.Records)
+  protected override void SetActions(Actions actions) =>
+    actions.Add("ToggleActive")
+      .AllowEdit()
+      .Label("Toggle active")
+      .Icon(UiIcon.Edit)
+      .Do(async (ctx, ct) =>
       {
-        if (rec.IsActive && activeIds.Count <= 1 && activeIds.Contains(rec.Id))
+        var activeIds = (await db.AppAgentProvider
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .Select(p => p.Id)
+            .ToListAsync(ct))
+          .ToHashSet();
+
+        foreach (var rec in ctx.Records)
         {
-          continue;
+          if (rec.IsActive && activeIds.Count <= 1 && activeIds.Contains(rec.Id))
+          {
+            continue;
+          }
+
+          rec.IsActive = !rec.IsActive;
+          if (rec.IsActive)
+          {
+            activeIds.Add(rec.Id);
+          }
+          else
+          {
+            activeIds.Remove(rec.Id);
+          }
         }
 
-        rec.IsActive = !rec.IsActive;
-        if (rec.IsActive)
-        {
-          activeIds.Add(rec.Id);
-        }
-        else
-        {
-          activeIds.Remove(rec.Id);
-        }
-      }
-    }, ct);
-
-    if (res.Outcome == MutationOutcome.Committed)
-    {
-      await AgentModelCatalog.SyncProviderModelsStateAsync(db, ct);
-    }
-
-    return res;
-  }
+        await ctx.FlushAsync(ct);
+        await AgentModelCatalog.SyncProviderModelsStateAsync(db, ct);
+      });
 }

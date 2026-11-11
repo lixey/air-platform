@@ -314,14 +314,15 @@ internal static class ParentScopeValidator
     return null;
   }
 
-  public static async Task RecalculateBoundParentsAsync(
+  public static async Task<List<AffectedDto>?> RecalculateBoundParentsAsync(
     PlatformDbContext db,
     PlatformAppService? app,
     string? requestParentService,
     string? boundParentService,
     Type? boundParentServiceType,
     IEnumerable<long?> parentIds,
-    CancellationToken ct)
+    CancellationToken ct,
+    long? requestParentId = null)
   {
     var distinctIds = parentIds
       .Where(id => id is > 0)
@@ -331,7 +332,7 @@ internal static class ParentScopeValidator
       .ToList();
     if (distinctIds.Count == 0)
     {
-      return;
+      return null;
     }
 
     var parentServiceType = (!string.IsNullOrEmpty(requestParentService)
@@ -344,14 +345,59 @@ internal static class ParentScopeValidator
 
     if (parentServiceType == null ||
         !typeof(Form.IFormService).IsAssignableFrom(parentServiceType) ||
-        ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is not Form.IFormService parentForm ||
-        !parentForm.HasCustomRecalculate)
+        ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is not Form.IFormService parentForm)
     {
-      return;
+      return null;
     }
 
-    await db.RunDerivedRecalculationAsync(
-      token => parentForm.RecalculateParentAsync(distinctIds, token),
-      ct);
+    if (app != null)
+    {
+      parentForm.AttachPlatformApp(app);
+    }
+
+    if (parentForm.HasCustomRecalculate)
+    {
+      await db.RunDerivedRecalculationAsync(
+        token => parentForm.RecalculateParentAsync(distinctIds, token),
+        ct);
+    }
+
+    if (distinctIds.Count > 5 || !ServiceEndpointsExtensions.CanView(parentForm.Feature, app?.User))
+    {
+      return null;
+    }
+
+    var parentEntityType = GetFormEntityType(parentServiceType);
+    List<AffectedDto>? affected = null;
+    foreach (var id in distinctIds)
+    {
+      var initialVer = parentEntityType != null ? db.GetInitialMutationVersion(parentEntityType, id) : null;
+      if (initialVer == null && id != requestParentId)
+      {
+        continue;
+      }
+
+      parentForm.SetRequest(new Form.Contracts.FormRequest { Id = id });
+      var loaded = await parentForm.LoadParentRecordAsync(id, ct);
+      if (loaded == null)
+      {
+        continue;
+      }
+
+      var formData = await parentForm.BuildFormDataAsync(loaded, ct: ct);
+      var prevVer = initialVer ?? formData.Ver;
+      affected ??= [];
+      affected.Add(new AffectedDto
+      {
+        Service = parentForm.Service,
+        Id = id,
+        PrevVer = prevVer,
+        Ver = formData.Ver,
+        Value = formData.Value,
+        Unavailable = formData.Unavailable
+      });
+    }
+
+    return affected;
   }
 }

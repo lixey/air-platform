@@ -39,91 +39,77 @@ public sealed class AppAgentModelGridService(
       .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetActions(Actions actions)
   {
-    base.SetNav(nav);
-    nav.AddAction(
-      RefreshModels,
-      b => b.Label(L["Refresh models"]).Icon(UiIcon.Reload).Color(UiColor.Blue),
-      needsSelection: false);
-    nav.AddAction(
-      SetAsDefault,
-      b => b.Label(L["Set as default"]).Icon(UiIcon.Checkmark).Color(UiColor.Emerald),
-      needsSelection: true);
-    nav.AddAction(
-      SetForPhotos,
-      b => b.Label(L["Set for photos"]).Icon(UiIcon.Photo).Color(UiColor.Violet),
-      needsSelection: true);
-    nav.AddAction(
-      ToggleActive,
-      b => b.Label(L["Toggle active"]).Icon(UiIcon.Edit),
-      needsSelection: true);
-  }
-
-  [RequireAction(EndpointAction.Edit)]
-  public async Task<GridActionDto> RefreshModels(GridRequest request, CancellationToken ct = default)
-  {
-    ParentService = request.ParentService;
-    ParentId = request.ParentId;
-    var parentProviderHandle = ParentRecord<AppAgentProvider>()?.Handle;
-
-    if (synchronizer is not null)
-    {
-      await synchronizer.SyncFromProvidersAsync(db, ct, parentProviderHandle);
-    }
-    else
-    {
-      await AgentModelCatalog.EnsureSeededAsync(db, ct);
-    }
-
-    return new GridActionDto { Outcome = MutationOutcome.Committed };
-  }
-
-  [RequireAction(EndpointAction.Edit)]
-  public async Task<GridActionDto> SetAsDefault(GridRequest request, CancellationToken ct = default)
-  {
-    var targetId = request.SelectedIds?.FirstOrDefault() ?? request.Id;
-    if (!targetId.HasValue)
-    {
-      return new GridActionDto { Outcome = MutationOutcome.Refused };
-    }
-
-    var ok = await AgentModelCatalog.SetDefaultModelAsync(db, targetId.Value, ct);
-    return new GridActionDto { Outcome = ok ? MutationOutcome.Committed : MutationOutcome.Refused };
-  }
-
-  [RequireAction(EndpointAction.Edit)]
-  public async Task<GridActionDto> SetForPhotos(GridRequest request, CancellationToken ct = default)
-  {
-    var targetId = request.SelectedIds?.FirstOrDefault() ?? request.Id;
-    if (!targetId.HasValue)
-    {
-      return new GridActionDto { Outcome = MutationOutcome.Refused };
-    }
-
-    var ok = await AgentModelCatalog.SetPhotoModelAsync(db, targetId.Value, ct);
-    return new GridActionDto { Outcome = ok ? MutationOutcome.Committed : MutationOutcome.Refused };
-  }
-
-  [RequireAction(EndpointAction.Edit)]
-  public Task<GridActionDto> ToggleActive(GridRequest request, CancellationToken ct = default) =>
-    ExecuteBatchAsync(request, async (context, token) =>
-    {
-      var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, token);
-
-      foreach (var rec in context.Records)
+    actions.Add("RefreshModels")
+      .AllowEdit()
+      .Label("Refresh models")
+      .Icon(UiIcon.Reload)
+      .Color(UiColor.Blue)
+      .WithoutSelection()
+      .WithoutTransaction()
+      .Do(async (_, ct) =>
       {
-        if ((rec.IsDefault || rec.IsForPhotos) && rec.IsActive)
+        var parentProviderHandle = ParentRecord<AppAgentProvider>()?.Handle;
+        if (synchronizer is not null)
         {
-          continue;
+          await synchronizer.SyncFromProvidersAsync(db, ct, parentProviderHandle);
         }
-
-        if (!rec.IsActive && !activeProviderHandles.Contains(rec.ProviderHandle))
+        else
         {
-          continue;
+          await AgentModelCatalog.EnsureSeededAsync(db, ct);
         }
+      });
 
-        rec.IsActive = !rec.IsActive;
-      }
-    }, ct);
+    actions.Add("SetAsDefault")
+      .AllowEdit()
+      .Label("Set as default")
+      .Icon(UiIcon.Checkmark)
+      .Color(UiColor.Emerald)
+      .Single()
+      .Do(async (ctx, rec, ct) =>
+      {
+        if (!await AgentModelCatalog.SetDefaultModelAsync(db, rec.Id, ct))
+        {
+          ctx.Refuse(L["MutationRefused"], rec.Id);
+        }
+      });
+
+    actions.Add("SetForPhotos")
+      .AllowEdit()
+      .Label("Set for photos")
+      .Icon(UiIcon.Photo)
+      .Color(UiColor.Violet)
+      .Single()
+      .Do(async (ctx, rec, ct) =>
+      {
+        if (!await AgentModelCatalog.SetPhotoModelAsync(db, rec.Id, ct))
+        {
+          ctx.Refuse(L["MutationRefused"], rec.Id);
+        }
+      });
+
+    actions.Add("ToggleActive")
+      .AllowEdit()
+      .Label("Toggle active")
+      .Icon(UiIcon.Edit)
+      .Do(async (ctx, ct) =>
+      {
+        var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
+        foreach (var rec in ctx.Records)
+        {
+          if ((rec.IsDefault || rec.IsForPhotos) && rec.IsActive)
+          {
+            continue;
+          }
+
+          if (!rec.IsActive && !activeProviderHandles.Contains(rec.ProviderHandle))
+          {
+            continue;
+          }
+
+          rec.IsActive = !rec.IsActive;
+        }
+      });
+  }
 }

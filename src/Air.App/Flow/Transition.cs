@@ -43,25 +43,25 @@ public class Transition<TEntity>
   public Transition<TEntity> Title(string uiSource, string dbSource) =>
     Title(Feature.FormatSourceTitle(uiSource, dbSource));
 
-  public Transition<TEntity> When(Func<TEntity, bool> guard, string refusal, string? path = null)
-  {
-    ArgumentNullException.ThrowIfNull(guard);
-    return When((move, _) => Task.FromResult(guard(move.Record)), refusal, path);
-  }
-
-  public Transition<TEntity> When(Func<Move<TEntity>, CancellationToken, Task<bool>> guard, string refusal, string? path = null)
-  {
-    ArgumentNullException.ThrowIfNull(guard);
-    ArgumentNullException.ThrowIfNull(refusal);
-    _guards.Add((guard, refusal, path));
-    return this;
-  }
-
-  public Transition<TEntity> AvailableWhen(Expression<Func<TEntity, bool>> condition, string reason)
+  public Transition<TEntity> When(Expression<Func<TEntity, bool>> condition, string reason)
   {
     ArgumentNullException.ThrowIfNull(condition);
     ArgumentNullException.ThrowIfNull(reason);
     _availability.Add(new RecordAvailability { Condition = condition, Reason = reason });
+    return this;
+  }
+
+  public Transition<TEntity> Check(Func<TEntity, bool> guard, string refusal, string? path = null)
+  {
+    ArgumentNullException.ThrowIfNull(guard);
+    return Check((move, _) => Task.FromResult(guard(move.Record)), refusal, path);
+  }
+
+  public Transition<TEntity> Check(Func<Move<TEntity>, CancellationToken, Task<bool>> guard, string refusal, string? path = null)
+  {
+    ArgumentNullException.ThrowIfNull(guard);
+    ArgumentNullException.ThrowIfNull(refusal);
+    _guards.Add((guard, refusal, path));
     return this;
   }
 
@@ -72,7 +72,7 @@ public class Transition<TEntity>
     return this;
   }
 
-  public Transition<TEntity> Ask<TInput>(Action<ActionInput<TInput>> elements, Func<TInput, string?>? note = null)
+  public Transition<TEntity> Ask<TInput>(Action<Elements<TInput>> elements, Func<TInput, string?>? note = null)
     where TInput : class, new()
   {
     ArgumentNullException.ThrowIfNull(elements);
@@ -87,7 +87,7 @@ public class Transition<TEntity>
     return this;
   }
 
-  public Transition<TEntity> RequireRight(Right right)
+  public Transition<TEntity> Allow(Right right)
   {
     ArgumentNullException.ThrowIfNull(right);
     RequiredRight = right;

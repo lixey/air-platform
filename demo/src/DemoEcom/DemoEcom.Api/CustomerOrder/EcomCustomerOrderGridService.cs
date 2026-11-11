@@ -34,49 +34,35 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
     query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetActions(Actions actions)
   {
-    base.SetNav(nav);
     _ = EcomDocTexts.Of(L);
-    nav.AddAction(CreateSalesInvoice, b => b.Label(L["Create sales invoice"]).Icon(UiIcon.Plus)).InMenu();
-    nav.AddAction(CreateIncomingPayment, b => b.Label(L["Create incoming payment"]).Icon(UiIcon.Plus)).InMenu();
-  }
-
-  [RequireRight<EcomSalesInvoiceGridService>(EndpointAction.Edit)]
-  public Task<GridActionDto> CreateSalesInvoice(GridRequest request, CancellationToken cancellationToken)
-  {
-    var date = Time.Today;
-    return ExecuteBatchAsync(
-      request,
-      (context, ct) => EcomDocActions.EnterAsync<EcomSalesInvoiceFormService>(
+    actions.Add("CreateSalesInvoice")
+      .Allow(Ecom.SalesInvoice.Edit)
+      .Label("Create sales invoice")
+      .Icon(UiIcon.Plus)
+      .InMenu()
+      .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSalesInvoiceFormService>(
         db,
-        context,
+        ctx,
         EcomData.DocType.SalesInvoiceId,
         EcomData.DocStatus.SalesInvoiceDraftId,
-        date,
+        Time.Today,
         EcomDocTexts.Of(L),
-        ct
-      ),
-      cancellationToken
-    );
-  }
+        ct));
 
-  [RequireRight<EcomIncomingPaymentGridService>(EndpointAction.Edit)]
-  public Task<GridActionDto> CreateIncomingPayment(GridRequest request, CancellationToken cancellationToken)
-  {
-    var date = Time.Today;
-    return ExecuteBatchAsync(
-      request,
-      (context, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
+    actions.Add("CreateIncomingPayment")
+      .Allow(Ecom.IncomingPayment.Edit)
+      .Label("Create incoming payment")
+      .Icon(UiIcon.Plus)
+      .InMenu()
+      .Do((ctx, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
         db,
-        context,
+        ctx,
         EcomData.DocType.IncomingPaymentId,
         EcomData.DocStatus.IncomingPaymentDraftId,
-        date,
+        Time.Today,
         EcomDocTexts.Of(L),
-        ct
-      ),
-      cancellationToken
-    );
+        ct));
   }
 }

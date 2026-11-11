@@ -9,6 +9,7 @@ import { LocaleService } from '../app/locale.service';
 import { Api, type RequestOf } from '../core/api';
 import type { CloseApproval } from '../core/close-decision';
 import type {
+  AffectedDto,
   FormDataDto,
   FormElementDto,
   FormModel,
@@ -19,9 +20,8 @@ import type {
   MutationOutcome,
   ScreenDto,
 } from '../core/generated/contracts';
+import { isRecord } from '../core/json';
 import { Lifetime } from '../core/lifetime';
-import { classifyMutationFailure, refusalDetailOf } from '../core/mutation-failure';
-import { problemOf } from '../core/problem';
 import { TextsService } from '../core/texts.service';
 import { newUuid } from '../core/uuid';
 import type { Unavailable } from '../nav/nav-availability';
@@ -32,10 +32,13 @@ import { OverlayService } from '../overlay/overlay.service';
 import { parentParams, SCREEN_ADDRESS, SCREEN_HOST } from '../screen/screen-address';
 import { ScreenLifecycle } from '../screen/screen-lifecycle';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
-import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
+import { type ScreenMutationEvent, ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
 import { FormActions } from './form-actions';
+import { reportFormReadFailure, routeFormFailure } from './form-failure';
 import { evaluateFilterNode, formFieldRules, isFieldDisabled } from './form-field-rules';
+import { confirmDraftReplacement, handOffCloseApproval } from './form-save';
 import {
+  absorbDraft,
   canonicalJson,
   frozenCopy,
   hasSecret,
@@ -480,9 +483,56 @@ export class FormService {
     return this.isDirty() || this.isUnsettled() || (this.isBusy() && !this.awaitsScreen());
   }
 
+  /**
+   * Absorbs a server-side parent patch (`AffectedDto`) produced by a child mutation when `prevVer` matches the form's
+   * held `ver`: bumps `ver`, updates `baseline`, refreshes clean and server-owned fields and `unavailable`, and keeps
+   * dirty user edits intact without marking the form stale.
+   */
+  absorb(affected: AffectedDto): boolean {
+    const service = this.service();
+    const id = this.id();
+    const ver = this.ver();
+    if (
+      !service ||
+      id === null ||
+      ver === null ||
+      this.isUnsettled() ||
+      this.isSaving() ||
+      this.isRecovering() ||
+      affected.service !== service ||
+      affected.id !== id ||
+      affected.prevVer == null ||
+      affected.ver == null ||
+      affected.prevVer !== ver ||
+      !isRecord(affected.value)
+    ) {
+      return false;
+    }
+    const elements = this.model()?.elements ?? [];
+    const baselineValue = this.baseline()?.value ?? {};
+    const { baseline, merged } = absorbDraft(untracked(this.value), baselineValue, affected.value, elements, this.zone(), e =>
+      this.hasParseError(e),
+    );
+    this._ver.set(affected.ver);
+    this._unavailable.set(frozenCopy(affected.unavailable ?? {}));
+    this._fields.set(merged.fields);
+    this._references.set(merged.references);
+    this.baseline.set({ elements, value: baseline.value });
+    return true;
+  }
+
   /** Tells the form and its sibling child screens that a child screen committed a mutation. */
-  notifyChildMutated(): void {
+  notifyChildMutated(event?: ScreenMutationEvent): void {
     this._dataRevision.update(v => v + 1);
+    const service = this.service();
+    const id = this.id();
+    const match = service && id !== null ? event?.affected?.find(a => a.service === service && a.id === id) : undefined;
+    if (match && this.absorb(match)) {
+      if (!this.isDirty() && this.isIdle() && this.host && service && id !== null) {
+        void this.readInPlace(service, id, false);
+      }
+      return;
+    }
     this.refresh();
   }
 
@@ -667,11 +717,7 @@ export class FormService {
   }
 
   private reportReadFailure(error: unknown): void {
-    const problem = problemOf(error);
-    const title = problem?.title ?? this.model()?.mutationTexts.unknownTitle;
-    if (title) {
-      this.alert.error(title, problem?.detail);
-    }
+    reportFormReadFailure(error, this.alert, this.model()?.mutationTexts.unknownTitle);
   }
 
   /**
@@ -779,7 +825,15 @@ export class FormService {
         this.closingResult = saved;
         await this.ref?.close(saved, operation?.id);
       } else if (typeof mode === 'object') {
-        this.handOff(mode.approval, saved, operation, isCurrent);
+        handOffCloseApproval(
+          mode.approval,
+          saved,
+          operation,
+          () => this.value(),
+          () => this.isBusy(),
+          isCurrent,
+          () => this.releaseOperation(operation),
+        );
         isHandedOff = true;
       }
       return saved;
@@ -867,21 +921,15 @@ export class FormService {
     }
     const saved = { ...answer, value: this.value() };
     if (operation) {
-      this.mutations?.publish(operation, { service, recordId: saved.id, data: saved, operation: 'save' });
+      this.mutations?.publish(operation, {
+        service,
+        recordId: saved.id,
+        data: saved,
+        affected: answer.affected ?? undefined,
+        operation: 'save',
+      });
     }
     return saved;
-  }
-
-  /**
-   * A save asked for by a close hands the close its result, the operation that caused it and the release of that
-   * operation; the approval holds while the value saved is the value shown and nothing is busy.
-   */
-  private handOff(approval: CloseApproval, saved: FormDataDto, operation: ScreenOperation | undefined, isCurrent: () => boolean): void {
-    const value = this.value();
-    approval.result = saved;
-    approval.cause = operation?.id;
-    approval.isCurrent = () => isCurrent() && this.value() === value && !this.isBusy();
-    approval.release = () => this.releaseOperation(operation);
   }
 
   /** What a save posts: the value without the secrets the user did not type, with the parent parameters, `id` and `ver`. */
@@ -901,16 +949,7 @@ export class FormService {
   }
 
   private confirmReplacement(): Promise<boolean> {
-    const model = this.model();
-    if (!model) {
-      return Promise.resolve(false);
-    }
-    return this.confirmation.confirm({
-      title: model.dirtyDialog.title,
-      message: model.dirtyDialog.description,
-      confirmLabel: model.mutationTexts.reloadLabel,
-      cancelLabel: model.dirtyDialog.continueLabel,
-    });
+    return confirmDraftReplacement(this.confirmation, this.model());
   }
 
   /** The messages kept for the record read again stand on its fields, when it is that record; they are kept once. */
@@ -931,39 +970,18 @@ export class FormService {
     }
   }
 
-  /**
-   * Shows a failure, each message once, by one rule for a save, an action and a status item: on the
-   * field of its element when the element can show it, else in the alert, led by the element's label, a line a
-   * message. An action passes `own`, the messages its dialog shows: they are left out. The form keeps only the
-   * messages that stand on its fields.
-   */
   private reportFailure(error: unknown, own: readonly MessageDto[] = []): void {
-    const failure = classifyMutationFailure(error);
-    this._outcome.set(failure.outcome);
-    const messages = own.length ? failure.messages.filter(m => !own.includes(m)) : failure.messages;
-    const shown = messages.filter(m => !!m.path && this.showsMessage(m.path));
-    this._messages.set(frozenCopy(shown));
+    const { outcome, fieldMessages } = routeFormFailure({
+      error,
+      own,
+      alert: this.alert,
+      texts: this.texts,
+      conflictTitle: this.model()?.mutationTexts.conflictTitle,
+      showsMessage: path => this.showsMessage(path),
+      elementOf: path => this.elementOf(path),
+    });
+    this._outcome.set(outcome);
+    this._messages.set(fieldMessages);
     this.tellRefused();
-    const general = messages.filter(m => !shown.includes(m)).map(m => this.namedOf(m));
-    if (failure.outcome === 'unknown') {
-      if (general.length) {
-        this.alert.open(general);
-      }
-      return;
-    }
-    if (failure.outcome === 'conflict' || general.length || !failure.messages.length) {
-      const fallback = failure.outcome === 'conflict' ? this.model()?.mutationTexts.conflictTitle : this.texts.of('RequestFailed');
-      const title = failure.title ?? fallback;
-      if (title) {
-        this.alert.error(title, refusalDetailOf(failure, general, '\n'));
-      }
-    }
-  }
-
-  /** A message the alert takes from an element of the form, led by that element's label; any other as it is. */
-  private namedOf(message: MessageDto): MessageDto {
-    const label = message.path ? this.elementOf(message.path)?.label : undefined;
-    const text = message.title ?? message.detail;
-    return label && text ? { ...message, title: `${label}: ${text}` } : message;
   }
 }

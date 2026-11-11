@@ -17,6 +17,8 @@ public interface IFormService : IPlatformService
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default);
+  Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) => Task.FromResult(false);
+  Task<FormActionDto?> ExecuteDeclaredActionAsync(string actionKey, FormRequest request, JsonElement? body, CancellationToken ct = default) => Task.FromResult<FormActionDto?>(null);
   Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<object?>> readRow, CancellationToken ct = default);
   Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default);
@@ -36,6 +38,25 @@ public interface IFormService : IPlatformService
   string GetTitle() => string.Empty;
   string GetRecordCaption(object? entity, long? id) => string.Empty;
   IReadOnlyList<MessageDto>? GetLastSaveWarnings() => null;
+  internal Task<IReadOnlyList<(GridNavActionModel Model, bool IsInMenu, bool IsAllowedInReadOnly, IReadOnlyList<RecordAvailability> Offers)>> BuildInheritedGridActionsAsync(
+    string gridServicePath,
+    long? parentId,
+    string? parentService,
+    bool isGridReadOnly,
+    bool isParentReadOnly = false,
+    CancellationToken ct = default) =>
+    Task.FromResult<IReadOnlyList<(GridNavActionModel, bool, bool, IReadOnlyList<RecordAvailability>)>>([]);
+  internal Task<IReadOnlyList<(string Key, IReadOnlyList<RecordAvailability> Offers)>> GetActionOffersAsync(
+    long? parentId,
+    string? parentService,
+    CancellationToken ct = default) =>
+    Task.FromResult<IReadOnlyList<(string, IReadOnlyList<RecordAvailability>)>>([]);
+  internal Task<bool> IsActionPermittedForGridAsync(
+    string actionKey,
+    bool isGridReadOnly,
+    bool isParentReadOnly = false,
+    CancellationToken ct = default) =>
+    Task.FromResult(false);
   new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }
 }

@@ -1,10 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { DestroyRef, inject, Injector, Service, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
 import { AlertService } from '../../app/alert/alert.service';
 import { shownByCaller } from '../../app/alert/error-alert.interceptor';
-import { withIdempotencyKey } from '../../app/auth/credentials.interceptor';
-import { Api } from '../../core/api';
+import { serviceUrl } from '../../core/api';
 import { fetchFile, SAVE_FILE } from '../../core/download';
 import type {
   FormAskModel,
@@ -18,9 +16,9 @@ import type {
 import type { IsCurrent } from '../../core/lifetime';
 import { classifyMutationFailure, refusalDetailOf, refusalOf } from '../../core/mutation-failure';
 import { TextsService } from '../../core/texts.service';
-import { newUuid } from '../../core/uuid';
 import { AskService, ownMessages } from '../../overlay/ask.service';
 import { ConfirmationService } from '../../overlay/confirmation.service';
+import { ActionRunner } from '../../screen/action-runner';
 import { ScreenMutations, type ScreenOperation } from '../../screen/screen-mutations';
 import type { GridRowKey } from '../grid-row';
 import { GridService } from '../grid.service';
@@ -76,7 +74,6 @@ interface ActionExchange<T> {
 export class GridActionsService {
   private readonly grid = inject(GridService);
   private readonly http = inject(HttpClient);
-  private readonly api = inject(Api);
   private readonly confirmation = inject(ConfirmationService);
   private readonly asks = inject(AskService);
   private readonly injector = inject(Injector);
@@ -85,12 +82,10 @@ export class GridActionsService {
   private readonly texts = inject(TextsService);
   private readonly saveFile = inject(SAVE_FILE);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly runner = new ActionRunner(this.http);
 
   /** The methods of the actions under way. */
   private readonly running = signal<ReadonlySet<string>>(new Set());
-
-  /** The last pick whose outcome nobody knows, kept with its idempotency key for a pick of the same row by the same picker. */
-  private uncertainPick: { readonly method: string; readonly pickedId: GridRowKey; readonly key: string } | null = null;
 
   /** Whether the action is under way: its button reads busy wherever it is drawn. */
   isRunning(action: Pick<GridNavActionModel, 'method'>): boolean {
@@ -108,10 +103,6 @@ export class GridActionsService {
       return false;
     }
 
-    const kept = this.uncertainPick;
-    const key = kept?.method === picker.method && kept.pickedId === pickedId ? kept.key : newUuid();
-    // Any other answer, or a pick of another row, drops the key kept
-    this.uncertainPick = null;
     const mutation = gridNavMutation(this.grid, this.destroyRef);
     let isCommitted = false;
     await this.during(
@@ -121,17 +112,12 @@ export class GridActionsService {
           action: { service, method: picker.method },
           isCurrent: mutation.isCurrent,
           input: { pickedId },
-          send: call => this.send(call, key),
+          send: call => this.runner.post<GridActionDto | null>(call.url, call.body),
           apply: (answer, call) => {
             isCommitted = true;
             this.adopt(answer, call, mutation);
           },
-          fail: error => {
-            if (classifyMutationFailure(error).outcome === 'unknown') {
-              this.uncertainPick = { method: picker.method, pickedId, key };
-            }
-            this.report(error);
-          },
+          fail: error => this.report(error),
         }),
       mutation.finish,
     );
@@ -169,34 +155,19 @@ export class GridActionsService {
 
   /** Opens the dialog of the action's input, with the server's values when it opens with them: every confirmation posts. */
   private async ask(action: GridNavActionModel, ask: FormAskModel, mutation: GridNavMutation): Promise<void> {
-    const given = ask.hasDefaults ? await this.defaultsOf(action, mutation) : undefined;
-    if (given !== null) {
-      await this.asks.ask({ ...ask, title: ask.title ?? action.label }, value => this.post(action, mutation, value), this.injector, given);
-    }
-  }
-
-  /**
-   * The values the action's dialog opens with, read for what the action would post without the dialog's values; null
-   * when the dialog does not open: the read failed, which is reported, or the grid shows something else by now.
-   */
-  private async defaultsOf(action: GridNavActionModel, mutation: GridNavMutation): Promise<Readonly<Record<string, unknown>> | null> {
-    const call = buildActionCall(action, this.grid.request(), this.grid.selection.selected());
-    try {
-      const answer = await firstValueFrom(
-        this.api.postTo<GridServiceEndpoints, typeof GRID_ACTION_INPUT>(
-          action.service,
-          GRID_ACTION_INPUT,
-          { ...call.body, method: action.method },
-          shownByCaller(),
-        ),
-      );
-      return mutation.isCurrent() ? (answer?.value ?? {}) : null;
-    } catch (error: unknown) {
-      if (mutation.isCurrent()) {
-        this.report(error);
-      }
-      return null;
-    }
+    await this.runner.prompt({
+      service: action.service,
+      method: action.method,
+      label: action.label,
+      ask,
+      asks: this.asks,
+      confirmation: this.confirmation,
+      injector: this.injector,
+      isCurrent: mutation.isCurrent,
+      buildDefaultParams: async () => buildActionCall(action, this.grid.request(), this.grid.selection.selected()).body,
+      reportDefaultsError: error => this.report(error),
+      submit: value => this.post(action, mutation, value),
+    });
   }
 
   /**
@@ -214,7 +185,7 @@ export class GridActionsService {
       action,
       isCurrent: mutation.isCurrent,
       input,
-      send: call => this.send(call),
+      send: call => this.runner.post<GridActionDto | null>(call.url, call.body),
       apply: (answer, call) => this.adopt(answer, call, mutation, action.label ?? undefined),
       fail: error => {
         own = action.ask ? ownMessages(action.ask, classifyMutationFailure(error).messages) : [];
@@ -222,12 +193,6 @@ export class GridActionsService {
       },
     });
     return own;
-  }
-
-  /** Sends the call of a plain action or of a pick, a pick under its idempotency `key`; the run reports its failure. */
-  private send(call: GridActionCall, key?: string): Promise<GridActionDto | null> {
-    const options = key === undefined ? shownByCaller() : withIdempotencyKey(key);
-    return firstValueFrom(this.http.post<GridActionDto | null>(call.url, call.body, options));
   }
 
   /** The answer of a plain action: the selection cleared, its warnings, the form it names, the screen told, the page reloaded. */
@@ -241,7 +206,12 @@ export class GridActionsService {
     }
     const service = this.grid.service();
     if (mutation.operation && service) {
-      this.mutations?.publish(mutation.operation, { service, operation: 'save', selectedIds: idsOf(call) });
+      this.mutations?.publish(mutation.operation, {
+        service,
+        operation: 'save',
+        selectedIds: idsOf(call),
+        affected: answer?.affected ?? undefined,
+      });
     }
     this.grid.reload();
   }
@@ -255,10 +225,7 @@ export class GridActionsService {
         this.perform<GridDeleteDto>({
           action,
           isCurrent: mutation.isCurrent,
-          send: call =>
-            firstValueFrom(
-              this.api.postTo<GridServiceEndpoints, typeof GRID_DELETE>(action.service, GRID_DELETE, call.body, shownByCaller()),
-            ),
+          send: call => this.runner.post<GridDeleteDto>(serviceUrl<GridServiceEndpoints>(action.service, GRID_DELETE), call.body),
           apply: (answer, call) =>
             this.deleted(answer, { attempt, ids: idsOf(call), operation: mutation.operation, service: action.service }),
           fail: (error, call) => this.grid.deletion.fail(attempt, idsOf(call), classifyMutationFailure(error)),
@@ -284,7 +251,12 @@ export class GridActionsService {
     this.grid.selection.remove(ids);
     this.alert.warnings(answer.warnings, this.grid.model()?.mutationTexts.committedWarningTitle);
     if (operation) {
-      this.mutations?.publish(operation, { service, operation: 'delete', selectedIds: ids });
+      this.mutations?.publish(operation, {
+        service,
+        operation: 'delete',
+        selectedIds: ids,
+        affected: answer.affected ?? undefined,
+      });
     } else {
       this.grid.reload();
     }

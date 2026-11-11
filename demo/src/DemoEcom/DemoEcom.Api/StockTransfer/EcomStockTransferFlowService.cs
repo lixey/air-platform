@@ -16,15 +16,15 @@ public sealed class EcomStockTransferFlowService(EcomDbContext db) : EcomDocFlow
   protected override void SetFlow(Flow flow)
   {
     base.SetFlow(flow);
-    flow.Status(Draft, L["Draft"], UiColor.Slate);
-    flow.Status(Posted, L["Posted"], UiColor.Green);
-    flow.Status(Canceled, L["Canceled"], UiColor.Red);
+    flow.Status(Draft, "Draft", UiColor.Slate);
+    flow.Status(Posted, "Posted", UiColor.Green);
+    flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
     flow.Initial(Draft);
   }
 
-  public Transition Reopen => From(Posted).To(Draft).Do(PostAsync);
+  public Transition Reopen => FromOpen().To(Draft).Do(PostAsync);
 
-  public Transition Post => From(Draft).To(Posted).Do(PostAsync);
+  public Transition Post => FromOpen().To(Posted).Do(PostAsync);
 
-  public Transition Cancel => From(Draft, Posted).To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
+  public Transition Cancel => FromOpen().To(Canceled).Confirm(Texts.CancelConfirm).Do(PostAsync);
 }

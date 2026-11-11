@@ -391,6 +391,15 @@ export interface ActionInputDto {
   value: Record<string, unknown>;
 }
 
+export interface AffectedDto {
+  service: string;
+  id: number;
+  prevVer?: number | null;
+  ver?: number | null;
+  value?: Record<string, unknown> | null;
+  unavailable?: Record<string, number> | null;
+}
+
 export interface AgentAttachmentDto {
   id: string;
   fileName: string;
@@ -699,6 +708,7 @@ export interface FormActionDto extends MutationResultDto {
   title?: string | null;
   messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
+  affected?: AffectedDto[] | null;
 }
 
 export interface FormActionInputRequest extends FormRequest {
@@ -750,6 +760,7 @@ export interface FormConstraintsDto {
   precision?: number | null;
   scale?: number | null;
   min?: number | null;
+  exclusiveMin?: boolean | null;
   max?: number | null;
 }
 
@@ -762,6 +773,7 @@ export interface FormDataDto extends MutationResultDto {
   title?: string | null;
   messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
+  affected?: AffectedDto[] | null;
 }
 
 export interface FormDateModel {
@@ -971,6 +983,7 @@ export interface GridActionDto extends MutationResultDto {
   title?: string | null;
   messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
+  affected?: AffectedDto[] | null;
 }
 
 export interface GridActionInputRequest extends GridRequest {
@@ -1024,6 +1037,7 @@ export interface GridCellDto extends MutationResultDto {
   title?: string | null;
   messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
+  affected?: AffectedDto[] | null;
 }
 
 export interface GridCellEmailModel {
@@ -1177,6 +1191,7 @@ export interface GridDeleteDto extends MutationResultDto {
   title?: string | null;
   messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
+  affected?: AffectedDto[] | null;
 }
 
 export interface GridFilterOperatorDto {
@@ -1480,6 +1495,7 @@ export interface MutationResultDto {
   title?: string | null;
   messages?: MessageDto[] | null;
   warnings?: MessageDto[] | null;
+  affected?: AffectedDto[] | null;
 }
 
 export interface MutationTextsDto {

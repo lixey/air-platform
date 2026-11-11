@@ -6,14 +6,35 @@ namespace Platform.App.Form;
 public abstract partial class FormService<TEntity>
   where TEntity : class, IEntity, new()
 {
-  protected async Task<FormActionDto> ExecuteActionAsync(
-    FormRequest request,
-    Func<FormActionContext<TEntity>, TEntity, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default,
-    [System.Runtime.CompilerServices.CallerMemberName] string? actionName = null)
+  public virtual async Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default)
   {
-    Request = request;
+    if (string.IsNullOrWhiteSpace(actionKey))
+    {
+      return false;
+    }
+
+    var actions = new Actions();
+    await SetActionsAsync(actions, ct);
+    return actions.Entries.Any(e => e.Matches(actionKey));
+  }
+
+  public virtual async Task<FormActionDto?> ExecuteDeclaredActionAsync(
+    string actionKey,
+    FormRequest request,
+    JsonElement? body,
+    CancellationToken ct = default)
+  {
+    SetRequest(request);
     IsNew = false;
+
+    var probeActions = new Actions();
+    await SetActionsAsync(probeActions, ct);
+    var probeEntry = probeActions.Entries.FirstOrDefault(e => e.Matches(actionKey));
+    if (probeEntry == null)
+    {
+      return null;
+    }
+
     if (request.Id is not > 0)
     {
       return new FormActionDto
@@ -25,15 +46,42 @@ public abstract partial class FormService<TEntity>
 
     var parent = GetParent();
     TEntity? actionEntity = null;
+    var actionPath = $"{Service}/{probeEntry.Method}";
 
-    var result = await db.RunMutationAsync(async mutationCt =>
-    {
-      var entity = await LockAndLoadExistingAsync(request.Id.Value, parent, mutationCt);
-      CurrentEntity = entity;
-
-      if (entity is IHasVersion versioned)
+    var result = await MutationRunner.RunIdempotentMutationAsync<FormActionDto>(
+      db,
+      actionPath,
+      request.IdempotencyKey,
+      request.RawPayload ?? body?.GetRawText(),
+      async mutationCt =>
       {
-        if (!request.Ver.HasValue || request.Ver.Value <= 0 || versioned.Ver != request.Ver.Value)
+        var entity = await LockAndLoadExistingAsync(request.Id.Value, parent, mutationCt);
+        CurrentEntity = entity;
+
+        var actions = new Actions();
+        await SetActionsAsync(actions, mutationCt);
+        var entry = actions.Entries.FirstOrDefault(e => e.Matches(actionKey));
+        if (entry?.Handler == null)
+        {
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+          };
+        }
+
+        var isParentReadOnly = (await ResolveParentChildBuilderAsync(ct: mutationCt))?.IsReadOnly == true;
+        if (!entry.Permission.IsPermitted(Feature, User, entry.Handle, IsReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
+        {
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+          };
+        }
+
+        if (entity is IHasVersion versioned &&
+            (!request.Ver.HasValue || request.Ver.Value <= 0 || versioned.Ver != request.Ver.Value))
         {
           return new FormActionDto
           {
@@ -41,112 +89,132 @@ public abstract partial class FormService<TEntity>
             Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
-      }
 
-      var nav = new Nav(Service, L);
-      await SetNavAsync(nav, mutationCt);
-      var navEntry = !string.IsNullOrEmpty(actionName)
-        ? nav.Actions.FirstOrDefault(a => string.Equals(a.Method.Method.Name, actionName, StringComparison.OrdinalIgnoreCase))
-        : null;
-
-      if (IsReadOnly && navEntry?.IsAllowedInReadOnly != true)
-      {
-        return new FormActionDto
+        object? askInput = null;
+        if (entry.Ask != null)
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
-        };
-      }
-
-      if (navEntry?.Ask != null)
-      {
-        var askInput = request.GetType() != typeof(FormRequest)
-          ? request
-          : navEntry.Ask.Read(request.Value);
-        var askFailures = navEntry.Ask.Validate(askInput, L);
-        if (askFailures.Count > 0)
-        {
-          return new FormActionDto
+          askInput = entry.Ask.Read(body ?? request.Value);
+          var askFailures = await entry.Ask.ValidateAsync(askInput, db, PlatformApp, L, mutationCt);
+          if (askFailures.Count > 0)
           {
-            Outcome = MutationOutcome.Refused,
-            Warnings = [.. askFailures]
-          };
+            return new FormActionDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Warnings = [.. askFailures]
+            };
+          }
         }
-      }
 
-      if (navEntry is { Offers.Count: > 0 })
-      {
-        foreach (var offer in navEntry.Offers)
+        if (entry.Offers.Count > 0)
         {
-          if (offer.Condition is Expression<Func<TEntity, bool>> cond)
+          foreach (var offer in entry.Offers)
           {
-            var passes = await db.Set<TEntity>().Where(e => e.Id == entity.Id).AnyAsync(cond, mutationCt);
-            if (!passes)
+            if (offer.Condition is Expression<Func<TEntity, bool>> cond)
+            {
+              var passes = await db.Set<TEntity>().Where(e => e.Id == entity.Id).AnyAsync(cond, mutationCt);
+              if (!passes)
+              {
+                return new FormActionDto
+                {
+                  Outcome = MutationOutcome.Refused,
+                  Warnings = [new MessageDto { Detail = L[offer.Reason], RecordId = entity.Id, Type = MessageType.Error }]
+                };
+              }
+            }
+          }
+        }
+
+        try
+        {
+          var oldParentId = parent.BoundProperty != null ? parent.BoundProperty.GetValue(entity) as long? : null;
+          var ctx = new FormActionContext<TEntity>(entity, token => db.SaveChangesAsync(token), db);
+
+          foreach (var (guard, refusal, path) in entry.Guards)
+          {
+            var errorsBefore = ctx.Errors.Count;
+            if (!await guard(ctx, entity, askInput, mutationCt))
+            {
+              if (ctx.Errors.Count == errorsBefore)
+              {
+                ctx.AddError("form.guard", L[refusal], entity.Id, path);
+              }
+
+              return new FormActionDto
+              {
+                Outcome = MutationOutcome.Refused,
+                Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+              };
+            }
+
+            if (ctx.Errors.Count > errorsBefore)
             {
               return new FormActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Warnings = [new MessageDto { Detail = L[offer.Reason], RecordId = entity.Id, Type = MessageType.Error }]
+                Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
               };
             }
           }
-        }
-      }
 
-      try
-      {
-        var oldParentId = parent.BoundProperty != null ? parent.BoundProperty.GetValue(entity) as long? : null;
-        var ctx = new FormActionContext<TEntity>(entity, ct => db.SaveChangesAsync(ct), db);
-        await handler(ctx, entity, mutationCt);
-        if (ctx.Errors.Count > 0)
+          await entry.Handler(ctx, entity, askInput, mutationCt);
+          if (ctx.Errors.Count > 0)
+          {
+            return new FormActionDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+            };
+          }
+
+          if (db.ChangeTracker.HasChanges())
+          {
+            await db.SaveChangesAsync(mutationCt);
+          }
+
+          List<AffectedDto>? affected = null;
+          if (parent.BoundProperty != null || parent.BoundParentServiceType != null)
+          {
+            var newParentId = parent.BoundProperty != null
+              ? parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId
+              : Request.ParentId;
+            affected = await ParentScopeValidator.RecalculateBoundParentsAsync(
+              db,
+              PlatformApp,
+              Request.ParentService,
+              parent.BoundParentService,
+              parent.BoundParentServiceType,
+              [oldParentId, newParentId],
+              mutationCt,
+              requestParentId: Request.ParentId);
+          }
+
+          actionEntity = entity;
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Committed,
+            OpenScreen = ctx.OpenScreen,
+            OpenId = ctx.OpenId,
+            Title = ctx.NoticeTitle,
+            Messages = ctx.NoticeMessages,
+            Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null,
+            Affected = affected
+          };
+        }
+        catch (DbUpdateConcurrencyException)
         {
           return new FormActionDto
           {
-            Outcome = MutationOutcome.Refused,
-            Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+            Outcome = MutationOutcome.Conflict,
+            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
-
-        if (db.ChangeTracker.HasChanges())
-        {
-          await db.SaveChangesAsync(mutationCt);
-        }
-
-        if (parent.BoundProperty != null)
-        {
-          var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
-          await ParentScopeValidator.RecalculateBoundParentsAsync(
-            db,
-            PlatformApp,
-            Request.ParentService,
-            parent.BoundParentService,
-            parent.BoundParentServiceType,
-            [oldParentId, newParentId],
-            mutationCt);
-        }
-
-        actionEntity = entity;
-        return new FormActionDto
-        {
-          Outcome = MutationOutcome.Committed,
-          OpenScreen = ctx.OpenScreen,
-          OpenId = ctx.OpenId,
-          Warnings = ctx.Warnings.Count > 0 ? ctx.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
-        };
-      }
-      catch (DbUpdateConcurrencyException)
-      {
-        return new FormActionDto
-        {
-          Outcome = MutationOutcome.Conflict,
-          Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
-        };
-      }
-    }, ct: cancellationToken);
+      },
+      ct,
+      PlatformApp?.Services);
 
     if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && actionEntity != null)
     {
-      await PlatformApp.ClearAuthCacheForEntityAsync(actionEntity, db, cancellationToken);
+      await PlatformApp.ClearAuthCacheForEntityAsync(actionEntity, db, ct);
     }
 
     return result;
@@ -164,119 +232,179 @@ public abstract partial class FormService<TEntity>
       Id = id,
       Ver = ver ?? Request.Ver,
       ParentId = Request.ParentId,
-      ParentService = Request.ParentService
+      ParentService = Request.ParentService,
+      IdempotencyKey = Request.IdempotencyKey,
+      RawPayload = Request.RawPayload
     };
     IsNew = false;
 
     var parent = GetParent();
     TEntity? movedEntity = null;
+    var actionPath = $"{Service}/move-status/{transitionName.ToLowerInvariant()}";
 
-    var result = await db.RunMutationAsync(async mutationCt =>
-    {
-      var entity = await LockAndLoadExistingAsync(id, parent, mutationCt);
-
-      CurrentEntity = entity;
-      var elements = new Elements();
-      await SetElementsAsync(elements, mutationCt);
-      if (elements.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
+    var result = await MutationRunner.RunIdempotentMutationAsync<FormActionDto>(
+      db,
+      actionPath,
+      Request.IdempotencyKey,
+      Request.RawPayload ?? body?.GetRawText(),
+      async mutationCt =>
       {
-        throw new InvalidOperationException($"Form '{GetType().Name}' does not use a status flow.");
-      }
+        var requestedParentId = Request.ParentId;
+        var candidate = await Reachable(asTracking: false).FirstOrDefaultAsync(e => e.Id == id, mutationCt)
+          ?? throw new KeyNotFoundException(L["FormNotFound"]);
 
-      if (IsReadOnly && !elements.StatusFlowAllowsReadOnly)
-      {
-        return new FormActionDto
+        if (parent.BoundProperty != null &&
+            (parent.MatchesService(Request.ParentService) || (await ResolveParentChildBuilderAsync(requirePreset: true, mutationCt))?.PresetProvider == null))
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
-        };
-      }
+          var probeParentId = parent.BoundProperty.GetValue(candidate) as long?;
+          if (requestedParentId is > 0 && probeParentId is > 0 && probeParentId.Value != requestedParentId.Value)
+          {
+            throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
+          }
 
-      if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
-      {
-        flowSvc.AttachPlatformApp(PlatformApp);
-      }
+          if (!parent.IsOptional || !Request.ParentId.HasValue)
+          {
+            if (probeParentId.HasValue)
+            {
+              Request.ParentId = probeParentId.Value;
+            }
+          }
+        }
 
-      if (entity is IHasVersion versioned &&
-          (!Request.Ver.HasValue || Request.Ver.Value <= 0 || versioned.Ver != Request.Ver.Value))
-      {
-        return new FormActionDto
+        var lockedParentId = Request.ParentId;
+        await EnsureParentScopeAsync(parent, lockParent: true, mutationCt);
+
+        CurrentEntity = candidate;
+        var elements = new Elements();
+        await SetElementsAsync(elements, mutationCt);
+        if (elements.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
         {
-          Outcome = MutationOutcome.Conflict,
-          Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
-        };
-      }
+          throw new InvalidOperationException($"Form '{GetType().Name}' does not use a status flow.");
+        }
 
-      var transition = statusFlow.Transitions.FirstOrDefault(t =>
-        string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
-
-      if (transition == null || !StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
-      {
-        return new FormActionDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
-        };
-      }
-
-      var input = transition.Ask?.Read(body);
-      if (transition.Ask != null)
-      {
-        var askFailures = transition.Ask.Validate(input, L);
-        if (askFailures.Count > 0)
+        if (IsReadOnly && !elements.StatusFlowAllowsReadOnly)
         {
           return new FormActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [.. askFailures]
+            Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
           };
         }
-      }
 
-      try
-      {
-        var oldParentId = parent.BoundProperty != null ? parent.BoundProperty.GetValue(entity) as long? : null;
+        if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+        {
+          flowSvc.AttachPlatformApp(PlatformApp);
+        }
+
+        var transition = statusFlow.Transitions.FirstOrDefault(t =>
+          string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
+
+        if (transition == null || !StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
+        {
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+          };
+        }
+
+        var input = transition.Ask?.Read(body);
+        if (transition.Ask != null)
+        {
+          var askFailures = await transition.Ask.ValidateAsync(input, db, PlatformApp, L, mutationCt);
+          if (askFailures.Count > 0)
+          {
+            return new FormActionDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Warnings = [.. askFailures]
+            };
+          }
+        }
+
         var context = new MutationContext(db);
-        await statusFlow.MoveAsync(context, [entity], transition.Name, input, mutationCt);
+        await statusFlow.LockRecordsAsync(context, [candidate], mutationCt);
+        await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id]], mutationCt);
 
-        if (context.Errors.Count > 0)
+        if (db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id) is { } localBeforeLock &&
+            db.Entry(localBeforeLock).State == EntityState.Unchanged &&
+            db.Database.IsRelational())
+        {
+          await db.Entry(localBeforeLock).ReloadAsync(mutationCt);
+        }
+
+        var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, mutationCt)
+          ?? throw new KeyNotFoundException(L["FormNotFound"]);
+
+        Request.ParentId = requestedParentId;
+        RestoreBoundParentId(entity, parent);
+        if (Request.ParentId != lockedParentId)
+        {
+          await EnsureParentScopeAsync(parent, lockParent: true, mutationCt);
+        }
+
+        CurrentEntity = entity;
+
+        if (entity is IHasVersion versioned &&
+            (!Request.Ver.HasValue || Request.Ver.Value <= 0 || versioned.Ver != Request.Ver.Value))
         {
           return new FormActionDto
           {
-            Outcome = MutationOutcome.Refused,
-            Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+            Outcome = MutationOutcome.Conflict,
+            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
 
-        if (parent.BoundProperty != null)
+        try
         {
-          var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
-          await ParentScopeValidator.RecalculateBoundParentsAsync(
-            db,
-            PlatformApp,
-            Request.ParentService,
-            parent.BoundParentService,
-            parent.BoundParentServiceType,
-            [oldParentId, newParentId],
-            mutationCt);
-        }
+          var oldParentId = parent.BoundProperty != null ? parent.BoundProperty.GetValue(entity) as long? : null;
+          await statusFlow.MoveAsync(context, [entity], transition.Name, input, mutationCt);
 
-        movedEntity = entity;
-        return new FormActionDto
+          if (context.Errors.Count > 0)
+          {
+            return new FormActionDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+            };
+          }
+
+          List<AffectedDto>? affected = null;
+          if (parent.BoundProperty != null || parent.BoundParentServiceType != null)
+          {
+            var newParentId = parent.BoundProperty != null
+              ? parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId
+              : Request.ParentId;
+            affected = await ParentScopeValidator.RecalculateBoundParentsAsync(
+              db,
+              PlatformApp,
+              Request.ParentService,
+              parent.BoundParentService,
+              parent.BoundParentServiceType,
+              [oldParentId, newParentId],
+              mutationCt,
+              requestParentId: Request.ParentId);
+          }
+
+          movedEntity = entity;
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Committed,
+            Warnings = context.Warnings.Count > 0 ? context.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null,
+            Affected = affected
+          };
+        }
+        catch (DbUpdateConcurrencyException)
         {
-          Outcome = MutationOutcome.Committed,
-          Warnings = context.Warnings.Count > 0 ? context.Warnings.Select(w => w.ToMessage(MessageType.Warning)).ToList() : null
-        };
-      }
-      catch (DbUpdateConcurrencyException)
-      {
-        return new FormActionDto
-        {
-          Outcome = MutationOutcome.Conflict,
-          Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
-        };
-      }
-    }, ct: ct);
+          return new FormActionDto
+          {
+            Outcome = MutationOutcome.Conflict,
+            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+          };
+        }
+      },
+      ct,
+      PlatformApp?.Services);
 
     if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && movedEntity != null)
     {

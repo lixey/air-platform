@@ -36,64 +36,56 @@ internal static class ScreenBuilderHelpers
         .ToList()
       : options?.ToList();
 
-  public static bool IsActionPermitted(
-    MethodInfo methodInfo,
+  public static Task<FormAskModel> BuildActionAskAsync(
+    Type ownerServiceType,
     Feature feature,
-    IUserContext? user,
-    bool isScreenReadOnly,
-    bool isAllowedInReadOnly)
-  {
-    if (user is not { IsAuthenticated: true })
-    {
-      return false;
-    }
-
-    if (isScreenReadOnly && !isAllowedInReadOnly)
-    {
-      var reqRight = methodInfo.GetCustomAttribute<RequireRightAttribute>(inherit: true);
-      var reqAction = methodInfo.GetCustomAttribute<RequireActionAttribute>(inherit: true);
-      var hasDedicatedRight = reqRight != null ||
-                              reqAction != null &&
-                              !string.Equals(reqAction.ActionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase) &&
-                              !string.Equals(reqAction.ActionName, nameof(EndpointAction.Delete), StringComparison.OrdinalIgnoreCase);
-      if (!hasDedicatedRight)
-      {
-        return false;
-      }
-    }
-
-    return ServiceEndpointsExtensions.IsCustomActionPermitted(methodInfo, feature, user);
-  }
-
-  public static FormAskModel BuildActionAsk(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    IUserContext user,
     FormNavActionModel model,
     RecordAsk ask,
     bool hasDefaults,
-    Localizer l) =>
-    BuildActionAskCore(model.Label, model.Confirm, model.Color, hasDefaults, ask, l);
+    Localizer l,
+    CancellationToken ct = default) =>
+    BuildActionAskCoreAsync(ownerServiceType, feature, db, app, user, model.Label, model.Confirm, model.Color, hasDefaults, ask, l, ct);
 
-  public static FormAskModel BuildActionAsk(
+  public static Task<FormAskModel> BuildActionAskAsync(
+    Type ownerServiceType,
+    Feature feature,
+    PlatformDbContext db,
+    PlatformAppService? app,
+    IUserContext user,
     GridNavActionModel model,
     RecordAsk ask,
     bool hasDefaults,
-    Localizer l) =>
-    BuildActionAskCore(model.Label, model.Confirm, model.Color, hasDefaults, ask, l);
+    Localizer l,
+    CancellationToken ct = default) =>
+    BuildActionAskCoreAsync(ownerServiceType, feature, db, app, user, model.Label, model.Confirm, model.Color, hasDefaults, ask, l, ct);
 
-  private static FormAskModel BuildActionAskCore(
+  private static async Task<FormAskModel> BuildActionAskCoreAsync(
+    Type ownerServiceType,
+    Feature feature,
+    PlatformDbContext db,
+    PlatformAppService? app,
+    IUserContext user,
     string? label,
     OverlayConfirmModel? confirm,
     string? color,
     bool hasDefaults,
     RecordAsk ask,
-    Localizer l) =>
-    new()
+    Localizer l,
+    CancellationToken ct)
+  {
+    var elements = await ask.BuildResolvedElementsAsync(ownerServiceType, feature, db, app, user, l, ct);
+    return new FormAskModel
     {
       Title = label,
       Message = confirm?.Message,
       Color = color,
       HasDefaults = hasDefaults,
-      Elements = StatusMoveNavBuilder.LocalizeElements(ask.BuildElements(), l)
+      Elements = [.. elements]
     };
+  }
 
   public static void AppendMenuAndInlineActions(
     List<NavElementModel> target,

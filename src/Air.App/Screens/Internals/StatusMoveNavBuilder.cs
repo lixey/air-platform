@@ -36,7 +36,7 @@ internal static class StatusMoveNavBuilder
       return e;
     })];
 
-  public static (
+  public static async Task<(
     string Key,
     string Method,
     string Label,
@@ -44,11 +44,16 @@ internal static class StatusMoveNavBuilder
     string? Color,
     OverlayConfirmModel? Confirm,
     FormAskModel? Ask,
-    List<string>? UnavailableReasons) BuildTransitionMeta<TEntity>(
+    List<string>? UnavailableReasons)> BuildTransitionMetaAsync<TEntity>(
+      Type ownerServiceType,
       Feature feature,
+      PlatformDbContext db,
+      PlatformAppService? app,
+      IUserContext user,
       Localizer l,
       IRecordStatuses<TEntity> statusFlow,
-      RecordTransition transition)
+      RecordTransition transition,
+      CancellationToken ct = default)
     where TEntity : class, IEntity
   {
     var target = statusFlow.Statuses.FirstOrDefault(s => s.Id == transition.To);
@@ -66,15 +71,19 @@ internal static class StatusMoveNavBuilder
     var confirm = transition.Ask is not null || confirmMessage is null
       ? null
       : new OverlayConfirmModel { Message = confirmMessage, Color = target?.Color };
-    var ask = transition.Ask is null
-      ? null
-      : new FormAskModel
+    FormAskModel? ask = null;
+    if (transition.Ask != null)
+    {
+      var resolvedElements = await transition.Ask.BuildResolvedElementsAsync(ownerServiceType, feature, db, app, user, l, ct);
+      ask = new FormAskModel
       {
         Title = label,
         Message = confirmMessage,
         Color = target?.Color,
-        Elements = LocalizeElements(transition.Ask.BuildElements(), l)
+        Elements = [.. resolvedElements]
       };
+    }
+
     var unavailableReasons = transition.Offers.Count == 0
       ? null
       : transition.Offers.Select(o => l[o.Reason]).ToList();

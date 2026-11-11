@@ -10,6 +10,8 @@ public sealed class FormActionContext<TEntity>(
   public TEntity Entity => Record;
   public string? OpenScreen { get; private set; }
   public long? OpenId { get; private set; }
+  public string? NoticeTitle { get; private set; }
+  public List<MessageDto>? NoticeMessages { get; private set; }
 
   public void Refuse(string message, string? path = null) =>
     AddError("refused", message, Record.Id, path);
@@ -18,6 +20,12 @@ public sealed class FormActionContext<TEntity>(
   {
     OpenScreen = ServicePathResolver.Resolve(typeof(TFormService));
     OpenId = id;
+  }
+
+  public void ShowNotice(string title, IEnumerable<MessageDto> messages)
+  {
+    NoticeTitle = title;
+    NoticeMessages = [.. messages];
   }
 
   public override Task FlushAsync(CancellationToken cancellationToken) =>

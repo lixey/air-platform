@@ -1,8 +1,6 @@
 import type { HttpClient } from '@angular/common/http';
 import { computed, type Injector, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
 import type { AlertService } from '../app/alert/alert.service';
-import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { serviceUrl } from '../core/api';
 import type { FormActionDto, FormDataDto, FormModel, FormNavActionModel, MessageDto, OverlayDto } from '../core/generated/contracts';
 import { classifyMutationFailure } from '../core/mutation-failure';
@@ -10,6 +8,7 @@ import { type AskService, ownMessages } from '../overlay/ask.service';
 import type { ConfirmationService } from '../overlay/confirmation.service';
 import type { OverlayRef } from '../overlay/overlay-ref';
 import type { OverlayService } from '../overlay/overlay.service';
+import { ActionRunner } from '../screen/action-runner';
 import { parentParams, type ScreenAddress } from '../screen/screen-address';
 import type { ScreenMutations, ScreenOperation } from '../screen/screen-mutations';
 import { frozenCopy } from './form-value';
@@ -93,8 +92,11 @@ export class FormActions {
 
   /** What a refused action after a new record's first save left for the record read again; a new press or a reset drops it. */
   private kept: KeptMessages | null = null;
+  private readonly runner: ActionRunner;
 
-  constructor(private readonly ctx: FormActionsContext) {}
+  constructor(private readonly ctx: FormActionsContext) {
+    this.runner = new ActionRunner(ctx.http);
+  }
 
   setReading(method: string | null): void {
     this.acting.set({ method, phase: 'reading' });
@@ -107,6 +109,7 @@ export class FormActions {
   reset(): void {
     this.acting.set(null);
     this.kept = null;
+    this.runner.reset();
   }
 
   /** Consumes and returns any messages kept for the record `id` read again; they are kept once. */
@@ -134,18 +137,51 @@ export class FormActions {
     this.kept = null;
     const flow: ActionFlow = { savedNew: false, isCommitted: false, id: null, posting: null, isCurrent: this.ctx.capture() };
     try {
-      if (action.ask) {
-        await this.ctx.asks.ask(
-          { ...action.ask, title: action.ask.title ?? action.label },
-          value => this.submit(action, service, press, flow, value),
-          this.ctx.injector,
-        );
-      } else if (!action.confirm || (await this.ctx.confirmation.confirm(action.confirm))) {
-        await this.submit(action, service, press, flow, {});
-      }
+      await this.runner.prompt({
+        service: action.service,
+        method: action.method,
+        label: action.label,
+        ask: action.ask,
+        confirm: action.confirm,
+        asks: this.ctx.asks,
+        confirmation: this.ctx.confirmation,
+        injector: this.ctx.injector,
+        isCurrent: () => this.acting() === press && flow.isCurrent(),
+        buildDefaultParams: () => this.prepareDefaults(service, press, flow),
+        onDefaultsLoading: loading => {
+          if (loading) {
+            flow.posting = { method: action.method, phase: 'posting' };
+            this.acting.set(flow.posting);
+          } else if (this.acting() === flow.posting) {
+            this.acting.set(press);
+          }
+        },
+        reportDefaultsError: error => this.ctx.reportFailure(error),
+        submit: value => this.submit(action, service, press, flow, value),
+      });
     } finally {
       this.endPress(service, press, flow);
     }
+  }
+
+  private async prepareDefaults(service: string, press: ActingState, flow: ActionFlow): Promise<Readonly<Record<string, unknown>> | null> {
+    if (this.acting() !== press || !flow.isCurrent() || !this.ctx.canAct()) {
+      return null;
+    }
+    if (this.ctx.id() === null || this.ctx.isDirty()) {
+      const wasNew = this.ctx.id() === null;
+      if (!(await this.ctx.saveBeforeAct())) {
+        return null;
+      }
+      flow.savedNew ||= wasNew;
+      flow.isCurrent = this.ctx.capture();
+    }
+    const id = this.ctx.id();
+    if (this.acting() !== press || id === null) {
+      return null;
+    }
+    flow.id = id;
+    return { ...parentParams(this.ctx.address(), service), id, ver: this.ctx.ver() };
   }
 
   /**
@@ -181,13 +217,10 @@ export class FormActions {
     this.acting.set(flow.posting);
     let refusal: unknown;
     try {
-      const answer = await firstValueFrom(
-        this.ctx.http.post<FormActionDto | null>(
-          serviceUrl(action.service, action.method),
-          // The record's members last, so no value of the dialog replaces one.
-          { ...value, ...parentParams(this.ctx.address(), service), id, ver: this.ctx.ver() },
-          shownByCaller(),
-        ),
+      const answer = await this.runner.post<FormActionDto | null>(
+        serviceUrl(action.service, action.method),
+        // The record's members last, so no value of the dialog replaces one.
+        { ...value, ...parentParams(this.ctx.address(), service), id, ver: this.ctx.ver() },
       );
       if (!flow.isCurrent()) {
         return [];
@@ -196,7 +229,12 @@ export class FormActions {
         this.ctx.alert.warnings(answer.warnings, this.ctx.model()?.mutationTexts.committedWarningTitle);
         this.ctx.confirmation.noticeMessages(answer.title ?? action.label ?? '', answer.messages);
         if (operation) {
-          this.ctx.mutations?.publish(operation, { service, recordId: id, operation: 'save' });
+          this.ctx.mutations?.publish(operation, {
+            service,
+            recordId: id,
+            affected: answer.affected ?? undefined,
+            operation: 'save',
+          });
         }
         if (answer.openScreen) {
           this.openScreen(answer.openScreen, answer.openId);

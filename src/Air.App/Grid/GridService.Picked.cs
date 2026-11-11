@@ -310,7 +310,7 @@ public abstract partial class GridService<TEntity, TRow>
         await db.SaveChangesAsync(mutationCt);
       }
 
-      await RecalculateBoundParentsForEntitiesAsync([target], mutationCt);
+      var affected = await RecalculateBoundParentsForEntitiesAsync([target], mutationCt);
 
       if (PlatformApp != null)
       {
@@ -324,7 +324,10 @@ public abstract partial class GridService<TEntity, TRow>
         Count = 1,
         OpenScreen = ctx.OpenScreen,
         OpenId = ctx.OpenId,
-        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, [target], MessageType.Warning) : null
+        Title = ctx.NoticeTitle,
+        Messages = ctx.NoticeMessages,
+        Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, [target], MessageType.Warning) : null,
+        Affected = affected
       };
     }, ct: cancellationToken);
   }

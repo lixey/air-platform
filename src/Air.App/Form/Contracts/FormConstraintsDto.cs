@@ -30,6 +30,9 @@ public sealed class FormConstraintsDto
   public JsonElement? Min { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public bool? ExclusiveMin { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   [WireNumber]
   public JsonElement? Max { get; set; }
 }

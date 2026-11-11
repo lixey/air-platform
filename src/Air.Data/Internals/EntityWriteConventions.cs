@@ -7,8 +7,7 @@ internal static class EntityWriteConventions
   public static void Apply(
     ChangeTracker changeTracker,
     ITenantContext tenantContext,
-    MutationRunScope? activeMutationRun,
-    bool suppressDerivedAudit)
+    MutationRunScope? activeMutationRun)
   {
     var now = DateTimeOffset.UtcNow;
     var tenantId = tenantContext.TenantId;
@@ -135,7 +134,7 @@ internal static class EntityWriteConventions
       }
       else if (entry.State == EntityState.Modified)
       {
-        var noAuditOnly = ChangesNoAuditOnly(entry, suppressDerivedAudit);
+        var noAuditOnly = ChangesNoAuditOnly(entry);
 
         if (entry.Entity is IHasTimestamps timestamps)
         {
@@ -167,7 +166,14 @@ internal static class EntityWriteConventions
         if (entry.Entity is IHasVersion version)
         {
           var verProp = entry.Property(nameof(IHasVersion.Ver));
-          if (noAuditOnly || activeMutationRun != null && !activeMutationRun.VersionIncrementedEntities.Add(entry.Entity))
+          var entityKey = entry.Entity is IEntity keyed && keyed.Id > 0
+            ? (entry.Metadata.ClrType, keyed.Id)
+            : ((Type, long)?)null;
+          var alreadyIncremented = activeMutationRun != null && !noAuditOnly && (
+            !activeMutationRun.VersionIncrementedEntities.Add(entry.Entity) ||
+            entityKey.HasValue && !activeMutationRun.VersionIncrementedKeys.Add(entityKey.Value));
+
+          if (noAuditOnly)
           {
             if (verProp.OriginalValue is int origV)
             {
@@ -176,9 +182,32 @@ internal static class EntityWriteConventions
 
             verProp.IsModified = false;
           }
+          else if (alreadyIncremented)
+          {
+            if (entityKey.HasValue && activeMutationRun!.InitialVersions.TryGetValue(entityKey.Value, out var initVer))
+            {
+              var targetVer = initVer + 1;
+              version.Ver = targetVer;
+              verProp.IsModified = verProp.OriginalValue is not int curOrig || curOrig != targetVer;
+            }
+            else
+            {
+              if (verProp.OriginalValue is int origV)
+              {
+                version.Ver = origV;
+              }
+
+              verProp.IsModified = false;
+            }
+          }
           else
           {
             var origVer = verProp.OriginalValue as int? ?? version.Ver;
+            if (activeMutationRun != null && entityKey.HasValue)
+            {
+              activeMutationRun.InitialVersions.TryAdd(entityKey.Value, origVer);
+            }
+
             version.Ver = origVer + 1;
           }
         }
@@ -210,16 +239,11 @@ internal static class EntityWriteConventions
     }
   }
 
-  private static bool ChangesNoAuditOnly(EntityEntry entry, bool suppressDerivedAudit)
+  private static bool ChangesNoAuditOnly(EntityEntry entry)
   {
     if (entry.State != EntityState.Modified)
     {
       return false;
-    }
-
-    if (suppressDerivedAudit)
-    {
-      return true;
     }
 
     var noAuditProps = EntityAuditMetadata.For(entry.Metadata.ClrType).NoAuditProperties;

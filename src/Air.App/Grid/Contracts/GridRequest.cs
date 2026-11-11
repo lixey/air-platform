@@ -25,4 +25,10 @@ public class GridRequest : ListRequest, IScopedServiceRequest
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public Dictionary<string, JsonElement>? FormDraft { get; set; }
+
+  [JsonIgnore]
+  public string? IdempotencyKey { get; set; }
+
+  [JsonIgnore]
+  public string? RawPayload { get; set; }
 }

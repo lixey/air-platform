@@ -10,9 +10,9 @@ internal sealed class MockBadActionGridService(AppTestDbContext db, PlatformAppS
   protected override void SetNav(Nav nav)
   {
     base.SetNav(nav);
-    nav.AddAction(UnattributedRun, b => b.Label("Run"));
+    nav.AddPicker<TestTagGridService>(UnattributedRun);
   }
 
-  public Task<GridActionDto> UnattributedRun(GridRequest request, CancellationToken ct = default) =>
+  public Task<GridActionDto> UnattributedRun(GridPickRequest request, CancellationToken ct = default) =>
     Task.FromResult(new GridActionDto { Outcome = MutationOutcome.Committed });
 }

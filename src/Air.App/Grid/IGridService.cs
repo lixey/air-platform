@@ -10,6 +10,8 @@ public interface IGridService : IPlatformService
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) => DeleteAsync(request, cancellationToken);
   Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default);
+  Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) => Task.FromResult(false);
+  Task<GridActionDto?> ExecuteDeclaredActionAsync(string actionKey, GridRequest request, JsonElement? body, CancellationToken ct = default) => Task.FromResult<GridActionDto?>(null);
   Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default);
   Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task<bool> BindParentAsync(string? parentService, long? parentId, CancellationToken ct = default) => Task.FromResult(true);

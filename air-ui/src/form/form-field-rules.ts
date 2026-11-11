@@ -49,7 +49,21 @@ export function formFieldRules(source: FormFieldRulesSource): SchemaFn<Record<st
       // Limit selection keys need a cast over an unknown-typed record model
       metadata(field, MIN, () => MIN_NUMBER as LimitKey<unknown>);
       metadata(field, MAX, () => MAX_NUMBER as LimitKey<unknown>);
-      validate(field, ctx => fieldErrorsOf(source.messages(), ctx.key()));
+      validate(field, ctx => {
+        const errors = [...fieldErrorsOf(source.messages(), ctx.key())];
+        const el = source.elementOf(ctx.key());
+        const val = ctx.value();
+        if (
+          el?.type === 'number' &&
+          el.constraints?.exclusiveMin === true &&
+          typeof el.constraints.min === 'number' &&
+          typeof val === 'number' &&
+          val <= el.constraints.min
+        ) {
+          errors.push({ kind: 'min' });
+        }
+        return errors;
+      });
     });
   };
 }
@@ -317,9 +331,9 @@ export function lengthLimitOf(element: FormElementDto | undefined, limit: 'minLe
   return element.constraints[limit] ?? undefined;
 }
 
-/** The bound of a number element; none for other types. */
+/** The bound of a number element; none for other types or exclusive bounds handled in `validate`. */
 export function numericBoundOf(element: FormElementDto | undefined, bound: 'min' | 'max'): number | undefined {
-  if (!element || element.type !== 'number') {
+  if (!element || element.type !== 'number' || (bound === 'min' && element.constraints?.exclusiveMin === true)) {
     return undefined;
   }
   const boundVal = element.constraints?.[bound];

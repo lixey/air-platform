@@ -168,7 +168,7 @@ public abstract class PlatformDbContext : DbContext
     ChangeTracker.DetectChanges();
     await CascadeLoader.LoadDependentsAsync(this, cancellationToken);
 
-    EntityWriteConventions.Apply(ChangeTracker, TenantContext, _activeMutationRun, _suppressDerivedAudit);
+    EntityWriteConventions.Apply(ChangeTracker, TenantContext, _activeMutationRun);
 
     if (_activeMutationRun != null)
     {
@@ -238,6 +238,11 @@ public abstract class PlatformDbContext : DbContext
     _suppressAllAudit = true;
     return new DisposableScope(() => _suppressAllAudit = prev);
   }
+
+  public int? GetInitialMutationVersion(Type entityType, long id) =>
+    _activeMutationRun != null && _activeMutationRun.InitialVersions.TryGetValue((entityType, id), out var ver)
+      ? ver
+      : null;
 
   public async Task RunDerivedRecalculationAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
   {

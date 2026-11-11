@@ -9,11 +9,11 @@ public static class EcomDocActions
 
   private static long[] CounterKey(EcomDoc doc) => [doc.OrganizationId, doc.DocTypeId, doc.Date.Year];
 
-  public static void AskReason<TInput>(ActionInput<TInput> input, Expression<Func<TInput, string?>> reason)
-    where TInput : class
+  public static void AskReason<TInput>(Elements<TInput> input, Expression<Func<TInput, string?>> reason)
+    where TInput : class, new()
   {
     ArgumentNullException.ThrowIfNull(input);
-    input.Add(reason).Label("Reason").AsTextarea().Required().Rules(r => r.MaximumLength(ReasonMaxLength));
+    input.Add(reason).Label("Reason").AsTextarea().Required().MaxLength(ReasonMaxLength);
   }
 
   public static async Task SaveAsync(
