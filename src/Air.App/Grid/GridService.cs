@@ -125,7 +125,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return true;
   }
 
-  protected async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
+  protected virtual async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
   {
     var parent = GetParent();
     var hasRequiredBoundParent = parent.BoundProperty != null && !parent.IsOptional;
@@ -219,6 +219,29 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     {
       try
       {
+        return q.CompiledLabelSelector(typed);
+      }
+      catch
+      {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  public virtual async Task<string?> GetRecordLabelAsync(object? entity, CancellationToken ct = default)
+  {
+    if (entity is not TEntity typed)
+    {
+      return null;
+    }
+
+    var q = GetQueryDeclaration();
+    if (q.CompiledLabelSelector != null)
+    {
+      try
+      {
         if (typed.Id > 0 && q.LabelNavigationPaths is { Count: > 0 } navs && navs.Any(nav => IsNavigationPathUnloaded(typed, nav)))
         {
           var reloadQuery = RestrictedQuery().AsNoTracking();
@@ -227,7 +250,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
             reloadQuery = reloadQuery.Include(nav);
           }
 
-          typed = reloadQuery.FirstOrDefault(e => e.Id == typed.Id) ?? typed;
+          typed = await reloadQuery.FirstOrDefaultAsync(e => e.Id == typed.Id, ct) ?? typed;
         }
 
         return q.CompiledLabelSelector(typed);
@@ -439,7 +462,53 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected virtual void SetColumns(Columns columns) { }
   protected virtual void SetColumns(Columns<TRow> columns) { }
 
-  public void RegisterMetadata() => CreateColumns();
+  PropertyInfo? IGridService.GetBoundParentProperty() => GetParent().BoundProperty;
+
+  public void RegisterMetadata()
+  {
+    var cols = CreateColumns();
+    (cols.StatusFlow as IRecordStatuses)?.RegisterMetadata();
+    var actions = new Actions();
+    try
+    {
+      SetActions(actions);
+    }
+    catch
+    {
+    }
+
+    foreach (var entry in actions.Entries)
+    {
+      entry.Ask?.BuildElements();
+    }
+  }
+
+  public async Task RegisterMetadataAsync(CancellationToken ct = default)
+  {
+    var cols = CreateColumns();
+    (cols.StatusFlow as IRecordStatuses)?.RegisterMetadata();
+    var actions = new Actions();
+    try
+    {
+      await SetActionsAsync(actions, ct);
+    }
+    catch
+    {
+      actions = new Actions();
+      try
+      {
+        SetActions(actions);
+      }
+      catch
+      {
+      }
+    }
+
+    foreach (var entry in actions.Entries)
+    {
+      entry.Ask?.BuildElements();
+    }
+  }
 
   void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
   {

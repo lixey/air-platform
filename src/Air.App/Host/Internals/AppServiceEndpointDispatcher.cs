@@ -21,89 +21,96 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     IServiceProvider services,
     CancellationToken ct)
   {
-    services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
-
-    if (typeof(IGridService).IsAssignableFrom(serviceType))
+    try
     {
-      return await DispatchGridAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
-    }
+      services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
 
-    if (typeof(IFormService).IsAssignableFrom(serviceType))
-    {
-      return await DispatchFormAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
-    }
-
-    if (typeof(IReportService).IsAssignableFrom(serviceType))
-    {
-      var reportService = (IReportService)services.GetRequiredService(serviceType);
-      feat ??= reportService.Feature;
-      if (services.GetService<PlatformAppService>() is { } appInstance)
+      if (typeof(IGridService).IsAssignableFrom(serviceType))
       {
-        reportService.AttachPlatformApp(appInstance);
+        return await DispatchGridAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
       }
 
-      if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
+      if (typeof(IFormService).IsAssignableFrom(serviceType))
       {
-        var userContext = services.GetService<IUserContext>();
-        if (userContext is null or { IsAuthenticated: false })
-        {
-          return Results.Unauthorized();
-        }
-
-        if (!CanView(feat, userContext))
-        {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
-        }
-
-        var (req, isMalformed) = await ReadJsonOrDefaultAsync<ReportRequest>(httpRequest, ct);
-        if (isMalformed)
-        {
-          return Results.BadRequest(new { detail = "Malformed JSON request body." });
-        }
-
-        return req.IsDataOnly
-          ? Results.Ok(new ScreenDto { Data = await reportService.GetReportAsync(req, ct) })
-          : Results.Ok(await reportService.BuildScreenAsync(serviceName, req, ct));
+        return await DispatchFormAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
       }
 
-      return await DispatchCustomServiceMethodAsync(serviceType, reportService, method, feat, httpRequest, services, ct);
-    }
+      if (typeof(IReportService).IsAssignableFrom(serviceType))
+      {
+        var reportService = (IReportService)services.GetRequiredService(serviceType);
+        feat ??= reportService.Feature;
+        if (services.GetService<PlatformAppService>() is { } appInstance)
+        {
+          reportService.AttachPlatformApp(appInstance);
+        }
 
-    if (typeof(IScreenService).IsAssignableFrom(serviceType))
+        if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
+        {
+          var userContext = services.GetService<IUserContext>();
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
+          if (!CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
+          var (req, isMalformed) = await ReadJsonOrDefaultAsync<ReportRequest>(httpRequest, ct);
+          if (isMalformed)
+          {
+            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+          }
+
+          return req.IsDataOnly
+            ? Results.Ok(new ScreenDto { Data = await reportService.GetReportAsync(req, ct) })
+            : Results.Ok(await reportService.BuildScreenAsync(serviceName, req, ct));
+        }
+
+        return await DispatchCustomServiceMethodAsync(serviceType, reportService, method, feat, httpRequest, services, ct);
+      }
+
+      if (typeof(IScreenService).IsAssignableFrom(serviceType))
+      {
+        var screenService = (IScreenService)services.GetRequiredService(serviceType);
+        feat ??= screenService.Feature;
+        if (services.GetService<PlatformAppService>() is { } appInstance)
+        {
+          screenService.AttachPlatformApp(appInstance);
+        }
+
+        if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
+        {
+          var userContext = services.GetService<IUserContext>();
+          if (userContext is null or { IsAuthenticated: false })
+          {
+            return Results.Unauthorized();
+          }
+
+          if (!CanView(feat, userContext))
+          {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+          }
+
+          var screen = await screenService.BuildScreenAsync(serviceName, ct);
+          ScreenService.EnforceAndFilterScreen(
+            serviceType,
+            screen,
+            userContext,
+            services.GetService<ModuleCatalog>() ?? ModuleCatalog.Instance);
+          return Results.Ok(screen);
+        }
+
+        return await DispatchCustomServiceMethodAsync(serviceType, screenService, method, feat, httpRequest, services, ct);
+      }
+
+      return Results.NotFound();
+    }
+    catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
     {
-      var screenService = (IScreenService)services.GetRequiredService(serviceType);
-      feat ??= screenService.Feature;
-      if (services.GetService<PlatformAppService>() is { } appInstance)
-      {
-        screenService.AttachPlatformApp(appInstance);
-      }
-
-      if (string.Equals(method, "get-data", StringComparison.OrdinalIgnoreCase))
-      {
-        var userContext = services.GetService<IUserContext>();
-        if (userContext is null or { IsAuthenticated: false })
-        {
-          return Results.Unauthorized();
-        }
-
-        if (!CanView(feat, userContext))
-        {
-          return Results.StatusCode(StatusCodes.Status403Forbidden);
-        }
-
-        var screen = await screenService.BuildScreenAsync(serviceName, ct);
-        ScreenService.EnforceAndFilterScreen(
-          serviceType,
-          screen,
-          userContext,
-          services.GetService<ModuleCatalog>() ?? ModuleCatalog.Instance);
-        return Results.Ok(screen);
-      }
-
-      return await DispatchCustomServiceMethodAsync(serviceType, screenService, method, feat, httpRequest, services, ct);
+      return mapped;
     }
-
-    return Results.NotFound();
   }
 
   private static async Task<IResult> DispatchGridAsync(
@@ -210,14 +217,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
 
-          try
-          {
-            return PlatformEndpointsExtensions.ToMutationResult(await grid.Delete(req, ct));
-          }
-          catch (IdempotencyConflictException ex)
-          {
-            return ToIdempotencyConflictResult(ex);
-          }
+          return PlatformEndpointsExtensions.ToMutationResult(await grid.Delete(req, ct));
         }
 
       case "save-cell":
@@ -264,14 +264,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           }
 
           ApplyGridMutationContext(httpRequest, body, req);
-          try
-          {
-            return PlatformEndpointsExtensions.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", body, ct));
-          }
-          catch (IdempotencyConflictException ex)
-          {
-            return ToIdempotencyConflictResult(ex);
-          }
+          return PlatformEndpointsExtensions.ToMutationResult(await grid.MoveStatusAsync(req, subMethod ?? "", body, ct));
         }
 
       case "export":
@@ -342,6 +335,14 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
               uploadReq.ParentService = qPs;
             }
 
+            if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
+            {
+              uploadReq.IdempotencyKey = idemVals.ToString().Trim();
+            }
+
+            var primaryFile = formCollection.Files["file"] ?? formCollection.Files.FirstOrDefault();
+            uploadReq.RawPayload = $"{uploadReq.ParentService}|{uploadReq.ParentId}|{uploadReq.AfterId}|{uploadReq.Metadata}|{primaryFile?.FileName}|{primaryFile?.Length}";
+
             return await InvokeServiceMethodAsync(uploadMethod, grid, [uploadReq, formCollection.Files, ct]);
           }
 
@@ -363,17 +364,10 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       }
 
       ApplyGridMutationContext(httpRequest, body, req);
-      try
+      var res = await grid.ExecuteDeclaredActionAsync(method, req, body, ct);
+      if (res != null)
       {
-        var res = await grid.ExecuteDeclaredActionAsync(method, req, body, ct);
-        if (res != null)
-        {
-          return PlatformEndpointsExtensions.ToMutationResult(res);
-        }
-      }
-      catch (IdempotencyConflictException ex)
-      {
-        return ToIdempotencyConflictResult(ex);
+        return PlatformEndpointsExtensions.ToMutationResult(res);
       }
 
       return Results.NotFound();
@@ -447,15 +441,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           {
             return Results.BadRequest(new { detail = "Malformed JSON request body." });
           }
-          catch (IdempotencyConflictException ex)
-          {
-            return Results.UnprocessableEntity(new MutationResultDto
-            {
-              Outcome = MutationOutcome.Refused,
-              Title = Localizer.Instance["MutationRefused"],
-              Messages = [new MessageDto { Detail = ex.Message, Type = MessageType.Error }]
-            });
-          }
           catch (FormRefusedException ex)
           {
             return ex.Outcome == MutationOutcome.Conflict
@@ -523,10 +508,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             var result = await form.MoveStatusAsync(req.Id.Value, subMethod, body, req.Ver, ct);
             return PlatformEndpointsExtensions.ToMutationResult(result);
           }
-          catch (IdempotencyConflictException ex)
-          {
-            return ToIdempotencyConflictResult(ex);
-          }
           catch (FormRefusedException ex)
           {
             return ex.Outcome == MutationOutcome.Conflict
@@ -559,10 +540,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
               {
                 return PlatformEndpointsExtensions.ToMutationResult(result);
               }
-            }
-            catch (IdempotencyConflictException ex)
-            {
-              return ToIdempotencyConflictResult(ex);
             }
             catch (FormRefusedException ex)
             {
@@ -646,7 +623,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
         ? (GridRequest?)JsonSerializer.Deserialize(rawBody.Value.GetRawText(), pType, PlatformJsonOptions.DefaultOptions)
         : null;
       gReq ??= (GridRequest)Activator.CreateInstance(pType)!;
-      ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, gReq);
+      ApplyGridMutationContext(httpRequest, rawBody, gReq);
       return gReq;
     }
 
@@ -672,7 +649,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     JsonElement root,
     FormRequest? existing = null)
   {
-    var (req, _) = FormRequest.Normalize(root, existing, allowNestedFallback: false);
+    var (req, _) = FormRequest.Normalize(root, existing);
     ServiceRequestBinder.ApplyScopedQueryParams(httpRequest, req);
     if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
     {
@@ -697,14 +674,6 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
 
     req.RawPayload = body?.GetRawText();
   }
-
-  private static IResult ToIdempotencyConflictResult(IdempotencyConflictException ex) =>
-    Results.UnprocessableEntity(new MutationResultDto
-    {
-      Outcome = MutationOutcome.Refused,
-      Title = Localizer.Instance["MutationRefused"],
-      Messages = [new MessageDto { Detail = ex.Message, Type = MessageType.Error }]
-    });
 
   private static bool TryDeserializeOptional<T>(JsonElement? body, out T result)
     where T : class, new()

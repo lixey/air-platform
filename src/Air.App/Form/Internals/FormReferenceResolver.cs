@@ -141,7 +141,7 @@ internal static class FormReferenceResolver
                 {
                 }
 
-                select.CreateOverlay ??= OverlayModel.Dialog($"{createServicePath}.modal").Screen(createServicePath).Build();
+                select.CreateOverlay ??= OverlayModel.Drawer($"{createServicePath}.modal").Screen(createServicePath).Build();
               }
             }
           }

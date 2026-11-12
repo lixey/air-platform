@@ -6,11 +6,12 @@ internal static class ReferenceLookupAllowlist
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedPatches = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedFilters = new();
   private static readonly SemaphoreSlim WarmSemaphore = new(1, 1);
-  private static volatile bool _warmed;
+  private static ModuleCatalog? _warmedCatalog;
 
   public static async Task EnsureWarmAsync(IServiceProvider? services, CancellationToken ct = default)
   {
-    if (_warmed || services == null)
+    var catalog = ModuleCatalog.Instance;
+    if (ReferenceEquals(_warmedCatalog, catalog) || services == null)
     {
       return;
     }
@@ -18,28 +19,36 @@ internal static class ReferenceLookupAllowlist
     await WarmSemaphore.WaitAsync(ct);
     try
     {
-      if (_warmed)
+      catalog = ModuleCatalog.Instance;
+      if (ReferenceEquals(_warmedCatalog, catalog))
       {
         return;
       }
 
       var appInstance = services.GetService<PlatformAppService>();
-      foreach (var serviceType in ModuleCatalog.Instance.AllServiceTypes)
+      foreach (var serviceType in catalog.AllServiceTypes)
       {
         try
         {
           if (typeof(Form.IFormService).IsAssignableFrom(serviceType))
           {
-            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is Form.IFormService form)
+            if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Form.IFormService form)
             {
-              await form.GetElementsMetadataAsync(ct);
+              await form.RegisterMetadataAsync(ct);
             }
           }
           else if (typeof(Grid.IGridService).IsAssignableFrom(serviceType))
           {
-            if (ModuleCatalog.Instance.CreateServiceInstance(serviceType, services, appInstance) is Grid.IGridService grid)
+            if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Grid.IGridService grid)
             {
-              grid.RegisterMetadata();
+              await grid.RegisterMetadataAsync(ct);
+            }
+          }
+          else if (typeof(Screens.IRecordStatuses).IsAssignableFrom(serviceType))
+          {
+            if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Screens.IRecordStatuses flow)
+            {
+              flow.RegisterMetadata();
             }
           }
         }
@@ -48,7 +57,7 @@ internal static class ReferenceLookupAllowlist
         }
       }
 
-      _warmed = true;
+      _warmedCatalog = catalog;
     }
     finally
     {
@@ -168,7 +177,17 @@ internal static class ReferenceLookupAllowlist
 
       var isAllowedField = string.Equals(rule.Field, "id", StringComparison.OrdinalIgnoreCase) ||
                            registered != null && registered.ContainsKey(rule.Field);
-      var isAllowedOp = rule.Operator is FilterOperator.Equals or FilterOperator.IsNull or FilterOperator.In;
+      var isAllowedOp = rule.Operator is
+        FilterOperator.Equals or
+        FilterOperator.NotEquals or
+        FilterOperator.IsNull or
+        FilterOperator.IsNotNull or
+        FilterOperator.In or
+        FilterOperator.NotIn or
+        FilterOperator.GreaterThan or
+        FilterOperator.GreaterThanOrEqual or
+        FilterOperator.LessThan or
+        FilterOperator.LessThanOrEqual;
       return isAllowedField && isAllowedOp;
     }
 

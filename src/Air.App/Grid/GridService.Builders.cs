@@ -68,6 +68,11 @@ public abstract partial class GridService<TEntity, TRow>
       BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
       HasRead = true;
     }
+
+    internal void AllowDynamicParent()
+    {
+      HasRead = true;
+    }
   }
 
   public sealed class Query

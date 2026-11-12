@@ -139,7 +139,7 @@ public sealed class DeclarativePrimitivesAndDemoTests : IDisposable
       CancellationToken.None);
     Assert.Equal(MutationOutcome.Refused, refusedBatch.Outcome);
     Assert.Equal(0, refusedBatch.Deleted);
-    var err = Assert.Single(refusedBatch.Warnings!);
+    var err = Assert.Single(refusedBatch.Messages!);
     Assert.Equal(usedInv.Id, err.RecordId);
     Assert.Contains("Invoice is referenced by tags.", err.Title ?? err.Detail ?? string.Empty, StringComparison.Ordinal);
 
@@ -155,7 +155,7 @@ public sealed class DeclarativePrimitivesAndDemoTests : IDisposable
       CancellationToken.None);
     Assert.Equal(MutationOutcome.Refused, refusedCategory.Outcome);
     Assert.Equal(0, refusedCategory.Deleted);
-    Assert.Single(refusedCategory.Warnings!, w => w.RecordId == parentTag.Id);
+    Assert.Single(refusedCategory.Messages!, w => w.RecordId == parentTag.Id);
 
     var deletedFreeCategory = await tagGrid.DeleteAsync(
       new GridRequest { SelectedIds = [freeTag.Id] },

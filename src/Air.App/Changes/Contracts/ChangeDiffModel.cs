@@ -8,9 +8,11 @@ public sealed record ChangeDiffModel : PanelModel
   public string? Subtitle { get; init; }
   public string Operation { get; init; } = string.Empty;
   public string OperationKey { get; init; } = string.Empty;
+  [OneOf(typeof(UiColor))]
   public string OperationColor { get; init; } = UiColor.Slate;
   public string? EmptyLabel { get; init; }
   public string? SourceBadge { get; init; }
+  [OneOf(typeof(UiColor))]
   public string? SourceBadgeColor { get; init; }
   public string? RelatedTitle { get; init; }
   public IReadOnlyList<ChangeDiffFieldDto> Fields { get; init; } = [];

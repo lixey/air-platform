@@ -19,6 +19,7 @@ public sealed class RowDto
   public string? Color { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(UiColor))]
   public Dictionary<string, string>? Colors { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

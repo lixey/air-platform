@@ -329,12 +329,12 @@ public static class ServiceEndpointsExtensions
         return false;
       }
 
-      if (string.Equals(reqAttr.ActionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(reqAttr.ActionName, Right.View, StringComparison.OrdinalIgnoreCase))
       {
         return CanView(targetFeat, userContext);
       }
 
-      if (string.Equals(reqAttr.ActionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(reqAttr.ActionName, Right.Edit, StringComparison.OrdinalIgnoreCase))
       {
         return CanEdit(targetFeat, userContext);
       }
@@ -353,12 +353,12 @@ public static class ServiceEndpointsExtensions
         return false;
       }
 
-      if (string.Equals(reqAction.ActionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(reqAction.ActionName, Right.View, StringComparison.OrdinalIgnoreCase))
       {
         return CanView(feat, userContext);
       }
 
-      if (string.Equals(reqAction.ActionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(reqAction.ActionName, Right.Edit, StringComparison.OrdinalIgnoreCase))
       {
         return CanEdit(feat, userContext);
       }

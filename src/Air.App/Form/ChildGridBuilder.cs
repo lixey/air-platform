@@ -1,7 +1,9 @@
 namespace Platform.App.Form;
 
-public sealed class ChildGridBuilder(string servicePath, Type? serviceType = null, string? tab = null)
+public class ChildGridBuilder(string servicePath, Type? serviceType = null, string? tab = null)
 {
+  private readonly List<ChildSumMapping> _sumMappings = [];
+
   public string ServicePath { get; } = servicePath;
   public Type? ServiceType => serviceType;
   public string? Tab => tab;
@@ -11,8 +13,9 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
   public bool IsFiles { get; private set; }
   public bool IsReadOnly { get; private set; }
   public string Look { get; private set; } = FilesLook.Tiles;
-  public string? SumTargetPath { get; private set; }
-  public string? SumSourcePath { get; private set; }
+  public IReadOnlyList<ChildSumMapping> SumMappings => _sumMappings;
+  public string? SumTargetPath => _sumMappings.Count > 0 ? _sumMappings[^1].ParentFieldPath : null;
+  public string? SumSourcePath => _sumMappings.Count > 0 ? _sumMappings[^1].ChildFieldPath : null;
   internal Type? ChildEntityType { get; set; }
   internal Func<PlatformDbContext, long, IQueryable, IQueryable>? FilterProvider { get; set; }
   internal Action<PlatformDbContext, long, object>? PresetProvider { get; set; }
@@ -55,8 +58,21 @@ public sealed class ChildGridBuilder(string servicePath, Type? serviceType = nul
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(parentFieldPath);
     ArgumentException.ThrowIfNullOrWhiteSpace(childFieldPath);
-    SumTargetPath = parentFieldPath;
-    SumSourcePath = childFieldPath;
+    AddSumMapping(new ChildSumMapping(parentFieldPath, childFieldPath));
     return this;
+  }
+
+  internal void AddSumMapping(ChildSumMapping mapping)
+  {
+    var existingIndex = _sumMappings.FindIndex(m =>
+      string.Equals(m.ParentFieldPath, mapping.ParentFieldPath, StringComparison.OrdinalIgnoreCase));
+    if (existingIndex >= 0)
+    {
+      _sumMappings[existingIndex] = mapping;
+    }
+    else
+    {
+      _sumMappings.Add(mapping);
+    }
   }
 }

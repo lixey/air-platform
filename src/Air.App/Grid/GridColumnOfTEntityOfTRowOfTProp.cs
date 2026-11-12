@@ -210,10 +210,10 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     return this;
   }
 
-  public GridColumn<TEntity, TRow, TProp> AsDatetime()
+  public GridColumn<TEntity, TRow, TProp> AsDateTime()
   {
-    dto.Type = UiFieldType.Datetime;
-    dto.Cell = new GridCellDatetimeModel();
+    dto.Type = UiFieldType.DateTime;
+    dto.Cell = new GridCellDateTimeModel();
     return this;
   }
 

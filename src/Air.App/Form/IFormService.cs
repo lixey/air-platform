@@ -34,9 +34,12 @@ public interface IFormService : IPlatformService
     string? triggerField = null,
     CancellationToken ct = default);
   bool HasCustomRecalculate => false;
+  Task<bool> NeedsParentRecalculationAsync(CancellationToken ct = default) => Task.FromResult(HasCustomRecalculate);
   Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default) => Task.CompletedTask;
+  Task RegisterMetadataAsync(CancellationToken ct = default) => GetElementsMetadataAsync(ct);
   string GetTitle() => string.Empty;
   string GetRecordCaption(object? entity, long? id) => string.Empty;
+  Task<string> GetRecordCaptionAsync(object? entity, long? id, CancellationToken ct = default) => Task.FromResult(GetRecordCaption(entity, id));
   IReadOnlyList<MessageDto>? GetLastSaveWarnings() => null;
   internal Task<IReadOnlyList<(GridNavActionModel Model, bool IsInMenu, bool IsAllowedInReadOnly, IReadOnlyList<RecordAvailability> Offers)>> BuildInheritedGridActionsAsync(
     string gridServicePath,

@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Flow;
 
 public class Flow<TEntity>
@@ -7,6 +9,7 @@ public class Flow<TEntity>
   internal HashSet<long> FinalStatusIds { get; } = [];
   internal long? InitialStatusId { get; private set; }
   internal List<Type> FollowerTypes { get; } = [];
+  internal Dictionary<Type, PropertyInfo> FollowerForeignKeys { get; } = [];
 
   public void State(Expression<Func<TEntity, long>> member)
   {
@@ -54,5 +57,25 @@ public class Flow<TEntity>
   public void FollowedBy<TFlowService>() where TFlowService : class
   {
     FollowerTypes.Add(typeof(TFlowService));
+  }
+
+  public void FollowedBy<TFlowService>(Expression<Func<TEntity, long?>> fk) where TFlowService : class
+  {
+    ArgumentNullException.ThrowIfNull(fk);
+    FollowerTypes.Add(typeof(TFlowService));
+    if (ParentScopeValidator.ExtractBoundProperty(fk) is { } prop)
+    {
+      FollowerForeignKeys[typeof(TFlowService)] = prop;
+    }
+  }
+
+  public void FollowedBy<TFlowService>(Expression<Func<TEntity, long>> fk) where TFlowService : class
+  {
+    ArgumentNullException.ThrowIfNull(fk);
+    FollowerTypes.Add(typeof(TFlowService));
+    if (ParentScopeValidator.ExtractBoundProperty(fk) is { } prop)
+    {
+      FollowerForeignKeys[typeof(TFlowService)] = prop;
+    }
   }
 }

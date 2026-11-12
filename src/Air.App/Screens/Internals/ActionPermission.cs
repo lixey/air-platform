@@ -65,10 +65,10 @@ internal sealed class ActionPermission
         }
 
         if (!_targetFeature.TryGetRight(_actionName!, out _) &&
-            !string.Equals(_actionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(_actionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(_actionName, nameof(EndpointAction.Delete), StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(_actionName, nameof(EndpointAction.Export), StringComparison.OrdinalIgnoreCase))
+            !string.Equals(_actionName, Right.View, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_actionName, Right.Edit, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_actionName, Right.Delete, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_actionName, Right.Export, StringComparison.OrdinalIgnoreCase))
         {
           throw new InvalidOperationException(
             $"Action '{handle}' in '{hostServiceType.FullName}' references undeclared right '{_actionName}' on feature '{_targetFeature.Name}'.");
@@ -122,22 +122,22 @@ internal sealed class ActionPermission
 
   private static bool CheckFeatureAction(Feature feature, string actionName, IUserContext user)
   {
-    if (string.Equals(actionName, nameof(EndpointAction.View), StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(actionName, Right.View, StringComparison.OrdinalIgnoreCase))
     {
       return ServiceEndpointsExtensions.CanView(feature, user);
     }
 
-    if (string.Equals(actionName, nameof(EndpointAction.Edit), StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(actionName, Right.Edit, StringComparison.OrdinalIgnoreCase))
     {
       return ServiceEndpointsExtensions.CanEdit(feature, user);
     }
 
-    if (string.Equals(actionName, nameof(EndpointAction.Delete), StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(actionName, Right.Delete, StringComparison.OrdinalIgnoreCase))
     {
       return feature.HasDelete && (user.Can(feature.Delete) || user.Can(feature.All) || user.Can("*"));
     }
 
-    if (string.Equals(actionName, nameof(EndpointAction.Export), StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(actionName, Right.Export, StringComparison.OrdinalIgnoreCase))
     {
       return ServiceEndpointsExtensions.CanExport(feature, user);
     }

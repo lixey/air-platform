@@ -121,7 +121,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   private static Expression<Func<TFile, bool>> BuildParentFilter(PropertyInfo boundProp, object parentVal) =>
     ParentScopeValidator.BuildParentKeyFilter<TFile>(boundProp, parentVal);
 
-  [RequireAction(EndpointAction.View)]
+  [RequireAction(Right.View)]
   public virtual async Task<FileInfoDto> GetInfo(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
@@ -194,7 +194,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     }
   }
 
-  [RequireAction(EndpointAction.View)]
+  [RequireAction(Right.View)]
   public virtual async Task<IResult> DownloadAll(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);

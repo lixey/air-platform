@@ -391,7 +391,7 @@ internal static class FormDraftEngine
         continue;
       }
 
-      if (el.Type is UiFieldType.Date or UiFieldType.Datetime)
+      if (el.Type is UiFieldType.Date or UiFieldType.DateTime)
       {
         if (prop.ValueKind == JsonValueKind.String &&
             prop.GetString() is { Length: > 0 } dateStr &&

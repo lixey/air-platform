@@ -30,7 +30,7 @@ internal sealed class TestInvoiceLineGridService(AppTestDbContext db, PlatformAp
     columns.Add(l => l.Amount).Sum();
   }
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public Task<GridActionDto> AttachTag(GridPickRequest req, CancellationToken ct = default) =>
     AttachPickedAsync<TestTag>(req, (tag, line) =>
     {

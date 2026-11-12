@@ -19,11 +19,19 @@ public interface IGridService : IPlatformService
   IReadOnlyList<string>? GetReferenceLabelPaths() => null;
   IReadOnlyList<string>? GetLabelNavigationPaths() => null;
   string? GetRecordLabel(object? entity) => null;
+  Task<string?> GetRecordLabelAsync(object? entity, CancellationToken ct = default) => Task.FromResult(GetRecordLabel(entity));
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
   IReadOnlyList<GridCreateDescriptor> GetAgentForms() => GetCreateForms();
   bool CanDelete() => false;
   bool AllowsMultiDelete => false;
   void RegisterMetadata() { }
+  Task RegisterMetadataAsync(CancellationToken ct = default)
+  {
+    RegisterMetadata();
+    return Task.CompletedTask;
+  }
+
+  internal PropertyInfo? GetBoundParentProperty() => null;
   bool CanView(GridRequest request, IUserContext? user) => ServiceEndpointsExtensions.CanView(Feature, user);
   bool CanLookup(GridRequest request, IUserContext? user) => CanView(request, user);
   new void AttachPlatformApp(PlatformAppService app);

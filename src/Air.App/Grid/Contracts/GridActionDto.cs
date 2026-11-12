@@ -12,5 +12,5 @@ public sealed class GridActionDto : MutationResultDto
   public string? OpenScreen { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public object? OpenId { get; set; }
+  public long? OpenId { get; set; }
 }

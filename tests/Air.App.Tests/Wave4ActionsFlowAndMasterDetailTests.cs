@@ -76,7 +76,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
       badTagPayload);
     Assert.NotNull(refusedAsk);
     Assert.Equal(MutationOutcome.Refused, refusedAsk.Outcome);
-    Assert.Contains(refusedAsk.Warnings ?? [], m => m.Path == "tagId");
+    Assert.Contains(refusedAsk.Messages ?? [], m => m.Path == "tagId");
 
     // 5. Valid Ask<TInput> executes delegated Form action via Grid and returns ShowNotice messages
     var goodTagPayload = JsonSerializer.SerializeToElement(new { tagId = activeTag.Id, note = "Urgent" });
@@ -262,7 +262,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
   }
 
   [Fact]
-  public async Task ActionIdempotency_ReplaysIdenticalRequest_AndRejectsDifferentPayloadWith422()
+  public async Task ActionIdempotency_ReplaysIdenticalRequest_AndRejectsDifferentPayloadWith409()
   {
     await using var db = CreateDbContext();
     var user = new FixedUser(10, "*");
@@ -325,7 +325,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
     var dbOrder = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == order.Id);
     Assert.Equal("ORD-IDEM-FAST-Once", dbOrder.Number);
 
-    // Reusing the same Idempotency-Key with a mutated payload returns 422 UnprocessableEntity
+    // Reusing the same Idempotency-Key with a mutated payload returns 409 Conflict
     var mutatedBody = JsonSerializer.Serialize(new
     {
       selectedIds = new[] { order.Id },
@@ -334,7 +334,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
       note = "Tampered"
     });
     var conflict = await PostActionAsync(mutatedBody, idemKey);
-    Assert.Equal(StatusCodes.Status422UnprocessableEntity, conflict.Status);
+    Assert.Equal(StatusCodes.Status409Conflict, conflict.Status);
   }
 
   [Fact]

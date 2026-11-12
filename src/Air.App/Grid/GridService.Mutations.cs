@@ -186,7 +186,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -202,7 +202,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -213,7 +213,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = missing
+            Messages = missing
           };
         }
 
@@ -223,7 +223,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -233,7 +233,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Conflict,
             Deleted = 0,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
 
@@ -250,7 +250,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = FormatErrors(ctx.Errors, entities)
+            Messages = FormatErrors(ctx.Errors, entities, MessageType.Error)
           };
         }
 
@@ -273,7 +273,7 @@ public abstract partial class GridService<TEntity, TRow>
               {
                 Outcome = MutationOutcome.Refused,
                 Deleted = 0,
-                Warnings = FormatErrors(ctx.Errors, entities)
+                Messages = FormatErrors(ctx.Errors, entities, MessageType.Error)
               };
             }
 
@@ -291,7 +291,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Outcome = MutationOutcome.Refused,
             Deleted = 0,
-            Warnings = [new MessageDto { Detail = L["DeleteRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["DeleteRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -372,7 +372,7 @@ public abstract partial class GridService<TEntity, TRow>
     return false;
   }
 
-  private List<MessageDto> FormatErrors(IEnumerable<MutationError> errors, IReadOnlyList<TEntity> records, string defaultType = MessageType.Warning)
+  private List<MessageDto> FormatErrors(IEnumerable<MutationError> errors, IReadOnlyList<TEntity> records, string defaultType = MessageType.Error)
   {
     var queryDeclaration = GetQueryDeclaration();
     var compiledLabel = queryDeclaration.LabelSelector?.Compile();
@@ -474,7 +474,7 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
+        Messages = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
       };
     }
 
@@ -492,7 +492,7 @@ public abstract partial class GridService<TEntity, TRow>
       return new GridCellDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
+        Messages = [new MessageDto { Detail = L["MutationRefused"], Path = request.Path, Type = MessageType.Error }]
       };
     }
 
@@ -521,7 +521,7 @@ public abstract partial class GridService<TEntity, TRow>
         return new GridCellDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FormValidationInvalid"], Path = request.Path, Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FormValidationInvalid"], Path = request.Path, Type = MessageType.Error }]
         };
       }
     }
@@ -529,7 +529,7 @@ public abstract partial class GridService<TEntity, TRow>
     return new GridCellDto
     {
       Outcome = MutationOutcome.Refused,
-      Warnings = [new MessageDto { Detail = L["FormReadOnly"], Path = request.Path, Type = MessageType.Error }]
+      Messages = [new MessageDto { Detail = L["FormReadOnly"], Path = request.Path, Type = MessageType.Error }]
     };
   }
 

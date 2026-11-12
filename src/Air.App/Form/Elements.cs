@@ -68,6 +68,15 @@ public class Elements
     return child;
   }
 
+  protected ChildGridBuilder<TParent, TChild> AddTypedChild<TChildGridService, TParent, TChild>()
+    where TParent : class, IEntity
+    where TChild : class, IEntity
+  {
+    var child = new ChildGridBuilder<TParent, TChild>(Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService), _currentTab);
+    _children.Add(child);
+    return child;
+  }
+
   private bool _disabled;
   internal Type? RecordLabelGridType { get; private set; }
 
@@ -387,7 +396,7 @@ public class Elements
 
     if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
     {
-      return UiFieldType.Datetime;
+      return UiFieldType.DateTime;
     }
 
     if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
@@ -440,7 +449,7 @@ public class Elements
 
     if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
     {
-      return new FormDatetimeModel();
+      return new FormDateTimeModel();
     }
 
     if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))

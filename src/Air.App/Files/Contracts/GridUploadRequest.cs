@@ -7,4 +7,10 @@ public sealed class GridUploadRequest
   public long? ParentId { get; set; }
   public long? AfterId { get; set; }
   public string? Metadata { get; set; }
+
+  [JsonIgnore]
+  public string? IdempotencyKey { get; set; }
+
+  [JsonIgnore]
+  public string? RawPayload { get; set; }
 }

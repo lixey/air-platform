@@ -26,12 +26,12 @@ public static class PlatformHost
       var contractsTs = ContractExporter.GenerateContracts(assemblies);
       var contractsFile = Path.Combine(outputDir, "contracts.ts");
       await File.WriteAllTextAsync(contractsFile, contractsTs);
-      Console.WriteLine($"[Air.Platform] Generated UI contracts: {contractsFile}");
+      Console.WriteLine($"[Platform] Generated UI contracts: {contractsFile}");
 
       var textsFile = Path.Combine(outputDir, "ui-texts.json");
       var textsJson = JsonSerializer.Serialize(UiTexts.English, new JsonSerializerOptions { WriteIndented = true });
       await File.WriteAllTextAsync(textsFile, textsJson + "\n");
-      Console.WriteLine($"[Air.Platform] Generated UI texts: {textsFile}");
+      Console.WriteLine($"[Platform] Generated UI texts: {textsFile}");
       return;
     }
 

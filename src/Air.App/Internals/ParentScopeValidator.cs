@@ -2,7 +2,7 @@ namespace Platform.App.Internals;
 
 internal static class ParentScopeValidator
 {
-  private static readonly ConcurrentDictionary<Type, Type?> CachedConventionFormTypes = new();
+  private static readonly ConcurrentDictionary<(ModuleCatalog Catalog, Type GridServiceType), Type?> CachedConventionFormTypes = new();
 
   public static Type? ResolveConventionFormType(Type? gridServiceType)
   {
@@ -11,11 +11,52 @@ internal static class ParentScopeValidator
       return null;
     }
 
-    return CachedConventionFormTypes.GetOrAdd(gridServiceType, static t =>
+    var catalog = ModuleCatalog.Instance;
+    return CachedConventionFormTypes.GetOrAdd((catalog, gridServiceType), static key =>
     {
-      var candidateName = t.Name.Replace("GridService", "FormService");
-      return t.Assembly.GetType(t.Namespace + "." + candidateName)
-        ?? t.Assembly.GetTypes().FirstOrDefault(x => x.Name == candidateName);
+      var (cat, gridType) = key;
+      var entityType = GetGridEntityType(gridType);
+      if (entityType == null)
+      {
+        return null;
+      }
+
+      var candidateForms = cat.AllServiceTypes
+        .Where(t => !t.IsAbstract && typeof(Form.IFormService).IsAssignableFrom(t) && GetFormEntityType(t) == entityType)
+        .ToList();
+      if (candidateForms.Count == 0)
+      {
+        return null;
+      }
+
+      var gridFeature = cat.FindFeature(gridType);
+      if (gridFeature != null)
+      {
+        var featureMatches = candidateForms
+          .Where(t => ReferenceEquals(cat.FindFeature(t), gridFeature))
+          .ToList();
+        if (featureMatches.Count == 1)
+        {
+          return featureMatches[0];
+        }
+
+        if (featureMatches.Count > 1)
+        {
+          var sameNs = featureMatches.Where(t => t.Namespace == gridType.Namespace).ToList();
+          return sameNs.Count == 1 ? sameNs[0] : featureMatches[0];
+        }
+
+        return null;
+      }
+
+      var nsMatches = candidateForms.Where(t => t.Namespace == gridType.Namespace).ToList();
+      if (nsMatches.Count == 1)
+      {
+        return nsMatches[0];
+      }
+
+      var asmMatches = candidateForms.Where(t => t.Assembly == gridType.Assembly).ToList();
+      return asmMatches.Count == 1 ? asmMatches[0] : null;
     });
   }
 
@@ -192,10 +233,15 @@ internal static class ParentScopeValidator
 
     if (parentId is null)
     {
-      if (parentServiceType != null &&
+      if (parentServiceType is { IsAbstract: false } &&
           typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
           ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is Form.IFormService metadataForm)
       {
+        if (app != null)
+        {
+          metadataForm.AttachPlatformApp(app);
+        }
+
         metadataForm.SetRequest(new Form.Contracts.FormRequest());
         var (_, children) = await metadataForm.GetElementsMetadataAsync(ct);
         return (true, null, children);
@@ -206,60 +252,38 @@ internal static class ParentScopeValidator
 
     var parentEntityType = ModuleCatalog.GetServiceEntityType(parentServiceType) ?? boundParentEntityType;
 
-    if (parentServiceType is { IsAbstract: true } &&
-        typeof(Form.IFormService).IsAssignableFrom(parentServiceType))
+    if (parentServiceType != null && typeof(Form.IFormService).IsAssignableFrom(parentServiceType))
     {
-      var candidates = ModuleCatalog.Instance.AllServiceTypes
-        .Where(t => !t.IsAbstract && parentServiceType.IsAssignableFrom(t))
-        .ToList();
-      var distinctFeatures = candidates
-        .Select(ModuleCatalog.Instance.FindFeature)
-        .Where(f => f is not null)
-        .Distinct()
-        .ToList();
-      if (candidates.Count > 0 && distinctFeatures.Count <= 1)
+      var candidateTypes = parentServiceType.IsAbstract
+        ? ModuleCatalog.Instance.AllServiceTypes
+          .Where(t => !t.IsAbstract && parentServiceType.IsAssignableFrom(t))
+          .ToList()
+        : [parentServiceType];
+
+      var viewableForms = new List<Form.IFormService>(candidateTypes.Count);
+      foreach (var candidateType in candidateTypes)
       {
-        if (distinctFeatures is [var sharedFeature] &&
-            sharedFeature is not null &&
-            !string.IsNullOrEmpty(sharedFeature.Module) &&
+        if (ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) is not Form.IFormService candidateForm)
+        {
+          continue;
+        }
+
+        if (app != null)
+        {
+          candidateForm.AttachPlatformApp(app);
+        }
+
+        if (!string.IsNullOrEmpty(candidateForm.Feature.Module) &&
             (app?.User is not { IsAuthenticated: true } user ||
-             !ServiceEndpointsExtensions.CanView(sharedFeature, user)))
+             !ServiceEndpointsExtensions.CanView(candidateForm.Feature, user)))
         {
-          return (false, null, null);
+          continue;
         }
 
-        if (lockParent && parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null)
-        {
-          await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
-        }
-
-        foreach (var candidateType in candidates)
-        {
-          if (ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) is not Form.IFormService candidateForm)
-          {
-            continue;
-          }
-
-          candidateForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
-          var loaded = await candidateForm.LoadParentRecordAsync(parentId.Value, ct);
-          if (loaded != null)
-          {
-            var (_, children) = await candidateForm.GetElementsMetadataAsync(ct);
-            return (true, loaded, children);
-          }
-        }
-
-        return (false, null, null);
+        viewableForms.Add(candidateForm);
       }
-    }
 
-    if (parentServiceType != null &&
-        typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
-        ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is Form.IFormService parentForm)
-    {
-      if (!string.IsNullOrEmpty(parentForm.Feature.Module) &&
-          (app?.User is not { IsAuthenticated: true } user ||
-           !ServiceEndpointsExtensions.CanView(parentForm.Feature, user)))
+      if (viewableForms.Count == 0)
       {
         return (false, null, null);
       }
@@ -269,15 +293,72 @@ internal static class ParentScopeValidator
         await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
       }
 
-      parentForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
-      var loaded = await parentForm.LoadParentRecordAsync(parentId.Value, ct);
-      if (loaded == null)
+      foreach (var candidateForm in viewableForms)
+      {
+        candidateForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
+        var loaded = await candidateForm.LoadParentRecordAsync(parentId.Value, ct);
+        if (loaded != null)
+        {
+          var (_, children) = await candidateForm.GetElementsMetadataAsync(ct);
+          return (true, loaded, children);
+        }
+      }
+
+      return (false, null, null);
+    }
+
+    if (parentServiceType != null && typeof(Grid.IGridService).IsAssignableFrom(parentServiceType))
+    {
+      var candidateTypes = parentServiceType.IsAbstract
+        ? ModuleCatalog.Instance.AllServiceTypes
+          .Where(t => !t.IsAbstract && parentServiceType.IsAssignableFrom(t))
+          .ToList()
+        : [parentServiceType];
+
+      var viewableGrids = new List<Grid.IGridService>(candidateTypes.Count);
+      foreach (var candidateType in candidateTypes)
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) is not Grid.IGridService candidateGrid)
+        {
+          continue;
+        }
+
+        if (app != null)
+        {
+          candidateGrid.AttachPlatformApp(app);
+        }
+
+        if (!string.IsNullOrEmpty(candidateGrid.Feature.Module) &&
+            !candidateGrid.CanView(new Grid.Contracts.GridRequest(), app?.User))
+        {
+          continue;
+        }
+
+        viewableGrids.Add(candidateGrid);
+      }
+
+      if (viewableGrids.Count == 0)
       {
         return (false, null, null);
       }
 
-      var (_, children) = await parentForm.GetElementsMetadataAsync(ct);
-      return (true, loaded, children);
+      if (lockParent && parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null)
+      {
+        await MutationContext.AcquireLocksAsync(db, parentEntityType, [[parentId.Value]], ct);
+      }
+
+      foreach (var candidateGrid in viewableGrids)
+      {
+        if (await candidateGrid.ReadRowAsync(parentId.Value, ct) != null)
+        {
+          var loaded = parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null
+            ? await db.FindAsync(parentEntityType, [parentId.Value], ct)
+            : null;
+          return (true, loaded, null);
+        }
+      }
+
+      return (false, null, null);
     }
 
     if (parentEntityType != null && db.Model.FindEntityType(parentEntityType) != null)
@@ -299,6 +380,7 @@ internal static class ParentScopeValidator
     PlatformAppService? app,
     string? requestParentService,
     string? boundParentService,
+    Type? boundParentServiceType,
     long? parentId,
     Action<(string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)> setCache,
     (string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)? cache,
@@ -308,7 +390,7 @@ internal static class ParentScopeValidator
     var effectiveParentService = !string.IsNullOrEmpty(requestParentService)
       ? requestParentService
       : boundParentService;
-    if (string.IsNullOrEmpty(effectiveParentService))
+    if (string.IsNullOrEmpty(effectiveParentService) && boundParentServiceType == null)
     {
       return null;
     }
@@ -323,10 +405,11 @@ internal static class ParentScopeValidator
     else
     {
       children = [];
-      var parentFormType = ModuleCatalog.Instance.FindServiceType(effectiveParentService);
-      if (parentFormType != null &&
-          typeof(Form.IFormService).IsAssignableFrom(parentFormType) &&
-          ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, app) is Form.IFormService parentForm)
+      var parentFormType = (!string.IsNullOrEmpty(effectiveParentService)
+        ? ModuleCatalog.Instance.FindServiceType(effectiveParentService)
+        : null) ?? boundParentServiceType;
+      var parentForm = await ResolveConcreteParentFormAsync(db, app, parentFormType, parentId, ct);
+      if (parentForm != null)
       {
         parentForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
         (_, children) = await parentForm.GetElementsMetadataAsync(ct);
@@ -384,42 +467,107 @@ internal static class ParentScopeValidator
       return null;
     }
 
-    var parentServiceType = (!string.IsNullOrEmpty(requestParentService)
+    var explicitParentType = !string.IsNullOrEmpty(requestParentService)
       ? ModuleCatalog.Instance.FindServiceType(requestParentService)
-      : null) ?? boundParentServiceType;
-    if (parentServiceType == null && !string.IsNullOrEmpty(boundParentService))
-    {
-      parentServiceType = ModuleCatalog.Instance.FindServiceType(boundParentService);
-    }
-
-    if (parentServiceType == null ||
-        !typeof(Form.IFormService).IsAssignableFrom(parentServiceType) ||
-        ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is not Form.IFormService parentForm)
+      : null;
+    var fallbackParentType = boundParentServiceType
+      ?? (!string.IsNullOrEmpty(boundParentService) ? ModuleCatalog.Instance.FindServiceType(boundParentService) : null);
+    var baseParentType = explicitParentType ?? fallbackParentType;
+    if (baseParentType == null || !typeof(Form.IFormService).IsAssignableFrom(baseParentType))
     {
       return null;
     }
 
-    if (app != null)
+    var formsById = new List<(long Id, Form.IFormService Form)>(distinctIds.Count);
+    if (!baseParentType.IsAbstract && (fallbackParentType == null || !fallbackParentType.IsAbstract || distinctIds.Count == 1 && distinctIds[0] == requestParentId))
     {
-      parentForm.AttachPlatformApp(app);
+      if (ModuleCatalog.Instance.CreateServiceInstance(baseParentType, db, app) is not Form.IFormService singleForm)
+      {
+        return null;
+      }
+
+      if (app != null)
+      {
+        singleForm.AttachPlatformApp(app);
+      }
+
+      foreach (var id in distinctIds)
+      {
+        formsById.Add((id, singleForm));
+      }
+    }
+    else
+    {
+      var resolvedByType = new Dictionary<Type, Form.IFormService>();
+      foreach (var id in distinctIds)
+      {
+        Form.IFormService? matchedForm = null;
+        if (explicitParentType is { IsAbstract: false })
+        {
+          if (!resolvedByType.TryGetValue(explicitParentType, out var explicitForm) &&
+              ModuleCatalog.Instance.CreateServiceInstance(explicitParentType, db, app) is Form.IFormService createdExplicit)
+          {
+            if (app != null)
+            {
+              createdExplicit.AttachPlatformApp(app);
+            }
+
+            resolvedByType[explicitParentType] = explicitForm = createdExplicit;
+          }
+
+          if (explicitForm != null)
+          {
+            explicitForm.SetRequest(new Form.Contracts.FormRequest { Id = id });
+            if (await explicitForm.LoadParentRecordAsync(id, ct) != null)
+            {
+              matchedForm = explicitForm;
+            }
+          }
+        }
+
+        if (matchedForm == null && fallbackParentType != null)
+        {
+          matchedForm = await ResolveConcreteParentFormAsync(db, app, fallbackParentType, id, ct, resolvedByType);
+        }
+
+        if (matchedForm != null)
+        {
+          formsById.Add((id, matchedForm));
+        }
+      }
     }
 
-    if (parentForm.HasCustomRecalculate)
-    {
-      await db.RunDerivedRecalculationAsync(
-        token => parentForm.RecalculateParentAsync(distinctIds, token),
-        ct);
-    }
-
-    if (distinctIds.Count > 5 || !ServiceEndpointsExtensions.CanView(parentForm.Feature, app?.User))
+    if (formsById.Count == 0)
     {
       return null;
     }
 
-    var parentEntityType = GetFormEntityType(parentServiceType);
+    foreach (var group in formsById.GroupBy(x => x.Form.GetType()))
+    {
+      var groupForm = group.First().Form;
+      var idsForForm = group.Select(x => x.Id).ToList();
+      if (await groupForm.NeedsParentRecalculationAsync(ct))
+      {
+        await db.RunDerivedRecalculationAsync(
+          token => groupForm.RecalculateParentAsync(idsForForm, token),
+          ct);
+      }
+    }
+
+    if (distinctIds.Count > 5)
+    {
+      return null;
+    }
+
+    var parentEntityType = GetFormEntityType(baseParentType);
     List<AffectedDto>? affected = null;
-    foreach (var id in distinctIds)
+    foreach (var (id, parentForm) in formsById)
     {
+      if (!ServiceEndpointsExtensions.CanView(parentForm.Feature, app?.User))
+      {
+        continue;
+      }
+
       var initialVer = parentEntityType != null ? db.GetInitialMutationVersion(parentEntityType, id) : null;
       if (initialVer == null && id != requestParentId)
       {
@@ -448,5 +596,85 @@ internal static class ParentScopeValidator
     }
 
     return affected;
+  }
+
+  private static async Task<Form.IFormService?> ResolveConcreteParentFormAsync(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    Type? parentFormType,
+    long? parentId,
+    CancellationToken ct,
+    Dictionary<Type, Form.IFormService>? instanceCache = null)
+  {
+    if (parentFormType == null || !typeof(Form.IFormService).IsAssignableFrom(parentFormType))
+    {
+      return null;
+    }
+
+    if (!parentFormType.IsAbstract)
+    {
+      if (instanceCache != null && instanceCache.TryGetValue(parentFormType, out var cached))
+      {
+        return cached;
+      }
+
+      if (ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, app) is Form.IFormService direct)
+      {
+        if (app != null)
+        {
+          direct.AttachPlatformApp(app);
+        }
+
+        instanceCache?.TryAdd(parentFormType, direct);
+        return direct;
+      }
+
+      return null;
+    }
+
+    var candidates = ModuleCatalog.Instance.AllServiceTypes
+      .Where(t => !t.IsAbstract && parentFormType.IsAssignableFrom(t))
+      .ToList();
+    if (candidates.Count == 0)
+    {
+      return null;
+    }
+
+    if (parentId is not > 0)
+    {
+      return candidates.Count == 1
+        ? await ResolveConcreteParentFormAsync(db, app, candidates[0], parentId: null, ct, instanceCache)
+        : null;
+    }
+
+    foreach (var candidateType in candidates)
+    {
+      if (instanceCache == null || !instanceCache.TryGetValue(candidateType, out var candidateForm))
+      {
+        candidateForm = ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) as Form.IFormService;
+        if (candidateForm != null)
+        {
+          if (app != null)
+          {
+            candidateForm.AttachPlatformApp(app);
+          }
+
+          instanceCache?.TryAdd(candidateType, candidateForm);
+        }
+      }
+
+      if (candidateForm == null)
+      {
+        continue;
+      }
+
+      candidateForm.SetRequest(new Form.Contracts.FormRequest { Id = parentId });
+      if (await candidateForm.LoadParentRecordAsync(parentId.Value, ct) != null)
+      {
+        return candidateForm;
+      }
+    }
+
+    return null;
   }
 }

@@ -55,7 +55,8 @@ public abstract partial class ChangeGridService
     var efEntity = targetDb.Model.GetEntityTypes()
       .FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table);
     var entityType = efEntity?.ClrType;
-    var targetFeat = ModuleCatalog.Instance.FindFeatureForEntity(entityType, change.Table);
+    var targetFeat = (!string.IsNullOrEmpty(ParentService) ? ModuleCatalog.Instance.FindFeature(ParentService) : null)
+      ?? ModuleCatalog.Instance.FindFeatureForEntity(entityType, change.Table);
     var modL = targetFeat != null && !string.IsNullOrEmpty(targetFeat.Module)
       ? Localizer.Instance.For(targetFeat.Module)
       : L;
@@ -515,17 +516,20 @@ public abstract partial class ChangeGridService
       var sibEf = sibDb.Model.GetEntityTypes()
         .FirstOrDefault(e => e.ClrType.Name == sib.Table || e.GetTableName() == sib.Table);
       var sibClr = sibEf?.ClrType;
-      var sibFeat = ModuleCatalog.Instance.FindFeatureForEntity(sibClr, sib.Table);
+      var sibFeat = (!string.IsNullOrEmpty(ParentService) && sib.Table == current.Table && sib.RowId == current.RowId
+          ? ModuleCatalog.Instance.FindFeature(ParentService)
+          : null)
+        ?? ModuleCatalog.Instance.FindFeatureForEntity(sibClr, sib.Table);
 
       if (!hasGlobalView && sib.Id != current.Id)
       {
-        var canSeeSibling = sibFeat != null &&
-                            (ServiceEndpointsExtensions.CanView(sibFeat, User) ||
-                             sibFeat.HasHistory && User != null && (User.Can(sibFeat.History) || User.Can(sibFeat.All) || User.Can("*")));
+        var (canSeeSibling, resolvedSibFeat) = await ResolvePermittedSiblingFeatureAsync(sibDb, sibClr, sib.Table, sib.RowId, sibFeat, ct);
         if (!canSeeSibling)
         {
           continue;
         }
+
+        sibFeat = resolvedSibFeat ?? sibFeat;
       }
 
       var sibModL = sibFeat != null && !string.IsNullOrEmpty(sibFeat.Module)
@@ -623,24 +627,98 @@ public abstract partial class ChangeGridService
     return null;
   }
 
+  private async Task<(bool Allowed, Feature? ResolvedFeature)> ResolvePermittedSiblingFeatureAsync(
+    PlatformDbContext sibDb,
+    Type? sibClr,
+    string sibTable,
+    long sibRowId,
+    Feature? defaultFeat,
+    CancellationToken ct)
+  {
+    bool CanSeeFeature(Feature? feat) =>
+      feat != null &&
+      ServiceEndpointsExtensions.CanView(feat, User) &&
+      feat.HasHistory &&
+      User != null &&
+      (User.Can(feat.History) || User.Can(feat.All) || User.Can("*"));
+
+    var candidateFeatures = ModuleCatalog.Instance.AllFeatures
+      .Where(f =>
+        sibClr != null && f.ServiceType != null && ModuleCatalog.GetServiceEntityType(f.ServiceType) == sibClr ||
+        string.Equals(f.Handle, sibTable, StringComparison.OrdinalIgnoreCase))
+      .Distinct()
+      .ToList();
+
+    foreach (var st in ModuleCatalog.Instance.AllServiceTypes)
+    {
+      if (sibClr != null &&
+          ModuleCatalog.GetServiceEntityType(st) == sibClr &&
+          ModuleCatalog.Instance.FindFeature(st) is { } svcFeat &&
+          !candidateFeatures.Contains(svcFeat))
+      {
+        candidateFeatures.Add(svcFeat);
+      }
+    }
+
+    if (candidateFeatures.Count <= 1)
+    {
+      var singleFeat = candidateFeatures.Count == 1 ? candidateFeatures[0] : defaultFeat;
+      return (CanSeeFeature(singleFeat), singleFeat);
+    }
+
+    if (sibClr == null || sibRowId <= 0)
+    {
+      return (candidateFeatures.All(CanSeeFeature), defaultFeat);
+    }
+
+    var sp = services ?? PlatformApp?.Services;
+    foreach (var feat in candidateFeatures)
+    {
+      if (!CanSeeFeature(feat))
+      {
+        continue;
+      }
+
+      var formType = ResolvePrimaryFormServiceType(feat, sibClr);
+      if (formType != null &&
+          (sp?.GetService(formType) as IFormService
+           ?? ModuleCatalog.Instance.CreateServiceInstance(formType, sibDb, PlatformApp, sp) as IFormService) is { } form)
+      {
+        if (PlatformApp != null)
+        {
+          form.AttachPlatformApp(PlatformApp);
+        }
+
+        if (await form.LoadParentRecordAsync(sibRowId, ct) != null)
+        {
+          return (true, feat);
+        }
+      }
+    }
+
+    return (false, null);
+  }
+
   private static Type? ResolvePrimaryFormServiceType(Feature feat, Type? entityType)
   {
-    if (feat.ServiceType != null && typeof(IFormService).IsAssignableFrom(feat.ServiceType))
+    if (feat.ServiceType != null && !feat.ServiceType.IsAbstract && typeof(IFormService).IsAssignableFrom(feat.ServiceType))
     {
       return feat.ServiceType;
     }
 
     return ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+             !t.IsAbstract &&
+             typeof(IFormService).IsAssignableFrom(t) &&
+             ReferenceEquals(ModuleCatalog.Instance.FindFeature(t), feat)
+           )
+           ?? ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+             !t.IsAbstract &&
              typeof(IFormService).IsAssignableFrom(t) &&
              entityType != null &&
              ModuleCatalog.GetServiceEntityType(t) == entityType &&
+             ModuleCatalog.Instance.FindFeature(t) == null &&
              (string.Equals(t.Name, $"{feat.Module}{feat.Handle}FormService", StringComparison.OrdinalIgnoreCase) ||
               string.Equals(t.Name, $"{feat.Handle}FormService", StringComparison.OrdinalIgnoreCase))
-           )
-           ?? ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
-             typeof(IFormService).IsAssignableFrom(t) &&
-             entityType != null &&
-             ModuleCatalog.GetServiceEntityType(t) == entityType
            );
   }
 }

@@ -7,12 +7,20 @@ public abstract partial class FormService<TEntity>
 {
   public sealed class Elements : Elements<TEntity>
   {
-    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+    public ChildGridBuilder<TEntity, TChildEntity> AddChild<TChildGridService, TChildEntity>()
+      where TChildEntity : class, IEntity
+    {
+      var builder = AddTypedChild<TChildGridService, TEntity, TChildEntity>();
+      builder.ChildEntityType = typeof(TChildEntity);
+      return builder;
+    }
+
+    public ChildGridBuilder<TEntity, TChildEntity> AddChild<TChildGridService, TChildEntity>(
       Expression<Func<TChildEntity, long>> foreignKey,
       Action<TChildEntity, TEntity>? preset = null)
       where TChildEntity : class, IEntity
     {
-      var builder = AddChild<TChildGridService>();
+      var builder = AddTypedChild<TChildGridService, TEntity, TChildEntity>();
       builder.ChildEntityType = typeof(TChildEntity);
       builder.FilterProvider = (_, parentId, rawQuery) =>
       {
@@ -56,12 +64,12 @@ public abstract partial class FormService<TEntity>
       return builder;
     }
 
-    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+    public ChildGridBuilder<TEntity, TChildEntity> AddChild<TChildGridService, TChildEntity>(
       Expression<Func<TChildEntity, long?>> foreignKey,
       Action<TChildEntity, TEntity>? preset = null)
       where TChildEntity : class, IEntity
     {
-      var builder = AddChild<TChildGridService>();
+      var builder = AddTypedChild<TChildGridService, TEntity, TChildEntity>();
       builder.ChildEntityType = typeof(TChildEntity);
       builder.FilterProvider = (_, parentId, rawQuery) =>
       {
@@ -106,18 +114,18 @@ public abstract partial class FormService<TEntity>
       return builder;
     }
 
-    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+    public ChildGridBuilder<TEntity, TChildEntity> AddChild<TChildGridService, TChildEntity>(
       Func<TEntity, Expression<Func<TChildEntity, bool>>> filter,
       Action<TChildEntity, TEntity>? preset = null)
       where TChildEntity : class, IEntity =>
       AddChild<TChildGridService, TChildEntity>((_, parent) => filter(parent), preset);
 
-    public ChildGridBuilder AddChild<TChildGridService, TChildEntity>(
+    public ChildGridBuilder<TEntity, TChildEntity> AddChild<TChildGridService, TChildEntity>(
       Func<PlatformDbContext, TEntity, Expression<Func<TChildEntity, bool>>> filter,
       Action<TChildEntity, TEntity>? preset = null)
       where TChildEntity : class, IEntity
     {
-      var builder = AddChild<TChildGridService>();
+      var builder = AddTypedChild<TChildGridService, TEntity, TChildEntity>();
       builder.ChildEntityType = typeof(TChildEntity);
       builder.FilterProvider = (ctxDb, parentId, rawQuery) =>
       {
@@ -152,7 +160,8 @@ public abstract partial class FormService<TEntity>
     }
 
     private static TEntity? LoadParentEntity(PlatformDbContext ctxDb, long parentId) =>
-      ctxDb.Set<TEntity>().Local.FirstOrDefault(e => e.Id == parentId);
+      ctxDb.Set<TEntity>().Local.FirstOrDefault(e => e.Id == parentId)
+      ?? ctxDb.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == parentId).GetAwaiter().GetResult();
   }
 
   public sealed class Parent

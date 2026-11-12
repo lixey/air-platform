@@ -191,7 +191,7 @@ public class Columns
 
     if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
     {
-      return UiFieldType.Datetime;
+      return UiFieldType.DateTime;
     }
 
     if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
@@ -223,7 +223,7 @@ public class Columns
 
     if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
     {
-      return new GridCellDatetimeModel();
+      return new GridCellDateTimeModel();
     }
 
     if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))

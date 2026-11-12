@@ -95,7 +95,7 @@ public abstract partial class GridService<TEntity, TRow>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
         };
       }
 
@@ -121,7 +121,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -134,7 +134,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -146,7 +146,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -160,7 +160,7 @@ public abstract partial class GridService<TEntity, TRow>
               return new GridActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Warnings = [.. askFailures]
+                Messages = [.. askFailures]
               };
             }
           }
@@ -174,7 +174,7 @@ public abstract partial class GridService<TEntity, TRow>
               return new GridActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Warnings = missing
+                Messages = missing
               };
             }
 
@@ -186,7 +186,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Conflict,
-              Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
             };
           }
 
@@ -211,7 +211,7 @@ public abstract partial class GridService<TEntity, TRow>
                     return new GridActionDto
                     {
                       Outcome = MutationOutcome.Refused,
-                      Warnings = FormatErrors([new MutationError("grid.availability", L[offer.Reason], RecordId: record.Id)], records, MessageType.Error)
+                      Messages = FormatErrors([new MutationError("grid.availability", L[offer.Reason], RecordId: record.Id)], records, MessageType.Error)
                     };
                   }
                 }
@@ -236,7 +236,7 @@ public abstract partial class GridService<TEntity, TRow>
                 return new GridActionDto
                 {
                   Outcome = MutationOutcome.Refused,
-                  Warnings = FormatErrors(ctx.Errors, records, MessageType.Error)
+                  Messages = FormatErrors(ctx.Errors, records, MessageType.Error)
                 };
               }
 
@@ -245,7 +245,7 @@ public abstract partial class GridService<TEntity, TRow>
                 return new GridActionDto
                 {
                   Outcome = MutationOutcome.Refused,
-                  Warnings = FormatErrors(ctx.Errors, records, MessageType.Error)
+                  Messages = FormatErrors(ctx.Errors, records, MessageType.Error)
                 };
               }
             }
@@ -256,7 +256,7 @@ public abstract partial class GridService<TEntity, TRow>
               return new GridActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Warnings = FormatErrors(ctx.Errors, records, MessageType.Error)
+                Messages = FormatErrors(ctx.Errors, records, MessageType.Error)
               };
             }
 
@@ -288,7 +288,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Conflict,
-              Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
             };
           }
         },
@@ -321,7 +321,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -330,7 +330,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Conflict,
-              Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
             };
           }
 
@@ -340,7 +340,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -350,7 +350,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -360,7 +360,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings =
+              Messages =
               [
                 new MessageDto
                 {
@@ -434,14 +434,14 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
         var cols = CreateColumns();
         if (cols.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };
         }
 
         if (IsReadOnly && !cols.StatusFlowAllowsReadOnly)
@@ -449,7 +449,7 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -461,17 +461,17 @@ public abstract partial class GridService<TEntity, TRow>
         var transition = statusFlow.Transitions.FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
         if (transition is null)
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
         }
 
         if (!StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
         }
 
         if (selectedIds.Count == 0)
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Warnings = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
         }
 
         var input = transition.Ask?.Read(body);
@@ -483,7 +483,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [.. askFailures]
+              Messages = [.. askFailures]
             };
           }
         }
@@ -509,7 +509,7 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = missingCandidates
+            Messages = missingCandidates
           };
         }
 
@@ -522,7 +522,7 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = missing
+            Messages = missing
           };
         }
 
@@ -531,7 +531,7 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
 
@@ -544,7 +544,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = FormatErrors(context.Errors, entities)
+              Messages = FormatErrors(context.Errors, entities, MessageType.Error)
             };
           }
 
@@ -565,7 +565,7 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
       },

@@ -219,9 +219,53 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected virtual Task RecalculateAsync(TEntity entity, CancellationToken ct) => Task.CompletedTask;
 
+  public async Task<bool> NeedsParentRecalculationAsync(CancellationToken ct = default)
+  {
+    if (HasCustomRecalculate)
+    {
+      return true;
+    }
+
+    var sumChildren = await GetSumChildrenAsync(ct);
+    return sumChildren.Count > 0;
+  }
+
+  private async Task<IReadOnlyList<ChildGridBuilder>> GetSumChildrenAsync(CancellationToken ct)
+  {
+    if (_lastElements != null)
+    {
+      return _lastElements.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
+    }
+
+    var probe = new Elements();
+    try
+    {
+      await SetElementsAsync(probe, ct);
+    }
+    catch
+    {
+      probe = new Elements();
+      try
+      {
+        SetElements(probe);
+      }
+      catch
+      {
+      }
+    }
+
+    return probe.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
+  }
+
   public async Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default)
   {
-    if (!HasCustomRecalculate || parentIds.Count == 0)
+    if (parentIds.Count == 0)
+    {
+      return;
+    }
+
+    var sumChildren = await GetSumChildrenAsync(ct);
+    if (!HasCustomRecalculate && sumChildren.Count == 0)
     {
       return;
     }
@@ -237,7 +281,15 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
         ?? await db.Set<TEntity>().AsTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
       if (entity != null)
       {
-        await RecalculateAsync(entity, ct);
+        if (sumChildren.Count > 0)
+        {
+          await ChildSumEvaluator.ApplySumsAsync(db, PlatformApp, entity, sumChildren, ct);
+        }
+
+        if (HasCustomRecalculate)
+        {
+          await RecalculateAsync(entity, ct);
+        }
       }
     }
   }
@@ -389,37 +441,37 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  protected virtual OverlayBuilder Presentation(string handle) => OverlayModel.Drawer(handle);
+  protected virtual OverlayBuilder? Presentation(string handle) => null;
 
-  private async Task<bool> HasChildPagesAsync(CancellationToken ct = default)
+  private static bool IsCompactPresentation(Elements elements) =>
+    elements.Tabs.Count == 0 &&
+    elements.Tables.Count == 0 &&
+    elements.Children.All(c => c.IsFiles) &&
+    elements.List.Count(e => !e.IsHidden && !e.IsRightsTree) <= 8;
+
+  private async Task<Elements> ProbeElementsForOverlayAsync(CancellationToken ct = default)
   {
     if (_lastElements is not null)
     {
-      return _lastElements.Children.Any(c => !c.IsFiles);
+      return _lastElements;
     }
 
-    var probe = new Elements();
     try
     {
       await EnsureEntityAndParentLoadedAsync(ct);
-      await SetElementsAsync(probe, ct);
     }
     catch
     {
     }
 
-    return probe.Children.Any(c => !c.IsFiles);
-  }
-
-  public virtual async Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) =>
-    BuildResolvedOverlay(service, await HasChildPagesAsync(ct));
-
-  public virtual OverlayDto Overlay(string service)
-  {
-    var hasChildPages = _lastElements?.Children.Any(c => !c.IsFiles);
-    if (hasChildPages is null)
+    var probe = new Elements();
+    try
     {
-      var probe = new Elements();
+      await SetElementsAsync(probe, ct);
+    }
+    catch
+    {
+      probe = new Elements();
       try
       {
         SetElements(probe);
@@ -427,16 +479,51 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       catch
       {
       }
-
-      hasChildPages = probe.Children.Any(c => !c.IsFiles);
     }
 
-    return BuildResolvedOverlay(service, hasChildPages == true);
+    return probe;
   }
 
-  private OverlayDto BuildResolvedOverlay(string service, bool hasChildPages)
+  private Elements ProbeElementsForOverlaySync()
   {
-    var dto = Presentation($"{service}.modal").Screen(service).Build();
+    if (_lastElements is not null)
+    {
+      return _lastElements;
+    }
+
+    var probe = new Elements();
+    try
+    {
+      SetElementsAsync(probe, CancellationToken.None).GetAwaiter().GetResult();
+    }
+    catch
+    {
+      probe = new Elements();
+      try
+      {
+        SetElements(probe);
+      }
+      catch
+      {
+      }
+    }
+
+    return probe;
+  }
+
+  public virtual async Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) =>
+    BuildResolvedOverlay(service, await ProbeElementsForOverlayAsync(ct));
+
+  public virtual OverlayDto Overlay(string service) =>
+    BuildResolvedOverlay(service, ProbeElementsForOverlaySync());
+
+  private OverlayDto BuildResolvedOverlay(string service, Elements elements)
+  {
+    var handle = $"{service}.modal";
+    var hasChildPages = elements.Children.Any(c => !c.IsFiles);
+    var builder = Presentation(handle)
+      ?? (IsCompactPresentation(elements) ? OverlayModel.Popover(handle) : OverlayModel.Drawer(handle));
+    var dto = builder.Screen(service).Build();
     if (dto.Presentation != OverlayPresentation.Drawer)
     {
       if (hasChildPages)
@@ -456,26 +543,79 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected virtual (string? Width, string? Height) OverlayAsk(Elements elements)
   {
-    var declared = Overlay(Service);
-    if (declared.Presentation != OverlayPresentation.Dialog && declared.Presentation != OverlayPresentation.Popover ||
-        declared.Width is not null ||
-        declared.Height is not null)
+    var explicitBuilder = Presentation($"{Service}.modal");
+    var hasChildPages = elements.Children.Any(c => !c.IsFiles);
+    var presentation = explicitBuilder?.Presentation
+      ?? (IsCompactPresentation(elements) ? OverlayPresentation.Popover : OverlayPresentation.Drawer);
+    if (presentation != OverlayPresentation.Drawer && hasChildPages)
+    {
+      presentation = OverlayPresentation.Drawer;
+    }
+
+    if (presentation is not (OverlayPresentation.Dialog or OverlayPresentation.Popover) ||
+        explicitBuilder?.WidthValue is not null ||
+        explicitBuilder?.HeightValue is not null)
     {
       return (null, null);
     }
 
-    return elements.Children.Any(c => !c.IsFiles) ? (PanelSize.Fill, PanelSize.Fill) : (PanelSize.Px(720), null);
+    return hasChildPages ? (PanelSize.Fill, PanelSize.Fill) : (PanelSize.Px(720), null);
   }
 
   protected virtual bool FillsOverlay(Elements elements)
   {
-    var declared = Overlay(Service);
-    return declared.Presentation == OverlayPresentation.Drawer ||
-           declared.Height == PanelSize.Fill ||
+    var explicitBuilder = Presentation($"{Service}.modal");
+    var hasChildPages = elements.Children.Any(c => !c.IsFiles);
+    var presentation = explicitBuilder?.Presentation
+      ?? (IsCompactPresentation(elements) ? OverlayPresentation.Popover : OverlayPresentation.Drawer);
+    if (presentation != OverlayPresentation.Drawer && hasChildPages)
+    {
+      presentation = OverlayPresentation.Drawer;
+    }
+
+    return presentation == OverlayPresentation.Drawer ||
+           explicitBuilder?.HeightValue == PanelSize.Fill ||
            OverlayAsk(elements).Height == PanelSize.Fill;
   }
 
-  protected virtual string RecordCaption(TEntity? entity, long? id)
+  protected virtual string RecordCaption(TEntity? entity, long? id) =>
+    FormatRecordCaption(entity, id, resolvedLabel: null);
+
+  protected virtual async Task<string> RecordCaptionAsync(TEntity? entity, long? id, CancellationToken ct = default)
+  {
+    var customMethod = GetType().GetMethod(
+      nameof(RecordCaption),
+      BindingFlags.Instance | BindingFlags.NonPublic,
+      [typeof(TEntity), typeof(long?)]);
+    if (customMethod != null && customMethod.DeclaringType != typeof(FormService<TEntity>))
+    {
+      return RecordCaption(entity, id);
+    }
+
+    if (id is null or 0)
+    {
+      return FormatRecordCaption(entity, id, resolvedLabel: null);
+    }
+
+    string? label = null;
+    if (_lastElements?.RecordLabelGridType is { } gridType && entity != null)
+    {
+      try
+      {
+        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, PlatformApp) is Grid.IGridService gridInst)
+        {
+          label = await gridInst.GetRecordLabelAsync(entity, ct);
+        }
+      }
+      catch
+      {
+      }
+    }
+
+    return FormatRecordCaption(entity, id, label);
+  }
+
+  private string FormatRecordCaption(TEntity? entity, long? id, string? resolvedLabel)
   {
     var title = L[Title];
     if (id is null or 0)
@@ -483,8 +623,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       return L.TryGetString($"New {Title}", out var named) ? named : L["FormNewRecord", title];
     }
 
-    string? label = null;
-    if (_lastElements?.RecordLabelGridType is { } gridType && entity != null)
+    var label = resolvedLabel;
+    if (label == null && _lastElements?.RecordLabelGridType is { } gridType && entity != null)
     {
       try
       {
@@ -505,6 +645,60 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   public string GetTitle() => L[Title];
   public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity ?? _lastSavedEntity, id);
+  public Task<string> GetRecordCaptionAsync(object? entity, long? id, CancellationToken ct = default) =>
+    RecordCaptionAsync(entity as TEntity ?? _lastSavedEntity, id, ct);
+
+  public async Task RegisterMetadataAsync(CancellationToken ct = default)
+  {
+    try
+    {
+      await GetElementsMetadataAsync(ct);
+    }
+    catch
+    {
+      var probe = new Elements();
+      try
+      {
+        await SetElementsAsync(probe, ct);
+      }
+      catch
+      {
+        try
+        {
+          SetElements(probe);
+        }
+        catch
+        {
+        }
+      }
+
+      (probe.StatusFlow as IRecordStatuses)?.RegisterMetadata();
+    }
+
+    (_lastElements?.StatusFlow as IRecordStatuses)?.RegisterMetadata();
+
+    var actions = new Actions();
+    try
+    {
+      await SetActionsAsync(actions, ct);
+    }
+    catch
+    {
+      actions = new Actions();
+      try
+      {
+        SetActions(actions);
+      }
+      catch
+      {
+      }
+    }
+
+    foreach (var entry in actions.Entries)
+    {
+      entry.Ask?.BuildElements();
+    }
+  }
 
   private async Task EnsureEntityAndParentLoadedAsync(CancellationToken ct = default)
   {
@@ -653,6 +847,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       PlatformApp,
       Request.ParentService,
       GetParent().BoundParentService,
+      GetParent().BoundParentServiceType,
       Request.ParentId,
       val => _cachedParentChildren = val,
       _cachedParentChildren,

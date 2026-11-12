@@ -3,10 +3,17 @@ namespace Platform.Api.Modules;
 public sealed class Right
 {
   public const int MaxKeyLength = 200;
+  public const string View = "View";
+  public const string MenuView = "MenuView";
+  public const string Edit = "Edit";
+  public const string Delete = "Delete";
+  public const string Export = "Export";
+  public const string History = "History";
+  public const string All = "*";
 
   public static readonly IReadOnlySet<string> StandardActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
   {
-    "View", "MenuView", "Edit", "Delete", "Export", "History", "*"
+    View, MenuView, Edit, Delete, Export, History, All
   };
 
   internal Right(string key, string action, Feature? feature, bool isPattern = false)

@@ -8,4 +8,6 @@ internal sealed class TestTag : IEntity, IHasTenant
   public bool IsActive { get; set; } = true;
   public decimal DefaultPrice { get; set; }
   public long? CategoryId { get; set; }
+  public string? Entity { get; set; }
+  public string? Value { get; set; }
 }

@@ -278,12 +278,12 @@ public abstract partial class FormService<TEntity>
   public virtual async Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default)
   {
     var (req, entityJson) = FormRequest.Normalize(json, request);
-    var input = FormValueBinder.DeserializeInput<TEntity>(entityJson);
-
-    if (req.Id is null or <= 0 && input.Id > 0)
+    if (req.Value is not { ValueKind: JsonValueKind.Object })
     {
-      req.Id = input.Id;
+      throw new JsonException("FormRequest 'value' object is required.");
     }
+
+    var input = FormValueBinder.DeserializeInput<TEntity>(entityJson);
 
     var id = req.Id;
     var clientVer = req.Ver;
@@ -704,7 +704,7 @@ public abstract partial class FormService<TEntity>
         return new GridCellDto
         {
           Outcome = ex.Outcome,
-          Warnings = ex.Messages.Select(m => m.Path == null
+          Messages = ex.Messages.Select(m => m.Path == null
             ? new MessageDto { Detail = m.Detail, Path = path, Code = m.Code, Type = m.Type }
             : m).ToList()
         };
@@ -715,7 +715,7 @@ public abstract partial class FormService<TEntity>
         return new GridCellDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FormInvalid"], Path = path, Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FormInvalid"], Path = path, Type = MessageType.Error }]
         };
       }
 

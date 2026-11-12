@@ -25,61 +25,57 @@ public class FormRequest : IScopedServiceRequest
   [JsonIgnore]
   public string? RawPayload { get; set; }
 
+  private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
+
   internal static (FormRequest Request, JsonElement EntityJson) Normalize(
     JsonElement json,
-    FormRequest? existing = null,
-    bool allowNestedFallback = true)
+    FormRequest? existing = null)
   {
     var req = existing ?? new FormRequest();
-    var entityJson = json;
+    var hasPresetValue = req.Value is { ValueKind: JsonValueKind.Object };
+    var entityJson = hasPresetValue
+      ? req.Value!.Value
+      : EmptyObject;
+
     if (json.ValueKind == JsonValueKind.Object)
     {
       req.RawPayload ??= json.GetRawText();
 
-      if (json.TryGetProperty("value", out var valProp) || json.TryGetProperty("entity", out valProp))
+      if (!hasPresetValue && json.TryGetProperty("value", out var valProp))
       {
-        entityJson = valProp;
-        if (valProp.ValueKind == JsonValueKind.Object)
+        if (valProp.ValueKind != JsonValueKind.Object)
         {
-          req.Value ??= valProp.Clone();
+          throw new JsonException("FormRequest 'value' must be a JSON object.");
         }
+
+        entityJson = valProp.Clone();
+        req.Value = entityJson;
       }
 
-      if (req.Id is null or <= 0)
+      if (!hasPresetValue)
       {
-        if (TryReadLong(json, "id") is { } rootId)
+        if (req.Id is null or <= 0 && TryReadLong(json, "id") is { } rootId)
         {
           req.Id = rootId;
         }
-        else if (allowNestedFallback && TryReadLong(entityJson, "id") is { } nestedId)
-        {
-          req.Id = nestedId;
-        }
-      }
 
-      if (req.Ver is null)
-      {
-        if (TryReadInt(json, "ver") is { } rootVer)
+        if (req.Ver is null && TryReadInt(json, "ver") is { } rootVer)
         {
           req.Ver = rootVer;
         }
-        else if (allowNestedFallback && TryReadInt(entityJson, "ver") is > 0 and var nestedVer)
+
+        if (req.ParentId is null && TryReadLong(json, "parentId") is { } rootPid)
         {
-          req.Ver = nestedVer;
+          req.ParentId = rootPid;
         }
-      }
 
-      if (req.ParentId is null && TryReadLong(json, "parentId") is { } rootPid)
-      {
-        req.ParentId = rootPid;
-      }
-
-      if (string.IsNullOrEmpty(req.ParentService) &&
-          json.TryGetProperty("parentService", out var psProp) &&
-          psProp.ValueKind == JsonValueKind.String &&
-          psProp.GetString() is { } rootPs)
-      {
-        req.ParentService = rootPs;
+        if (string.IsNullOrEmpty(req.ParentService) &&
+            json.TryGetProperty("parentService", out var psProp) &&
+            psProp.ValueKind == JsonValueKind.String &&
+            psProp.GetString() is { } rootPs)
+        {
+          req.ParentService = rootPs;
+        }
       }
     }
 

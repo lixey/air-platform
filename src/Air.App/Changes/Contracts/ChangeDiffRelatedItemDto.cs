@@ -6,6 +6,7 @@ public sealed record ChangeDiffRelatedItemDto
   public long Id { get; init; }
   public string Title { get; init; } = string.Empty;
   public string Operation { get; init; } = string.Empty;
+  [OneOf(typeof(UiColor))]
   public string OperationColor { get; init; } = UiColor.Slate;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

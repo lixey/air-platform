@@ -17,4 +17,9 @@ internal sealed class TestAppModule : ModuleDefinition<TestAppModule>
   public static readonly Feature CategoryTags = Feature<TestCategoryUsedTagGridService>();
   public static readonly Feature WarnInvoices = Feature<TestWarnInvoiceFormService>();
   public static readonly Feature CompositeScreen = Feature<TestCompositeScreenService>().ReadOnly().WithoutExport();
+  public static readonly Feature SalesDocs = Feature<TestSalesDocFormService>();
+  public static readonly Feature PurchaseDocs = Feature<TestPurchaseDocFormService>();
+  public static readonly Feature DocLines = Feature<TestDocLineGridService>();
+  public static readonly Feature AskWarmup = Feature<TestAskWarmupGridService>();
+  public static readonly Feature AppFiles = Feature<TestAppFileGridService>();
 }

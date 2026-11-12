@@ -7,5 +7,6 @@ public interface IRecordStatuses
   IReadOnlyList<Type> Followers { get; }
   bool FollowsChildFlow(Type childFlowType) => false;
   PropertyInfo? FindParentKeyProperty(Type childEntityType) => null;
+  void RegisterMetadata() { }
   Task FollowMovesAsync(IMutationContext context, IReadOnlySet<long> movedRecordIds, CancellationToken cancellationToken);
 }

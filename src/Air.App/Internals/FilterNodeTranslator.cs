@@ -300,9 +300,22 @@ internal static class FilterNodeTranslator
 
   private static Expression UnwrapConvert(Expression expr)
   {
-    while (expr is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } conv)
+    while (true)
     {
-      expr = conv.Operand;
+      if (expr is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } conv)
+      {
+        expr = conv.Operand;
+        continue;
+      }
+
+      if (expr is MethodCallExpression { Method: { Name: "op_Implicit" or "op_Explicit", IsSpecialName: true }, Arguments.Count: 1 } implicitCall &&
+          implicitCall.Type.IsByRefLike)
+      {
+        expr = implicitCall.Arguments[0];
+        continue;
+      }
+
+      break;
     }
 
     return expr;
@@ -334,10 +347,11 @@ internal static class FilterNodeTranslator
   private static object? EvaluateConstantOrClosure(Expression expr)
   {
     var unwrapped = UnwrapConvert(expr);
+    var targetType = expr.Type.IsByRefLike ? unwrapped.Type : expr.Type;
     switch (unwrapped)
     {
       case ConstantExpression ce:
-        return ConvertIfNeeded(ce.Value, expr.Type);
+        return ConvertIfNeeded(ce.Value, targetType);
 
       case MemberExpression me:
         {
@@ -346,16 +360,16 @@ internal static class FilterNodeTranslator
           {
             FieldInfo fi => fi.GetValue(instance),
             PropertyInfo pi => pi.GetValue(instance),
-            _ => Expression.Lambda(expr).Compile(preferInterpretation: true).DynamicInvoke()
+            _ => Expression.Lambda(unwrapped).Compile(preferInterpretation: true).DynamicInvoke()
           };
-          return ConvertIfNeeded(raw, expr.Type);
+          return ConvertIfNeeded(raw, targetType);
         }
 
       case NewArrayExpression { NodeType: ExpressionType.NewArrayInit } nae:
         return nae.Expressions.Select(EvaluateConstantOrClosure).ToList();
 
       default:
-        return Expression.Lambda(expr).Compile(preferInterpretation: true).DynamicInvoke();
+        return Expression.Lambda(unwrapped).Compile(preferInterpretation: true).DynamicInvoke();
     }
   }
 

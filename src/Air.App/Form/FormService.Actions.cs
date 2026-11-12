@@ -40,7 +40,7 @@ public abstract partial class FormService<TEntity>
       return new FormActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
+        Messages = [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]
       };
     }
 
@@ -66,7 +66,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -76,7 +76,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -86,7 +86,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
 
@@ -100,7 +100,7 @@ public abstract partial class FormService<TEntity>
             return new FormActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [.. askFailures]
+              Messages = [.. askFailures]
             };
           }
         }
@@ -117,7 +117,7 @@ public abstract partial class FormService<TEntity>
                 return new FormActionDto
                 {
                   Outcome = MutationOutcome.Refused,
-                  Warnings = [new MessageDto { Detail = L[offer.Reason], RecordId = entity.Id, Type = MessageType.Error }]
+                  Messages = [new MessageDto { Detail = L[offer.Reason], RecordId = entity.Id, Type = MessageType.Error }]
                 };
               }
             }
@@ -142,7 +142,7 @@ public abstract partial class FormService<TEntity>
               return new FormActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+                Messages = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
               };
             }
 
@@ -151,7 +151,7 @@ public abstract partial class FormService<TEntity>
               return new FormActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+                Messages = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
               };
             }
           }
@@ -162,7 +162,7 @@ public abstract partial class FormService<TEntity>
             return new FormActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
+              Messages = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
             };
           }
 
@@ -205,7 +205,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
       },
@@ -287,7 +287,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
           };
         }
 
@@ -304,7 +304,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Warnings = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
@@ -317,7 +317,7 @@ public abstract partial class FormService<TEntity>
             return new FormActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = [.. askFailures]
+              Messages = [.. askFailures]
             };
           }
         }
@@ -351,7 +351,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
 
@@ -365,7 +365,7 @@ public abstract partial class FormService<TEntity>
             return new FormActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Warnings = context.Errors.Select(e => e.ToMessage()).ToList()
+              Messages = context.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
             };
           }
 
@@ -399,7 +399,7 @@ public abstract partial class FormService<TEntity>
           return new FormActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Warnings = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
       },

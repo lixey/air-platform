@@ -151,10 +151,10 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsDatetime()
+  public FormElement<TEntity, TProp> AsDateTime()
   {
-    dto.Type = UiFieldType.Datetime;
-    dto.Model = new FormDatetimeModel();
+    dto.Type = UiFieldType.DateTime;
+    dto.Model = new FormDateTimeModel();
     return this;
   }
 
@@ -479,6 +479,12 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     TVal value) =>
     AddConstantFilterRule(MemberPath.Of(sourceMember), value);
 
+  public FormElement<TEntity, TProp> Where(Expression<Func<TProp, bool>> predicate) =>
+    AddPredicateFilterRule(predicate);
+
+  public FormElement<TEntity, TProp> Where<TSource>(Expression<Func<TSource, bool>> predicate) =>
+    AddPredicateFilterRule(predicate);
+
   public FormElement<TEntity, TProp> AllowCreate(bool allow = true)
   {
     dto.AllowsCreate = allow;
@@ -618,6 +624,33 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     }
 
     return this;
+  }
+
+  private FormElement<TEntity, TProp> AddPredicateFilterRule(LambdaExpression predicate)
+  {
+    if (dto.Model is FormSelectModel selectModel)
+    {
+      var translated = FilterNodeTranslator.Translate(predicate);
+      RegisterFilterNodeFields(dto.ReferenceServiceType, translated);
+      selectModel.ReferenceFilter = CombineFilter(selectModel.ReferenceFilter, translated);
+    }
+
+    return this;
+  }
+
+  private static void RegisterFilterNodeFields(Type? referenceServiceType, FilterNode node)
+  {
+    if (node is FilterRule rule)
+    {
+      ReferenceLookupAllowlist.RegisterFilterField(referenceServiceType, rule.Field);
+    }
+    else if (node is FilterGroup group)
+    {
+      foreach (var child in group.Items)
+      {
+        RegisterFilterNodeFields(referenceServiceType, child);
+      }
+    }
   }
 
   private static FilterNode CombineFilter(FilterNode? existing, FilterNode addition)

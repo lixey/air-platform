@@ -51,7 +51,7 @@ public static class GridFilterOperators
       return For(TextOperators);
     }
 
-    if (fieldType == UiFieldType.Number || isTemporal || fieldType == UiFieldType.Date)
+    if (fieldType == UiFieldType.Number || isTemporal || fieldType is UiFieldType.Date or UiFieldType.DateTime)
     {
       return For(Ordered);
     }

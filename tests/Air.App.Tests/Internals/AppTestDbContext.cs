@@ -8,4 +8,5 @@ internal sealed class AppTestDbContext(DbContextOptions<AppTestDbContext> option
   public DbSet<TestInvoiceLine> InvoiceLines => Set<TestInvoiceLine>();
   public DbSet<TestTag> Tags => Set<TestTag>();
   public DbSet<TestInvoiceTag> InvoiceTags => Set<TestInvoiceTag>();
+  public DbSet<TestAppFile> AppFiles => Set<TestAppFile>();
 }

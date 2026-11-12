@@ -15,6 +15,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
   private readonly List<OptionDto> _statuses = [];
   private readonly HashSet<long> _finalStatusIds = [];
   private readonly List<Type> _followers = [];
+  private readonly Dictionary<Type, PropertyInfo> _followerForeignKeys = [];
   private readonly List<ChildRule> _childRules = [];
   private readonly Dictionary<string, Transition<TEntity>> _transitionsByName = new(StringComparer.OrdinalIgnoreCase);
   private Expression<Func<TEntity, long>>? _statusMember;
@@ -110,6 +111,15 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
   }
 
   private (IMutationContext Context, HashSet<long> Ids)? _preLockedBatch;
+
+  public void RegisterMetadata()
+  {
+    EnsureDeclared();
+    foreach (var transition in _transitionsByName.Values)
+    {
+      transition.Asked?.BuildElements();
+    }
+  }
 
   bool IRecordStatuses.FollowsChildFlow(Type childFlowType)
   {
@@ -572,7 +582,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
         {
           if (context.Errors.Count == guardErrorsBefore)
           {
-            context.AddError("status.guard", refusal, record.Id, path);
+            context.AddError("status.guard", L[refusal], record.Id, path);
           }
 
           return;
@@ -650,7 +660,9 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
         var parentEntityType = followerBase?.GetGenericArguments().FirstOrDefault();
         if (parentEntityType != null)
         {
-          var fkProp = follower.FindParentKeyProperty(typeof(TEntity))
+          var fkProp = (_followerForeignKeys.TryGetValue(followerType, out var explicitFk) ? explicitFk : null)
+            ?? _followerForeignKeys.FirstOrDefault(kv => kv.Key.IsAssignableFrom(followerType)).Value
+            ?? follower.FindParentKeyProperty(typeof(TEntity))
             ?? typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
               .FirstOrDefault(p => (p.PropertyType == typeof(long) || p.PropertyType == typeof(long?)) &&
                 p.Name.Length > 2 &&
@@ -727,6 +739,11 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
       }
 
       _followers.AddRange(flow.FollowerTypes);
+      foreach (var (followerType, fkProp) in flow.FollowerForeignKeys)
+      {
+        _followerForeignKeys[followerType] = fkProp;
+      }
+
       _initialStatusId = flow.InitialStatusId;
       if (flow.InitialStatusId.HasValue)
       {

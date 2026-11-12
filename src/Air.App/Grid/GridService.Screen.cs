@@ -432,7 +432,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       if (col.IsFilterable && col.Header == null)
       {
-        if (col.Type is UiFieldType.Date or UiFieldType.Datetime)
+        if (col.Type is UiFieldType.Date or UiFieldType.DateTime)
         {
           col.Header = new GridHeaderDateModel();
         }
@@ -488,11 +488,11 @@ public abstract partial class GridService<TEntity, TRow>
       }
       catch
       {
-        // Fallback to default dialog overlay below
+        // Fallback to default drawer overlay below
       }
     }
 
-    var fallback = OverlayModel.Dialog($"{formServicePath}.modal").Screen(formServicePath).Build();
+    var fallback = OverlayModel.Drawer($"{formServicePath}.modal").Screen(formServicePath).Build();
     _cachedFormOverlays[formServicePath] = fallback;
     return fallback;
   }

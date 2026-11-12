@@ -6,7 +6,7 @@ namespace Platform.App.Files;
 public abstract partial class FileGridService<TFile>
   where TFile : BaseAppFile, new()
 {
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> Upload(
     GridUploadRequest request,
     IFormFileCollection files,
@@ -29,7 +29,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L["FileCountRefused"], Code = "file.count", Type = MessageType.Error }]
+        Messages = [new MessageDto { Detail = L["FileCountRefused"], Code = "file.count", Type = MessageType.Error }]
       };
     }
 
@@ -39,7 +39,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [headerError]
+        Messages = [headerError]
       };
     }
 
@@ -56,7 +56,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [contentError]
+        Messages = [contentError]
       };
     }
 
@@ -70,7 +70,7 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
         };
       }
 
@@ -91,15 +91,21 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
         };
       }
     }
 
     ParentId = request.ParentId ?? ParentId;
     var thumbFile = files["thumbnail"];
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.AfterId}|{sha256}|{normalizedMetadata}";
 
-    return await db.RunMutationAsync(
+    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
+      db,
+      $"{servicePath}/upload",
+      request.IdempotencyKey,
+      rawPayload,
       mutationCt => SaveUploadedFileInMutationAsync(
         cleanedName,
         normalizedType,
@@ -111,7 +117,8 @@ public abstract partial class FileGridService<TFile>
         idempotentOnDuplicate: false,
         rules,
         mutationCt),
-      ct: cancellationToken);
+      cancellationToken,
+      PlatformApp?.Services);
   }
 
   private MessageDto? ValidateFileHeader(
@@ -204,7 +211,7 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileCountLimit", rules.MaxFiles], Code = "file.limit", Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FileCountLimit", rules.MaxFiles], Code = "file.limit", Type = MessageType.Error }]
         };
       }
 
@@ -213,7 +220,7 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileTotalTooLarge", Math.Round(rules.MaxTotalBytes / (1024d * 1024d), 1)], Code = "file.limit", Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FileTotalTooLarge", Math.Round(rules.MaxTotalBytes / (1024d * 1024d), 1)], Code = "file.limit", Type = MessageType.Error }]
         };
       }
 
@@ -222,7 +229,7 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileDuplicate", duplicate.Name], Code = "file.duplicate", Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = L["FileDuplicate", duplicate.Name], Code = "file.duplicate", Type = MessageType.Error }]
         };
       }
     }
@@ -334,7 +341,7 @@ public abstract partial class FileGridService<TFile>
   protected virtual Task AfterUploadAsync(TFile entity, byte[] content, CancellationToken cancellationToken) =>
     Task.CompletedTask;
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public override Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
     DeleteAsync(request, cancellationToken);
 
@@ -347,83 +354,92 @@ public abstract partial class FileGridService<TFile>
     var rules = FileRulesAttribute.Of(typeof(TFile));
     var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
     var keysToDelete = new List<(string? Store, string Key)>();
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{string.Join(',', request.SelectedIds ?? [])}";
 
-    var result = await db.RunMutationAsync(async mutationCt =>
-    {
-      var ids = request.SelectedIds ?? [];
-      if (ids.Count == 0 && request.Id.HasValue)
+    var result = await MutationRunner.RunIdempotentMutationAsync<GridDeleteDto>(
+      db,
+      $"{servicePath}/delete",
+      request.IdempotencyKey,
+      rawPayload,
+      async mutationCt =>
       {
-        ids = [request.Id.Value];
-      }
-
-      var parent = GetParent();
-      await InferBoundParentIdFromIdsAsync(ids, mutationCt);
-
-      if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
-      {
-        return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
-      }
-
-      var list = await RestrictedQuery().AsTracking().Where(f => ids.Contains(f.Id)).ToListAsync(mutationCt);
-      if (list.Count == 0)
-      {
-        return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
-      }
-
-      var parentsLosingCover = new HashSet<object>();
-
-      foreach (var item in list)
-      {
-        if (HasCovers && rules.Cover == FileCover.Auto && parent.BoundProperty != null &&
-            item is IHasCoverFile { IsCover: true } &&
-            parent.BoundProperty.GetValue(item) is { } parentVal)
+        var ids = request.SelectedIds ?? [];
+        if (ids.Count == 0 && request.Id.HasValue)
         {
-          parentsLosingCover.Add(parentVal);
+          ids = [request.Id.Value];
         }
 
-        var itemStore = item.Store ?? storeKey;
-        if (!string.IsNullOrEmpty(item.StorageKey))
+        var parent = GetParent();
+        await InferBoundParentIdFromIdsAsync(ids, mutationCt);
+
+        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
         {
-          keysToDelete.Add((itemStore, item.StorageKey));
+          return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
         }
 
-        if (!string.IsNullOrEmpty(item.ThumbnailKey))
+        var list = await RestrictedQuery().AsTracking().Where(f => ids.Contains(f.Id)).ToListAsync(mutationCt);
+        if (list.Count == 0)
         {
-          keysToDelete.Add((itemStore, item.ThumbnailKey));
+          return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
         }
 
-        db.Set<TFile>().Remove(item);
-      }
+        var parentsLosingCover = new HashSet<object>();
 
-      await db.SaveChangesAsync(mutationCt);
-
-      if (parentsLosingCover.Count > 0 && parent.BoundProperty != null)
-      {
-        foreach (var parentVal in parentsLosingCover)
+        foreach (var item in list)
         {
-          var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
-          var nextCover = await db.Set<TFile>()
-            .AsTracking()
-            .Where(lambda)
-            .OrderBy(f => f.SortOrder)
-            .ThenByDescending(f => f.Id)
-            .FirstOrDefaultAsync(mutationCt);
-
-          if (nextCover is IHasCoverFile cf)
+          if (HasCovers && rules.Cover == FileCover.Auto && parent.BoundProperty != null &&
+              item is IHasCoverFile { IsCover: true } &&
+              parent.BoundProperty.GetValue(item) is { } parentVal)
           {
-            cf.IsCover = true;
+            parentsLosingCover.Add(parentVal);
           }
+
+          var itemStore = item.Store ?? storeKey;
+          if (!string.IsNullOrEmpty(item.StorageKey))
+          {
+            keysToDelete.Add((itemStore, item.StorageKey));
+          }
+
+          if (!string.IsNullOrEmpty(item.ThumbnailKey))
+          {
+            keysToDelete.Add((itemStore, item.ThumbnailKey));
+          }
+
+          db.Set<TFile>().Remove(item);
         }
 
         await db.SaveChangesAsync(mutationCt);
-      }
 
-      return new GridDeleteDto
-      {
-        Outcome = MutationOutcome.Committed,
-        Deleted = list.Count
-      };
-    }, ct: cancellationToken);
+        if (parentsLosingCover.Count > 0 && parent.BoundProperty != null)
+        {
+          foreach (var parentVal in parentsLosingCover)
+          {
+            var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
+            var nextCover = await db.Set<TFile>()
+              .AsTracking()
+              .Where(lambda)
+              .OrderBy(f => f.SortOrder)
+              .ThenByDescending(f => f.Id)
+              .FirstOrDefaultAsync(mutationCt);
+
+            if (nextCover is IHasCoverFile cf)
+            {
+              cf.IsCover = true;
+            }
+          }
+
+          await db.SaveChangesAsync(mutationCt);
+        }
+
+        return new GridDeleteDto
+        {
+          Outcome = MutationOutcome.Committed,
+          Deleted = list.Count
+        };
+      },
+      cancellationToken,
+      PlatformApp?.Services);
 
     if (result.Outcome == MutationOutcome.Committed && keysToDelete.Count > 0)
     {
@@ -455,182 +471,209 @@ public abstract partial class FileGridService<TFile>
     return result;
   }
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> SetCover(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
     ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{string.Join(',', request.SelectedIds ?? [])}";
 
-    return await db.RunMutationAsync(async mutationCt =>
-    {
-      if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly || !HasCovers)
+    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
+      db,
+      $"{servicePath}/set-cover",
+      request.IdempotencyKey,
+      rawPayload,
+      async mutationCt =>
       {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
-
-      var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
-      if (!targetId.HasValue)
-      {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
-
-      var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId.Value, mutationCt);
-      if (target == null)
-      {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
-
-      var parent = GetParent();
-
-      if (parent.BoundProperty != null)
-      {
-        var parentVal = parent.BoundProperty.GetValue(target);
-        if (parentVal != null)
+        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly || !HasCovers)
         {
-          var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
-          var siblings = await db.Set<TFile>().AsTracking().Where(lambda).ToListAsync(mutationCt);
-          foreach (var sibling in siblings)
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
+
+        var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
+        if (!targetId.HasValue)
+        {
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
+
+        var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId.Value, mutationCt);
+        if (target == null)
+        {
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
+
+        var parent = GetParent();
+
+        if (parent.BoundProperty != null)
+        {
+          var parentVal = parent.BoundProperty.GetValue(target);
+          if (parentVal != null)
           {
-            if (sibling is IHasCoverFile cf)
+            var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
+            var siblings = await db.Set<TFile>().AsTracking().Where(lambda).ToListAsync(mutationCt);
+            foreach (var sibling in siblings)
             {
-              cf.IsCover = sibling.Id == targetId.Value;
+              if (sibling is IHasCoverFile cf)
+              {
+                cf.IsCover = sibling.Id == targetId.Value;
+              }
             }
           }
         }
-      }
-      else if (target is IHasCoverFile cf)
-      {
-        cf.IsCover = true;
-      }
+        else if (target is IHasCoverFile cf)
+        {
+          cf.IsCover = true;
+        }
 
-      await db.SaveChangesAsync(mutationCt);
-      return new GridActionDto { Outcome = MutationOutcome.Committed };
-    }, ct: cancellationToken);
+        await db.SaveChangesAsync(mutationCt);
+        return new GridActionDto { Outcome = MutationOutcome.Committed };
+      },
+      cancellationToken,
+      PlatformApp?.Services);
   }
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> Move(FileMoveRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
     ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{request.BeforeId}|{string.Join(',', request.SelectedIds ?? [])}";
 
-    return await db.RunMutationAsync(async mutationCt =>
-    {
-      if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
+    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
+      db,
+      $"{servicePath}/move",
+      request.IdempotencyKey,
+      rawPayload,
+      async mutationCt =>
       {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
+        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
+        {
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
 
-      var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
-      if (!targetId.HasValue)
-      {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
+        var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
+        if (!targetId.HasValue)
+        {
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
 
-      var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId.Value, mutationCt);
-      if (target == null)
-      {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
+        var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId.Value, mutationCt);
+        if (target == null)
+        {
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
 
-      if (request.BeforeId == target.Id)
-      {
+        if (request.BeforeId == target.Id)
+        {
+          return new GridActionDto { Outcome = MutationOutcome.Committed };
+        }
+
+        var parent = GetParent();
+
+        var siblingsQuery = RestrictedQuery().AsTracking().Where(f => f.Id != target.Id);
+        if (parent.BoundProperty != null && parent.BoundProperty.GetValue(target) is { } parentVal)
+        {
+          siblingsQuery = siblingsQuery.Where(BuildParentFilter(parent.BoundProperty, parentVal));
+        }
+
+        var others = await siblingsQuery
+          .OrderBy(f => f.SortOrder)
+          .ThenByDescending(f => f.Id)
+          .ToListAsync(mutationCt);
+
+        var place = request.BeforeId is { } beforeId && others.FindIndex(f => f.Id == beforeId) is >= 0 and var idx
+          ? idx
+          : others.Count;
+
+        if (Between(place > 0 ? others[place - 1].SortOrder : null, place < others.Count ? others[place].SortOrder : null) is { } order)
+        {
+          target.SortOrder = order;
+        }
+        else
+        {
+          others.Insert(place, target);
+          Renumber(others);
+        }
+
+        await db.SaveChangesAsync(mutationCt);
         return new GridActionDto { Outcome = MutationOutcome.Committed };
-      }
-
-      var parent = GetParent();
-
-      var siblingsQuery = RestrictedQuery().AsTracking().Where(f => f.Id != target.Id);
-      if (parent.BoundProperty != null && parent.BoundProperty.GetValue(target) is { } parentVal)
-      {
-        siblingsQuery = siblingsQuery.Where(BuildParentFilter(parent.BoundProperty, parentVal));
-      }
-
-      var others = await siblingsQuery
-        .OrderBy(f => f.SortOrder)
-        .ThenByDescending(f => f.Id)
-        .ToListAsync(mutationCt);
-
-      var place = request.BeforeId is { } beforeId && others.FindIndex(f => f.Id == beforeId) is >= 0 and var idx
-        ? idx
-        : others.Count;
-
-      if (Between(place > 0 ? others[place - 1].SortOrder : null, place < others.Count ? others[place].SortOrder : null) is { } order)
-      {
-        target.SortOrder = order;
-      }
-      else
-      {
-        others.Insert(place, target);
-        Renumber(others);
-      }
-
-      await db.SaveChangesAsync(mutationCt);
-      return new GridActionDto { Outcome = MutationOutcome.Committed };
-    }, ct: cancellationToken);
+      },
+      cancellationToken,
+      PlatformApp?.Services);
   }
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> SetInfo(FileInfoRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
     ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{request.Name}|{request.Description}";
 
-    return await db.RunMutationAsync(async mutationCt =>
-    {
-      if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
+    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
+      db,
+      $"{servicePath}/set-info",
+      request.IdempotencyKey,
+      rawPayload,
+      async mutationCt =>
       {
-        return new GridActionDto { Outcome = MutationOutcome.Refused };
-      }
-
-      var stem = request.Name?.Trim() ?? string.Empty;
-      if (stem.Length == 0 || stem.Any(c => c is '/' or '\\' || char.IsControl(c)))
-      {
-        return new GridActionDto
+        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileNameInvalid"], Path = "name", Code = "file.name", Type = MessageType.Error }]
-        };
-      }
+          return new GridActionDto { Outcome = MutationOutcome.Refused };
+        }
 
-      var description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-      if (description?.Length > BaseAppFile.DescriptionMaxLength)
-      {
-        return new GridActionDto
+        var stem = request.Name?.Trim() ?? string.Empty;
+        if (stem.Length == 0 || stem.Any(c => c is '/' or '\\' || char.IsControl(c)))
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileDescriptionTooLong"], Path = "description", Code = "form.validation.maxLength", Type = MessageType.Error }]
-        };
-      }
+          return new GridActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Messages = [new MessageDto { Detail = L["FileNameInvalid"], Path = "name", Code = "file.name", Type = MessageType.Error }]
+          };
+        }
 
-      var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
-        ?? throw new InvalidOperationException("File ID required.");
-
-      var file = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == id, mutationCt)
-        ?? throw new KeyNotFoundException("File not found.");
-
-      var ext = Path.GetExtension(file.Name);
-      var candidateName = stem.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? stem : stem + ext;
-      if (FileTypeTable.NameOf(candidateName) is not { } newName ||
-          !string.Equals(Path.GetExtension(newName), ext, StringComparison.OrdinalIgnoreCase) ||
-          newName.Length > BaseAppFile.NameMaxLength)
-      {
-        return new GridActionDto
+        var description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        if (description?.Length > BaseAppFile.DescriptionMaxLength)
         {
-          Outcome = MutationOutcome.Refused,
-          Warnings = [new MessageDto { Detail = L["FileNameRefused"], Path = "name", Code = "file.name", Type = MessageType.Error }]
-        };
-      }
+          return new GridActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Messages = [new MessageDto { Detail = L["FileDescriptionTooLong"], Path = "description", Code = "form.validation.maxLength", Type = MessageType.Error }]
+          };
+        }
 
-      file.Name = newName;
-      file.Description = description;
-      await db.SaveChangesAsync(mutationCt);
+        var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
+          ?? throw new InvalidOperationException("File ID required.");
 
-      return new GridActionDto { Outcome = MutationOutcome.Committed };
-    }, ct: cancellationToken);
+        var file = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == id, mutationCt)
+          ?? throw new KeyNotFoundException("File not found.");
+
+        var ext = Path.GetExtension(file.Name);
+        var candidateName = stem.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? stem : stem + ext;
+        if (FileTypeTable.NameOf(candidateName) is not { } newName ||
+            !string.Equals(Path.GetExtension(newName), ext, StringComparison.OrdinalIgnoreCase) ||
+            newName.Length > BaseAppFile.NameMaxLength)
+        {
+          return new GridActionDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Messages = [new MessageDto { Detail = L["FileNameRefused"], Path = "name", Code = "file.name", Type = MessageType.Error }]
+          };
+        }
+
+        file.Name = newName;
+        file.Description = description;
+        await db.SaveChangesAsync(mutationCt);
+
+        return new GridActionDto { Outcome = MutationOutcome.Committed };
+      },
+      cancellationToken,
+      PlatformApp?.Services);
   }
 
   async Task<GridActionDto> IFormFilesSource.AttachFileAsync(
@@ -647,7 +690,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [new MessageDto { Detail = L[parentId <= 0 ? "RequestInvalid" : "FileRefused"], Code = "file.invalid", Type = MessageType.Error }]
+        Messages = [new MessageDto { Detail = L[parentId <= 0 ? "RequestInvalid" : "FileRefused"], Code = "file.invalid", Type = MessageType.Error }]
       };
     }
 
@@ -668,7 +711,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [headerError]
+        Messages = [headerError]
       };
     }
 
@@ -677,7 +720,7 @@ public abstract partial class FileGridService<TFile>
       return new GridActionDto
       {
         Outcome = MutationOutcome.Refused,
-        Warnings = [contentError]
+        Messages = [contentError]
       };
     }
 

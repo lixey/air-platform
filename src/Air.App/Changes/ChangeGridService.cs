@@ -7,7 +7,11 @@ namespace Platform.App.Changes;
 public abstract partial class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null, PlatformAppService? app = null)
   : GridService<AppPlatformChange>(db, app)
 {
+  private (string? Service, long? Id) _validatedParentScope;
+
   protected override bool IsReadOnly => true;
+
+  protected override void SetParent(Parent parent) => parent.AllowDynamicParent();
 
   public override bool CanView(GridRequest request, IUserContext? user)
   {
@@ -16,14 +20,13 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       return false;
     }
 
-    if (base.CanView(request, user))
+    if (!string.IsNullOrEmpty(request.ParentService) || request.ParentId.HasValue)
     {
-      return true;
-    }
+      if (string.IsNullOrEmpty(request.ParentService) || request.ParentId is not > 0)
+      {
+        return false;
+      }
 
-    if (!string.IsNullOrEmpty(request.ParentService) &&
-        request.ParentId is > 0)
-    {
       var parentFeat = ModuleCatalog.Instance.FindFeature(request.ParentService);
       if (parentFeat == null &&
           services != null &&
@@ -32,19 +35,104 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
         parentFeat = (services.GetService(parentServiceType) as IPlatformService)?.Feature;
       }
 
-      if (parentFeat is { HasHistory: true })
+      if (parentFeat == null || !ServiceEndpointsExtensions.CanView(parentFeat, user))
       {
-        return user.Can(parentFeat.History) ||
-               user.Can(parentFeat.All) ||
-               user.Can("*");
+        return false;
       }
+
+      if (base.CanView(new GridRequest(), user))
+      {
+        return true;
+      }
+
+      return parentFeat.HasHistory &&
+             (user.Can(parentFeat.History) ||
+              user.Can(parentFeat.All) ||
+              user.Can("*"));
     }
 
-    return false;
+    return base.CanView(request, user);
   }
 
   public override bool CanLookup(GridRequest request, IUserContext? user) =>
     CanView(request, user);
+
+  protected override async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
+  {
+    _validatedParentScope = default;
+
+    if (string.IsNullOrEmpty(ParentService) && !ParentId.HasValue)
+    {
+      return base.CanView(new GridRequest(), User);
+    }
+
+    if (string.IsNullOrEmpty(ParentService) || ParentId is not > 0)
+    {
+      return false;
+    }
+
+    var scopedReq = new GridRequest { ParentService = ParentService, ParentId = ParentId };
+    if (!CanView(scopedReq, User))
+    {
+      return false;
+    }
+
+    var parentServiceType = ModuleCatalog.Instance.FindServiceType(ParentService);
+    var entityType = ModuleCatalog.GetServiceEntityType(parentServiceType);
+    if (parentServiceType == null || parentServiceType.IsAbstract || entityType == null)
+    {
+      return false;
+    }
+
+    var targetDb = GetDbContextForTable(entityType.Name);
+    if (typeof(Form.IFormService).IsAssignableFrom(parentServiceType))
+    {
+      var (allowed, _, _) = await Internals.ParentScopeValidator.ValidateAndLoadAsync(
+        targetDb,
+        PlatformApp,
+        ParentId,
+        ParentService,
+        hasRequiredBoundParent: true,
+        _ => true,
+        ParentService,
+        parentServiceType,
+        entityType,
+        lockParent: false,
+        ct);
+      if (!allowed)
+      {
+        return false;
+      }
+
+      _validatedParentScope = (ParentService, ParentId);
+      return true;
+    }
+
+    if (typeof(IGridService).IsAssignableFrom(parentServiceType) &&
+        ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, targetDb, PlatformApp, services) is IGridService parentGrid)
+    {
+      if (PlatformApp != null)
+      {
+        parentGrid.AttachPlatformApp(PlatformApp);
+      }
+
+      if (!parentGrid.CanView(new GridRequest(), User))
+      {
+        return false;
+      }
+
+      var row = await parentGrid.ReadRowAsync(ParentId.Value, ct);
+      if (row == null)
+      {
+        return false;
+      }
+
+      _validatedParentScope = (ParentService, ParentId);
+      return true;
+    }
+
+    return false;
+  }
 
   protected override OverlayDto? ResolveFormOverlay(Columns columns)
   {
@@ -58,7 +146,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
   protected override void SetColumns(Columns<AppPlatformChange> columns)
   {
     columns.Add(r => r.Id).Cell(new GridCellOpenFormModel()).Width(90);
-    columns.Add(r => r.At).AsDatetime();
+    columns.Add(r => r.At).AsDateTime();
 
     var userCol = columns.Add(r => r.UserId).Label("User");
     userCol.Dto.Type = UiFieldType.Text;
@@ -82,10 +170,14 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
   protected override void SetQuery(Query query)
   {
     var hasGlobalView = base.CanView(new GridRequest(), User);
-    if (!string.IsNullOrEmpty(ParentService) && ParentId is > 0)
+    if (!string.IsNullOrEmpty(ParentService) || ParentId.HasValue)
     {
-      var tableName = ResolveParentTableName(ParentService);
-      if (string.IsNullOrEmpty(tableName))
+      var isValidated = _validatedParentScope.Id == ParentId &&
+                        string.Equals(_validatedParentScope.Service, ParentService, StringComparison.OrdinalIgnoreCase);
+      var tableName = isValidated && !string.IsNullOrEmpty(ParentService)
+        ? ResolveParentTableName(ParentService)
+        : string.Empty;
+      if (!isValidated || string.IsNullOrEmpty(tableName) || ParentId is not > 0)
       {
         query.Where(_ => false);
       }

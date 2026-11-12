@@ -175,13 +175,13 @@ public static class PlatformEndpointsExtensions
           {
             Outcome = mut.Outcome,
             Title = mut.Title ?? Localizer.Instance["MutationConflict"],
-            Messages = mut.Messages ?? mut.Warnings
+            Messages = mut.Messages
           })
           : Results.UnprocessableEntity(new MutationResultDto
           {
             Outcome = mut.Outcome,
             Title = mut.Title ?? Localizer.Instance[refusedFallbackKey ?? "MutationRefused"],
-            Messages = mut.Messages ?? mut.Warnings
+            Messages = mut.Messages
           }),
       _ => Results.Ok(result)
     };

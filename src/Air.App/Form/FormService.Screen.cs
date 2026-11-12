@@ -96,7 +96,7 @@ public abstract partial class FormService<TEntity>
       MutationTexts = ScreenBuilderHelpers.BuildMutationTexts(L)
     };
 
-    var caption = RecordCaption(entity, id);
+    var caption = await RecordCaptionAsync(entity, id, ct);
     var filesChildren = elements.Children.Where(c => c.IsFiles && IsChildPermitted(c)).ToList();
     var pageChildren = elements.Children.Where(c => !c.IsFiles && IsChildPermitted(c)).ToList();
     var hasPages = pageChildren.Count > 0 && id is > 0;
