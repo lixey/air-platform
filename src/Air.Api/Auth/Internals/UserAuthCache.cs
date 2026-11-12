@@ -1,6 +1,6 @@
 namespace Platform.Api.Auth.Internals;
 
-internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
+internal sealed class UserAuthCache(ICacheProvider cache, IServiceScopeFactory? scopeFactory = null) : IUserAuthCache
 {
   private const string AuthTag = "platform:auth";
   private const int MaxUserGenerations = 10_000;
@@ -13,7 +13,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
   private readonly ConcurrentDictionary<long, long> _sessionGenerations = new();
   private long _globalGeneration;
 
-  public async Task<SessionAuthSnapshot?> GetSessionAsync(long sessionId, IAuthStore store, CancellationToken ct = default)
+  public async Task<SessionAuthSnapshot?> GetSessionAsync(long sessionId, IAuthStore? store = null, CancellationToken ct = default)
   {
     if (sessionId <= 0)
     {
@@ -27,15 +27,43 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
       SessionKey(gGen, sGen, sessionId),
       async token =>
       {
-        var dbSession = await store.FindSessionAsync(sessionId, token);
-        return dbSession == null
-          ? null
-          : new SessionAuthSnapshot(
-              dbSession.Id,
-              dbSession.UserId,
-              dbSession.TenantId,
-              dbSession.RevokedAt,
-              dbSession.ExpiresAt);
+        AsyncServiceScope? ownedScope = null;
+        try
+        {
+          var effectiveStore = store;
+          if (scopeFactory != null)
+          {
+            ownedScope = scopeFactory.CreateAsyncScope();
+            effectiveStore = ownedScope.Value.ServiceProvider.GetService<IAuthStore>() ?? store;
+          }
+
+          if (effectiveStore == null)
+          {
+            return null;
+          }
+
+          BaseAppAuthSession? dbSession;
+          using (AsyncLocalTenantContext.UseSystemScope())
+          {
+            dbSession = await effectiveStore.FindSessionAsync(sessionId, token);
+          }
+
+          return dbSession == null
+            ? null
+            : new SessionAuthSnapshot(
+                dbSession.Id,
+                dbSession.UserId,
+                dbSession.TenantId,
+                dbSession.RevokedAt,
+                dbSession.ExpiresAt);
+        }
+        finally
+        {
+          if (ownedScope is { } scopeToDispose)
+          {
+            await scopeToDispose.DisposeAsync();
+          }
+        }
       },
       SessionTtl,
       [AuthTag, SessionTag(sessionId)],
@@ -45,7 +73,7 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
   public async Task<UserAuthSnapshot?> GetUserProfileAsync(
     long userId,
     long? tenantId,
-    IAuthStore store,
+    IAuthStore? store = null,
     CancellationToken ct = default)
   {
     if (userId <= 0)
@@ -60,40 +88,73 @@ internal sealed class UserAuthCache(ICacheProvider cache) : IUserAuthCache
       ProfileKey(gGen, uGen, userId, tenantId),
       async token =>
       {
-        var user = await store.FindUserByIdAsync(userId, token);
-        if (user == null)
+        AsyncServiceScope? ownedScope = null;
+        try
         {
-          return null;
+          var effectiveStore = store;
+          if (scopeFactory != null)
+          {
+            ownedScope = scopeFactory.CreateAsyncScope();
+            effectiveStore = ownedScope.Value.ServiceProvider.GetService<IAuthStore>() ?? store;
+          }
+
+          if (effectiveStore == null)
+          {
+            return null;
+          }
+
+          BaseAppUser? user;
+          using (AsyncLocalTenantContext.UseSystemScope())
+          {
+            user = await effectiveStore.FindUserByIdAsync(userId, token);
+          }
+
+          if (user == null)
+          {
+            return null;
+          }
+
+          var effectiveTenantId = tenantId ?? (user as IHasTenant)?.TenantId;
+          SecurityInfo securityInfo;
+
+          using (effectiveTenantId != null
+            ? AsyncLocalTenantContext.Use(effectiveTenantId, null, user.Id)
+            : AsyncLocalTenantContext.UseSystemScope(user.Id))
+          {
+            securityInfo = await effectiveStore.LoadSecurityInfoAsync(user.Id, token);
+          }
+
+          string? languageCode;
+          string? resolvedTimeZone;
+          using (AsyncLocalTenantContext.UseSystemScope(user.Id))
+          {
+            languageCode = await effectiveStore.ResolveLanguageCodeAsync(user.LanguageId, token);
+            resolvedTimeZone = await effectiveStore.ResolveTimeZoneAsync(user.TimeZone, effectiveTenantId ?? securityInfo.HomeTenantId, token);
+          }
+
+          return new UserAuthSnapshot(
+            user.Id,
+            user.Login,
+            user.Name ?? user.Login,
+            user.Email ?? string.Empty,
+            resolvedTimeZone ?? string.Empty,
+            user.IsActive,
+            user.IsRoot,
+            user.TokenVersion,
+            user.MustChangePassword,
+            (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
+            securityInfo.Permissions,
+            securityInfo.Global,
+            securityInfo.AllowedTenantIds?.ToList(),
+            languageCode);
         }
-
-        var effectiveTenantId = tenantId ?? (user as IHasTenant)?.TenantId;
-        SecurityInfo securityInfo;
-
-        using (effectiveTenantId != null
-          ? AsyncLocalTenantContext.Use(effectiveTenantId, null, user.Id)
-          : AsyncLocalTenantContext.UseSystemScope(user.Id))
+        finally
         {
-          securityInfo = await store.LoadSecurityInfoAsync(user.Id, token);
+          if (ownedScope is { } scopeToDispose)
+          {
+            await scopeToDispose.DisposeAsync();
+          }
         }
-
-        var languageCode = await store.ResolveLanguageCodeAsync(user.LanguageId, token);
-        var resolvedTimeZone = await store.ResolveTimeZoneAsync(user.TimeZone, effectiveTenantId ?? securityInfo.HomeTenantId, token);
-
-        return new UserAuthSnapshot(
-          user.Id,
-          user.Login,
-          user.Name ?? user.Login,
-          user.Email ?? string.Empty,
-          resolvedTimeZone ?? string.Empty,
-          user.IsActive,
-          user.IsRoot,
-          user.TokenVersion,
-          user.MustChangePassword,
-          (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
-          securityInfo.Permissions,
-          securityInfo.Global,
-          securityInfo.AllowedTenantIds?.ToList(),
-          languageCode);
       },
       ProfileTtl,
       [AuthTag, UserTag(userId)],

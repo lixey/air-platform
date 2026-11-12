@@ -31,7 +31,6 @@ internal sealed class RacyAuthStore : IAuthStore
   public BaseAppAuthSession CreateSession(
     long userId,
     long? tenantId,
-    Guid familyId,
     string refreshTokenHash,
     DateTimeOffset expiresAt,
     string? client,

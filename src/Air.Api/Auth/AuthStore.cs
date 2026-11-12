@@ -15,42 +15,79 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
   public async Task<BaseAppUser?> FindUserByLoginAsync(string login, CancellationToken ct = default)
   {
     var lower = login.ToLowerInvariant();
-    return await db.Set<TUser>().IgnoreQueryFilters()
-      .FirstOrDefaultAsync(u => u.Login.ToLower() == lower, ct);
+    using (EnterSystemScope())
+    {
+      return await db.Set<TUser>().IgnoreQueryFilters()
+        .FirstOrDefaultAsync(u => u.Login.ToLower() == lower, ct);
+    }
   }
 
-  public async Task<BaseAppUser?> FindUserByIdAsync(long id, CancellationToken ct = default) =>
-    await db.Set<TUser>().IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id, ct);
+  public async Task<BaseAppUser?> FindUserByIdAsync(long id, CancellationToken ct = default)
+  {
+    using (EnterSystemScope())
+    {
+      return await db.Set<TUser>().IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id, ct);
+    }
+  }
 
-  public async Task<BaseAppAuthSession?> FindSessionAsync(long id, CancellationToken ct = default) =>
-    await db.Set<TSession>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id, ct);
+  public async Task<BaseAppAuthSession?> FindSessionAsync(long id, CancellationToken ct = default)
+  {
+    using (EnterSystemScope())
+    {
+      return await db.Set<TSession>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == id, ct);
+    }
+  }
 
-  public async Task<BaseAppAuthSession?> FindSessionByHashAsync(string refreshTokenHash, CancellationToken ct = default) =>
-    await db.Set<TSession>().IgnoreQueryFilters()
-      .FirstOrDefaultAsync(s => s.RefreshTokenHash == refreshTokenHash || s.PreviousRefreshTokenHash == refreshTokenHash, ct);
+  public async Task<BaseAppAuthSession?> FindSessionByHashAsync(string refreshTokenHash, CancellationToken ct = default)
+  {
+    using (EnterSystemScope())
+    {
+      return await db.Set<TSession>().IgnoreQueryFilters()
+        .FirstOrDefaultAsync(s => s.RefreshTokenHash == refreshTokenHash || s.PreviousRefreshTokenHash == refreshTokenHash, ct);
+    }
+  }
 
-  public async Task<SecurityInfo> LoadSecurityInfoAsync(long userId, CancellationToken ct = default) =>
-    await GrantedRights.LoadAsync<TAssignment, TRole, TGrant>(db, userId, ct);
+  public async Task<SecurityInfo> LoadSecurityInfoAsync(long userId, CancellationToken ct = default)
+  {
+    if (db.TenantContext.TenantId == null && !db.TenantContext.IsSystemScope)
+    {
+      using (EnterSystemScope())
+      {
+        return await GrantedRights.LoadAsync<TAssignment, TRole, TGrant>(db, userId, ct);
+      }
+    }
 
-  public async Task<List<BaseAppTenant>> GetActiveTenantsAsync(CancellationToken ct = default) =>
-    (await db.Set<TTenant>().IgnoreQueryFilters()
-      .Where(t => t.IsActive)
-      .OrderBy(t => t.SortOrder)
-      .ThenBy(t => t.Name)
-      .ToListAsync(ct))
-    .Cast<BaseAppTenant>()
-    .ToList();
+    return await GrantedRights.LoadAsync<TAssignment, TRole, TGrant>(db, userId, ct);
+  }
 
-  public async Task<BaseAppTenant?> FindTenantByIdAsync(long id, CancellationToken ct = default) =>
-    await db.Set<TTenant>().IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id, ct);
+  public async Task<List<BaseAppTenant>> GetActiveTenantsAsync(CancellationToken ct = default)
+  {
+    using (EnterSystemScope())
+    {
+      return (await db.Set<TTenant>().IgnoreQueryFilters()
+          .Where(t => t.IsActive)
+          .OrderBy(t => t.SortOrder)
+          .ThenBy(t => t.Name)
+          .ToListAsync(ct))
+        .Cast<BaseAppTenant>()
+        .ToList();
+    }
+  }
 
-  public BaseAppAuthSession CreateSession(long userId, long? tenantId, Guid familyId, string refreshTokenHash, DateTimeOffset expiresAt, string? client, string? address)
+  public async Task<BaseAppTenant?> FindTenantByIdAsync(long id, CancellationToken ct = default)
+  {
+    using (EnterSystemScope())
+    {
+      return await db.Set<TTenant>().IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == id, ct);
+    }
+  }
+
+  public BaseAppAuthSession CreateSession(long userId, long? tenantId, string refreshTokenHash, DateTimeOffset expiresAt, string? client, string? address)
   {
     var session = new TSession
     {
       UserId = userId,
       TenantId = tenantId,
-      FamilyId = familyId,
       RefreshTokenHash = refreshTokenHash,
       ExpiresAt = expiresAt,
       LastUsedAt = DateTimeOffset.UtcNow,
@@ -70,13 +107,16 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
     CancellationToken ct = default)
   {
     ArgumentNullException.ThrowIfNull(user);
-    await db.Set<TUser>().IgnoreQueryFilters()
-      .Where(u => u.Id == user.Id)
-      .ExecuteUpdateAsync(s => s
-        .SetProperty(u => u.AccessFailedCount, accessFailedCount)
-        .SetProperty(u => u.LockoutCount, lockoutCount)
-        .SetProperty(u => u.LockoutEnd, lockoutEnd)
-        .SetProperty(u => u.LastLoggedIn, lastLoggedIn), ct);
+    using (EnterSystemScope())
+    {
+      await db.Set<TUser>().IgnoreQueryFilters()
+        .Where(u => u.Id == user.Id)
+        .ExecuteUpdateAsync(s => s
+          .SetProperty(u => u.AccessFailedCount, accessFailedCount)
+          .SetProperty(u => u.LockoutCount, lockoutCount)
+          .SetProperty(u => u.LockoutEnd, lockoutEnd)
+          .SetProperty(u => u.LastLoggedIn, lastLoggedIn), ct);
+    }
 
     var entry = db.Entry(user);
     if (entry.State != EntityState.Detached)
@@ -105,9 +145,13 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
   public async Task RevokeUserSessionsAsync(long userId, long? exceptSessionId, string reason, CancellationToken ct = default)
   {
     var now = DateTimeOffset.UtcNow;
-    var sessions = await db.Set<TSession>().IgnoreQueryFilters()
-      .Where(s => s.UserId == userId && s.RevokedAt == null && (exceptSessionId == null || s.Id != exceptSessionId.Value))
-      .ToListAsync(ct);
+    List<TSession> sessions;
+    using (EnterSystemScope())
+    {
+      sessions = await db.Set<TSession>().IgnoreQueryFilters()
+        .Where(s => s.UserId == userId && s.RevokedAt == null && (exceptSessionId == null || s.Id != exceptSessionId.Value))
+        .ToListAsync(ct);
+    }
 
     foreach (var s in sessions)
     {
@@ -123,10 +167,15 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
       return null;
     }
 
-    var code = await langSet.IgnoreQueryFilters().AsNoTracking()
-      .Where(l => l.Id == languageId.Value && l.IsActive)
-      .Select(l => l.Code)
-      .FirstOrDefaultAsync(ct);
+    string? code;
+    using (EnterSystemScope())
+    {
+      code = await langSet.IgnoreQueryFilters().AsNoTracking()
+        .Where(l => l.Id == languageId.Value && l.IsActive)
+        .Select(l => l.Code)
+        .FirstOrDefaultAsync(ct);
+    }
+
     if (string.IsNullOrWhiteSpace(code))
     {
       return null;
@@ -143,25 +192,28 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
       return userTimeZone.Trim();
     }
 
-    var currentId = tenantId;
-    var visited = new HashSet<long>();
-    while (currentId is > 0 && visited.Add(currentId.Value))
+    using (EnterSystemScope())
     {
-      var row = await db.Set<TTenant>().IgnoreQueryFilters().AsNoTracking()
-        .Where(t => t.Id == currentId.Value)
-        .Select(t => new { t.ParentId, t.TimeZone })
-        .FirstOrDefaultAsync(ct);
-      if (row == null)
+      var currentId = tenantId;
+      var visited = new HashSet<long>();
+      while (currentId is > 0 && visited.Add(currentId.Value))
       {
-        break;
-      }
+        var row = await db.Set<TTenant>().IgnoreQueryFilters().AsNoTracking()
+          .Where(t => t.Id == currentId.Value)
+          .Select(t => new { t.ParentId, t.TimeZone })
+          .FirstOrDefaultAsync(ct);
+        if (row == null)
+        {
+          break;
+        }
 
-      if (!string.IsNullOrWhiteSpace(row.TimeZone))
-      {
-        return row.TimeZone.Trim();
-      }
+        if (!string.IsNullOrWhiteSpace(row.TimeZone))
+        {
+          return row.TimeZone.Trim();
+        }
 
-      currentId = row.ParentId;
+        currentId = row.ParentId;
+      }
     }
 
     return null;
@@ -179,9 +231,12 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
       return;
     }
 
-    using (AsyncLocalTenantContext.UseSystemScope(db.TenantContext.UserId, db.TenantContext.CorrelationId))
+    using (EnterSystemScope())
     {
       await db.SaveChangesAsync(ct);
     }
   }
+
+  private IDisposable EnterSystemScope() =>
+    AsyncLocalTenantContext.UseSystemScope(db.TenantContext.UserId, db.TenantContext.CorrelationId);
 }

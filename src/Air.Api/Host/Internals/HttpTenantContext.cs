@@ -34,9 +34,7 @@ internal sealed class HttpTenantContext(IHttpContextAccessor httpContextAccessor
     }
   }
 
-  public bool IsSystemScope =>
-    AsyncLocalTenantContext.Instance.HasExplicitSystemScope ||
-    httpContextAccessor.HttpContext == null && TenantId == null;
+  public bool IsSystemScope => AsyncLocalTenantContext.Instance.HasExplicitSystemScope;
 
   public long? UserId
   {

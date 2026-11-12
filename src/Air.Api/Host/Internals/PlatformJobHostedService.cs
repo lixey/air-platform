@@ -33,7 +33,10 @@ internal sealed class PlatformJobHostedService(
         await using var scope = scopeFactory.CreateAsyncScope();
         if (scope.ServiceProvider.GetRequiredService(registration.JobType) is IPlatformJob job)
         {
-          await job.ExecuteAsync(stoppingToken);
+          using (AsyncLocalTenantContext.Use(null, null, null, $"job:{registration.JobType.Name}"))
+          {
+            await job.ExecuteAsync(stoppingToken);
+          }
         }
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

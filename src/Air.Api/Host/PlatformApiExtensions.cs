@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Platform.Api.Host.Internals;
 
 namespace Platform.Api.Host;
 
 public static class PlatformApiExtensions
 {
+  private const string ForwardedHeadersRegisteredKey = "Platform.ForwardedHeadersRegistered";
   public static WebApplicationBuilder AddPlatformApiModule<TModule>(this WebApplicationBuilder builder)
     where TModule : class, IPlatformModule, new() =>
     builder.AddPlatformApiModule(new TModule());
@@ -45,26 +47,50 @@ public static class PlatformApiExtensions
 
     var tokenSecret = builder.Configuration["Auth:TokenSecret"]
       ?? builder.Configuration["Platform:Security:Jwt:Secret"]
-      ?? Environment.GetEnvironmentVariable("AIR_TOKEN_SECRET");
-    SessionTokenService.ConfigureSecret(tokenSecret);
+      ?? Environment.GetEnvironmentVariable(SessionTokenService.SecretEnvironmentVariable);
+    SessionTokenService.EnsureConfiguredForEnvironment(tokenSecret, builder.Environment.IsProduction());
 
     if (builder.Services.All(d => d.ServiceType != typeof(PlatformApiCoreMarker)))
     {
       builder.Services.AddSingleton<PlatformApiCoreMarker>();
+      builder.Services.TryAddSingleton(_ => BuildDefaultPlatformOptions(builder.Configuration));
       builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
       builder.Services.AddHttpContextAccessor();
       builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
       builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
       builder.Services.AddHybridCache();
       builder.Services.TryAddSingleton<ICacheProvider, Caching.Internals.CacheProvider>();
-      builder.Services.TryAddSingleton<IUserAuthCache, Auth.Internals.UserAuthCache>();
+      builder.Services.TryAddSingleton<IUserAuthCache>(sp =>
+        new Auth.Internals.UserAuthCache(
+          sp.GetRequiredService<ICacheProvider>(),
+          sp.GetRequiredService<IServiceScopeFactory>()));
       builder.Services.TryAddSingleton<Auth.Internals.LoginRateLimiter>();
       builder.Services.TryAddSingleton<Mutations.Internals.IdempotencyStore>();
       builder.Services.TryAddSingleton<FileLinks>();
+
+      if (IsForwardedHeadersConfigured(builder.Configuration))
+      {
+        builder.Services.Configure<ForwardedHeadersOptions>(fwd =>
+        {
+          fwd.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+          fwd.ForwardLimit = builder.Configuration.GetValue("ForwardedHeaders:ForwardLimit", 1);
+          if (builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() is { Length: > 0 } proxies)
+          {
+            foreach (var rawProxy in proxies)
+            {
+              if (System.Net.IPAddress.TryParse(rawProxy, out var ip))
+              {
+                fwd.KnownProxies.Add(ip);
+              }
+            }
+          }
+        });
+      }
+
       var filesPath = builder.Configuration["Files:Path"];
       if (string.IsNullOrWhiteSpace(filesPath))
       {
-        filesPath = Path.Combine(builder.Environment.ContentRootPath, "air_files");
+        filesPath = Path.Combine(builder.Environment.ContentRootPath, "platform_files");
       }
       else if (!Path.IsPathRooted(filesPath))
       {
@@ -96,6 +122,26 @@ public static class PlatformApiExtensions
 
   public static IApplicationBuilder UsePlatformAuth(this IApplicationBuilder app)
   {
+    var options = app.ApplicationServices.GetService<PlatformOptions>();
+    var config = app.ApplicationServices.GetService<IConfiguration>();
+    if ((options?.UseForwardedHeaders == true || config != null && IsForwardedHeadersConfigured(config)) &&
+        app.Properties.TryAdd(ForwardedHeadersRegisteredKey, true))
+    {
+      var configuredFwd = app.ApplicationServices.GetService<Microsoft.Extensions.Options.IOptions<ForwardedHeadersOptions>>()?.Value;
+      if (configuredFwd is { ForwardedHeaders: not ForwardedHeaders.None })
+      {
+        app.UseForwardedHeaders();
+      }
+      else
+      {
+        app.UseForwardedHeaders(new ForwardedHeadersOptions
+        {
+          ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+          ForwardLimit = config?.GetValue("ForwardedHeaders:ForwardLimit", 1) ?? 1
+        });
+      }
+    }
+
     return app.Use(async (context, next) =>
     {
       if (context.RequestServices.GetService<ModuleCatalog>() is { } requestCatalog)
@@ -121,13 +167,13 @@ public static class PlatformApiExtensions
 
       if (!string.IsNullOrWhiteSpace(token) &&
           SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _, out var tokenVersion) &&
-          context.RequestServices.GetService<IAuthStore>() is { } authStore &&
-          context.RequestServices.GetService<IUserAuthCache>() is { } authCache)
+          context.RequestServices.GetService<IUserAuthCache>() is { } authCache &&
+          HasAuthStoreRegistered(context.RequestServices, authCache, out var fallbackStore))
       {
-        var session = await authCache.GetSessionAsync(sessionId, authStore, context.RequestAborted);
+        var session = await authCache.GetSessionAsync(sessionId, fallbackStore, context.RequestAborted);
         if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
         {
-          var user = await authCache.GetUserProfileAsync(userId, session.TenantId, authStore, context.RequestAborted);
+          var user = await authCache.GetUserProfileAsync(userId, session.TenantId, fallbackStore, context.RequestAborted);
           if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
           {
             var claims = new List<Claim>(6)
@@ -208,5 +254,47 @@ public static class PlatformApiExtensions
     builder.Services.AddSingleton(new PlatformJobRegistration(typeof(TJob), interval, initialDelay));
     builder.Services.AddHostedService<PlatformJobHostedService>();
     return builder;
+  }
+
+  private static PlatformOptions BuildDefaultPlatformOptions(IConfiguration configuration)
+  {
+    var options = new PlatformOptions
+    {
+      UseForwardedHeaders = IsForwardedHeadersConfigured(configuration)
+    };
+
+    if (TimeSpan.TryParse(configuration["Auth:AccessTokenLifetime"], CultureInfo.InvariantCulture, out var accessLifetime) &&
+        accessLifetime > TimeSpan.Zero)
+    {
+      options.AccessTokenLifetime = accessLifetime;
+    }
+
+    if (TimeSpan.TryParse(configuration["Auth:RefreshTokenLifetime"], CultureInfo.InvariantCulture, out var refreshLifetime) &&
+        refreshLifetime > TimeSpan.Zero)
+    {
+      options.RefreshTokenLifetime = refreshLifetime;
+    }
+
+    return options;
+  }
+
+  private static bool IsForwardedHeadersConfigured(IConfiguration configuration) =>
+    configuration.GetValue<bool>("ForwardedHeaders:Enabled") ||
+    string.Equals(configuration["ASPNETCORE_FORWARDEDHEADERS_ENABLED"], "true", StringComparison.OrdinalIgnoreCase);
+
+  private static bool HasAuthStoreRegistered(
+    IServiceProvider requestServices,
+    IUserAuthCache authCache,
+    out IAuthStore? fallbackStore)
+  {
+    if (authCache is Auth.Internals.UserAuthCache &&
+        requestServices.GetService<IServiceProviderIsService>() is { } serviceCheck)
+    {
+      fallbackStore = null;
+      return serviceCheck.IsService(typeof(IAuthStore));
+    }
+
+    fallbackStore = requestServices.GetService<IAuthStore>();
+    return fallbackStore != null;
   }
 }

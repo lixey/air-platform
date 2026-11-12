@@ -7,6 +7,8 @@ namespace Platform.Api.Auth;
 /// </summary>
 public static class SessionTokenService
 {
+  public const string SecretEnvironmentVariable = "PLATFORM_TOKEN_SECRET";
+
   private static byte[] SecretKey { get => field ??= DeriveDefaultKey(); set; }
 
   public static void ConfigureSecret(string? secret)
@@ -16,11 +18,27 @@ public static class SessionTokenService
       var trimmed = secret.Trim();
       if (trimmed.Length < 32)
       {
-        throw new InvalidOperationException("Auth:TokenSecret must be at least 32 characters long.");
+        throw new InvalidOperationException("Token secret must be at least 32 characters long.");
       }
 
       SecretKey = SHA256.HashData(Encoding.UTF8.GetBytes(trimmed));
     }
+  }
+
+  internal static void EnsureConfiguredForEnvironment(string? secret, bool isProduction)
+  {
+    if (string.IsNullOrWhiteSpace(secret))
+    {
+      if (isProduction)
+      {
+        throw new InvalidOperationException(
+          $"Production startup requires a token signing secret (>= 32 characters) configured via 'Auth:TokenSecret', 'Platform:Security:Jwt:Secret', or '{SecretEnvironmentVariable}'.");
+      }
+
+      return;
+    }
+
+    ConfigureSecret(secret);
   }
 
   internal static byte[] DeriveSubKey(string purpose) =>
@@ -28,10 +46,24 @@ public static class SessionTokenService
 
   private static byte[] DeriveDefaultKey()
   {
-    var envSecret = Environment.GetEnvironmentVariable("AIR_TOKEN_SECRET");
+    var envSecret = Environment.GetEnvironmentVariable(SecretEnvironmentVariable);
     if (!string.IsNullOrWhiteSpace(envSecret))
     {
-      return SHA256.HashData(Encoding.UTF8.GetBytes(envSecret.Trim()));
+      var trimmed = envSecret.Trim();
+      if (trimmed.Length < 32)
+      {
+        throw new InvalidOperationException($"{SecretEnvironmentVariable} must be at least 32 characters long.");
+      }
+
+      return SHA256.HashData(Encoding.UTF8.GetBytes(trimmed));
+    }
+
+    var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+      ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+    if (string.Equals(envName, "Production", StringComparison.OrdinalIgnoreCase))
+    {
+      throw new InvalidOperationException(
+        $"Production startup requires a token signing secret (>= 32 characters) configured via 'Auth:TokenSecret', 'Platform:Security:Jwt:Secret', or '{SecretEnvironmentVariable}'.");
     }
 
     try
@@ -39,7 +71,7 @@ public static class SessionTokenService
       var userDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
       if (!string.IsNullOrWhiteSpace(userDir))
       {
-        var keyDir = Path.Combine(userDir, ".air");
+        var keyDir = Path.Combine(userDir, ".platform");
         Directory.CreateDirectory(keyDir);
         var keyFile = Path.Combine(keyDir, "token.key");
         if (File.Exists(keyFile))

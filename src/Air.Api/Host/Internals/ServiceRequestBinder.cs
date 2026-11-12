@@ -12,11 +12,18 @@ internal static class ServiceRequestBinder
         .Where(ServiceEndpointsExtensions.IsCallableServiceAction)
         .ToList());
 
-    var normalized = method.Replace("-", "", StringComparison.Ordinal);
+    var normalized = StripAsyncSuffix(method.Replace("-", "", StringComparison.Ordinal));
     return methods.FirstOrDefault(m =>
       string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase) ||
-      string.Equals(m.Name, normalized, StringComparison.OrdinalIgnoreCase));
+      string.Equals(m.Name, normalized, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(StripAsyncSuffix(m.Name), method, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(StripAsyncSuffix(m.Name), normalized, StringComparison.OrdinalIgnoreCase));
   }
+
+  private static string StripAsyncSuffix(string name) =>
+    name.Length > "Async".Length && name.EndsWith("Async", StringComparison.OrdinalIgnoreCase)
+      ? name[..^"Async".Length]
+      : name;
 
   public static void ApplyScopedQueryParams(HttpRequest httpRequest, IScopedServiceRequest req)
   {

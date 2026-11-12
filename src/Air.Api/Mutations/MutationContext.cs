@@ -49,7 +49,12 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
   {
     var targetName = db?.Model.FindEntityType(lockedType)?.GetSchemaQualifiedTableName() ?? lockedType.Name;
     var numbers = string.Join(':', key.Select(n => n.ToString(CultureInfo.InvariantCulture)));
-    var prefix = $"air-lock:{targetName}:{numbers}";
+    var includeTenant = (typeof(IHasTenant).IsAssignableFrom(lockedType) || key.Count != 1) &&
+                        db?.TenantContext.TenantId is > 0;
+    var tenantPart = includeTenant
+      ? $":t{db!.TenantContext.TenantId!.Value.ToString(CultureInfo.InvariantCulture)}"
+      : string.Empty;
+    var prefix = $"platform-lock:{targetName}{tenantPart}:{numbers}";
     return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(prefix)));
   }
 
@@ -79,7 +84,7 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
         }
         else if (isSqlServer)
         {
-          var resource = $"air-lock:{lockKey}";
+          var resource = $"platform-lock:{lockKey}";
           await db.Database.ExecuteSqlInterpolatedAsync(
             $"DECLARE @res int; EXEC @res = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000; IF @res < 0 THROW 51000, 'Failed to acquire application lock.', 1;",
             ct);
