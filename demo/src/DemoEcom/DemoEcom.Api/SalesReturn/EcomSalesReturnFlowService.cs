@@ -5,11 +5,11 @@ namespace DemoEcom.SalesReturn;
 /// </summary>
 public sealed class EcomSalesReturnFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.SalesReturnDraftId;
-  private const long Posted = EcomData.DocStatus.SalesReturnPostedId;
-  private const long Canceled = EcomData.DocStatus.SalesReturnCanceledId;
+  private const long Draft = EcomDocStatusData.SalesReturnDraftId;
+  private const long Posted = EcomDocStatusData.SalesReturnPostedId;
+  private const long Canceled = EcomDocStatusData.SalesReturnCanceledId;
 
-  protected override long Type => EcomData.DocType.SalesReturnId;
+  protected override long Type => EcomDocTypeData.SalesReturnId;
 
   public override Feature Feature => Ecom.SalesReturn;
 

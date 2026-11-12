@@ -40,26 +40,38 @@ protected override void SetColumns(Columns columns)
   ```csharp
   protected override void SetQuery(Query query)
   {
-    query.Where(d => d.DocTypeId == EcomData.DocType.CustomerOrderId);
+    query.Where(d => d.DocTypeId == EcomDocTypeData.CustomerOrderId);
     query.SortByDescending(d => d.Date).ThenByDescending(d => d.Id);
 
-    query.NamedFilter("stage", "Stage")
+    query.NamedFilter("Stage", "Stage")
       .Inline()
       .ShowCounts()
-      .Item("open", "Open", d => d.DocStatusId != CompletedId && d.DocStatusId != CanceledId)
+      .Item("Open", "Open", d => d.DocStatusId != CompletedId && d.DocStatusId != CanceledId)
       .Default()
       .Color(UiColor.Blue)
-      .Item("completed", "Completed", d => d.DocStatusId == CompletedId)
+      .Item("Completed", "Completed", d => d.DocStatusId == CompletedId)
       .Color(UiColor.Green)
       .All("All");
 
-    query.NamedFilter("unpaid", "Unpaid", d => d.PaidAmount < d.Amount)
+    query.NamedFilter("Unpaid", "Unpaid", d => d.PaidAmount < d.Amount)
       .Color(UiColor.Amber)
       .ShowCount();
   }
   ```
+  - Усі ідентифікатори груп і елементів `NamedFilter` обов'язково задаються в `PascalCase` (`"Stage"`, `"Open"`, `"Unpaid"`).
   - `.Inline()` відображає групу як компактну смугу вкладок безпосередньо в панелі навігації грида (без випадаючого списку).
   - `.ShowCounts()` (на групі) та `.ShowCount()` (на окремому фільтрі чи елементі) автоматично повертають живі лічильники в `GridPageDto.NamedFilterCounts` (з нульовими витратами, якщо лічильники не увімкнені або запит іде з reference-пікера) і миттєво оновлюють бейджі після мутацій.
+- **Декларативні дії таблиці та форми (`SetActions`):**
+  ```csharp
+  protected override void SetActions(Actions actions) =>
+    actions.Add("CreateSalesInvoice")
+      .Allow(Ecom.SalesInvoice.Edit)
+      .Label("Create sales invoice")
+      .Icon(UiIcon.Plus)
+      .InMenu()
+      .Do((ctx, ct) => ...);
+  ```
+  `SetActions` дозволяє декларативно оголошувати групові та одиничні (`.Single()`) операції, діалоги підтвердження (`.Confirm(...)`), типізовані форми параметрів (`.Ask<TInput>(...)`) та права доступу (`.AllowEdit()`, `.Allow(Right)`, `.AllowReadOnly()`) без створення кастомних HTTP-ендпоінтів.
 - **Декларативний захист видалення за FK (`SetHooks`):**
   ```csharp
   protected override void SetHooks(Hooks hooks)
@@ -83,7 +95,7 @@ protected override void SetParent(Parent parent) =>
 
 ## 2. Форми, правила та неблокуючі попередження (`FormService<TEntity>`)
 
-`FormService<TEntity>` автоматично обирає оптимальне подання картки (`OverlayModel.Popover` для компактних форм із `<= 8` видимими скалярними полями без підлеглих таблиць даних, вкладок і таблиць звіту, або `OverlayModel.Drawer` в усіх інших випадках), керує підготовкою чернетки (`PrepareDraftAsync`), правилами валідації та збереженням.
+`FormService<TEntity>` автоматично обирає оптимальне подання картки (`OverlayModel.Popover` для компактних автономних форм із `<= 8` видимими скалярними полями без дерева прав, `0` вкладок, `0` таблиць звіту та `0` нефайлових підлеглих таблиць даних, або `OverlayModel.Drawer` в усіх інших випадках; перевизначати `Presentation` вручну потрібно лише для свідомих винятків), керує підготовкою чернетки (`PrepareDraftAsync`), правилами валідації та збереженням.
 
 ### 2.1. Елементи форми, `PatchOnSelect` та декларативне `SumTo` (`SetElements`)
 
@@ -103,7 +115,7 @@ protected override void SetElements(Elements elements)
     .Label("Lines")
     .SumTo(d => d.Qty, l => l.Qty)
     .SumTo(d => d.Amount, l => l.Amount)
-    .ReadOnlyWhen(d => d.DocStatusId != EcomData.DocStatus.CustomerOrderNewId);
+    .ReadOnlyWhen(d => d.DocStatusId != EcomDocStatusData.CustomerOrderNewId);
 }
 ```
 
@@ -167,7 +179,7 @@ public Transition Cancel => FromOpen().To(Canceled)
 
 ## 4. Аналітичні звіти (`ReportService`), Комбіновані екрани (`ScreenService`), Файли (`FileGridService`) та Аудит (`ChangeGridService`)
 
-- **`ReportService`:** базовий сервіс інтерактивних аналітичних дашбордів (`GetReportAsync(ReportRequest, CancellationToken)` -> `ReportDataDto`), який підтримує групи швидких фільтрів (`FilterGroups`), картки KPI (`Kpis`), стовпчикові/лінійні/кругові діаграми (`Charts`) та деталізовану таблицю (`Table`) з клікабельним відкриттям картки документа (`RowDto.Open`). Див. еталон `EcomSalesReportService` у `demo/`.
+- **`ReportService`:** базовий сервіс інтерактивних аналітичних дашбордів (`GetReportAsync(ReportRequest, CancellationToken)` -> `ReportDataDto`), який підтримує групи швидких фільтрів (`FilterGroups`), картки KPI (`Kpis`), стовпчикові/лінійні/кругові діаграми (`Charts`) та деталізовану таблицю (`Table`) з клікабельним відкриттям картки документа (`RowDto.Open`) і семантичними кольорами бейджів через `RowDto.Colors` (у `Cells` завжди передається скалярний текст `L[statusName]`, а колір — у `Colors["status"]`). Див. еталон `EcomSalesReportService` у `demo/`.
 - **`ScreenService` та мультипанельні робочі місця (`PanelLayout.Screen<TService>`):** дозволяє компонувати кілька повноцінних екранів платформи (наприклад, реєстр замовлень поруч із залишками складу або звітом) без жодного рядка кастомного фронтенд-коду:
   ```csharp
   public override Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
@@ -180,7 +192,7 @@ public Transition Cancel => FromOpen().To(Canceled)
     });
   ```
   Кожна вбудована панель рендериться компонентом `PanelScreenComponent` із незалежною навігацією та реактивним оновленням, а `PlatformValidator` на старті перевіряє всі вкладені сервіси на вертикальну ізоляцію модулів (ADR #8).
-- **`FileGridService<TFile, TParent>`:** вбудований сервіс файлів із перевіркою сигнатур байтів, генерацією прев'ю, обкладинками (`IHasCoverFile`) та підписаними URL `FileLinks`.
+- **`FileGridService<TFile>` / `FileGridService<TDbContext, TFile>`:** вбудований сервіс файлів із перевіркою сигнатур байтів, генерацією прев'ю, обкладинками (`IHasCoverFile`) та підписаними URL `FileLinks`.
 - **`ChangeGridService`:** глобальний переглядач історії `AppPlatformChange` із розшифруванням назв довідників і часовим поясом користувача.
 
 ---
@@ -196,7 +208,7 @@ public Transition Cancel => FromOpen().To(Canceled)
 
 ## 6. Вбудований ШІ-асистент (`Air.Agent` та `Air.Mcp`)
 
-ШІ-асистент підключається одним рядком `.AddPlatformAgent()` у `PlatformHostOptions` і керується виключно метаданими платформи:
+ШІ-асистент підключається одним рядком `options.AddPlatformAgent()` у `PlatformOptions` (або низькорівневою парою `services.AddPlatformAgent()` + `app.MapPlatformAgent()`) і керується виключно метаданими платформи:
 
 1. **Гранулярний доступ (`AgentAccess`):** `.AllowAgent()` вмикає читання й підготовку змін (`AgentAccess.ReadWrite`), а `.AllowAgent(AgentAccess.Read)` відкриває таблицю або `ReportService` лише для читання й аналітики з урахуванням прав поточного користувача (`CanView` / `CanEdit`).
 2. **Модульна база знань (`AgentMemoryCatalog.RegisterDomainKnowledge`):** кожен модуль реєструє свої бізнес-правила у `ConfigureServices`, які автоматично сідяться в `AppAgentMemory` й додаються в системний контекст без обрізання, а нові факти зберігаються тегом `<agent_memory>`.

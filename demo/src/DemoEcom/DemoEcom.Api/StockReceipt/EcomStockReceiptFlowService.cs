@@ -5,11 +5,11 @@ namespace DemoEcom.StockReceipt;
 /// </summary>
 public sealed class EcomStockReceiptFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.StockReceiptDraftId;
-  private const long Posted = EcomData.DocStatus.StockReceiptPostedId;
-  private const long Canceled = EcomData.DocStatus.StockReceiptCanceledId;
+  private const long Draft = EcomDocStatusData.StockReceiptDraftId;
+  private const long Posted = EcomDocStatusData.StockReceiptPostedId;
+  private const long Canceled = EcomDocStatusData.StockReceiptCanceledId;
 
-  protected override long Type => EcomData.DocType.StockReceiptId;
+  protected override long Type => EcomDocTypeData.StockReceiptId;
 
   public override Feature Feature => Ecom.StockReceipt;
 

@@ -1,3 +1,5 @@
+using DemoEcom.Migrations.Seeds.Internals;
+
 namespace DemoEcom.Migrations;
 
 /// <summary>

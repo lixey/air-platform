@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 /// <summary>
 /// What the seed writes one tenant's stock documents with: its key, the generator of its locale, the notes of its

@@ -3,7 +3,7 @@ namespace DemoEcom.CustomerOrder;
 public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? ecom = null, EcomCustomerOrderFlowService? flow = null)
   : EcomDocGridService(db, ecom, flow)
 {
-  protected override long Type => EcomData.DocType.CustomerOrderId;
+  protected override long Type => EcomDocTypeData.CustomerOrderId;
 
   public override Feature Feature => Ecom.CustomerOrder;
 
@@ -26,30 +26,30 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
   {
     base.SetQuery(query);
     var me = User?.UserId;
-    query.NamedFilter("status", L["Status"])
+    query.NamedFilter("Status", L["Status"])
       .Inline()
       .ShowCounts()
       .Item(
-        "open",
+        "Open",
         L["In work"],
         doc =>
-          doc.DocStatusId == EcomData.DocStatus.CustomerOrderNewId ||
-          doc.DocStatusId == EcomData.DocStatus.CustomerOrderInProgressId ||
-          doc.DocStatusId == EcomData.DocStatus.CustomerOrderConfirmedId ||
-          doc.DocStatusId == EcomData.DocStatus.CustomerOrderPausedId
+          doc.DocStatusId == EcomDocStatusData.CustomerOrderNewId ||
+          doc.DocStatusId == EcomDocStatusData.CustomerOrderInProgressId ||
+          doc.DocStatusId == EcomDocStatusData.CustomerOrderConfirmedId ||
+          doc.DocStatusId == EcomDocStatusData.CustomerOrderPausedId
       ).Color(UiColor.Amber).Default()
       .Item(
-        "completed",
+        "Completed",
         L["Completed"],
-        doc => doc.DocStatusId == EcomData.DocStatus.CustomerOrderCompletedId
+        doc => doc.DocStatusId == EcomDocStatusData.CustomerOrderCompletedId
       ).Color(UiColor.Emerald)
       .Item(
-        "canceled",
+        "Canceled",
         L["Canceled"],
-        doc => doc.DocStatusId == EcomData.DocStatus.CustomerOrderCanceledId
+        doc => doc.DocStatusId == EcomDocStatusData.CustomerOrderCanceledId
       ).Color(UiColor.Rose)
       .All(L["All"]);
-    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
+    query.NamedFilter("Mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
     query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
   }
 
@@ -64,8 +64,8 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSalesInvoiceFormService>(
         db,
         ctx,
-        EcomData.DocType.SalesInvoiceId,
-        EcomData.DocStatus.SalesInvoiceDraftId,
+        EcomDocTypeData.SalesInvoiceId,
+        EcomDocStatusData.SalesInvoiceDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));
@@ -78,8 +78,8 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
         db,
         ctx,
-        EcomData.DocType.IncomingPaymentId,
-        EcomData.DocStatus.IncomingPaymentDraftId,
+        EcomDocTypeData.IncomingPaymentId,
+        EcomDocStatusData.IncomingPaymentDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));

@@ -3,7 +3,7 @@ namespace DemoEcom.SalesReturn;
 public sealed class EcomSalesReturnFormService(EcomDbContext db, EcomSalesReturnFlowService flow, EcomService? ecom = null)
   : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.SalesReturnId;
+  protected override long Type => EcomDocTypeData.SalesReturnId;
 
   protected override EcomDocFlowService Flow => flow;
 

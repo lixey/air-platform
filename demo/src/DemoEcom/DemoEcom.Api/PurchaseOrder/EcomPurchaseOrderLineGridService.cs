@@ -23,7 +23,7 @@ public sealed class EcomPurchaseOrderLineGridService(EcomDbContext db, EcomServi
     hooks.BeforeDelete((c, cancellationToken) =>
     {
       long[] gone = [.. c.Records.Select(line => line.Id)];
-      return EcomDocEntering.PurchasedAsync(db, gone, gone, cancellationToken);
+      return EcomDocPurchasing.PurchasedAsync(db, gone, gone, cancellationToken);
     });
   }
 }

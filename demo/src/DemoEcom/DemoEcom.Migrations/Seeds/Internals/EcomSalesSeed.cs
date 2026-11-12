@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 /// <summary>
 /// The sales of Ecom's examples, as steps of the walk of the examples (<see cref="EcomSeedWalk"/>): what becomes of each
@@ -35,7 +35,7 @@ internal static class EcomSalesSeed
   /// <summary>What a Confirmed or Paused order gets: no invoice, or an invoice in one of these statuses; and how likely each is.</summary>
   private static readonly long[] Shipments =
   [
-    NoInvoice, EcomData.DocStatus.SalesInvoiceDraftId, EcomData.DocStatus.SalesInvoiceReadyToShipId, EcomData.DocStatus.SalesInvoiceInTransitId
+    NoInvoice, EcomDocStatusData.SalesInvoiceDraftId, EcomDocStatusData.SalesInvoiceReadyToShipId, EcomDocStatusData.SalesInvoiceInTransitId
   ];
 
   private static readonly float[] ShipmentWeights = [0.4f, 0.15f, 0.15f, 0.3f];
@@ -47,7 +47,7 @@ internal static class EcomSalesSeed
   public static Dictionary<EcomStockKey, decimal> Demand(IReadOnlyList<(EcomDoc Doc, EcomDocLine[] Lines)> orders)
   {
     var demand = new Dictionary<EcomStockKey, decimal>();
-    foreach (var (order, lines) in orders.Where(order => order.Doc.DocStatusId == EcomData.DocStatus.CustomerOrderCompletedId))
+    foreach (var (order, lines) in orders.Where(order => order.Doc.DocStatusId == EcomDocStatusData.CustomerOrderCompletedId))
     {
       foreach (var line in lines)
       {
@@ -77,13 +77,13 @@ internal static class EcomSalesSeed
     var completed = 0;
     foreach (var (order, lines) in orders)
     {
-      DateOnly? returned = order.DocStatusId == EcomData.DocStatus.CustomerOrderCompletedId && ++completed % ReturnEvery == 0
+      DateOnly? returned = order.DocStatusId == EcomDocStatusData.CustomerOrderCompletedId && ++completed % ReturnEvery == 0
         ? order.Date.AddDays(random.Int(MinReturnDays, MaxReturnDays))
         : null;
       yield return new EcomSeedStep(order.Date, EcomSeedStep.Order, () => order.DocStatusId switch
       {
-        EcomData.DocStatus.CustomerOrderCompletedId => Shipped(books, order, lines, random, returned, returns),
-        EcomData.DocStatus.CustomerOrderConfirmedId or EcomData.DocStatus.CustomerOrderPausedId => Held(books, order, lines, random, purchasing),
+        EcomDocStatusData.CustomerOrderCompletedId => Shipped(books, order, lines, random, returned, returns),
+        EcomDocStatusData.CustomerOrderConfirmedId or EcomDocStatusData.CustomerOrderPausedId => Held(books, order, lines, random, purchasing),
         _ => [books.Post(order, lines)]
       });
       if (returned is { } date)
@@ -112,15 +112,15 @@ internal static class EcomSalesSeed
           order,
           lines,
           line => line.Qty - line.QtyDone,
-          EcomData.DocType.SalesInvoiceId,
-          EcomData.DocStatus.SalesInvoiceDeliveredId,
+          EcomDocTypeData.SalesInvoiceId,
+          EcomDocStatusData.SalesInvoiceDeliveredId,
           order.Date
         ) is not { } entry)
     {
       return [books.Post(order, lines)];
     }
 
-    var invoice = books.Finish(entry.Doc, entry.Lines, EcomData.DocStatus.SalesInvoiceDeliveredId, random, entry.Links);
+    var invoice = books.Finish(entry.Doc, entry.Lines, EcomDocStatusData.SalesInvoiceDeliveredId, random, entry.Links);
     EcomDocEntering.Fulfil(entry.Links, entering: true);
     foreach (var line in lines)
     {
@@ -132,7 +132,7 @@ internal static class EcomSalesSeed
       // One line comes back, a part of it or all: whole units, as a customer returns goods
       var line = random.ArrayElement([.. entry.Lines]);
       var qty = (decimal)random.Int(1, (int)decimal.Floor(line.Qty));
-      if (EcomDocEntering.Enter(entry.Doc, [line], _ => qty, EcomData.DocType.SalesReturnId, EcomData.DocStatus.SalesReturnPostedId, date) is { } back)
+      if (EcomDocEntering.Enter(entry.Doc, [line], _ => qty, EcomDocTypeData.SalesReturnId, EcomDocStatusData.SalesReturnPostedId, date) is { } back)
       {
         EcomDocEntering.Fulfil(back.Links, entering: true);
         returns[order] = back;
@@ -161,14 +161,14 @@ internal static class EcomSalesSeed
   {
     EcomStock.Reserve(lines, lines.Select(line => line.ProductId).Distinct().ToDictionary(product => product, product => books.Free(Key(order, product))));
     var statusId = random.WeightedRandom(Shipments, ShipmentWeights);
-    var shipped = statusId == EcomData.DocStatus.SalesInvoiceInTransitId;
+    var shipped = statusId == EcomDocStatusData.SalesInvoiceInTransitId;
     List<EcomSeedWritten> entered = [];
     if (statusId != NoInvoice
         && EcomDocEntering.Enter(
           order,
           lines,
           line => shipped ? line.QtyReserved : line.Qty - line.QtyDone,
-          EcomData.DocType.SalesInvoiceId,
+          EcomDocTypeData.SalesInvoiceId,
           statusId,
           order.Date
         ) is { } entry)
@@ -186,7 +186,7 @@ internal static class EcomSalesSeed
 
   /// <summary>The return kept for <paramref name="order"/>, Posted on its date: its goods are back in the warehouse from then.</summary>
   private static IReadOnlyList<EcomSeedWritten> Returned(EcomSeedBooks books, EcomDoc order, Randomizer random, Dictionary<EcomDoc, EcomDocEntry> returns) =>
-    returns.Remove(order, out var back) ? [books.Finish(back.Doc, back.Lines, EcomData.DocStatus.SalesReturnPostedId, random, back.Links)] : [];
+    returns.Remove(order, out var back) ? [books.Finish(back.Doc, back.Lines, EcomDocStatusData.SalesReturnPostedId, random, back.Links)] : [];
 
   /// <summary>What a balance is kept of for a line of <paramref name="order"/>: its product in the order's warehouse.</summary>
   private static EcomStockKey Key(EcomDoc order, EcomDocLine line) => Key(order, line.ProductId);

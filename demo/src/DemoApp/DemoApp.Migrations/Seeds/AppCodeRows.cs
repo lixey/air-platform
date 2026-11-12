@@ -12,21 +12,21 @@ public static class AppCodeRows
   public static AppSeedTenant[] Tenants() =>
   [
     new(
-      new AppTenant { Id = AppData.Tenant.EcomUaId, Handle = AppData.Tenant.EcomUa, Name = AppData.Tenant.EcomUa, TimeZone = "Europe/Kyiv", IsActive = true },
-      AppData.Language.UkrainianId,
+      new AppTenant { Id = AppTenantData.EcomUaId, Handle = AppTenantData.EcomUa, Name = AppTenantData.EcomUa, TimeZone = "Europe/Kyiv", IsActive = true },
+      AppLanguageData.UkrainianId,
       "uk"
     ),
     new(
-      new AppTenant { Id = AppData.Tenant.EcomEnId, Handle = AppData.Tenant.EcomEn, Name = AppData.Tenant.EcomEn, TimeZone = "Europe/Kyiv", IsActive = true },
-      AppData.Language.EnglishId,
+      new AppTenant { Id = AppTenantData.EcomEnId, Handle = AppTenantData.EcomEn, Name = AppTenantData.EcomEn, TimeZone = "Europe/Kyiv", IsActive = true },
+      AppLanguageData.EnglishId,
       "en"
     )
   ];
 
   public static AppLanguage[] Languages() =>
   [
-    new() { Id = AppData.Language.EnglishId, Handle = AppData.Language.English, Code = AppData.Language.EnglishCode, Name = "English", IsActive = true },
-    new() { Id = AppData.Language.UkrainianId, Handle = AppData.Language.Ukrainian, Code = AppData.Language.UkrainianCode, Name = "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430", IsActive = true }
+    new() { Id = AppLanguageData.EnglishId, Handle = AppLanguageData.English, Code = AppLanguageData.EnglishCode, Name = "English", IsActive = true },
+    new() { Id = AppLanguageData.UkrainianId, Handle = AppLanguageData.Ukrainian, Code = AppLanguageData.UkrainianCode, Name = "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430", IsActive = true }
   ];
 
   public static AppColor[] Colors() =>

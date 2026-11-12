@@ -5,11 +5,11 @@ namespace DemoEcom.SupplierInvoice;
 /// </summary>
 public sealed class EcomSupplierInvoiceFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.SupplierInvoiceDraftId;
-  private const long Posted = EcomData.DocStatus.SupplierInvoicePostedId;
-  private const long Canceled = EcomData.DocStatus.SupplierInvoiceCanceledId;
+  private const long Draft = EcomDocStatusData.SupplierInvoiceDraftId;
+  private const long Posted = EcomDocStatusData.SupplierInvoicePostedId;
+  private const long Canceled = EcomDocStatusData.SupplierInvoiceCanceledId;
 
-  protected override long Type => EcomData.DocType.SupplierInvoiceId;
+  protected override long Type => EcomDocTypeData.SupplierInvoiceId;
 
   public override Feature Feature => Ecom.SupplierInvoice;
 

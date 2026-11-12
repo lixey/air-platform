@@ -4,26 +4,26 @@ public static class OrgCodeRows
 {
   public static OrgCurrency[] Currencies() =>
   [
-    new() { Id = OrgData.Currency.UahId, Handle = OrgData.Currency.Uah, Code = OrgData.Currency.UahCode, Name = "Ukrainian Hryvnia", Symbol = "\u20b4", IsActive = true },
-    new() { Id = OrgData.Currency.UsdId, Handle = OrgData.Currency.Usd, Code = OrgData.Currency.UsdCode, Name = "US Dollar", Symbol = "$", IsActive = true },
-    new() { Id = OrgData.Currency.EurId, Handle = OrgData.Currency.Eur, Code = OrgData.Currency.EurCode, Name = "Euro", Symbol = "\u20ac", IsActive = true }
+    new() { Id = OrgCurrencyData.UahId, Handle = OrgCurrencyData.Uah, Code = OrgCurrencyData.UahCode, Name = "Ukrainian Hryvnia", Symbol = "\u20b4", IsActive = true },
+    new() { Id = OrgCurrencyData.UsdId, Handle = OrgCurrencyData.Usd, Code = OrgCurrencyData.UsdCode, Name = "US Dollar", Symbol = "$", IsActive = true },
+    new() { Id = OrgCurrencyData.EurId, Handle = OrgCurrencyData.Eur, Code = OrgCurrencyData.EurCode, Name = "Euro", Symbol = "\u20ac", IsActive = true }
   ];
 
   public static OrgUnit[] Units() =>
   [
-    new() { Id = OrgData.Unit.PieceId, Handle = OrgData.Unit.Piece, Name = "Pieces", IsActive = true },
-    new() { Id = OrgData.Unit.SetId, Handle = OrgData.Unit.Set, Name = "Sets", IsActive = true },
-    new() { Id = OrgData.Unit.LitreId, Handle = OrgData.Unit.Litre, Name = "Litres", IsActive = true },
-    new() { Id = OrgData.Unit.KilogramId, Handle = OrgData.Unit.Kilogram, Name = "Kilograms", IsActive = true },
-    new() { Id = OrgData.Unit.MetreId, Handle = OrgData.Unit.Metre, Name = "Metres", IsActive = true }
+    new() { Id = OrgUnitData.PieceId, Handle = OrgUnitData.Piece, Name = "Pieces", IsActive = true },
+    new() { Id = OrgUnitData.SetId, Handle = OrgUnitData.Set, Name = "Sets", IsActive = true },
+    new() { Id = OrgUnitData.LitreId, Handle = OrgUnitData.Litre, Name = "Litres", IsActive = true },
+    new() { Id = OrgUnitData.KilogramId, Handle = OrgUnitData.Kilogram, Name = "Kilograms", IsActive = true },
+    new() { Id = OrgUnitData.MetreId, Handle = OrgUnitData.Metre, Name = "Metres", IsActive = true }
   ];
 
   public static OrgPaymentTerm[] PaymentTerms() =>
   [
-    new() { Id = OrgData.PaymentTerm.FullPrepaymentId, Handle = OrgData.PaymentTerm.FullPrepayment, Name = "Full Prepayment", IsActive = true },
-    new() { Id = OrgData.PaymentTerm.PartialPrepaymentId, Handle = OrgData.PaymentTerm.PartialPrepayment, Name = "Partial Prepayment", IsActive = true },
-    new() { Id = OrgData.PaymentTerm.PaymentOnDeliveryId, Handle = OrgData.PaymentTerm.PaymentOnDelivery, Name = "Payment on Delivery", IsActive = true },
-    new() { Id = OrgData.PaymentTerm.NoPaymentId, Handle = OrgData.PaymentTerm.NoPayment, Name = "No Payment Required", IsActive = true }
+    new() { Id = OrgPaymentTermData.FullPrepaymentId, Handle = OrgPaymentTermData.FullPrepayment, Name = "Full Prepayment", IsActive = true },
+    new() { Id = OrgPaymentTermData.PartialPrepaymentId, Handle = OrgPaymentTermData.PartialPrepayment, Name = "Partial Prepayment", IsActive = true },
+    new() { Id = OrgPaymentTermData.PaymentOnDeliveryId, Handle = OrgPaymentTermData.PaymentOnDelivery, Name = "Payment on Delivery", IsActive = true },
+    new() { Id = OrgPaymentTermData.NoPaymentId, Handle = OrgPaymentTermData.NoPayment, Name = "No Payment Required", IsActive = true }
   ];
 
   public static async Task SyncAsync(OrgDbContext db, CancellationToken cancellationToken = default)

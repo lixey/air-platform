@@ -7,7 +7,7 @@ public sealed class EcomOutgoingPaymentGridService(
   EcomDbContext db, EcomOutgoingPaymentFlowService flow, EcomService? ecom = null
 ) : EcomDocGridService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.OutgoingPaymentId;
+  protected override long Type => EcomDocTypeData.OutgoingPaymentId;
 
   protected override EcomDocFlowService Flow => flow;
 

@@ -5,11 +5,11 @@ namespace DemoEcom.StockTransfer;
 /// </summary>
 public sealed class EcomStockTransferFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.StockTransferDraftId;
-  private const long Posted = EcomData.DocStatus.StockTransferPostedId;
-  private const long Canceled = EcomData.DocStatus.StockTransferCanceledId;
+  private const long Draft = EcomDocStatusData.StockTransferDraftId;
+  private const long Posted = EcomDocStatusData.StockTransferPostedId;
+  private const long Canceled = EcomDocStatusData.StockTransferCanceledId;
 
-  protected override long Type => EcomData.DocType.StockTransferId;
+  protected override long Type => EcomDocTypeData.StockTransferId;
 
   public override Feature Feature => Ecom.StockTransfer;
 

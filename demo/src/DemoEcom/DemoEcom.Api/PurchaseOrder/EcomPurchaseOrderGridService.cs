@@ -6,7 +6,7 @@ namespace DemoEcom.PurchaseOrder;
 public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseOrderFlowService flow, EcomService? ecom = null)
   : EcomDocGridService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.PurchaseOrderId;
+  protected override long Type => EcomDocTypeData.PurchaseOrderId;
 
   protected override EcomDocFlowService Flow => flow;
 
@@ -16,20 +16,20 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
   {
     base.SetQuery(query);
     var me = User?.UserId;
-    query.NamedFilter("status", L["Status"])
+    query.NamedFilter("Status", L["Status"])
       .ShowCounts()
       .Item(
-        "open",
+        "Open",
         L["In work"],
-        doc => doc.DocStatusId == EcomData.DocStatus.PurchaseOrderNewId || doc.DocStatusId == EcomData.DocStatus.PurchaseOrderSentId
+        doc => doc.DocStatusId == EcomDocStatusData.PurchaseOrderNewId || doc.DocStatusId == EcomDocStatusData.PurchaseOrderSentId
       ).Color(UiColor.Amber).Default()
       .Item(
-        "closed",
+        "Closed",
         L["Finished"],
-        doc => doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCompletedId || doc.DocStatusId == EcomData.DocStatus.PurchaseOrderCanceledId
+        doc => doc.DocStatusId == EcomDocStatusData.PurchaseOrderCompletedId || doc.DocStatusId == EcomDocStatusData.PurchaseOrderCanceledId
       ).Color(UiColor.Emerald)
       .All(L["All"]);
-    query.NamedFilter("mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
+    query.NamedFilter("Mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
   }
 
   protected override void SetColumns(Columns<EcomDoc> columns)
@@ -59,8 +59,8 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSupplierInvoiceFormService>(
         db,
         ctx,
-        EcomData.DocType.SupplierInvoiceId,
-        EcomData.DocStatus.SupplierInvoiceDraftId,
+        EcomDocTypeData.SupplierInvoiceId,
+        EcomDocStatusData.SupplierInvoiceDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));
@@ -73,8 +73,8 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
         db,
         ctx,
-        EcomData.DocType.OutgoingPaymentId,
-        EcomData.DocStatus.OutgoingPaymentDraftId,
+        EcomDocTypeData.OutgoingPaymentId,
+        EcomDocStatusData.OutgoingPaymentDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));
@@ -87,7 +87,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
     {
       long[] orders = [.. c.Records.Select(doc => doc.Id)];
       var gone = await db.EcomDocLine.Where(line => orders.Contains(line.DocId)).Select(line => line.Id).ToListAsync(cancellationToken);
-      await EcomDocEntering.PurchasedAsync(db, gone, gone, cancellationToken);
+      await EcomDocPurchasing.PurchasedAsync(db, gone, gone, cancellationToken);
     });
   }
 }

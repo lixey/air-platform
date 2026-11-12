@@ -5,11 +5,11 @@ namespace DemoEcom.SupplierReturn;
 /// </summary>
 public sealed class EcomSupplierReturnFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.SupplierReturnDraftId;
-  private const long Posted = EcomData.DocStatus.SupplierReturnPostedId;
-  private const long Canceled = EcomData.DocStatus.SupplierReturnCanceledId;
+  private const long Draft = EcomDocStatusData.SupplierReturnDraftId;
+  private const long Posted = EcomDocStatusData.SupplierReturnPostedId;
+  private const long Canceled = EcomDocStatusData.SupplierReturnCanceledId;
 
-  protected override long Type => EcomData.DocType.SupplierReturnId;
+  protected override long Type => EcomDocTypeData.SupplierReturnId;
 
   public override Feature Feature => Ecom.SupplierReturn;
 

@@ -87,7 +87,7 @@ public static class DevMigrationsRunner
 
     Console.WriteLine("Seeding Ecom (documents, lines, stock moves, links, balances via Bogus)...");
     var ecomTimer = Stopwatch.StartNew();
-    var now = DateTimeOffset.UtcNow;
+    var now = TimeProvider.System.GetUtcNow();
     await EcomSeed.RunAsync(ecomDb, volume.Ecom, randomSeed, tenants, now);
     ecomTimer.Stop();
 
@@ -100,7 +100,7 @@ public static class DevMigrationsRunner
     var custsTotal = await orgDb.OrgCustomer.CountAsync();
     var prodsTotal = await orgDb.OrgProduct.CountAsync();
     var docsTotal = await ecomDb.EcomDoc.CountAsync();
-    var ordersTotal = await ecomDb.EcomDoc.Where(d => d.DocTypeId == EcomData.DocType.CustomerOrderId).CountAsync();
+    var ordersTotal = await ecomDb.EcomDoc.Where(d => d.DocTypeId == EcomDocTypeData.CustomerOrderId).CountAsync();
     var linesTotal = await ecomDb.EcomDocLine.CountAsync();
     var movesTotal = await ecomDb.EcomStockMove.CountAsync();
     var balancesTotal = await ecomDb.EcomStockBalance.CountAsync();

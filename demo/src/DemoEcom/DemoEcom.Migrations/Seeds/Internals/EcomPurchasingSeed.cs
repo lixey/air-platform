@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 internal sealed class EcomPurchasingSeed
 {
@@ -10,7 +10,7 @@ internal sealed class EcomPurchasingSeed
   private const string UkrainianReturnNote = "\u0422\u043e\u0432\u0430\u0440 \u043f\u043e\u0437\u0430 \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f\u043c: \u043f\u043e\u0432\u0435\u0440\u043d\u0435\u043d\u043e \u043f\u043e\u0441\u0442\u0430\u0447\u0430\u043b\u044c\u043d\u0438\u043a\u0443.";
   private const string EnglishReturnNote = "Goods beyond the order: returned to the supplier.";
 
-  private static readonly End[] Ends = [End.Received, End.Sent, End.Nothing, End.New];
+  private static readonly EcomPurchasingEnd[] Ends = [EcomPurchasingEnd.Received, EcomPurchasingEnd.Sent, EcomPurchasingEnd.Nothing, EcomPurchasingEnd.New];
 
   private readonly EcomSeedBooks _books;
   private readonly Randomizer _random;
@@ -61,8 +61,8 @@ internal sealed class EcomPurchasingSeed
   {
     List<EcomPurchase> wanted =
     [
-      .. lines.Where(line => EcomDocEntering.ToPurchase(line) > 0m)
-        .Select(line => new EcomPurchase(order, line, _products[line.ProductId], EcomDocEntering.ToPurchase(line)))
+      .. lines.Where(line => EcomDocPurchasing.ToPurchase(line) > 0m)
+        .Select(line => new EcomPurchase(order, line, _products[line.ProductId], EcomDocPurchasing.ToPurchase(line)))
     ];
     if (wanted.Count == 0)
     {
@@ -70,26 +70,26 @@ internal sealed class EcomPurchasingSeed
     }
 
     var end = Ends[_turns.NextShort() % Ends.Length];
-    if (end == End.Nothing)
+    if (end == EcomPurchasingEnd.Nothing)
     {
       return [];
     }
 
-    var purchases = EcomDocEntering.EnterPurchases(wanted, order.ManagerId, order.Date);
+    var purchases = EcomDocPurchasing.EnterPurchases(wanted, order.ManagerId, order.Date);
     var written = new List<EcomSeedWritten>();
     foreach (var purchase in purchases)
     {
-      if (end == End.Received)
+      if (end == EcomPurchasingEnd.Received)
       {
         written.AddRange(Received(purchase));
         continue;
       }
 
-      var statusId = end == End.Sent ? EcomData.DocStatus.PurchaseOrderSentId : EcomData.DocStatus.PurchaseOrderNewId;
+      var statusId = end == EcomPurchasingEnd.Sent ? EcomDocStatusData.PurchaseOrderSentId : EcomDocStatusData.PurchaseOrderNewId;
       written.Add(_books.Finish(purchase.Doc, purchase.Lines, statusId, _random, purchase.Links));
     }
 
-    if (end == End.Received)
+    if (end == EcomPurchasingEnd.Received)
     {
       EcomStock.Reserve(
         lines,
@@ -100,7 +100,7 @@ internal sealed class EcomPurchasingSeed
       );
     }
 
-    EcomDocEntering.Purchased([.. purchases.SelectMany(purchase => purchase.Links)]);
+    EcomDocPurchasing.Purchased([.. purchases.SelectMany(purchase => purchase.Links)]);
     return written;
   }
 
@@ -110,8 +110,8 @@ internal sealed class EcomPurchasingSeed
       purchase.Doc,
       purchase.Lines,
       line => line.Qty - line.QtyDone,
-      EcomData.DocType.SupplierInvoiceId,
-      EcomData.DocStatus.SupplierInvoicePostedId,
+      EcomDocTypeData.SupplierInvoiceId,
+      EcomDocStatusData.SupplierInvoicePostedId,
       purchase.Doc.Date
     ) ?? throw new InvalidOperationException("A purchase order made for an order line has nothing to receive.");
     List<EcomDocLine> lines = [.. invoice.Lines];
@@ -126,8 +126,8 @@ internal sealed class EcomPurchasingSeed
         invoice.Doc,
         [extra],
         line => line.Qty,
-        EcomData.DocType.SupplierReturnId,
-        EcomData.DocStatus.SupplierReturnPostedId,
+        EcomDocTypeData.SupplierReturnId,
+        EcomDocStatusData.SupplierReturnPostedId,
         invoice.Doc.Date
       ) ?? throw new InvalidOperationException("The line a supplier invoice carries beyond its order has nothing to return.");
       back.Doc.Note = _returnNote;
@@ -137,12 +137,12 @@ internal sealed class EcomPurchasingSeed
     EcomDocEntering.Fulfil(invoice.Links, entering: true);
     List<EcomSeedWritten> written =
     [
-      _books.Finish(purchase.Doc, purchase.Lines, EcomData.DocStatus.PurchaseOrderSentId, _random, purchase.Links),
-      _books.Finish(invoice.Doc, lines, EcomData.DocStatus.SupplierInvoicePostedId, _random, invoice.Links)
+      _books.Finish(purchase.Doc, purchase.Lines, EcomDocStatusData.PurchaseOrderSentId, _random, purchase.Links),
+      _books.Finish(invoice.Doc, lines, EcomDocStatusData.SupplierInvoicePostedId, _random, invoice.Links)
     ];
     if (back is not null)
     {
-      written.Add(_books.Finish(back.Doc, back.Lines, EcomData.DocStatus.SupplierReturnPostedId, _random, back.Links));
+      written.Add(_books.Finish(back.Doc, back.Lines, EcomDocStatusData.SupplierReturnPostedId, _random, back.Links));
     }
 
     return written;
@@ -166,13 +166,5 @@ internal sealed class EcomPurchasingSeed
       Price = product.PurchasePrice,
       Amount = EcomDocTotals.LineAmount(qty, product.PurchasePrice, 0m)
     };
-  }
-
-  private enum End
-  {
-    Received,
-    Sent,
-    Nothing,
-    New
   }
 }

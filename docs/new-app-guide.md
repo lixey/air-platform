@@ -49,7 +49,8 @@
 
 ### 2.2. `<Mod>.Migrations` (Міграції EF Core та початкові дані `Seeds`)
 
-- Містить файли міграцій, `*ModelSnapshot.cs` та класи початкового наповнення (`<Mod>Seed.cs`, `<Mod>Catalog.cs`).
+- Містить файли міграцій, `*ModelSnapshot.cs`, фабрику `PlatformDesignTimeFactory<<Mod>DbContext>` (із `Platform.Data.Postgres` або `Platform.Data.SqlServer` для офлайнового `dotnet ef migrations add`) та класи початкового наповнення (`<Mod>Seed.cs`, `<Mod>CodeRows.cs`).
+- Застосування міграцій, перевірка відсутності розбіжностей моделі та бейзлайнінг виконуються централізовано через `PlatformMigrator.Check` / `PlatformMigrator.MigrateAsync` / `PlatformMigrator.BaselineAsync`.
 - Відокремлений від `<Mod>.Data` згідно з **ADR #5**, щоб багатотисячні файли знімків міграцій не сповільнювали компіляцію доменних проєктів.
 
 ### 2.3. `<Mod>.Api` (Фічі, сервіси таблиць, форм, звітів, екранів і потоків статусів)
@@ -94,7 +95,7 @@ await PlatformHost.RunAsync(
 ```
 
 > [!IMPORTANT]
-> Не додавайте у `Program.cs` ручні виклики `app.UseDefaultFiles()`, `app.UseStaticFiles()` або `app.MapFallbackToFile("index.html")` — `PlatformHost` автоматично монтує API модулів, `/api/agent/*`, `/api/mcp`, статику та безпечний SPA-fallback із захистом `/api/* -> 404 NotFound`.
+> Не додавайте у `Program.cs` ручні виклики `app.UseDefaultFiles()`, `app.UseStaticFiles()` або `app.MapFallbackToFile("index.html")` — `PlatformHost` автоматично монтує API модулів, ШІ-асистента (`AddPlatformAgent` + `MapPlatformAgent` на `/api/agent/*` і `/api/mcp`), статику та безпечний SPA-fallback із захистом `/api/* -> 404 NotFound`. Для запуску в середовищі `Production` обов'язково задайте секрет підпису токенів `PLATFORM_TOKEN_SECRET` (щонайменше 32 символи).
 
 ---
 

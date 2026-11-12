@@ -7,13 +7,13 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
 
   protected override void SetQuery(Query query)
   {
-    query.Where(line => line.Doc.DocTypeId == EcomData.DocType.CustomerOrderId
-                  && (line.Doc.DocStatusId == EcomData.DocStatus.CustomerOrderConfirmedId
-                      || line.Doc.DocStatusId == EcomData.DocStatus.CustomerOrderPausedId));
+    query.Where(line => line.Doc.DocTypeId == EcomDocTypeData.CustomerOrderId
+                  && (line.Doc.DocStatusId == EcomDocStatusData.CustomerOrderConfirmedId
+                      || line.Doc.DocStatusId == EcomDocStatusData.CustomerOrderPausedId));
     query.SortByDescending("toPurchase").ThenBy(r => r.Doc.Date).ThenBy(r => r.Doc.Number);
     query.RecordLabel(e => e.Doc.Number);
     query.NamedFilter(
-      "needs-purchase",
+      "NeedsPurchase",
       L["Needs a purchase"],
       line => line.Qty - line.QtyDone - line.QtyReserved - line.QtyPurchased > 0m
     );
@@ -24,7 +24,7 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
     columns.Add(r => r.Doc.Number);
     columns.Add(r => r.Doc.Date);
     columns.Add(r => r.Doc.DocStatus).Label("Status").AsReference<EcomDocStatusGridService>()
-      .Where(s => s.DocTypeId, EcomData.DocType.CustomerOrderId)
+      .Where(s => s.DocTypeId, EcomDocTypeData.CustomerOrderId)
       .Color(line => line.Doc.DocStatus.Color.Handle);
     columns.Add(r => r.Doc.Organization).AsReference<OrgOrganizationGridService>().Color(line => line.Doc.Organization.Color.Handle);
     columns.Add(r => r.Doc.Warehouse).AsReference<OrgWarehouseGridService>();

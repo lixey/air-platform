@@ -4,7 +4,7 @@ public sealed class EcomStockTransferGridService(
   EcomDbContext db, EcomStockTransferFlowService flow, EcomService? ecom = null
 ) : EcomDocGridService(db, ecom, flow)
 {
-  protected override long Type => EcomData.DocType.StockTransferId;
+  protected override long Type => EcomDocTypeData.StockTransferId;
 
   protected override EcomDocFlowService Flow => flow;
 

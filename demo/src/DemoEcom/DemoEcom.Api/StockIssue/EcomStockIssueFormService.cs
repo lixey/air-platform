@@ -3,7 +3,7 @@ namespace DemoEcom.StockIssue;
 public sealed class EcomStockIssueFormService(EcomDbContext db, EcomStockIssueFlowService flow, EcomService? ecom = null)
   : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.StockIssueId;
+  protected override long Type => EcomDocTypeData.StockIssueId;
 
   protected override EcomDocFlowService Flow => flow;
 

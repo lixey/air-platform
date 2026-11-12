@@ -6,7 +6,7 @@ public sealed class EcomCustomerOrderFormService(
   EcomService? ecom = null
 ) : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.CustomerOrderId;
+  protected override long Type => EcomDocTypeData.CustomerOrderId;
 
   protected override EcomDocFlowService Flow => flow;
 

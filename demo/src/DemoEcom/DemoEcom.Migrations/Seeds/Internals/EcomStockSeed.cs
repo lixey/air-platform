@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 /// <summary>
 /// The stock documents of Ecom's examples, the same volume for each tenant, as steps of the walk of the examples
@@ -105,12 +105,12 @@ internal static class EcomStockSeed
     (long TypeId, int Age)[] plans =
     [
       .. Enumerable.Range(0, volume.PurchaseOrders).Select(index => (
-        EcomData.DocType.PurchaseOrderId,
+        EcomDocTypeData.PurchaseOrderId,
         index % RecentEvery == 0 ? random.Int(1, EcomSeedClock.RecentDays) : random.Int(EcomSeedClock.RecentDays + 1, EcomSeedClock.Days)
       )),
-      .. Enumerable.Range(0, volume.SupplierInvoices).Select(_ => (EcomData.DocType.SupplierInvoiceId, random.Int(1, EcomSeedClock.Days))),
-      .. Enumerable.Range(0, volume.StockIssues).Select(_ => (EcomData.DocType.StockIssueId, random.Int(1, EcomSeedClock.Days))),
-      .. Enumerable.Range(0, volume.StockTransfers).Select(_ => (EcomData.DocType.StockTransferId, random.Int(1, EcomSeedClock.Days)))
+      .. Enumerable.Range(0, volume.SupplierInvoices).Select(_ => (EcomDocTypeData.SupplierInvoiceId, random.Int(1, EcomSeedClock.Days))),
+      .. Enumerable.Range(0, volume.StockIssues).Select(_ => (EcomDocTypeData.StockIssueId, random.Int(1, EcomSeedClock.Days))),
+      .. Enumerable.Range(0, volume.StockTransfers).Select(_ => (EcomDocTypeData.StockTransferId, random.Int(1, EcomSeedClock.Days)))
     ];
     var turns = new EcomStockTurns();
     return
@@ -193,8 +193,8 @@ internal static class EcomStockSeed
   {
     var draft = typeId switch
     {
-      EcomData.DocType.PurchaseOrderId or EcomData.DocType.SupplierInvoiceId => Purchase(scope, typeId, date),
-      EcomData.DocType.StockIssueId => Issue(scope, date, books),
+      EcomDocTypeData.PurchaseOrderId or EcomDocTypeData.SupplierInvoiceId => Purchase(scope, typeId, date),
+      EcomDocTypeData.StockIssueId => Issue(scope, date, books),
       _ => Transfer(scope, date, books)
     };
     if (draft is not var (doc, lines))
@@ -213,7 +213,7 @@ internal static class EcomStockSeed
   private static EcomSeedWritten Opening(EcomStockScope scope, EcomStockShelf shelf, DateOnly date, EcomSeedBooks books)
   {
     var random = scope.Faker.Random;
-    var doc = NewDoc(scope, EcomData.DocType.StockReceiptId, shelf, date);
+    var doc = NewDoc(scope, EcomDocTypeData.StockReceiptId, shelf, date);
     doc.Note = scope.Texts.OpeningNote;
     var lines = LinesOf(scope, doc, shelf.Assortment.Select(product =>
     {
@@ -221,7 +221,7 @@ internal static class EcomStockSeed
       var surplus = random.Bool(ScarceShare) ? random.Int(1, MaxScarceQty) : random.Int(MinOpeningQty, MaxOpeningQty);
       return (product, demand + surplus);
     }));
-    return books.Finish(doc, lines, EcomData.DocStatus.StockReceiptPostedId, random);
+    return books.Finish(doc, lines, EcomDocStatusData.StockReceiptPostedId, random);
   }
 
   /// <summary>
@@ -236,7 +236,7 @@ internal static class EcomStockSeed
     var offer = random.ArrayElement(shelf.Offers);
     var doc = NewDoc(scope, typeId, shelf, date);
     doc.CounterpartyId = offer.Supplier.Id;
-    if (typeId == EcomData.DocType.PurchaseOrderId)
+    if (typeId == EcomDocTypeData.PurchaseOrderId)
     {
       doc.PaymentTermId = OneOf(random, scope.PaymentTerms);
       doc.DueDate = date.AddDays(offer.Supplier.DeliveryDays);
@@ -264,7 +264,7 @@ internal static class EcomStockSeed
       return null;
     }
 
-    var doc = NewDoc(scope, EcomData.DocType.StockIssueId, shelf, date);
+    var doc = NewDoc(scope, EcomDocTypeData.StockIssueId, shelf, date);
     doc.Note = random.Bool(0.6f) ? scope.Faker.PickRandom(scope.Texts.IssueNotes) : null;
     return (doc, LinesOf(scope, doc, Pick(random, held).Select(of => (of.Product, (decimal)random.Int(1, Math.Min(MaxIssueQty, of.Free))))));
   }
@@ -292,7 +292,7 @@ internal static class EcomStockSeed
       return null;
     }
 
-    var doc = NewDoc(scope, EcomData.DocType.StockTransferId, shelf, date);
+    var doc = NewDoc(scope, EcomDocTypeData.StockTransferId, shelf, date);
     doc.WarehouseToId = neighbours[to].WarehouseId;
     doc.Note = random.Bool(0.3f) ? scope.Faker.PickRandom(scope.Texts.TransferNotes) : null;
     return (doc, LinesOf(scope, doc, Pick(random, held).Select(of => (of.Product, (decimal)random.Int(1, Math.Min(MaxTransferQty, of.Free))))));

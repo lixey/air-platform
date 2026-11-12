@@ -1,10 +1,10 @@
 namespace DemoEcom;
 
-public abstract class EcomGridService<TEntity, TRow>(EcomDbContext db, PlatformAppService? app = null)
-  : GridService<TEntity, TRow>(db, app)
+public abstract class EcomGridService<TEntity, TRow>(EcomDbContext db, EcomService? ecom = null)
+  : GridService<TEntity, TRow>(db, ecom)
   where TEntity : class, IEntity, new()
   where TRow : class
 {
   protected EcomDbContext Db => db;
-  protected PlatformAppService? EcomApp => app;
+  protected EcomService? EcomApp => ecom;
 }
