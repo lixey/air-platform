@@ -269,7 +269,8 @@ internal static class AgentProposalChildExecutor
           ct);
         if (delRes.Outcome != MutationOutcome.Committed)
         {
-          throw new InvalidOperationException(delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"]);
+          var msg = delRes.Messages?.FirstOrDefault()?.Detail ?? delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
+          throw new InvalidOperationException(msg);
         }
       }
 
@@ -283,7 +284,8 @@ internal static class AgentProposalChildExecutor
         ct);
       if (delRes.Outcome != MutationOutcome.Committed)
       {
-        throw new InvalidOperationException(delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"]);
+        var msg = delRes.Messages?.FirstOrDefault()?.Detail ?? delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
+        throw new InvalidOperationException(msg);
       }
     }
   }

@@ -4,6 +4,7 @@ internal sealed class InspectionFormService(AgentTestDbContext db, PlatformAppSe
   : FormService<AgentTestInspection>(db, app)
 {
   public override Feature Feature => AgentTestModule.Inspections;
+  protected override void SetQuery(Query query) => query.Where(i => i.Code != "OTHER-DOCTYPE");
   protected override void SetElements(Elements elements)
   {
     elements.UseStatusOf(new InspectionFlowService(db));

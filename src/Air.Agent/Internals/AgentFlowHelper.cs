@@ -11,9 +11,6 @@ internal static class AgentFlowHelper
   private static readonly MethodInfo ValidateRecordGenericMethod = typeof(AgentFlowHelper)
     .GetMethod(nameof(ValidateRecordForTransitionTypedAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
 
-  private static readonly MethodInfo ExecuteDirectFlowGenericMethod = typeof(AgentFlowHelper)
-    .GetMethod(nameof(ExecuteDirectFlowMoveTypedAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
-
   public static Type? FindFlowServiceType(Feature? feature)
   {
     if (feature == null)
@@ -73,10 +70,48 @@ internal static class AgentFlowHelper
     return await task;
   }
 
+  public static async Task<(object? Entity, object? GridRow)> EnsureRecordReachableAsync(
+    Feature feature,
+    Type? formServiceType,
+    Type? gridServiceType,
+    long recordId,
+    PlatformDbContext db,
+    PlatformAppService app,
+    CancellationToken ct)
+  {
+    if (!AgentFeatureRegistry.CanViewFeature(feature, app) || formServiceType == null && gridServiceType == null)
+    {
+      throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+    }
+
+    var localizer = Localizer.Instance.For(feature.Module);
+    object? entity = null;
+    if (formServiceType != null)
+    {
+      var formInst = ModuleCatalog.Instance.CreateServiceInstance(formServiceType, db, app) as IFormService
+        ?? throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+      formInst.SetRequest(new FormRequest { Id = recordId });
+      entity = await formInst.LoadParentRecordAsync(recordId, ct)
+        ?? throw new KeyNotFoundException(localizer["FormNotFound"]);
+    }
+
+    object? gridRow = null;
+    if (gridServiceType != null)
+    {
+      var gridInst = ModuleCatalog.Instance.CreateServiceInstance(gridServiceType, db, app) as IGridService
+        ?? throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+      gridRow = await gridInst.ReadRowAsync(recordId, ct)
+        ?? throw new KeyNotFoundException(localizer["FormNotFound"]);
+    }
+
+    return (entity, gridRow);
+  }
+
   public static async Task<(long CurrentStatusId, string CurrentStatusName, int? Ver)> ValidateRecordForTransitionAsync(
     Type flowServiceType,
     Feature feature,
     long recordId,
+    object? reachableEntity,
     AgentFlowTransitionDescriptor transition,
     PlatformDbContext db,
     PlatformAppService app,
@@ -89,14 +124,13 @@ internal static class AgentFlowHelper
 
     var task = (Task<(long, string, int?)>)ValidateRecordGenericMethod
       .MakeGenericMethod(entityType)
-      .Invoke(null, [flowObj, feature, recordId, transition, db, app, ct])!;
+      .Invoke(null, [flowObj, feature, recordId, reachableEntity, transition, db, app, ct])!;
     return await task;
   }
 
   public static async Task ExecuteMoveStatusAsync(
     Type? formServiceType,
     Type? gridServiceType,
-    Type? flowServiceType,
     long recordId,
     string transitionName,
     JsonElement? askBody,
@@ -136,16 +170,6 @@ internal static class AgentFlowHelper
       {
         result = null;
       }
-    }
-
-    if (result == null && flowServiceType != null && FindFlowEntityType(flowServiceType) is { } entityType)
-    {
-      var flowObj = ModuleCatalog.Instance.CreateServiceInstance(flowServiceType, db, app)
-        ?? throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
-      var directTask = (Task<MutationResultDto>)ExecuteDirectFlowGenericMethod
-        .MakeGenericMethod(entityType)
-        .Invoke(null, [flowObj, recordId, transitionName, askBody, ver, db, app, ct])!;
-      result = await directTask;
     }
 
     if (result == null)
@@ -256,6 +280,7 @@ internal static class AgentFlowHelper
     StatusFlowService<TEntity> flow,
     Feature feature,
     long recordId,
+    object? reachableEntity,
     AgentFlowTransitionDescriptor transition,
     PlatformDbContext db,
     PlatformAppService app,
@@ -264,7 +289,8 @@ internal static class AgentFlowHelper
   {
     flow.AttachPlatformApp(app);
     var localizer = Localizer.Instance.For(feature.Module);
-    var entity = await db.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == recordId, ct)
+    var entity = reachableEntity as TEntity
+      ?? await db.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == recordId, ct)
       ?? throw new KeyNotFoundException(localizer["FormNotFound"]);
 
     var currentStatusId = flow.StatusMember.Compile()(entity);
@@ -288,69 +314,5 @@ internal static class AgentFlowHelper
 
     var ver = (entity as IHasVersion)?.Ver;
     return (currentStatusId, currentStatusName, ver);
-  }
-
-  private static async Task<MutationResultDto> ExecuteDirectFlowMoveTypedAsync<TEntity>(
-    StatusFlowService<TEntity> flow,
-    long recordId,
-    string transitionName,
-    JsonElement? askBody,
-    int? ver,
-    PlatformDbContext db,
-    PlatformAppService app,
-    CancellationToken ct)
-    where TEntity : class, IEntity, new()
-  {
-    flow.AttachPlatformApp(app);
-    var localizer = Localizer.Instance.For(flow.Feature.Module);
-    return await db.RunMutationAsync(async mutationCt =>
-    {
-      var entity = await db.Set<TEntity>().FirstOrDefaultAsync(e => e.Id == recordId, mutationCt)
-        ?? throw new KeyNotFoundException(localizer["FormNotFound"]);
-
-      if (entity is IHasVersion versioned && ver is > 0 && versioned.Ver != ver.Value)
-      {
-        return new MutationResultDto
-        {
-          Outcome = MutationOutcome.Conflict,
-          Messages = [new MessageDto { Detail = localizer["FormRecordChanged"], Type = MessageType.Error }]
-        };
-      }
-
-      var transition = flow.Transitions.FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
-      if (transition == null || !CanMoveTransition(flow.Feature, app.User, transition.Name))
-      {
-        return new MutationResultDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Messages = [new MessageDto { Detail = localizer["MutationRefused"], Type = MessageType.Error }]
-        };
-      }
-
-      var askInput = transition.Ask?.Read(askBody);
-      if (transition.Ask != null)
-      {
-        var askErrors = await transition.Ask.ValidateAsync(askInput, db, app, localizer, mutationCt);
-        if (askErrors.Count > 0)
-        {
-          return new MutationResultDto { Outcome = MutationOutcome.Refused, Messages = [.. askErrors] };
-        }
-      }
-
-      var ctx = new MutationContext(db);
-      await flow.MoveAsync(ctx, [entity], transition.Name, askInput, mutationCt);
-      if (ctx.Errors.Count > 0)
-      {
-        db.MarkMutationRollbackOnly();
-        return new MutationResultDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Messages = ctx.Errors.Select(e => e.ToMessage(MessageType.Error)).ToList()
-        };
-      }
-
-      await db.SaveChangesAsync(mutationCt);
-      return new MutationResultDto { Outcome = MutationOutcome.Committed };
-    }, ct);
   }
 }

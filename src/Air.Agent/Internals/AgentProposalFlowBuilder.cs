@@ -25,7 +25,7 @@ internal static class AgentProposalFlowBuilder
     CancellationToken ct)
   {
     var (feature, formType, gridType) = ResolveMoveTargetFeature(requestedService);
-    if (feature == null || !feature.AllowsAgentWrite)
+    if (feature == null || !feature.AllowsAgentWrite || formType == null && gridType == null)
     {
       throw new InvalidOperationException($"Status flow on '{requestedService}' is not available or not enabled for AI mutations.");
     }
@@ -42,23 +42,26 @@ internal static class AgentProposalFlowBuilder
 
     await using var scope = AgentModuleScope.OpenForService(rootServices, formType ?? gridType ?? matched.FlowServiceType, fallbackDb, fallbackApp);
 
+    var (reachableEntity, rowObj) = await AgentFlowHelper.EnsureRecordReachableAsync(
+      feature,
+      formType,
+      gridType,
+      recordId,
+      scope.Db,
+      scope.App,
+      ct);
+
     var (_, currentStatusName, recordVer) = await AgentFlowHelper.ValidateRecordForTransitionAsync(
       matched.FlowServiceType,
       feature,
       recordId,
+      reachableEntity,
       matched,
       scope.Db,
       scope.App,
       ct);
 
-    string? recordCaption = null;
-    if (gridType != null &&
-        ModuleCatalog.Instance.CreateServiceInstance(gridType, scope.Db, scope.App) is IGridService gridInst &&
-        AgentFeatureRegistry.CanViewFeature(gridInst.Feature, scope.App))
-    {
-      var rowObj = await gridInst.ReadRowAsync(recordId, ct);
-      recordCaption = GetRowDisplayName(CleanGridRow(rowObj));
-    }
+    var recordCaption = rowObj != null ? GetRowDisplayName(CleanGridRow(rowObj)) : null;
 
     var askSource = TryGetPropertyIgnoreCase(args, "ask", out var askEl) && askEl.ValueKind == JsonValueKind.Object
       ? askEl

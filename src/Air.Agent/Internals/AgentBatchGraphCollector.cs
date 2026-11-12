@@ -299,7 +299,8 @@ internal static class AgentBatchGraphCollector
         var attachRes = await fileSource.AttachFileAsync(recordId, att.FileName, att.ContentType, bytes, parentService, mutationCt);
         if (attachRes.Outcome != MutationOutcome.Committed || attachRes.Id is not > 0)
         {
-          throw new InvalidOperationException(attachRes.Warnings?.FirstOrDefault()?.Detail ?? attachRes.Title ?? L["MutationRefused"]);
+          var msg = attachRes.Messages?.FirstOrDefault()?.Detail ?? attachRes.Warnings?.FirstOrDefault()?.Detail ?? attachRes.Title ?? L["MutationRefused"];
+          throw new InvalidOperationException(msg);
         }
       }
     }

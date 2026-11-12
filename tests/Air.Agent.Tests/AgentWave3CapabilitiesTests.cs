@@ -475,6 +475,66 @@ public sealed class AgentWave3CapabilitiesTests : IDisposable
 
     await Assert.ThrowsAsync<InvalidOperationException>(
       async () => await AgentProposalExecutor.CommitProposalAsync(staleMoveProposal, services, CancellationToken.None));
+
+    // Shared-table (ADR-4) / SetQuery reachability guard: sibling DocType rows cannot be staged or moved.
+    var inspectionGridPath = ServicePathResolver.Resolve(typeof(InspectionGridService));
+    var siblingDocRow = new AgentTestInspection { Code = "OTHER-DOCTYPE", Status = 1 };
+    var morphingRow = new AgentTestInspection { Code = "INSP-MORPH", Status = 1 };
+    using (db.BeginMutationRun())
+    {
+      db.Inspections.AddRange(siblingDocRow, morphingRow);
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    await Assert.ThrowsAsync<KeyNotFoundException>(
+      async () => await AgentProposalBuilder.StageProposalAsync(
+        JsonSerializer.SerializeToElement(new
+        {
+          sessionId = "sess-flow-scope",
+          operation = "move-status",
+          service = inspectionFormPath,
+          recordId = siblingDocRow.Id,
+          transition = "Approve"
+        }),
+        services,
+        CancellationToken.None));
+
+    await Assert.ThrowsAsync<KeyNotFoundException>(
+      async () => await AgentProposalBuilder.StageProposalAsync(
+        JsonSerializer.SerializeToElement(new
+        {
+          sessionId = "sess-flow-scope",
+          operation = "move-status",
+          service = inspectionGridPath,
+          recordId = siblingDocRow.Id,
+          transition = "Approve"
+        }),
+        services,
+        CancellationToken.None));
+
+    var morphProposal = await AgentProposalBuilder.StageProposalAsync(
+      JsonSerializer.SerializeToElement(new
+      {
+        sessionId = "sess-flow-scope",
+        operation = "move-status",
+        service = inspectionFormPath,
+        recordId = morphingRow.Id,
+        transition = "Approve"
+      }),
+      services,
+      CancellationToken.None);
+
+    using (db.BeginMutationRun())
+    {
+      morphingRow.Code = "OTHER-DOCTYPE";
+      await db.SaveChangesAsync();
+      await db.FlushMutationJournalAsync();
+    }
+
+    await Assert.ThrowsAsync<KeyNotFoundException>(
+      async () => await AgentProposalExecutor.CommitProposalAsync(morphProposal, services, CancellationToken.None));
+    Assert.Equal(1, (await db.Inspections.AsNoTracking().SingleAsync(i => i.Id == morphingRow.Id)).Status);
   }
 
   [Fact]

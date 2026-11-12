@@ -288,6 +288,7 @@ public static class AgentProposalExecutor
     var flowType = AgentFlowHelper.FindFlowServiceType(feature);
     if (feature is not { AllowsAgentWrite: true } ||
         flowType == null ||
+        formType == null && gridType == null ||
         payload.RecordId is not > 0 ||
         string.IsNullOrWhiteSpace(payload.Transition))
     {
@@ -300,24 +301,27 @@ public static class AgentProposalExecutor
       throw new InvalidOperationException(L["MutationRefused"]);
     }
 
+    var (existing, _) = await AgentFlowHelper.EnsureRecordReachableAsync(
+      feature,
+      formType,
+      gridType,
+      payload.RecordId.Value,
+      stepScope.Db,
+      stepScope.App,
+      mutationCt);
+
     var ver = payload.Ver;
-    if (formType != null &&
-        ModuleCatalog.Instance.CreateServiceInstance(formType, stepScope.Db, stepScope.App) is IFormService checkForm)
+    if (existing is IHasVersion versioned &&
+        ver != null &&
+        versioned.Ver != ver.Value &&
+        preVerifiedEdits.Contains((existing.GetType(), payload.RecordId.Value)))
     {
-      checkForm.SetRequest(new FormRequest { Id = payload.RecordId });
-      var existing = await checkForm.LoadParentRecordAsync(payload.RecordId.Value, mutationCt);
-      if (existing is IHasVersion versioned &&
-          ver != null &&
-          versioned.Ver != ver.Value &&
-          preVerifiedEdits.Contains((existing.GetType(), payload.RecordId.Value)))
-      {
-        ver = versioned.Ver;
-      }
+      ver = versioned.Ver;
     }
 
     JsonElement? askJson = payload.Values.Count > 0 ? JsonSerializer.SerializeToElement(payload.Values, WebJson) : null;
     await AgentFlowHelper.ExecuteMoveStatusAsync(
-      formType, gridType, flowType, payload.RecordId.Value, payload.Transition, askJson, ver, stepScope.Db, stepScope.App, mutationCt);
+      formType, gridType, payload.RecordId.Value, payload.Transition, askJson, ver, stepScope.Db, stepScope.App, mutationCt);
 
     var formPath = formType != null ? ServicePathResolver.Resolve(formType) : payload.Service;
     var label = !string.IsNullOrWhiteSpace(proposal.Title) ? proposal.Title : $"#{payload.RecordId.Value}";
