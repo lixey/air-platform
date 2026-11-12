@@ -5,6 +5,6 @@ await PlatformHost.RunAsync(
       .AddModule<EcomModule>()
       .AddModule<OrgModule>()
       .AddModule<AppModule>()
-      .AddAirAgent()
+      .AddPlatformAgent()
 );
 

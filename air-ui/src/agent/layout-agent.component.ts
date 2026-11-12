@@ -35,7 +35,13 @@ import { type AgentChatMessage, AgentService } from './agent.service';
       }
 
       <ng-container ngProjectAs="[end]">
-        <ui-btn variant="ghost" icon="reload" [title]="texts.of('AgentNewChat')" [disabled]="agent.isStreaming()" (click)="agent.reset()" />
+        <ui-btn
+          variant="ghost"
+          icon="refresh"
+          [title]="texts.of('AgentNewChat')"
+          [disabled]="agent.isStreaming()"
+          (click)="agent.reset()"
+        />
         @if (canExpandPanel()) {
           <ui-btn
             variant="ghost"

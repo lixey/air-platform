@@ -26,7 +26,11 @@ public sealed class EcomPurchaseOrderFormService(EcomDbContext db, EcomPurchaseO
     elements.Add(e => e.ExternalNumber).Span(4);
     elements.Add(e => e.Note).AsTextarea();
 
-    elements.AddChild<EcomPurchaseOrderLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomPurchaseOrderLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomPurchaseOrderBasisGridService>().Key("basis").Label("Entered on");
     elements.AddChild<EcomPurchaseOrderFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomPurchaseOrderHistoryGridService>().Key("history").Label("History");

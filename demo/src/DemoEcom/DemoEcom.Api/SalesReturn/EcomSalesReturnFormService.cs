@@ -26,7 +26,11 @@ public sealed class EcomSalesReturnFormService(EcomDbContext db, EcomSalesReturn
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(6);
     elements.Add(e => e.Note).AsTextarea();
 
-    elements.AddChild<EcomSalesReturnLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomSalesReturnLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomSalesReturnBasisGridService>().Key("basis").Label("Entered on");
     elements.AddChild<EcomSalesReturnFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomSalesReturnHistoryGridService>().Key("history").Label("History");

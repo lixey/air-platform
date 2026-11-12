@@ -44,7 +44,11 @@ public sealed class EcomCustomerOrderFormService(
     elements.Add(e => e.CounterpartyId).AsReference<OrgCounterpartyGridService>().Span(12);
     elements.Add(e => e.Note).AsTextarea().Span(12);
 
-    elements.AddChild<EcomCustomerOrderLineGridService>().Key("lines").Label("Lines").SumTo("amount", "amount");
+    elements.AddChild<EcomCustomerOrderLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomCustomerOrderFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomCustomerOrderHistoryGridService>().Key("history").Label("History");
   }

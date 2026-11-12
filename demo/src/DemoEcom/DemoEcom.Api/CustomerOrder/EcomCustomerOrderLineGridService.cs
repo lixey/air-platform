@@ -25,7 +25,7 @@ public sealed class EcomCustomerOrderLineGridService(EcomDbContext db, EcomServi
     nav.AddPicker<EcomCustomerOrderProductGridService>(AddProduct, L["Add by article"]).MinLength(3);
   }
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public Task<GridActionDto> AddProduct(GridPickRequest request, CancellationToken cancellationToken = default) =>
     AttachPickedAsync<OrgProduct>(
       request,

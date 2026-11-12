@@ -25,7 +25,11 @@ public sealed class EcomSupplierInvoiceFormService(EcomDbContext db, EcomSupplie
     elements.Add(e => e.ExternalNumber).Span(6);
     elements.Add(e => e.Note).AsTextarea();
 
-    elements.AddChild<EcomSupplierInvoiceLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomSupplierInvoiceLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomSupplierInvoiceBasisGridService>().Key("basis").Label("Entered on");
     elements.AddChild<EcomSupplierInvoiceFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomSupplierInvoiceHistoryGridService>().Key("history").Label("History");

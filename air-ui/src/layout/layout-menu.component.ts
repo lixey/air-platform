@@ -121,7 +121,7 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
           <ui-layout-sign-out />
 
           @if (canHide()) {
-            <ui-btn size="small" variant="ghost" icon="panelRightOpen" [title]="texts.of('NavigationHide')" (click)="hide()" />
+            <ui-btn size="small" variant="ghost" icon="panel-right-open" [title]="texts.of('NavigationHide')" (click)="hide()" />
           }
         </ng-container>
       </ui-nav>

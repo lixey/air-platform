@@ -448,27 +448,34 @@ public static partial class AgentProposalBuilder
     }
 
     // Declarative child-to-parent rollup strictly when declared on AddChild(...).SumTo(parentField, childField)
-    if (rawLineDicts.Count > 0 &&
-        !string.IsNullOrWhiteSpace(childBuilder.SumTargetPath) &&
-        !string.IsNullOrWhiteSpace(childBuilder.SumSourcePath) &&
-        !explicitlyProvided.Contains(childBuilder.SumTargetPath) &&
-        (!formValues.TryGetValue(childBuilder.SumTargetPath, out var curParentTotal) ||
-         !TryConvertToDecimal(curParentTotal, out var existingTotal) ||
-         existingTotal == 0m))
+    if (rawLineDicts.Count > 0 && childBuilder.SumMappings.Count > 0)
     {
-      var computedTotal = 0m;
-      foreach (var dict in rawLineDicts)
+      foreach (var mapping in childBuilder.SumMappings)
       {
-        if (dict.TryGetValue(childBuilder.SumSourcePath, out var lineVal) &&
-            TryConvertToDecimal(lineVal, out var decLineVal))
+        if (string.IsNullOrWhiteSpace(mapping.ParentFieldPath) ||
+            string.IsNullOrWhiteSpace(mapping.ChildFieldPath) ||
+            explicitlyProvided.Contains(mapping.ParentFieldPath) ||
+            formValues.TryGetValue(mapping.ParentFieldPath, out var curParentTotal) &&
+            TryConvertToDecimal(curParentTotal, out var existingTotal) &&
+            existingTotal != 0m)
         {
-          computedTotal += decLineVal;
+          continue;
         }
-      }
 
-      if (computedTotal != 0m)
-      {
-        formValues[childBuilder.SumTargetPath] = computedTotal;
+        var computedTotal = 0m;
+        foreach (var dict in rawLineDicts)
+        {
+          if (dict.TryGetValue(mapping.ChildFieldPath, out var lineVal) &&
+              TryConvertToDecimal(lineVal, out var decLineVal))
+          {
+            computedTotal += decLineVal;
+          }
+        }
+
+        if (computedTotal != 0m)
+        {
+          formValues[mapping.ParentFieldPath] = computedTotal;
+        }
       }
     }
 

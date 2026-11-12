@@ -27,7 +27,7 @@ export const TABULAR_TEXT = 'tabular-nums';
 /** The kinds of cell that draw their text in tabular digits. */
 export const TABULAR_CELLS: ReadonlySet<GridColumnDto['cell']['kind']> = new Set<GridColumnDto['cell']['kind']>([
   'GridCellDate',
-  'GridCellDatetime',
+  'GridCellDateTime',
   'GridCellTime',
   'GridCellNumber',
   'GridCellMoney',

@@ -10,6 +10,7 @@ public sealed class AgentSyncSourceDto
   public string? Subtitle { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  [OneOf(typeof(UiIcon))]
   public string? Icon { get; set; }
 
   public bool AcceptsFile { get; set; }

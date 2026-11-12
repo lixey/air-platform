@@ -24,7 +24,7 @@
 
 - **100% декларативні метадані на бекенді:** Розробник описує сутність БД (`C# class`), реєструє фічу (`Feature<TService>()`) у модулі та створює компактні класи сервісів (`*GridService`, `*FormService`, `*FlowService`, `*ReportService`, `*ScreenService`), де декларативно вказує колонки, живі лічильники вкладок (`.ShowCounts()`), захист видалення (`PreventDeleteWhenUsedBy`), поля форми, зв'язки (`AsReference`, `AddChild`, `PatchOnSelect`, `SumTo`), неблокуючі попередження (`AsWarning`, `Warn`), умови доступності (`DisabledWhen`, `VisibleWhen`) та переходи статусів.
 - **Універсальний клієнтський рушій (`@air/ui`):** Фронтенд не містить жодної жорстко закодованої бізнес-форми чи таблиці. Він запитує метадані екрана (`ScreenDto`) у бекенду й автоматично будує таблиці з віртуальним скролом, фільтрами, сортуванням, експортом у Excel, багатосекційні форми-дровери, комбіновані робочі місця (`PanelScreen`), дерева прав та аналітичні звіти.
-- **Вбудований ШІ-асистент без ручних хендлерів (`Air.Agent`):** Достатньо додати `.AllowAgent()` до оголошення фічі та `.AddAirAgent()` у `PlatformHost` — і ШІ-асистент автоматично прочитає схему форми, довідники, дочірні таблиці та права поточного користувача, формуючи безпечні картки пропозицій `<air_proposal>`, які проходять через той самий конвеєр валідації, попереджень та збереження `FormService`, що й звичайні дії користувача в UI.
+- **Вбудований ШІ-асистент без ручних хендлерів (`Air.Agent`):** Достатньо додати `.AllowAgent()` до оголошення фічі та `.AddPlatformAgent()` у `PlatformHost` — і ШІ-асистент автоматично прочитає схему форми, довідники, дочірні таблиці та права поточного користувача, формуючи безпечні картки пропозицій `<ui_proposal>`, які проходять через той самий конвеєр валідації, попереджень та збереження `FormService`, що й звичайні дії користувача в UI.
 
 ---
 
@@ -43,7 +43,7 @@ flowchart TD
   end
 
   subgraph AI["ШІ-асистент та MCP"]
-    AirAgent["Air.Agent (Platform.Agent)<br/>Оркестратор чату, контекст, <air_proposal>, пам'ять"]
+    AirAgent["Air.Agent (Platform.Agent)<br/>Оркестратор чату, контекст, <ui_proposal>, пам'ять"]
     AirMcp["Air.Mcp (Platform.Mcp)<br/>Міст виконання та інструменти MCP"]
     AirAgent --> AirMcp
   end
@@ -79,7 +79,7 @@ flowchart TD
 | **`Air.Api`**            | `Platform.Api.*`            | Легковаговий headless API-хост: життєвий цикл модулів (`IPlatformModule`, `ModuleDefinition<TSelf>`, `Feature`, `Right`, `PlatformValidator`), автентифікація, сесії, RBAC, мутації (`MutationRunner`), файли (`FileLinks`), локалізація та універсальний HTTP-диспетчер сервісів. |
 | **`Air.App`**            | `Platform.App.*`            | Повнофункціональний рушій бек-офісу поверх `Air.Api`: `GridService`, `FormService`, `StatusFlowService`, `ReportService`, `ScreenService`, `FileGridService`, `ChangeGridService`, дерево прав `RightsTree`, оверлеї та експортер TypeScript-контрактів `ContractExporter`.        |
 | **`Air.Mcp`**            | `Platform.Mcp.*`            | Протокол MCP та ізольований міст виконання між ШІ-провайдером і процесом платформи (`/api/mcp`).                                                                                                                                                                                   |
-| **`Air.Agent`**          | `Platform.Agent.*`          | Вбудований ШІ-асистент: збір метаданих і довідників з урахуванням прав користувача, побудова та виконання карток `<air_proposal>`, довготривала пам'ять `AppAgentMemory`, CLI/API провайдери (`agy`, `claude`, `codex`, `gemini`).                                                 |
+| **`Air.Agent`**          | `Platform.Agent.*`          | Вбудований ШІ-асистент: збір метаданих і довідників з урахуванням прав користувача, побудова та виконання карток `<ui_proposal>`, довготривала пам'ять `AppAgentMemory`, CLI/API провайдери (`agy`, `claude`, `codex`, `gemini`).                                                  |
 | **`Air.UiContracts`**    | `Platform.UiContracts`      | CLI-інструмент для миттєвої генерації `contracts.ts` та `ui-texts.json` у `air-ui/src/core/generated/`.                                                                                                                                                                            |
 | **`air-ui/`**            | `@air/ui` (TypeScript)      | Універсальна бібліотека Angular 22+ компонентів, сервісів і семантичних токенів Tailwind CSS v4.                                                                                                                                                                                   |
 

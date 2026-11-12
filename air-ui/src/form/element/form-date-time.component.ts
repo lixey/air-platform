@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
-import type { FormDatetimeModel } from '../../core/generated/contracts';
+import type { FormDateTimeModel } from '../../core/generated/contracts';
 import { TemporalBoxComponent } from '../../datepicker/temporal-box.component';
 import { FormElementBase } from './form-element-base';
 import { FormItemComponent } from './form-item.component';
@@ -10,7 +10,7 @@ import { FormItemComponent } from './form-item.component';
  * with minutes by the model's step, over the member's wire semantics.
  */
 @Component({
-  selector: 'ui-form-datetime',
+  selector: 'ui-form-date-time',
   imports: [FormItemComponent, TemporalBoxComponent, FormField],
   template: `
     <ui-form-item [element]="element()">
@@ -26,4 +26,4 @@ import { FormItemComponent } from './form-item.component';
     </ui-form-item>
   `,
 })
-export class FormDatetimeComponent extends FormElementBase<string | null, FormDatetimeModel> {}
+export class FormDateTimeComponent extends FormElementBase<string | null, FormDateTimeModel> {}

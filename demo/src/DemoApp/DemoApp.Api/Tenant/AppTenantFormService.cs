@@ -5,8 +5,6 @@ public sealed class AppTenantFormService(AppDbContext db, AppService? app = null
 {
   public override Feature Feature => App.Tenant;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Popover(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus();

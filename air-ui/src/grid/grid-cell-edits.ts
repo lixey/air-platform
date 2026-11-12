@@ -55,7 +55,7 @@ const EDIT_KINDS: Readonly<Record<string, GridCellEditKind>> = {
   GridCellMoney: 'money',
   GridCellPercent: 'percent',
   GridCellDate: 'date',
-  GridCellDatetime: 'datetime',
+  GridCellDateTime: 'datetime',
   GridCellTime: 'time',
   GridCellSelect: 'select',
   GridCellCheckbox: 'checkbox',

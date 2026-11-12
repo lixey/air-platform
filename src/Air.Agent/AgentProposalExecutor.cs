@@ -531,7 +531,10 @@ public static class AgentProposalExecutor
 
     if (!TryExtractSavedId(saveResult, out var recordId))
     {
-      var errMsg = (saveResult as FormDataDto)?.Warnings?.FirstOrDefault()?.Detail ?? L["AgentErrorSave"];
+      var refusedDto = saveResult as FormDataDto;
+      var errMsg = refusedDto?.Messages?.FirstOrDefault()?.Detail
+        ?? refusedDto?.Warnings?.FirstOrDefault()?.Detail
+        ?? L["AgentErrorSave"];
       throw new InvalidOperationException(errMsg);
     }
 
@@ -741,7 +744,10 @@ public static class AgentProposalExecutor
               if (!TryExtractSavedId(savedLine, out _))
               {
                 var lineName = lineDict.TryGetValue(childPrimaryTextKey, out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
-                var lineErr = (savedLine as FormDataDto)?.Warnings?.FirstOrDefault()?.Detail ?? L["MutationRefused"];
+                var lineDto = savedLine as FormDataDto;
+                var lineErr = lineDto?.Messages?.FirstOrDefault()?.Detail
+                  ?? lineDto?.Warnings?.FirstOrDefault()?.Detail
+                  ?? L["MutationRefused"];
                 throw new InvalidOperationException($"{lineName}: {lineErr}");
               }
 

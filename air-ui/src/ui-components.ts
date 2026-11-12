@@ -8,8 +8,8 @@ import { FileViewerOverlayComponent } from './file/file-viewer-overlay.component
 import { FormCheckboxSetComponent } from './form/element/form-checkbox-set.component';
 import { FormCheckboxTreeComponent } from './form/element/form-checkbox-tree.component';
 import { FormCheckboxComponent } from './form/element/form-checkbox.component';
+import { FormDateTimeComponent } from './form/element/form-date-time.component';
 import { FormDateComponent } from './form/element/form-date.component';
-import { FormDatetimeComponent } from './form/element/form-datetime.component';
 import { FormFilesComponent } from './form/element/form-files.component';
 import { FormInfoComponent } from './form/element/form-info.component';
 import { FormInputComponent } from './form/element/form-input.component';
@@ -30,8 +30,8 @@ import { FormNavSaveOpenComponent } from './form/nav/form-nav-save-open.componen
 import { FormNavSaveComponent } from './form/nav/form-nav-save.component';
 import { GridCellCheckboxComponent } from './grid/cell/grid-cell-checkbox.component';
 import { GridCellCoverComponent } from './grid/cell/grid-cell-cover.component';
+import { GridCellDateTimeComponent } from './grid/cell/grid-cell-date-time.component';
 import { GridCellDateComponent } from './grid/cell/grid-cell-date.component';
-import { GridCellDatetimeComponent } from './grid/cell/grid-cell-datetime.component';
 import { GridCellEmailComponent } from './grid/cell/grid-cell-email.component';
 import { GridCellFileComponent } from './grid/cell/grid-cell-file.component';
 import { GridCellMoneyComponent } from './grid/cell/grid-cell-money.component';
@@ -259,7 +259,7 @@ export const UI_COMPONENTS = defineComponents({
   GridCellCheckbox: GridCellCheckboxComponent,
   GridCellNumber: GridCellNumberComponent,
   GridCellDate: GridCellDateComponent,
-  GridCellDatetime: GridCellDatetimeComponent,
+  GridCellDateTime: GridCellDateTimeComponent,
   GridCellTime: GridCellTimeComponent,
   GridCellOpenForm: GridCellOpenFormComponent,
   GridCellPicker: GridCellPickerComponent,
@@ -293,7 +293,7 @@ export const UI_COMPONENTS = defineComponents({
   FormTextarea: FormTextareaComponent,
   FormCheckbox: FormCheckboxComponent,
   FormDate: FormDateComponent,
-  FormDatetime: FormDatetimeComponent,
+  FormDateTime: FormDateTimeComponent,
   FormTime: FormTimeComponent,
   FormSelect: FormSelectComponent,
   FormTimeZone: FormTimeZoneComponent,

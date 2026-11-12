@@ -8,6 +8,7 @@ import type {
   ReportSeriesDto,
   ReportTableDto,
   RowDto,
+  UiColor,
 } from '../core/generated/contracts';
 import { asRowUiColor, isRowDto } from '../grid/grid-row';
 
@@ -55,9 +56,9 @@ export type AgentContentBlock = AgentMarkdownBlock | AgentChartBlock | AgentTabl
  */
 export interface AgentBlockPlugin {
   readonly kind: string;
-  /** XML-style tag name without angle brackets, e.g. `air_chart`. */
+  /** XML-style tag name without angle brackets, e.g. `ui_chart`. */
   readonly tag: string;
-  /** Optional markdown code-fence language identifiers, e.g. `['air-chart', 'chart']`. */
+  /** Optional markdown code-fence language identifiers, e.g. `['ui-chart', 'chart']`. */
   readonly fences?: readonly string[];
   /** Optional custom Angular component for rendering `AgentCustomBlock`. */
   readonly component?: Type<unknown>;
@@ -191,7 +192,7 @@ function normalizeTable(raw: Record<string, unknown>): ReportTableDto | null {
     }
     const obj = r as Record<string, unknown>;
     const cells: Record<string, unknown> = {};
-    const colors: Record<string, string> = {};
+    const colors: Record<string, UiColor> = {};
     const currencies: Record<string, string> = {};
     const defaultCurrency = typeof obj['currency'] === 'string' ? obj['currency'] : null;
 
@@ -199,8 +200,8 @@ function normalizeTable(raw: Record<string, unknown>): ReportTableDto | null {
       if (col.key in obj) {
         cells[col.key] = obj[col.key];
       }
-      const colColor = obj[`${col.key}Color`];
-      if (typeof colColor === 'string' && colColor) {
+      const colColor = asRowUiColor(typeof obj[`${col.key}Color`] === 'string' ? (obj[`${col.key}Color`] as string) : null);
+      if (colColor) {
         colors[col.key] = colColor;
       }
       const colCurrency = obj[`${col.key}Currency`] ?? (col.kind === 'money' ? defaultCurrency : null);
@@ -285,8 +286,8 @@ function normalizeKpis(raw: unknown): ReportKpiDto[] {
 export const DEFAULT_AGENT_BLOCK_PLUGINS: readonly AgentBlockPlugin[] = [
   {
     kind: 'chart',
-    tag: 'air_chart',
-    fences: ['air-chart', 'air_chart', 'chart'],
+    tag: 'ui_chart',
+    fences: ['ui-chart', 'ui_chart', 'chart'],
     parse: (raw, idPrefix) => {
       const parsed = tryParseJson(raw);
       if (!parsed) {
@@ -307,8 +308,8 @@ export const DEFAULT_AGENT_BLOCK_PLUGINS: readonly AgentBlockPlugin[] = [
   },
   {
     kind: 'table',
-    tag: 'air_table',
-    fences: ['air-table', 'air_table'],
+    tag: 'ui_table',
+    fences: ['ui-table', 'ui_table'],
     parse: (raw, idPrefix) => {
       const parsed = tryParseJson(raw);
       if (!parsed || typeof parsed !== 'object') {
@@ -329,8 +330,8 @@ export const DEFAULT_AGENT_BLOCK_PLUGINS: readonly AgentBlockPlugin[] = [
   },
   {
     kind: 'kpi',
-    tag: 'air_kpi',
-    fences: ['air-kpi', 'air_kpi', 'kpi'],
+    tag: 'ui_kpi',
+    fences: ['ui-kpi', 'ui_kpi', 'kpi'],
     parse: (raw, idPrefix) => {
       const parsed = tryParseJson(raw);
       const kpis = normalizeKpis(parsed);
@@ -339,8 +340,8 @@ export const DEFAULT_AGENT_BLOCK_PLUGINS: readonly AgentBlockPlugin[] = [
   },
   {
     kind: 'html',
-    tag: 'air_html',
-    fences: ['air-html', 'air_html'],
+    tag: 'ui_html',
+    fences: ['ui-html', 'ui_html'],
     parse: (raw, idPrefix) => {
       const html = raw.trim();
       return html ? [{ id: `${idPrefix}-html`, kind: 'html', html }] : [];

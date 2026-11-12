@@ -132,7 +132,7 @@ import type { AgentProposal, AgentProposalLine } from './agent.service';
           <ui-btn size="small" variant="ghost" color="blue" icon="external" [label]="texts.of('Open')" (click)="openCommitted.emit(p)" />
         } @else if (p.status === 'superseded') {
           <div class="flex items-center gap-1.5 text-xs text-muted">
-            <i class="flex h-3.5 w-3.5 items-center justify-center" [icon]="'reload'"></i>
+            <i class="flex h-3.5 w-3.5 items-center justify-center" [icon]="'refresh'"></i>
             <span>{{ texts.of('AgentSupersededBadge') }}</span>
           </div>
         } @else {

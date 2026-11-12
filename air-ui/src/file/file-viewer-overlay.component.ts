@@ -79,7 +79,7 @@ const MOVES: Readonly<Record<string, (index: number, count: number) => number>> 
           @if (isImage()) {
             <div class="flex shrink-0 items-center gap-(--ui-panel-gap)">
               <ui-btn
-                icon="minimize"
+                icon="fullscreen-exit"
                 variant="ghost"
                 color="slate"
                 [title]="texts.of('FitToScreen')"
@@ -88,7 +88,7 @@ const MOVES: Readonly<Record<string, (index: number, count: number) => number>> 
                 data-file-fit
               />
               <ui-btn
-                icon="maximize"
+                icon="fullscreen"
                 variant="ghost"
                 color="slate"
                 [title]="texts.of('ActualSize')"

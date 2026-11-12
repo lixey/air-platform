@@ -13,7 +13,7 @@ public abstract class EcomDocLineGridService<TDocForm>(EcomDbContext db, EcomSer
     query.SortBy(r => r.SortOrder);
   }
 
-  [RequireAction(EndpointAction.Edit)]
+  [RequireAction(Right.Edit)]
   public override Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
     base.Delete(request, cancellationToken);
 

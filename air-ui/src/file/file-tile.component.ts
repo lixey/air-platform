@@ -173,7 +173,7 @@ const BUSY_CLASSES = 'opacity-50 cursor-not-allowed!';
           <div [class]="actionsClasses()">
             @if (upload.status === 'failed') {
               <ui-btn
-                icon="reload"
+                icon="refresh"
                 variant="ghost"
                 [title]="texts.of('Retry')"
                 [attr.aria-describedby]="nameId"

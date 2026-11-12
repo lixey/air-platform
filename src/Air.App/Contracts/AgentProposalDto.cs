@@ -30,7 +30,8 @@ public sealed class AgentProposalDto
   [JsonIgnore]
   public JsonElement Payload { get; set; }
 
-  public string Status { get; set; } = "pending";
+  [OneOf(typeof(AgentProposalStatus))]
+  public string Status { get; set; } = AgentProposalStatus.Pending;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public long? RecordId { get; set; }

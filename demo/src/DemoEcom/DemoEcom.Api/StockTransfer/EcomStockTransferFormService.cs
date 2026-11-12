@@ -24,7 +24,11 @@ public sealed class EcomStockTransferFormService(EcomDbContext db, EcomStockTran
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(6);
     elements.Add(e => e.Note).AsTextarea();
 
-    elements.AddChild<EcomStockTransferLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomStockTransferLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomStockTransferHistoryGridService>().Key("history").Label("History");
   }
 

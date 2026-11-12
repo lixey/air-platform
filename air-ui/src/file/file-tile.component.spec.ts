@@ -364,7 +364,7 @@ describe('FileTileComponent', () => {
         box(UPLOAD_ACTIONS.list, 'ui-btn', 'ui-btn'),
       ),
     ]);
-    expect(count()).toBe(21);
+    expect(count()).toBe(23);
 
     fixture.componentRef.setInput('upload', uploadOf('uploaded', { progress: 100 }));
     fixture.detectChanges();

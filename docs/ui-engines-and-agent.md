@@ -28,7 +28,7 @@ protected override void SetColumns(Columns columns)
 
 Ключові можливості колонок:
 
-- **Типи та форматування:** `.AsDate()`, `.AsDatetime()`, `.AsNumber()`, `.AsMoney()`, `.AsPercent()`, `.AsCheckbox()`, `.AsSelect(options)`, `.AsReference<TGridService>()`, `.AsCover<TFileGrid>()`, `.AsImage()`.
+- **Типи та форматування:** `.AsDate()`, `.AsDateTime()`, `.AsNumber()`, `.AsMoney()`, `.AsPercent()`, `.AsCheckbox()`, `.AsSelect(options)`, `.AsReference<TGridService>()`, `.AsCover<TFileGrid>()`, `.AsImage()`.
 - **Перехід до картки з комірки:** `.AsOpenForm<TFormService>()` або `.AsOpenForm<TFormService>(x => x.TargetId)` (якщо `TargetId == null`, клік безпечно ігнорується).
 - **Редагування в комірці та пікери:** `.Editable()`, `.PickedBy<TSourceGrid>(AttachMethod)`.
 - **Підсумки:** `.Sum()` (агрегат на рівні СУБД у нижньому рядку таблиці) та `.SelectionSum()` (підрахунок виділених рядків у клієнті).
@@ -83,7 +83,7 @@ protected override void SetParent(Parent parent) =>
 
 ## 2. Форми, правила та неблокуючі попередження (`FormService<TEntity>`)
 
-`FormService<TEntity>` керує оверлеєм картки (`OverlayModel.Drawer` за замовчуванням або `OverlayModel.Popover` для компактних форм без дочірніх таблиць), підготовкою чернетки (`PrepareDraftAsync`), правилами валідації та збереженням.
+`FormService<TEntity>` автоматично обирає оптимальне подання картки (`OverlayModel.Popover` для компактних форм із `<= 8` видимими скалярними полями без підлеглих таблиць даних, вкладок і таблиць звіту, або `OverlayModel.Drawer` в усіх інших випадках), керує підготовкою чернетки (`PrepareDraftAsync`), правилами валідації та збереженням.
 
 ### 2.1. Елементи форми, `PatchOnSelect` та декларативне `SumTo` (`SetElements`)
 
@@ -99,20 +99,21 @@ protected override void SetElements(Elements elements)
 
   elements.Add(d => d.Amount).AsMoney().ServerOwned().Span(3);
 
-  elements.AddChild<EcomCustomerOrderLineGridService>()
+  elements.AddChild<EcomCustomerOrderLineGridService, EcomDocLine>()
     .Label("Lines")
-    .SumTo("amount", "amount")
+    .SumTo(d => d.Qty, l => l.Qty)
+    .SumTo(d => d.Amount, l => l.Amount)
     .ReadOnlyWhen(d => d.DocStatusId != EcomData.DocStatus.CustomerOrderNewId);
 }
 ```
 
 - **`PatchOnSelect`:** під час зміни поля-довідника у формі оновлює залежні поля лише для зміненого тригера (`triggerField`), не перезатираючи інші поля чернетки.
 - **`DisabledWhen` та `VisibleWhen`:** оцінюються на сервері алгоритмом нерухомої точки (fixed-point) — зміна типу чи прапорця в одному збереженні коректно розблоковує або ховає залежні поля, але поле ніколи не може розблокувати саме себе.
-- **`.SumTo(parentField, childColumn)`:** декларативно вказує зв'язок суми дочірніх рядків із полем заголовка як для UI, так і для ШІ-пропозицій `<air_proposal>`.
+- **`.SumTo(parentField, childColumn)`:** суворо типізовано (з підтримкою ланцюжка для кількох полів) вказує зв'язок суми дочірніх рядків із полями заголовка для серверного перерахунку `ChildSumEvaluator`, UI та ШІ-пропозицій `<ui_proposal>`.
 
 ### 2.2. Правила валідації (`SetRules`) та неблокуючі попередження (`AsWarning`, `Warn`)
 
-Поруч із помилками, що блокують збереження (`FormRefusedException`), платформа підтримує **неблокуючі попередження (`MessageType.Warning`)**, які дозволяють зберегти запис і автоматично показують жовтий тост користувачеві (як при збереженні з форми, так і при підтвердженні `<air_proposal>` у чаті ШІ):
+Поруч із помилками, що блокують збереження (`FormRefusedException`), платформа підтримує **неблокуючі попередження (`MessageType.Warning`)**, які дозволяють зберегти запис і автоматично показують жовтий тост користувачеві (як при збереженні з форми, так і при підтвердженні `<ui_proposal>` у чаті ШІ):
 
 ```csharp
 protected override void SetRules(Rules rules) =>
@@ -195,9 +196,9 @@ public Transition Cancel => FromOpen().To(Canceled)
 
 ## 6. Вбудований ШІ-асистент (`Air.Agent` та `Air.Mcp`)
 
-ШІ-асистент підключається одним рядком `.AddAirAgent()` у `PlatformHostOptions` і керується виключно метаданими платформи:
+ШІ-асистент підключається одним рядком `.AddPlatformAgent()` у `PlatformHostOptions` і керується виключно метаданими платформи:
 
 1. **Гранулярний доступ (`AgentAccess`):** `.AllowAgent()` вмикає читання й підготовку змін (`AgentAccess.ReadWrite`), а `.AllowAgent(AgentAccess.Read)` відкриває таблицю або `ReportService` лише для читання й аналітики з урахуванням прав поточного користувача (`CanView` / `CanEdit`).
-2. **Модульна база знань (`AgentMemoryCatalog.RegisterDomainKnowledge`):** кожен модуль реєструє свої бізнес-правила у `ConfigureServices`, які автоматично сідяться в `AppAgentMemory` й додаються в системний контекст без обрізання.
-3. **Картки `<air_proposal>`, довідники та попередження:** малі довідники (`<= 50` записів) підвантажуються одразу, більші опитуються через серверний пошук та вбудовані MCP-інструменти (`POST /api/mcp`: `air_catalog_list`, `air_catalog_describe`, `air_records_query`, `air_proposal_stage`). При підтвердженні `<air_proposal>` `AgentProposalExecutor` виконує стандартний `FormService.SaveAsync` в атомарній транзакції й прокидає всі неблокуючі попередження (`AgentCommitResultDto.Warnings`) у клієнтський `AlertService`.
+2. **Модульна база знань (`AgentMemoryCatalog.RegisterDomainKnowledge`):** кожен модуль реєструє свої бізнес-правила у `ConfigureServices`, які автоматично сідяться в `AppAgentMemory` й додаються в системний контекст без обрізання, а нові факти зберігаються тегом `<agent_memory>`.
+3. **Картки `<ui_proposal>`, візуальні блоки (`<ui_kpi>`, `<ui_chart>`, `<ui_table>`, `<ui_html>`), довідники та попередження:** малі довідники (`<= 50` записів) підвантажуються одразу, більші опитуються через серверний пошук та вбудовані MCP-інструменти (`POST /api/mcp`: `platform_catalog_list`, `platform_catalog_describe`, `platform_records_query`, `platform_proposal_stage`). При підтвердженні `<ui_proposal>` `AgentProposalExecutor` виконує стандартний `FormService.SaveAsync` в атомарній транзакції й прокидає всі неблокуючі попередження (`AgentCommitResultDto.Warnings`) у клієнтський `AlertService`.
 4. **Безпека та ізоляція:** CLI-провайдери отримують промпт через `stdin` у тимчасовій директорії `0700` з очищеним оточенням і одноразовим криптографічним токеном ходу, а пам'ять і сесії чату суворо ізольовані за `(TenantId, UserId)`.

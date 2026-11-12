@@ -3,6 +3,7 @@ namespace Platform.App.Contracts;
 [UiContract]
 public sealed class AgentStreamEventDto
 {
+  [OneOf(typeof(AgentStreamEventType))]
   public string Type { get; set; } = string.Empty;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

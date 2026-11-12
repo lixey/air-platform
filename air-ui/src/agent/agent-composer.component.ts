@@ -280,9 +280,9 @@ export class AgentComposerComponent {
 
   protected syncSourceIcon(src: AgentSyncSourceDto): UiIcon {
     if (src.icon && src.icon in ICON_SET) {
-      return src.icon as UiIcon;
+      return src.icon;
     }
-    return src.acceptsFile ? 'import' : 'reload';
+    return src.acceptsFile ? 'import' : 'refresh';
   }
 
   protected isImageAttachment(contentType: string | null | undefined): boolean {

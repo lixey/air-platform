@@ -2,15 +2,15 @@ import type { AgentBlockPlugin, AgentContentBlock } from './agent-block-models';
 import { splitMarkdownAndGfmTables } from './agent-markdown';
 
 /**
- * Removes inline `<air_proposal>` and `<air_memory>` XML blocks (including incomplete trailing tags while streaming)
+ * Removes inline `<ui_proposal>` and `<agent_memory>` XML blocks (including incomplete trailing tags while streaming)
  * from raw assistant text before displaying or copying prose.
  */
 export function stripAgentControlBlocks(raw: string): string {
   return raw
-    .replace(/```(?:json|xml)?\s*<air_proposal\b[^>]*>[\s\S]*?(?:<\/air_proposal>\s*```|<\/air_proposal>|$)/gi, '')
-    .replace(/<air_proposal\b[^>]*>[\s\S]*?(?:<\/air_proposal>|$)/gi, '')
-    .replace(/```(?:json|xml)?\s*<air_memory\b[^>]*>[\s\S]*?(?:<\/air_memory>\s*```|<\/air_memory>|$)/gi, '')
-    .replace(/<air_memory\b[^>]*>[\s\S]*?(?:<\/air_memory>|$)/gi, '')
+    .replace(/```(?:json|xml)?\s*<ui_proposal\b[^>]*>[\s\S]*?(?:<\/ui_proposal>\s*```|<\/ui_proposal>|$)/gi, '')
+    .replace(/<ui_proposal\b[^>]*>[\s\S]*?(?:<\/ui_proposal>|$)/gi, '')
+    .replace(/```(?:json|xml)?\s*<agent_memory\b[^>]*>[\s\S]*?(?:<\/agent_memory>\s*```|<\/agent_memory>|$)/gi, '')
+    .replace(/<agent_memory\b[^>]*>[\s\S]*?(?:<\/agent_memory>|$)/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

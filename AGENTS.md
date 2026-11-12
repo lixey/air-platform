@@ -31,7 +31,7 @@
   - `Air.Data` / `Air.Data.Postgres` / `Air.Data.SqlServer` (`Platform.Data.*`): EF Core 10 base, multi-tenancy, entities (`AppAgentModel`, `AppAgentMemory`), querying. Strictly independent of ASP.NET Core/Web.
   - `Air.Api` (`Platform.Api`): Headless modular API host, module lifecycle (`IPlatformModule`, `Feature`, `Right`), authentication, sessions, RBAC, localization, mutations, file storage/streaming, and universal `PlatformService` HTTP dispatch. Zero dependency on backoffice UI engines.
   - `Air.App` (`Platform.App`): Rich backoffice UI engine built on `Air.Api` — `GridService`, `FormService`, `ReportService`, `ScreenService`, `StatusFlowService`, `OverlayModel`, `PanelLayout`, `RightsTree`, and TypeScript `ContractExporter`. Host entry point via `PlatformHost.RunAsync(args, options => ..., app => ...)`.
-  - `Air.Mcp` / `Air.Agent` (`Platform.Mcp` / `Platform.Agent`): Built-in AI assistant (`Feature.AllowAgent()`), operating in-process via `FormService`/`GridService`, persistent DB memory & rules (`AppAgentMemory`), and `<air_proposal>` confirmation cards, isolated by `(TenantId, UserId)` and user permissions.
+  - `Air.Mcp` / `Air.Agent` (`Platform.Mcp` / `Platform.Agent`): Built-in AI assistant (`Feature.AllowAgent()`, `AddPlatformAgent()` / `MapPlatformAgent()`), operating in-process via `FormService`/`GridService`, persistent DB memory & rules (`AppAgentMemory`, `<agent_memory>`), visual chat blocks (`<ui_kpi>`, `<ui_chart>`, `<ui_table>`, `<ui_html>`), and `<ui_proposal>` confirmation cards, isolated by `(TenantId, UserId)` and user permissions.
   - `Air.UiContracts` (`Platform.UiContracts`): Fast CLI tool in `src/` to export TypeScript contracts (`contracts.ts`) and UI texts (`ui-texts.json`).
 - **Frontend (`air-ui/` & `demo/web/`)**:
   - Dynamic component resolution via `UI_COMPONENTS` mapped by `kind`.
@@ -49,9 +49,9 @@
 ## 5. UI & Form Conventions
 - **Reuse Platform Primitives**: Always use `air-ui` components, services, and tokens (`ui-nav`, `ui-btn`, `SelectService`, `OverlayService`, `fieldClasses`, `UiIcon` + `ICON_SET`, semantic classes `bg-surface`, `bg-field`, `border-line`, `border-field-edge`) instead of custom native controls. Use `flex items-center justify-center` on `<i [icon]="...">` tags.
 - **Responsive Panels**: Respect `LayoutPanelsService` (`panels.isNarrow()`). On narrow screens, open side panels inside a modal dialog (`presentation: 'dialog'`).
-- **Form Overlay Presentation Rule (`Drawer` vs `Popover`)**:
-  - **Default (`Drawer`)**: All standard and composite forms use `OverlayModel.Drawer(handle)` by default in the base `FormService` (as most entities have subordinate child data tables via `elements.AddChild(...)`). Child form services must NOT redundantly override `Presentation` when using `Drawer`.
-  - **Compact Forms (`Popover`)**: Override `Presentation` with `OverlayModel.Popover(handle)` only for compact standalone forms that have no subordinate child data tables.
+- **Automatic Form Overlay Presentation Rule (`Popover` vs `Drawer`)**:
+  - **Automatic by Default**: `FormService` automatically chooses `OverlayModel.Popover(handle)` for compact standalone forms (`<= 8` visible non-tree scalar fields, `0` tabs, `0` report tables, and `0` non-file child data tables) and `OverlayModel.Drawer(handle)` for all larger or composite forms (any form with `> 8` visible scalar fields, tabs, report tables, or non-file `elements.AddChild(...)` grids).
+  - **Explicit Overrides Only for Exceptions**: Base module form services and leaf `*FormService` classes must NOT redundantly override `Presentation` when the automatic rule already produces the desired presentation; override `Presentation` only when intentionally overriding the `<= 8` fields heuristic or customizing width/dialog presentation.
 - **Declarative Grid, Form & Screen Primitives**:
   - Use `.ShowCounts()` / `.ShowCount()` and `.Inline()` on `NamedFilter` groups/items instead of custom count endpoints.
   - Use `hooks.PreventDeleteWhenUsedBy<TDependent>(fkExpr, message?)` on `GridService.Hooks` instead of manual `BeforeDelete` FK existence queries.

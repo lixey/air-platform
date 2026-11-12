@@ -44,7 +44,7 @@ public sealed class AppAgentModelGridService(
     actions.Add("RefreshModels")
       .AllowEdit()
       .Label("Refresh models")
-      .Icon(UiIcon.Reload)
+      .Icon(UiIcon.Refresh)
       .Color(UiColor.Blue)
       .WithoutSelection()
       .WithoutTransaction()

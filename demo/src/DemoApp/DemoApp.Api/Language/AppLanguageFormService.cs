@@ -5,8 +5,6 @@ public sealed class AppLanguageFormService(AppDbContext db, AppService? app = nu
 {
   public override Feature Feature => App.Language;
 
-  protected override OverlayBuilder Presentation(string handle) => OverlayModel.Popover(handle);
-
   protected override void SetElements(Elements elements)
   {
     elements.Add(e => e.Name).Focus();

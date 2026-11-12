@@ -3,12 +3,12 @@ import { DEFAULT_AGENT_BLOCK_PLUGINS } from './agent-block-models';
 import { parseAgentBlocks, stripAgentControlBlocks } from './agent-block-parser';
 
 describe('agent-block-parser', () => {
-  it('strips both <air_proposal> and <air_memory> blocks including trailing incomplete tags during streaming', () => {
+  it('strips both <ui_proposal> and <agent_memory> blocks including trailing incomplete tags during streaming', () => {
     const streaming = [
       'Saved your preference.',
-      '<air_memory>{"kind":"Preference","title":"Default currency","content":"Prefer USD"}</air_memory>',
+      '<agent_memory>{"kind":"Preference","title":"Default currency","content":"Prefer USD"}</agent_memory>',
       'Preparing draft:',
-      '<air_proposal>{"service":"ecom-order","action":"create"',
+      '<ui_proposal>{"service":"ecom-order","action":"create"',
     ].join('\n\n');
 
     expect(stripAgentControlBlocks(streaming)).toBe('Saved your preference.\n\nPreparing draft:');
@@ -21,11 +21,11 @@ describe('agent-block-parser', () => {
     });
   });
 
-  it('strips fenced <air_memory> blocks and parses structured <air_kpi> blocks cleanly', () => {
+  it('strips fenced <agent_memory> blocks and parses structured <ui_kpi> blocks cleanly', () => {
     const text = [
       'Overview ready.',
-      '```xml\n<air_memory>{"kind":"Fact","title":"Office","content":"Kyiv"}</air_memory>\n```',
-      '<air_kpi>[{"label":"Orders","value":12}]</air_kpi>',
+      '```xml\n<agent_memory>{"kind":"Fact","title":"Office","content":"Kyiv"}</agent_memory>\n```',
+      '<ui_kpi>[{"label":"Orders","value":12}]</ui_kpi>',
     ].join('\n\n');
 
     const blocks = parseAgentBlocks(text, DEFAULT_AGENT_BLOCK_PLUGINS, 'm2');

@@ -22,7 +22,11 @@ public sealed class EcomStockReceiptFormService(EcomDbContext db, EcomStockRecei
     elements.Add(e => e.ManagerId).AsReference<AppUserGridService>().Span(6);
     elements.Add(e => e.Note).AsTextarea();
 
-    elements.AddChild<EcomStockReceiptLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomStockReceiptLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomStockReceiptHistoryGridService>().Key("history").Label("History");
   }
 }

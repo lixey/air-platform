@@ -63,7 +63,7 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
           <ui-btn
             size="medium"
             variant="ghost"
-            icon="panelRightClose"
+            icon="panel-right-close"
             [title]="texts.of('NavigationShow')"
             (click)="megaMenu.restoreNav()"
           />

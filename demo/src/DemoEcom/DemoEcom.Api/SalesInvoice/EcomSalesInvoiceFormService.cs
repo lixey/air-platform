@@ -34,7 +34,11 @@ public sealed class EcomSalesInvoiceFormService(EcomDbContext db, EcomSalesInvoi
     elements.Add(e => e.CounterpartyId).AsReference<OrgCounterpartyGridService>().Span(12);
     elements.Add(e => e.Note).AsTextarea();
 
-    elements.AddChild<EcomSalesInvoiceLineGridService>().Key("lines").Label("Lines");
+    elements.AddChild<EcomSalesInvoiceLineGridService, EcomDocLine>()
+      .Key("lines")
+      .Label("Lines")
+      .SumTo(d => d.Qty, l => l.Qty)
+      .SumTo(d => d.Amount, l => l.Amount);
     elements.AddChild<EcomSalesInvoiceBasisGridService>().Key("basis").Label("Entered on");
     elements.AddChild<EcomSalesInvoiceFollowerGridService>().Key("followers").Label("Followed by");
     elements.AddChild<EcomSalesInvoiceHistoryGridService>().Key("history").Label("History");
