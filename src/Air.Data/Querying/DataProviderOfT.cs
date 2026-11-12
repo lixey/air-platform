@@ -6,6 +6,13 @@ public sealed class DataProvider<TEntity, TRow>
   where TEntity : class
   where TRow : class
 {
+  private static readonly MethodInfo EnumerableContains = typeof(Enumerable)
+    .GetMethods()
+    .Single(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2);
+
+  private static readonly MethodInfo StreamChunksByKeyMethod = typeof(DataProvider<TEntity, TRow>)
+    .GetMethod(nameof(StreamChunksByKeyAsync), BindingFlags.Instance | BindingFlags.NonPublic)!;
+
   private readonly Expression<Func<TEntity, TRow>>? _selector;
 
   public DataProvider(IQueryable<TEntity> source, QueryMap<TEntity> map, Expression<Func<TEntity, TRow>>? selector = null)
@@ -100,50 +107,80 @@ public sealed class DataProvider<TEntity, TRow>
     return EnumerateAsync(Project(plan.Order(plan.Filter(Source)).Take(limit)), cancellationToken);
   }
 
-  public async IAsyncEnumerable<IReadOnlyList<TRow>> StreamChunksAsync(
+  public IAsyncEnumerable<IReadOnlyList<TRow>> StreamChunksAsync(
     ListRequest request,
     int limit,
     int chunkSize = 500,
-    [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default)
   {
     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSize);
 
-    var enumerator = StreamAsync(request, limit, cancellationToken).GetAsyncEnumerator(cancellationToken);
-    var disposed = false;
-    try
+    var plan = Map.Plan(request);
+    var ordered = plan.Order(plan.Filter(Source));
+
+    if (limit <= chunkSize)
     {
-      if (!await enumerator.MoveNextAsync())
-      {
-        disposed = true;
-        await enumerator.DisposeAsync();
-        yield break;
-      }
-
-      var hasCurrent = true;
-      while (hasCurrent)
-      {
-        var chunk = new List<TRow>(Math.Min(chunkSize, limit));
-        while (hasCurrent && chunk.Count < chunkSize)
-        {
-          chunk.Add(enumerator.Current);
-          hasCurrent = await enumerator.MoveNextAsync();
-        }
-
-        if (!hasCurrent)
-        {
-          disposed = true;
-          await enumerator.DisposeAsync();
-        }
-
-        yield return chunk;
-      }
+      return StreamSingleChunkAsync(ordered, limit, cancellationToken);
     }
-    finally
+
+    return Map.Key.Expression switch
     {
-      if (!disposed)
+      Expression<Func<TEntity, long>> longKey => StreamChunksByKeyAsync(plan, ordered, longKey, limit, chunkSize, cancellationToken),
+      Expression<Func<TEntity, int>> intKey => StreamChunksByKeyAsync(plan, ordered, intKey, limit, chunkSize, cancellationToken),
+      Expression<Func<TEntity, Guid>> guidKey => StreamChunksByKeyAsync(plan, ordered, guidKey, limit, chunkSize, cancellationToken),
+      Expression<Func<TEntity, string>> stringKey => StreamChunksByKeyAsync(plan, ordered, stringKey, limit, chunkSize, cancellationToken),
+      var keyExpr => (IAsyncEnumerable<IReadOnlyList<TRow>>)StreamChunksByKeyMethod
+        .MakeGenericMethod(keyExpr.ReturnType)
+        .Invoke(this, [plan, ordered, keyExpr, limit, chunkSize, cancellationToken])!
+    };
+  }
+
+  private async IAsyncEnumerable<IReadOnlyList<TRow>> StreamSingleChunkAsync(
+    IQueryable<TEntity> ordered,
+    int limit,
+    [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+  {
+    var rows = await ExecuteListAsync(Project(ordered.Take(limit)), cancellationToken);
+    if (rows.Count > 0)
+    {
+      yield return rows;
+    }
+  }
+
+  private async IAsyncEnumerable<IReadOnlyList<TRow>> StreamChunksByKeyAsync<TKey>(
+    QueryPlan<TEntity> plan,
+    IQueryable<TEntity> ordered,
+    Expression<Func<TEntity, TKey>> keySelector,
+    int limit,
+    int chunkSize,
+    [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+  {
+    var keys = await ExecuteListAsync(ordered.Select(keySelector).Take(limit), cancellationToken);
+    if (keys.Count == 0)
+    {
+      yield break;
+    }
+
+    var containsMethod = EnumerableContains.MakeGenericMethod(typeof(TKey));
+    for (var offset = 0; offset < keys.Count; offset += chunkSize)
+    {
+      cancellationToken.ThrowIfCancellationRequested();
+      var count = Math.Min(chunkSize, keys.Count - offset);
+      var batchKeys = keys.GetRange(offset, count);
+
+      var entity = Expression.Parameter(typeof(TEntity), "e");
+      var keyMember = Map.Key.Bind(entity);
+      var inCall = Expression.Call(
+        containsMethod,
+        BoundValue.Of(batchKeys, typeof(List<TKey>)),
+        keyMember);
+      var predicate = Expression.Lambda<Func<TEntity, bool>>(inCall, entity);
+
+      var chunk = await ExecuteListAsync(Project(plan.Order(Source.Where(predicate))), cancellationToken);
+      if (chunk.Count > 0)
       {
-        await enumerator.DisposeAsync();
+        yield return chunk;
       }
     }
   }

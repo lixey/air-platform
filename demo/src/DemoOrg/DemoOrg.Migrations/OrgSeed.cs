@@ -10,6 +10,7 @@ public static class OrgSeed
     CancellationToken cancellationToken = default
   )
   {
+    using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "seed:DemoOrg");
     tenants ??= AppCodeRows.Tenants();
 
     await OrgCodeRows.SyncAsync(db, cancellationToken);

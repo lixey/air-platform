@@ -59,6 +59,7 @@ public static class EcomSeed
     ArgumentNullException.ThrowIfNull(db);
     ArgumentNullException.ThrowIfNull(volume);
     ArgumentNullException.ThrowIfNull(tenants);
+    using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "seed:DemoEcom");
     await EcomCodeRows.SyncAsync(db, cancellationToken);
     await Installation.RunOnceAsync(
       db,

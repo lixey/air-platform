@@ -12,6 +12,7 @@ public static class AppSeed
     string? seedPassword = null
   )
   {
+    using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "seed:DemoApp");
     tenants ??= AppCodeRows.Tenants();
 
     await AppCodeRows.SyncAsync(db, tenants, cancellationToken);

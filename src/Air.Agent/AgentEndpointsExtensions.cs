@@ -207,6 +207,7 @@ public static class AgentEndpointsExtensions
 
     try
     {
+      using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "agent-startup-seed");
       using var scope = app.ServiceProvider.CreateScope();
       var db = scope.ServiceProvider.GetService<PlatformDbContext>();
       if (db is not null)

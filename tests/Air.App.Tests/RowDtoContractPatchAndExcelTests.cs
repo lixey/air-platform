@@ -420,6 +420,43 @@ public sealed class RowDtoContractPatchAndExcelTests : IDisposable
     Assert.Equal(42.75m, afterGridCell.Amount);
   }
 
+  [Fact]
+  public async Task ExportAsync_Over500RowsWithComputeSecondaryQueries_ClosesReaderBetweenChunks()
+  {
+    var interceptor = new SingleActiveReaderInterceptor();
+    var options = new DbContextOptionsBuilder<AppTestDbContext>()
+      .UseSqlite(_connection)
+      .AddInterceptors(interceptor)
+      .Options;
+    var rights = new HashSet<string>(["*"], StringComparer.OrdinalIgnoreCase);
+    await using var db = new AppTestDbContext(options, new FixedTenant(1, 10, rights));
+    db.Database.EnsureCreated();
+
+    db.Tags.AddRange(new TestTag { Name = "T1" }, new TestTag { Name = "T2" });
+    for (var i = 1; i <= 525; i++)
+    {
+      db.Invoices.Add(new TestInvoice { Number = $"INV-{i:D4}", Status = 1 });
+    }
+
+    await db.SaveChangesAsync();
+    Assert.Equal(0, interceptor.ActiveReaders);
+
+    var app = new TestPlatformAppService(db, new FixedUser(10, "*"));
+    var grid = new TestComputedExportGridService(db, app);
+    var result = await grid.ExportAsync(new GridRequest(), CancellationToken.None);
+
+    var fileResult = Assert.IsType<FileStreamHttpResult>(result);
+    await using var stream = fileResult.FileStream;
+    Assert.Equal(2, grid.ComputeBatchCalls);
+    Assert.Equal(0, interceptor.ActiveReaders);
+
+    using var doc = SpreadsheetDocument.Open(stream, isEditable: false);
+    var sheetData = doc.WorkbookPart!.WorksheetParts.Single().Worksheet.GetFirstChild<SheetData>()!;
+    var rows = sheetData.Elements<Row>().ToList();
+    Assert.Equal(526, rows.Count);
+    Assert.Contains("INV-0525:2", rows[^1].InnerText, StringComparison.Ordinal);
+  }
+
   private static Assembly BuildDynamicContractAssembly(string name, Action<ModuleBuilder> defineTypes)
   {
     var asmBuilder = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(name), AssemblyBuilderAccess.Run);

@@ -58,6 +58,8 @@ public static class DevMigrationsRunner
       ecomOptions = new DbContextOptionsBuilder<EcomDbContext>().UseSqlite(sqlite).Options;
     }
 
+    using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: $"demo-dev-migrations:{action}");
+
     await using var appDb = new AppDbContext(appOptions);
     await using var orgDb = new OrgDbContext(orgOptions);
     await using var ecomDb = new EcomDbContext(ecomOptions);
