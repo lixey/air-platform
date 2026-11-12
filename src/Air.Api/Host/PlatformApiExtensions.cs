@@ -68,7 +68,11 @@ public static class PlatformApiExtensions
       builder.Services.TryAddSingleton<Mutations.Internals.IdempotencyStore>();
       builder.Services.TryAddSingleton<FileLinks>();
 
-      if (IsForwardedHeadersConfigured(builder.Configuration))
+      var hasExplicitForwardedOption = builder.Services.Any(d =>
+        d.ServiceType == typeof(PlatformOptions) &&
+        d.ImplementationInstance is PlatformOptions { UseForwardedHeaders: true });
+
+      if (hasExplicitForwardedOption || IsForwardedHeadersConfigured(builder.Configuration))
       {
         builder.Services.Configure<ForwardedHeadersOptions>(fwd =>
         {
@@ -76,6 +80,8 @@ public static class PlatformApiExtensions
           fwd.ForwardLimit = builder.Configuration.GetValue("ForwardedHeaders:ForwardLimit", 1);
           if (builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() is { Length: > 0 } proxies)
           {
+            fwd.KnownProxies.Clear();
+            fwd.KnownIPNetworks.Clear();
             foreach (var rawProxy in proxies)
             {
               if (System.Net.IPAddress.TryParse(rawProxy, out var ip))
@@ -120,7 +126,7 @@ public static class PlatformApiExtensions
     return builder;
   }
 
-  public static IApplicationBuilder UsePlatformAuth(this IApplicationBuilder app)
+  public static IApplicationBuilder UsePlatformForwardedHeaders(this IApplicationBuilder app)
   {
     var options = app.ApplicationServices.GetService<PlatformOptions>();
     var config = app.ApplicationServices.GetService<IConfiguration>();
@@ -141,6 +147,13 @@ public static class PlatformApiExtensions
         });
       }
     }
+
+    return app;
+  }
+
+  public static IApplicationBuilder UsePlatformAuth(this IApplicationBuilder app)
+  {
+    app.UsePlatformForwardedHeaders();
 
     return app.Use(async (context, next) =>
     {

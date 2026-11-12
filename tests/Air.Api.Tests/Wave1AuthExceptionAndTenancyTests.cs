@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Auth.Internals;
@@ -470,6 +472,71 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     var globalSinglePkT1 = MutationContext.LockKeyOf(typeof(TestAuthTenant), [5], dbTenant1);
     var globalSinglePkT2 = MutationContext.LockKeyOf(typeof(TestAuthTenant), [5], dbTenant2);
     Assert.Equal(globalSinglePkT1, globalSinglePkT2);
+  }
+
+  [Fact]
+  public async Task UsePlatformForwardedHeaders_DisabledBlocksLoopbackSpoof_EnabledHonorsKnownProxiesOnce()
+  {
+    var defaultBuilder = WebApplication.CreateBuilder();
+    defaultBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+      ["Auth:TokenSecret"] = "wave1-unit-test-secret-with-more-than-32-characters"
+    });
+    defaultBuilder.AddPlatformApiModule<TestApiModule>();
+    await using var defaultApp = defaultBuilder.Build();
+
+    var defaultPipeline = ((IApplicationBuilder)defaultApp).New();
+    defaultPipeline.UsePlatformForwardedHeaders();
+    defaultPipeline.UsePlatformAuth();
+    IPAddress? observedDefaultIp = null;
+    defaultPipeline.Run(ctx =>
+    {
+      observedDefaultIp = ctx.Connection.RemoteIpAddress;
+      return Task.CompletedTask;
+    });
+    var defaultDelegate = defaultPipeline.Build();
+
+    var spoofedLoopback = new DefaultHttpContext { RequestServices = defaultApp.Services };
+    spoofedLoopback.Connection.RemoteIpAddress = IPAddress.Loopback;
+    spoofedLoopback.Request.Headers["X-Forwarded-For"] = "198.51.100.77";
+    await defaultDelegate(spoofedLoopback);
+    Assert.Equal(IPAddress.Loopback, observedDefaultIp);
+
+    var enabledBuilder = WebApplication.CreateBuilder();
+    enabledBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+      ["Auth:TokenSecret"] = "wave1-unit-test-secret-with-more-than-32-characters",
+      ["ForwardedHeaders:Enabled"] = "true",
+      ["ForwardedHeaders:ForwardLimit"] = "1",
+      ["ForwardedHeaders:KnownProxies:0"] = "10.0.0.5"
+    });
+    enabledBuilder.AddPlatformApiModule<TestApiModule>();
+    await using var enabledApp = enabledBuilder.Build();
+
+    var enabledPipeline = ((IApplicationBuilder)enabledApp).New();
+    enabledPipeline.UsePlatformForwardedHeaders();
+    enabledPipeline.UsePlatformAuth();
+    IPAddress? observedEnabledIp = null;
+    enabledPipeline.Run(ctx =>
+    {
+      observedEnabledIp = ctx.Connection.RemoteIpAddress;
+      return Task.CompletedTask;
+    });
+    var enabledDelegate = enabledPipeline.Build();
+
+    // Default 127.0.0.1 loopback proxy is cleared when KnownProxies is explicitly set.
+    var untrustedLoopback = new DefaultHttpContext { RequestServices = enabledApp.Services };
+    untrustedLoopback.Connection.RemoteIpAddress = IPAddress.Loopback;
+    untrustedLoopback.Request.Headers["X-Forwarded-For"] = "198.51.100.88";
+    await enabledDelegate(untrustedLoopback);
+    Assert.Equal(IPAddress.Loopback, observedEnabledIp);
+
+    // Trusted proxy 10.0.0.5 with ForwardLimit=1 runs middleware once (resolving 198.51.100.2, not 198.51.100.1).
+    var trustedProxyCtx = new DefaultHttpContext { RequestServices = enabledApp.Services };
+    trustedProxyCtx.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.5");
+    trustedProxyCtx.Request.Headers["X-Forwarded-For"] = "198.51.100.1, 198.51.100.2";
+    await enabledDelegate(trustedProxyCtx);
+    Assert.Equal(IPAddress.Parse("198.51.100.2"), observedEnabledIp);
   }
 
   private static DefaultHttpContext CreateHttpContext(IServiceProvider services, bool includeClientHeader)

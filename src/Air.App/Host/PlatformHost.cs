@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.HttpOverrides;
-
 namespace Platform.App.Host;
 
 public static class PlatformHost
@@ -65,14 +63,8 @@ public static class PlatformHost
       .AllowAnyMethod()
       .AllowCredentials()));
 
-    builder.Services.Configure<ForwardedHeadersOptions>(fwd =>
-    {
-      fwd.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-      fwd.ForwardLimit = 1;
-    });
-
     var app = builder.Build();
-    app.UseForwardedHeaders();
+    app.UsePlatformForwardedHeaders();
     app.UseCors();
     app.MapGet("/api/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
     app.MapPlatform();

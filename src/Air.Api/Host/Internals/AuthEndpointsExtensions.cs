@@ -9,8 +9,13 @@ internal static class AuthEndpointsExtensions
     new PasswordHasher().HashPassword("dummy-password-for-timing-defense"));
 
   private static readonly ConcurrentDictionary<long, GraceRefreshEntry> GraceRefreshTokens = new();
+  private static readonly ConcurrentDictionary<(long SessionId, string NextRefreshHash), GraceRefreshEntry> PendingGraceRotations = new();
 
-  internal static void ClearGraceTokensForTesting() => GraceRefreshTokens.Clear();
+  internal static void ClearGraceTokensForTesting()
+  {
+    GraceRefreshTokens.Clear();
+    PendingGraceRotations.Clear();
+  }
 
   public static void MapAuthEndpoints(this RouteGroupBuilder api)
   {
@@ -403,32 +408,39 @@ internal static class AuthEndpointsExtensions
     {
       var prevHash = session.RefreshTokenHash;
       var nextRefresh = SessionTokenService.CreateRefreshToken();
+      var nextRefreshHash = SessionTokenService.HashRefreshToken(nextRefresh);
       var refreshExpiresAt = now + options.RefreshTokenLifetime;
       var accessExpiresAt = now + options.AccessTokenLifetime;
       var nextAccess = SessionTokenService.CreateAccessToken(session.Id, user.Id, accessExpiresAt, user.TokenVersion);
 
       session.PreviousRefreshTokenHash = prevHash;
-      session.RefreshTokenHash = SessionTokenService.HashRefreshToken(nextRefresh);
+      session.RefreshTokenHash = nextRefreshHash;
       session.RotatedAt = now;
       session.LastUsedAt = now;
       session.ExpiresAt = refreshExpiresAt;
 
+      var hadPriorGrace = GraceRefreshTokens.TryGetValue(session.Id, out var priorGrace);
+      var nextGrace = new GraceRefreshEntry(
+        prevHash,
+        nextAccess,
+        accessExpiresAt,
+        nextRefresh,
+        refreshExpiresAt,
+        now + GraceWindow);
+      CleanupExpiredGraceTokens(now);
+      PendingGraceRotations[(session.Id, nextRefreshHash)] = nextGrace;
+      GraceRefreshTokens[session.Id] = nextGrace;
+
       try
       {
         await authStore.SaveChangesAsync(ct);
-        CleanupExpiredGraceTokens(now);
-        GraceRefreshTokens[session.Id] = new GraceRefreshEntry(
-          prevHash,
-          nextAccess,
-          accessExpiresAt,
-          nextRefresh,
-          refreshExpiresAt,
-          now + GraceWindow);
+        GraceRefreshTokens[session.Id] = nextGrace;
         AuthCookieHelper.SetAuthCookies(ctx, nextAccess, accessExpiresAt, nextRefresh, refreshExpiresAt);
         cookiesIssued = true;
       }
       catch (DbUpdateConcurrencyException ex)
       {
+        RollbackGraceEntry(session.Id, nextRefreshHash, nextGrace, hadPriorGrace, priorGrace);
         foreach (var entry in ex.Entries)
         {
           await entry.ReloadAsync(ct);
@@ -443,10 +455,12 @@ internal static class AuthEndpointsExtensions
           return Results.Unauthorized();
         }
 
-        if (GraceRefreshTokens.TryGetValue(session.Id, out var racedGrace) &&
+        if ((PendingGraceRotations.TryGetValue((session.Id, session.RefreshTokenHash), out var racedGrace) ||
+             GraceRefreshTokens.TryGetValue(session.Id, out racedGrace)) &&
             racedGrace.PrevHash == providedHash &&
             racedGrace.GraceExpiresAt > now)
         {
+          GraceRefreshTokens[session.Id] = racedGrace;
           AuthCookieHelper.SetAuthCookies(
             ctx,
             racedGrace.AccessToken,
@@ -455,6 +469,11 @@ internal static class AuthEndpointsExtensions
             racedGrace.RefreshExpiresAt);
           cookiesIssued = true;
         }
+      }
+      catch
+      {
+        RollbackGraceEntry(session.Id, nextRefreshHash, nextGrace, hadPriorGrace, priorGrace);
+        throw;
       }
     }
 
@@ -677,18 +696,45 @@ internal static class AuthEndpointsExtensions
   private static DateTimeOffset ResolveUtcNow(IServiceProvider services) =>
     (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
 
+  private static void RollbackGraceEntry(
+    long sessionId,
+    string nextRefreshHash,
+    GraceRefreshEntry stagedEntry,
+    bool hadPriorGrace,
+    GraceRefreshEntry? priorGrace)
+  {
+    PendingGraceRotations.TryRemove((sessionId, nextRefreshHash), out _);
+    if (hadPriorGrace && priorGrace != null)
+    {
+      GraceRefreshTokens.TryUpdate(sessionId, priorGrace, stagedEntry);
+    }
+    else
+    {
+      GraceRefreshTokens.TryRemove(KeyValuePair.Create(sessionId, stagedEntry));
+    }
+  }
+
   private static void CleanupExpiredGraceTokens(DateTimeOffset now)
   {
-    if (GraceRefreshTokens.Count <= 256)
+    if (GraceRefreshTokens.Count > 256)
     {
-      return;
+      foreach (var (sid, entry) in GraceRefreshTokens)
+      {
+        if (entry.GraceExpiresAt <= now)
+        {
+          GraceRefreshTokens.TryRemove(sid, out _);
+        }
+      }
     }
 
-    foreach (var (sid, entry) in GraceRefreshTokens)
+    if (PendingGraceRotations.Count > 256)
     {
-      if (entry.GraceExpiresAt <= now)
+      foreach (var (key, entry) in PendingGraceRotations)
       {
-        GraceRefreshTokens.TryRemove(sid, out _);
+        if (entry.GraceExpiresAt <= now)
+        {
+          PendingGraceRotations.TryRemove(key, out _);
+        }
       }
     }
   }
