@@ -326,7 +326,7 @@ public static class AgentContextQueryService
             total = probePage.Total,
             loadedMatches = matchedRows.Count,
             note =
-              "Large dictionary (>50 records): pass the exact name in <air_proposal> and the server will automatically find the existing record in DB or propose creating it if not found."
+              "Large dictionary (>50 records): pass the exact name in <ui_proposal> and the server will automatically find the existing record in DB or propose creating it if not found."
           };
         }
       }

@@ -91,17 +91,17 @@ internal static class CliTurnRunner
     targetEnv["NO_COLOR"] = "1";
     if (!string.IsNullOrWhiteSpace(mcpTurnToken))
     {
-      targetEnv["AIR_MCP_TOKEN"] = mcpTurnToken;
+      targetEnv["PLATFORM_MCP_TOKEN"] = mcpTurnToken;
     }
 
     if (!string.IsNullOrWhiteSpace(sessionId))
     {
-      targetEnv["AIR_SESSION_ID"] = sessionId;
+      targetEnv["PLATFORM_SESSION_ID"] = sessionId;
     }
 
     if (!string.IsNullOrWhiteSpace(mcpServerUrl))
     {
-      targetEnv["AIR_MCP_URL"] = mcpServerUrl;
+      targetEnv["PLATFORM_MCP_URL"] = mcpServerUrl;
     }
   }
 
@@ -263,7 +263,7 @@ internal static class CliTurnRunner
             string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
           );
           var includeReports = !hasPhoto;
-          var ctxObj = await AirAgentRuntime.BuildContextAsync(
+          var ctxObj = await AgentContextQueryService.BuildContextAsync(
             effectiveRequest.Services,
             effectiveRequest.Message,
             ct,
@@ -280,7 +280,7 @@ internal static class CliTurnRunner
             }
           }
 
-          var extendedRecordsObj = await AirAgentRuntime.BuildExtendedWorkspaceRecordsAsync(effectiveRequest.Services, ct);
+          var extendedRecordsObj = await AgentContextQueryService.BuildExtendedWorkspaceRecordsAsync(effectiveRequest.Services, ct);
           await File.WriteAllTextAsync(recordsFilePath, JsonSerializer.Serialize(extendedRecordsObj, PromptJsonOptions), Encoding.UTF8, ct);
         }
         catch
@@ -317,13 +317,13 @@ internal static class CliTurnRunner
           {
             mcpServers = new
             {
-              air = new
+              platform = new
               {
                 type = "http",
                 url = request.McpServerUrl,
                 headers = new Dictionary<string, string>
                 {
-                  ["X-Air-Mcp-Token"] = mcpTurnToken
+                  ["X-Platform-Mcp-Token"] = mcpTurnToken
                 }
               }
             }

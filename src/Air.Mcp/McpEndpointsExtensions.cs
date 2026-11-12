@@ -6,7 +6,7 @@ public static class McpEndpointsExtensions
 {
   private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
-  public static IServiceCollection AddAirMcp(this IServiceCollection services)
+  public static IServiceCollection AddPlatformMcp(this IServiceCollection services)
   {
     services.TryAddSingleton<McpExecutionBridge>();
     return services;
@@ -15,12 +15,12 @@ public static class McpEndpointsExtensions
   public static IServiceCollection AddMcpTool<TTool>(this IServiceCollection services)
     where TTool : class, IMcpTool
   {
-    services.AddAirMcp();
+    services.AddPlatformMcp();
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IMcpTool, TTool>());
     return services;
   }
 
-  public static IEndpointRouteBuilder MapAirMcp(this IEndpointRouteBuilder endpoints, string pattern = "/api/mcp")
+  public static IEndpointRouteBuilder MapPlatformMcp(this IEndpointRouteBuilder endpoints, string pattern = "/api/mcp")
   {
     endpoints.MapPost(
       pattern,
@@ -36,12 +36,12 @@ public static class McpEndpointsExtensions
         if (!isUserAuthenticated)
         {
           var remoteIp = httpContext.Connection.RemoteIpAddress;
-          if (remoteIp is not null && !IPAddress.IsLoopback(remoteIp))
+          if (remoteIp is null || !IPAddress.IsLoopback(remoteIp))
           {
             return Results.Unauthorized();
           }
 
-          var rawToken = httpContext.Request.Headers["X-Air-Mcp-Token"].FirstOrDefault();
+          var rawToken = httpContext.Request.Headers["X-Platform-Mcp-Token"].FirstOrDefault();
           if (string.IsNullOrWhiteSpace(rawToken))
           {
             var authHeader = httpContext.Request.Headers.Authorization.FirstOrDefault();
@@ -115,7 +115,7 @@ public static class McpEndpointsExtensions
                 {
                   protocolVersion = "2024-11-05",
                   capabilities = new { tools = new { } },
-                  serverInfo = new { name = "air-mcp", version = "1.0.0" }
+                  serverInfo = new { name = "platform-mcp", version = "1.0.0" }
                 });
 
             case "ping":

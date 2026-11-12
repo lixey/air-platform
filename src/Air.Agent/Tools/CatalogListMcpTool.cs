@@ -2,7 +2,7 @@ namespace Platform.Agent.Tools;
 
 public sealed class CatalogListMcpTool : IMcpTool
 {
-  public string Name => "air_catalog_list";
+  public string Name => "platform_catalog_list";
 
   public string Description =>
     "Lists agent-enabled forms (read-write), grids (read), and analytical reports (read) permitted for the current user.";

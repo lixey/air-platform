@@ -2,7 +2,7 @@ namespace Platform.Agent.Tools;
 
 public sealed class CatalogDescribeMcpTool : IMcpTool
 {
-  public string Name => "air_catalog_describe";
+  public string Name => "platform_catalog_describe";
 
   public string Description =>
     "Describes the editable field schema, child lines schema, and defaults of an agent-enabled form, or reads summary KPIs/table of an agent-enabled report.";
@@ -16,7 +16,7 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
       service = new
       {
         type = "string",
-        description = "Form or report service path from air_catalog_list."
+        description = "Form or report service path from platform_catalog_list."
       }
     }
   };

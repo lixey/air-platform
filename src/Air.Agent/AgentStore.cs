@@ -10,6 +10,7 @@ public sealed class AgentStore
   private readonly SemaphoreSlim _seedLock = new(1, 1);
   private readonly SemaphoreSlim _globalTurnSemaphore;
   private bool _catalogsSeeded;
+  private long _lastAutoSyncTicks;
   private long _lastCleanupTicks = DateTimeOffset.UtcNow.UtcTicks;
 
   public AgentOptions Options { get; }
@@ -23,7 +24,7 @@ public sealed class AgentStore
 
     var appHash = Convert.ToHexStringLower(
       SHA256.HashData(Encoding.UTF8.GetBytes($"{AppContext.BaseDirectory}|{Environment.UserName}")))[..12];
-    WorkspaceDirectory = Path.Combine(Path.GetTempPath(), $"air-agent-{appHash}");
+    WorkspaceDirectory = Path.Combine(Path.GetTempPath(), $"platform-agent-{appHash}");
     EnsurePrivateDirectory(WorkspaceDirectory);
     CleanupStaleDiskFiles();
   }
@@ -73,7 +74,19 @@ public sealed class AgentStore
     return new AgentTurnLease(_globalTurnSemaphore);
   }
 
-  public async Task EnsureCatalogsSeededAsync(PlatformDbContext db, string? domainKnowledge, CancellationToken ct = default)
+  public bool TryClaimAutoSyncCooldown(TimeSpan cooldown)
+  {
+    var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+    var prev = Interlocked.Read(ref _lastAutoSyncTicks);
+    if (nowTicks - prev < cooldown.Ticks)
+    {
+      return false;
+    }
+
+    return Interlocked.CompareExchange(ref _lastAutoSyncTicks, nowTicks, prev) == prev;
+  }
+
+  public async Task EnsureCatalogsSeededAsync(PlatformDbContext db, string? domainKnowledge = null, CancellationToken ct = default)
   {
     if (_catalogsSeeded)
     {
@@ -88,8 +101,9 @@ public sealed class AgentStore
         return;
       }
 
+      using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "agent-catalog-seed");
       await AgentModelCatalog.EnsureSeededAsync(db, ct);
-      await AgentMemoryCatalog.EnsureSeededAsync(db, domainKnowledge, ct);
+      await AgentMemoryCatalog.EnsureSeededAsync(db, domainKnowledge ?? Options.DomainKnowledge, ct);
       _catalogsSeeded = true;
     }
     finally

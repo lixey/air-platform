@@ -12,6 +12,7 @@ public sealed class AgentModelSynchronizer(IEnumerable<IAgentProvider> providers
     await _syncLock.WaitAsync(ct);
     try
     {
+      using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "agent-model-sync");
       await AgentModelCatalog.EnsureSeededAsync(db, ct);
 
       var dbProviders = await db.AppAgentProvider
