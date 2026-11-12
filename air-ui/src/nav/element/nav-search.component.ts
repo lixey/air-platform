@@ -1,4 +1,4 @@
-import { Component, computed, inject, model, signal, type WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, signal, type WritableSignal } from '@angular/core';
 import { SearchBoxComponent } from '../../controls/search-box.component';
 import type { NavSearchModel } from '../../core/generated/contracts';
 import { PanelsContext, panelValue } from '../../panels/panels-context';
@@ -18,7 +18,7 @@ import { PanelsContext, panelValue } from '../../panels/panels-context';
 export class NavSearchComponent {
   private readonly context = inject(PanelsContext, { optional: true });
 
-  readonly model = model<NavSearchModel | null>();
+  readonly model = input<NavSearchModel | null>();
 
   protected readonly panelText = computed<WritableSignal<string>>(() => {
     const name = this.model()?.value ?? '';

@@ -1,4 +1,4 @@
-import { Component, computed, inject, model, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
 import { TextBoxComponent } from '../controls/text-box.component';
 import type { OverlayConfirmModel } from '../core/generated/contracts';
@@ -45,7 +45,7 @@ function confirmDefaults(
       <h2 [id]="id + '-title'" class="m-0 text-base font-semibold">{{ view().title }}</h2>
     </header>
 
-    <p [id]="id + '-message'" class="m-0 px-3 py-4 max-w-2xl max-h-[70vh] overflow-y-auto whitespace-pre-line text-sm leading-relaxed">
+    <p [id]="id + '-message'" class="m-0 px-3 py-4 max-w-2xl max-h-[70dvh] overflow-y-auto whitespace-pre-line text-sm leading-relaxed">
       {{ view().message }}
     </p>
 
@@ -89,7 +89,7 @@ export class OverlayConfirmComponent {
   /** Ids the title and the message carry, so the dialog can be named and described by them. */
   protected readonly id = `ui-confirm-${++OverlayConfirmComponent.next}`;
 
-  readonly model = model<OverlayConfirmModel | null>();
+  readonly model = input<OverlayConfirmModel | null>();
 
   protected readonly view = computed(() => resolveModel(confirmDefaults(this.texts), this.model(), {}));
 

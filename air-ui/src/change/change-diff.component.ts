@@ -46,7 +46,7 @@ import { ScreenMutations } from '../screen/screen-mutations';
                     <span class="text-muted">→</span>
                     <span class="break-all font-semibold text-ink">{{ field.after ?? '—' }}</span>
                   } @else if (m.operationKey === 'Deleted') {
-                    <span class="break-all font-medium text-red-600 dark:text-red-400">{{ field.before ?? '—' }}</span>
+                    <span class="hue-red break-all font-medium text-(--hue-ink)">{{ field.before ?? '—' }}</span>
                   } @else {
                     <span class="break-all font-medium text-ink">{{ field.after ?? field.before ?? '—' }}</span>
                   }

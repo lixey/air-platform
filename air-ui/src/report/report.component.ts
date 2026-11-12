@@ -219,17 +219,10 @@ export class ReportComponent {
       return;
     }
 
-    const nextFilters: Record<string, string> = {
+    this.applyFilters({
       ...current.activeFilters,
       [groupKey]: itemKey,
-    };
-
-    if (groupKey === 'year' && itemKey !== 'all') {
-      delete nextFilters['from'];
-      delete nextFilters['to'];
-    }
-
-    this.applyFilters(nextFilters);
+    });
   }
 
   protected selectDateFilter(bound: 'from' | 'to', value: string | null): void {
@@ -249,9 +242,6 @@ export class ReportComponent {
 
     if (value) {
       nextFilters[bound] = value;
-      if ('year' in nextFilters) {
-        nextFilters['year'] = 'all';
-      }
     } else {
       delete nextFilters[bound];
     }

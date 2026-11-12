@@ -2,7 +2,6 @@ import type { AgentBlockOverlayModel } from './agent/agent-block-overlay.model';
 import { defineComponents } from './core/dynamic-component/component-map';
 import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
 import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
-import { FileUploadOverlayComponent } from './file/file-upload-overlay.component';
 import type { ShownFile } from './file/file-upload-queue';
 import { FileViewerOverlayComponent } from './file/file-viewer-overlay.component';
 import { FormCheckboxSetComponent } from './form/element/form-checkbox-set.component';
@@ -10,7 +9,6 @@ import { FormCheckboxTreeComponent } from './form/element/form-checkbox-tree.com
 import { FormCheckboxComponent } from './form/element/form-checkbox.component';
 import { FormDateTimeComponent } from './form/element/form-date-time.component';
 import { FormDateComponent } from './form/element/form-date.component';
-import { FormFilesComponent } from './form/element/form-files.component';
 import { FormInfoComponent } from './form/element/form-info.component';
 import { FormInputComponent } from './form/element/form-input.component';
 import { FormMoneyComponent } from './form/element/form-money.component';
@@ -64,7 +62,6 @@ import { GridNavNamedFilterComponent } from './grid/nav/grid-nav-named-filter.co
 import { GridNavPickerComponent } from './grid/nav/grid-nav-picker.component';
 import { GridNavSearchComponent } from './grid/nav/grid-nav-search.component';
 import { GridNavStatusComponent } from './grid/nav/grid-nav-status.component';
-import { GridNavUploadComponent } from './grid/nav/grid-nav-upload.component';
 import { GridPickerOverlayComponent } from './grid/nav/grid-picker-overlay.component';
 import { LayoutMegaMenuBodyComponent } from './layout/layout-mega-menu-body.component';
 import { LayoutMenuComponent } from './layout/layout-menu.component';
@@ -250,10 +247,10 @@ export const UI_COMPONENTS = defineComponents({
   GridNavNamedFilterGroup: GridNavNamedFilterGroupComponent,
   GridNavSearch: GridNavSearchComponent,
   GridNavStatus: GridNavStatusComponent,
-  GridNavUpload: GridNavUploadComponent,
+  GridNavUpload: () => import('./grid/nav/grid-nav-upload.component').then(m => m.GridNavUploadComponent),
   GridNavPicker: GridNavPickerComponent,
   GridPickerOverlay: GridPickerOverlayComponent,
-  FileUploadOverlay: FileUploadOverlayComponent,
+  FileUploadOverlay: () => import('./file/file-upload-overlay.component').then(m => m.FileUploadOverlayComponent),
   FileViewerOverlay: FileViewerOverlayComponent,
   GridCellText: GridCellTextComponent,
   GridCellCheckbox: GridCellCheckboxComponent,
@@ -300,7 +297,7 @@ export const UI_COMPONENTS = defineComponents({
   FormCheckboxSet: FormCheckboxSetComponent,
   FormCheckboxTree: FormCheckboxTreeComponent,
   FormInfo: FormInfoComponent,
-  FormFiles: FormFilesComponent,
+  FormFiles: () => import('./form/element/form-files.component').then(m => m.FormFilesComponent),
   FormNavAction: FormNavActionComponent,
   FormNavSave: FormNavSaveComponent,
   FormNavSaveClose: FormNavSaveCloseComponent,

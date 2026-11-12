@@ -1,7 +1,7 @@
 import { computed, inject, linkedSignal, type Signal, signal, untracked } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AlertService } from '../app/alert/alert.service';
-import { shownByCaller } from '../app/alert/error-alert.interceptor';
+import { withIdempotencyKey } from '../app/auth/credentials.interceptor';
 import { LocaleService } from '../app/locale.service';
 import { Api } from '../core/api';
 import type {
@@ -16,6 +16,8 @@ import type {
 import type { IsCurrent } from '../core/lifetime';
 import { classifyMutationFailure, type MutationFailure, refusalDetailOf, refusalOf } from '../core/mutation-failure';
 import { TextsService } from '../core/texts.service';
+import { newUuid } from '../core/uuid';
+import { stableJson } from '../form/form-value';
 import { ConfirmationService } from '../overlay/confirmation.service';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
 import { referenceOf } from './cell/grid-cell-format';
@@ -104,19 +106,9 @@ type SaveResult =
   | { readonly kind: 'failed' };
 
 /**
- * The cells of one grid edited in place, saved one value at a time by the grid's form through `save-cell`. One edit is
- * held, by the row's key and the column's path, so the virtual body that draws a row again finds it; a row whose save
- * runs takes no second edit, and a change of the request or of the model cancels the edit. A commit posts the value
- * with the row's version and the grid's parent parameters, and nothing for a value equal to the cell's. Its answer
- * marks the record's changed cells on the page the reload loads, replaces the row by the answered one, tells the
- * screen, shows the commit's warnings, moves the active cell and loads the page again. A refusal with messages at the
- * column's path keeps the edit open with them; a conflict shows the model's conflict title, cancels and reloads; any
- * other failure is reported as a grid action's and cancels. A checkbox takes no edit: `toggle` saves its other value
- * at once. A column that `confirmsEdit` asks before either posts: `Cancel` posts nothing and keeps the edit as it is,
- * and while the question is open no second commit, toggle or start is taken.
- *
- * Created in a field of the grid service, so its injections are the service's. It knows nothing of the service: it is
- * given its options.
+ * Manages inline cell editing for one grid through `save-cell`: holds at most one active edit keyed by row id and column
+ * path across virtual row re-renders, serializes per-row commits with idempotency keys, prompts on `confirmsEdit`
+ * columns, adopts committed row versions, and surfaces path validation messages inline.
  */
 export class GridCellEdits {
   private readonly api = inject(Api);
@@ -137,6 +129,9 @@ export class GridCellEdits {
 
   /** A cell edit queued behind an in-flight commit on the same row or a confirmation dialog. */
   private pendingStart: { readonly key: GridRowKey; readonly column: GridColumnDto; readonly typed?: string } | null = null;
+
+  /** The idempotency key of an unanswered cell save, reused only when the exact same request is retried. */
+  private uncertain: { readonly fingerprint: string; readonly key: string } | null = null;
 
   /** Whether a confirmation dialog for an edited cell is currently open. */
   get isConfirming(): boolean {
@@ -214,12 +209,7 @@ export class GridCellEdits {
     this.edit.set({ key: edit.key, path: edit.path, value, isSaving: false, messages: edit.messages });
   }
 
-  /**
-   * Saves the edit's value and, once it is answered, moves as `move` says while the edit it saved is still the one held:
-   * an edit started meanwhile keeps its cell. An unchanged value posts nothing and moves at once. A confirmed column
-   * asks first: `Cancel`, or an answer that finds the edit ended or changed, posts nothing and keeps the edit held.
-   * Resolves when the answer is taken.
-   */
+  /** Saves the active edit's value and moves focus once answered; unchanged values skip the post. */
   async commit(move: GridCellMove): Promise<void> {
     const edit = untracked(this.current);
     if (!edit || edit.isSaving || this.isAsking) {
@@ -280,10 +270,7 @@ export class GridCellEdits {
     }
   }
 
-  /**
-   * Saves the other value of the row's editable checkbox at once, a confirmed column's once the user said `Save`;
-   * nothing while a save of the row runs or a question is open.
-   */
+  /** Toggles an editable checkbox cell immediately (after confirmation when `confirmsEdit` is set). */
   async toggle(row: GridRow, column: GridColumnDto): Promise<void> {
     const key = keyOf(row);
     if (
@@ -310,6 +297,7 @@ export class GridCellEdits {
   /** Ends the edit with nothing posted. */
   cancel(): void {
     this.pendingStart = null;
+    this.uncertain = null;
     this.edit.set(null);
   }
 
@@ -359,12 +347,15 @@ export class GridCellEdits {
     }
     const ver = row.ver;
     const body: GridCellRequest = { ...untracked(this.options.params), id, path, value, ...(typeof ver === 'number' ? { ver } : {}) };
+    const fingerprint = `${service}\n${stableJson(body)}`;
+    const idempotencyKey = this.uncertain?.fingerprint === fingerprint ? this.uncertain.key : newUuid();
+    this.uncertain = null;
     const isCurrent = this.options.capture();
     const operation = this.options.beginMutation();
     this.saving.update(keys => new Set(keys).add(id));
     try {
       const answer = await firstValueFrom(
-        this.api.postTo<GridServiceEndpoints, typeof GRID_SAVE_CELL>(service, GRID_SAVE_CELL, body, shownByCaller()),
+        this.api.postTo<GridServiceEndpoints, typeof GRID_SAVE_CELL>(service, GRID_SAVE_CELL, body, withIdempotencyKey(idempotencyKey)),
       );
       if (!isCurrent()) {
         return { kind: 'failed' };
@@ -372,7 +363,11 @@ export class GridCellEdits {
       this.adopt(answer, id, service, operation);
       return { kind: 'committed', row: isRowDto(answer.row) ? answer.row : null };
     } catch (error: unknown) {
-      return isCurrent() ? this.fail(classifyMutationFailure(error), keepsRefusal ? path : null) : { kind: 'failed' };
+      const failure = classifyMutationFailure(error);
+      if (failure.outcome === 'unknown') {
+        this.uncertain = { fingerprint, key: idempotencyKey };
+      }
+      return isCurrent() ? this.fail(failure, keepsRefusal ? path : null) : { kind: 'failed' };
     } finally {
       this.saving.update(keys => {
         const next = new Set(keys);

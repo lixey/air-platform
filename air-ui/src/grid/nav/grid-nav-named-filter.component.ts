@@ -1,4 +1,4 @@
-import { Component, computed, inject, LOCALE_ID, model } from '@angular/core';
+import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavNamedFilterModel } from '../../core/generated/contracts';
 import { NAV_MENU } from '../../nav/nav-menu';
@@ -26,7 +26,7 @@ export class GridNavNamedFilterComponent {
   private readonly menu = inject(NAV_MENU, { optional: true });
   private readonly locale = inject(LOCALE_ID);
 
-  readonly model = model<GridNavNamedFilterModel | null>();
+  readonly model = input<GridNavNamedFilterModel | null>();
 
   protected readonly isOn = computed(() => {
     const model = this.model();

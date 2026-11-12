@@ -1,4 +1,4 @@
-import { Component, computed, DestroyRef, inject, Injector, model } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Injector, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavMenuModel, OverlayDto } from '../../core/generated/contracts';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
@@ -40,7 +40,7 @@ export class NavMenuComponent {
   /** The menu, what the button says of it; it closes with this element. */
   protected readonly menu = inject(OverlayService).menu();
 
-  readonly model = model<NavMenuModel | null>();
+  readonly model = input<NavMenuModel | null>();
 
   /** The menu's elements. */
   protected readonly elements = computed(() => this.model()?.elements ?? []);

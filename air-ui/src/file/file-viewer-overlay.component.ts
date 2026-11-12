@@ -7,58 +7,26 @@ import {
   inject,
   Injector,
   input,
-  linkedSignal,
   signal,
   viewChildren,
 } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent, SLATE_GHOST_ICON_BTN_CLASSES, SLATE_SOFT_BTN_CLASSES } from '../btn/btn.component';
 import { TextsService } from '../core/texts.service';
-import type { GridRowKey } from '../grid/grid-row';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayRef } from '../overlay/overlay-ref';
-import { FOCUS_RING } from '../theme/css-classes';
 import type { FileViewerOverlayModel } from '../ui-components';
 import { FileInfoPanelComponent } from './file-info-panel.component';
 import { formatBytes } from './file-size';
 import { badgeOf, downloadLinkOf, type FileView, isInlineImage, isInlineVideo, pictureOf } from './file-view';
 import { FILE_VIEWER_SOURCE } from './file-viewer';
 import { FileViewerLinks } from './file-viewer-links';
-
-/** A thumbnail of the strip: a small square button, the shown file's framed in the checked role. */
-const THUMB = `flex items-center justify-center size-14 rounded-md border-2 bg-surface-2 overflow-hidden cursor-pointer ${FOCUS_RING}`;
-
-/** The keys that walk the files, with where each goes from the shown one among `count`. */
-const MOVES: Readonly<Record<string, (index: number, count: number) => number>> = {
-  ArrowLeft: index => index - 1,
-  ArrowRight: index => index + 1,
-  Home: () => 0,
-  End: (_, count) => count - 1,
-};
+import { FileViewerSequence, isInInfo, isInStrip, isViewerMoveKey, THUMB_CLASSES } from './file-viewer-sequence';
 
 /**
  * The file viewer (`FileViewerOverlay`), a dialog over the whole window opened at one file over a sequence of files its
  * opener gives it (`FILE_VIEWER_SOURCE`): a files element's files, the page's pictures of a file grid, a record's files
  * from its cover.
- *
- * An image shows from its `url`, fitted to the stage or at its natural size by the pair of toggles; an MP4 video plays
- * in the browser's own player, `<video controls playsinline preload="none">` with its thumbnail as the poster, which
- * requests nothing before it is played; any other file, a PDF included, shows as its card, the badge of its extension
- * with Open, which follows the `url` in a new browsing context with neither opener nor referrer, and Download; no
- * document is drawn inside the viewer. Download follows the `url` with the query `download`, which the server answers
- * as an attachment. The header names the file and its size, counts its place ("3 / 5") in a polite live region, and
- * offers Download, Delete where the opener offers it, Info, and Close, spaced one unit apart as a nav's buttons are
- * and all in the neutral colour, Delete too; the strip under the stage shows the sequence's
- * thumbnails, the shown one current. Info toggles a panel (`FileInfoPanel`) beside the stage on a wide panel and under
- * it on a narrow one, holding what the opener's file grid says of the shown file: the name and the description, as
- * fields where the opener offers the upload, and the metadata where it carries the right to read it.
- *
- * Left and Right show the previous and the next file, Home and End the first and the last, save inside Info, whose
- * fields keep their keys; Escape closes the viewer,
- * and the overlay gives the focus back to the element that opened it. Delete asks the opener, which confirms and
- * deletes, then shows the next file, or the previous one after the last, and closes when none is left. An image or a
- * video that fails to load makes the opener ask its page again, once for each file, for fresh links, and a video plays
- * on from the moment it stopped at; one that fails again shows its card with the reason and Download.
  */
 @Component({
   selector: 'ui-file-viewer-overlay',
@@ -278,29 +246,14 @@ export class FileViewerOverlayComponent {
 
   readonly model = input<FileViewerOverlayModel | null>();
 
-  /** The files deleted here: gone from the sequence at once, before the opener's page says so. */
-  private readonly removed = signal<ReadonlySet<GridRowKey>>(new Set());
+  private readonly sequence = new FileViewerSequence(
+    () => this.source.files(),
+    () => this.model()?.key ?? null,
+  );
 
-  /** The files the viewer walks: the opener's that have a key, less those deleted here. */
-  protected readonly files = computed(() => {
-    const removed = this.removed();
-    return this.source.files().filter(file => file.key !== null && !removed.has(file.key));
-  });
-
-  /** The key of the shown file: the model's at the opening, then the one the user walks to. */
-  private readonly shownKey = linkedSignal<GridRowKey | null>(() => this.model()?.key ?? null);
-
-  /** Where the shown file stood, which holds the place when the file leaves the sequence. */
-  private readonly position = signal(0);
-
-  /** The shown file's place: where its key stands, else the last place held, within the sequence. */
-  protected readonly index = computed(() => {
-    const files = this.files();
-    const found = files.findIndex(file => file.key === this.shownKey());
-    return found >= 0 ? found : Math.min(this.position(), files.length - 1);
-  });
-
-  protected readonly current = computed<FileView | null>(() => this.files()[this.index()] ?? null);
+  protected readonly files = this.sequence.files;
+  protected readonly index = this.sequence.index;
+  protected readonly current = this.sequence.current;
 
   protected readonly counter = computed(() => {
     const count = this.files().length;
@@ -313,14 +266,8 @@ export class FileViewerOverlayComponent {
   });
 
   protected readonly badge = computed(() => badgeOf(this.current()?.name ?? ''));
-
-  /** Whether the shown file is a raster image a link serves inline, which the viewer draws. */
   protected readonly isImage = computed(() => isInlineImage(this.current()?.contentType));
-
-  /** Whether the shown file is a video a link serves inline, which the viewer plays. */
   protected readonly isVideo = computed(() => isInlineVideo(this.current()?.contentType));
-
-  /** The links that failed to load here, and where a video plays on from by its fresh one. */
   protected readonly links = new FileViewerLinks(() => this.source.refresh());
 
   protected readonly showsImage = computed(() => {
@@ -333,38 +280,30 @@ export class FileViewerOverlayComponent {
     return this.isVideo() && !!file?.url && !this.links.hasFailed(file.url);
   });
 
-  /** Where the shown video plays on from its fresh link; null where it starts afresh, when the user plays it. */
   protected readonly resumesAt = computed(() => this.links.resumesAt(this.current()?.key));
-
-  /** Whether the image shows at its natural size rather than fitted to the stage. */
   protected readonly isActualSize = signal(false);
   protected readonly isDeleting = signal(false);
-  /** Whether Info shows beside the file: it stays open as the user walks the files. */
   protected readonly isInfoOpen = signal(false);
   protected readonly canDelete = computed(() => this.source.canDelete() && this.current()?.key != null);
 
   protected readonly badgeOf = badgeOf;
   protected readonly downloadLinkOf = downloadLinkOf;
-  /** A link drawn as a medium soft slate button, with an icon and its label, by the classes `ui-btn` draws. */
   protected readonly linkButton = SLATE_SOFT_BTN_CLASSES;
-  /** A link drawn as a medium ghost slate button with its icon alone, by the classes `ui-btn` draws. */
   protected readonly linkIconButton = SLATE_GHOST_ICON_BTN_CLASSES;
-  protected readonly thumbCurrent = `${THUMB} border-checked`;
-  protected readonly thumbOther = `${THUMB} border-transparent`;
+  protected readonly thumbCurrent = `${THUMB_CLASSES} border-checked`;
+  protected readonly thumbOther = `${THUMB_CLASSES} border-transparent`;
 
   constructor() {
     this.ref?.name({ label: this.texts.of('FileViewer') });
   }
 
-  /** The picture of a thumbnail of the strip; none where it failed, drawn as the badge. */
   protected thumbOf(file: FileView): string | null {
     const picture = pictureOf(file);
     return picture && !this.links.hasFailed(picture) ? picture : null;
   }
 
-  /** Left and Right show the previous and the next file, Home and End the first and the last. */
   protected onKeydown(event: KeyboardEvent): void {
-    if (event.altKey || event.ctrlKey || event.metaKey || !(event.key in MOVES) || isInInfo(event.target)) {
+    if (event.altKey || event.ctrlKey || event.metaKey || !isViewerMoveKey(event.key) || isInInfo(event.target)) {
       return;
     }
     event.preventDefault();
@@ -372,25 +311,17 @@ export class FileViewerOverlayComponent {
   }
 
   protected move(key: string): void {
-    const count = this.files().length;
-    const to = MOVES[key]?.(this.index(), count);
-    if (to !== undefined && count > 0) {
-      this.show(Math.max(0, Math.min(to, count - 1)));
+    const target = this.sequence.targetIndexFor(key);
+    if (target !== null) {
+      this.show(target);
     }
   }
 
-  /**
-   * Shows the file at `index` of the sequence, and brings its thumbnail into the strip's view. A focus in the strip moves
-   * to that thumbnail, the strip's one Tab stop; a focus anywhere else in the viewer stays where it is.
-   */
   protected show(index: number): void {
-    const file = this.files()[index];
-    if (!file || index === this.index()) {
+    const isStripFocused = isInStrip(document.activeElement);
+    if (!this.sequence.select(index)) {
       return;
     }
-    const isStripFocused = isInStrip(document.activeElement);
-    this.shownKey.set(file.key);
-    this.position.set(index);
     afterNextRender(
       () => {
         const thumb = this.thumbs()[index]?.nativeElement;
@@ -403,10 +334,6 @@ export class FileViewerOverlayComponent {
     );
   }
 
-  /**
-   * Asks the opener to delete the shown file, which it confirms first; once deleted, shows the file after it, or the
-   * one before it after the last, and closes when none is left.
-   */
   protected async remove(): Promise<void> {
     const file = this.current();
     if (!file || file.key === null || this.isDeleting()) {
@@ -425,29 +352,12 @@ export class FileViewerOverlayComponent {
     if (!deleted || this.destroyRef.destroyed) {
       return;
     }
-    const key = file.key;
-    this.removed.update(removed => new Set(removed).add(key));
-    const rest = this.files();
-    if (!rest.length) {
+    if (!this.sequence.recordDeleted(file.key, at)) {
       this.close();
-      return;
     }
-    const next = Math.min(at, rest.length - 1);
-    this.shownKey.set(rest[next].key);
-    this.position.set(next);
   }
 
   protected close(): void {
     void this.ref?.dismiss();
   }
-}
-
-/** Whether a key came from inside Info, whose fields keep their keys. */
-function isInInfo(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[data-file-info-panel]') !== null;
-}
-
-/** Whether the focus is on the strip of thumbnails. */
-function isInStrip(active: Element | null): boolean {
-  return active !== null && active.closest('[data-file-strip]') !== null;
 }

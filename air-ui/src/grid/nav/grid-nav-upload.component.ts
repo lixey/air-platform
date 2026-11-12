@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, Injector, model } from '@angular/core';
+import { Component, DestroyRef, inject, Injector, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavUploadModel } from '../../core/generated/contracts';
 import { uploadOverlayOf } from '../../file/file-upload-overlay.component';
@@ -32,7 +32,7 @@ export class GridNavUploadComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
 
-  readonly model = model<GridNavUploadModel | null>();
+  readonly model = input<GridNavUploadModel | null>();
 
   protected open(): void {
     const upload = this.model();

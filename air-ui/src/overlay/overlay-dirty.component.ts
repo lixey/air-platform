@@ -1,4 +1,4 @@
-import { Component, inject, model } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
 import type { OverlayDirtyModel } from '../core/generated/contracts';
 import { OverlayRef } from './overlay-ref';
@@ -25,7 +25,7 @@ export class OverlayDirtyComponent {
   private static next = 0;
   protected readonly id = `ui-dirty-${++OverlayDirtyComponent.next}`;
   protected readonly ref = inject(OverlayRef<DirtyChoice>);
-  readonly model = model<OverlayDirtyModel | null>();
+  readonly model = input<OverlayDirtyModel | null>();
 
   constructor() {
     // The card is the alert dialog, not a dialog holding one

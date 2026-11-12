@@ -1,4 +1,4 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavActionModel } from '../../core/generated/contracts';
 import { isRecord } from '../../core/json';
@@ -38,7 +38,7 @@ export class GridNavActionComponent {
   private readonly actions = inject(GridActionsService, { optional: true });
   private readonly menu = inject(NAV_MENU, { optional: true });
 
-  readonly model = model<GridNavActionModel | null>();
+  readonly model = input<GridNavActionModel | null>();
 
   protected readonly isVisible = computed(() => {
     const action = this.model();

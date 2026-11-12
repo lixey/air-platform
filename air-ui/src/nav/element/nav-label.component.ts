@@ -1,4 +1,4 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavLabelModel } from '../../core/generated/contracts';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
@@ -44,7 +44,7 @@ export class NavLabelComponent {
   /** The caption's id: inside an overlay it names the overlay's card, a form's caption naming the form's dialog. */
   protected readonly id = `ui-nav-label-${++NavLabelComponent.next}`;
 
-  readonly model = model<NavLabelModel | null>();
+  readonly model = input<NavLabelModel | null>();
 
   /** The page the caption stands for, while the panel its model names is one. */
   protected readonly page = computed(() => {

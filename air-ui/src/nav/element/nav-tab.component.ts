@@ -1,4 +1,4 @@
-import { Component, computed, inject, model, signal, type WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, signal, type WritableSignal } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavTabModel } from '../../core/generated/contracts';
 import { PanelsContext, panelValue } from '../../panels/panels-context';
@@ -26,7 +26,7 @@ export class NavTabComponent {
   private readonly context = inject(PanelsContext, { optional: true });
   private readonly panels = inject(PANELS, { optional: true });
 
-  readonly model = model<NavTabModel | null>();
+  readonly model = input<NavTabModel | null>();
 
   /** The group's shared value; a tab with no context around it keeps one of its own. */
   private readonly group = computed<WritableSignal<string>>(() => {

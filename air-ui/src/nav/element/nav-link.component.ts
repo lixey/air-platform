@@ -1,4 +1,4 @@
-import { Component, inject, model } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { Router } from '@angular/router';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavLinkModel } from '../../core/generated/contracts';
@@ -13,7 +13,7 @@ import { isExternalPath } from '../../core/url';
 export class NavLinkComponent {
   private readonly router = inject(Router);
 
-  readonly model = model<NavLinkModel | null>();
+  readonly model = input<NavLinkModel | null>();
 
   protected go(): void {
     const path = this.model()?.path;

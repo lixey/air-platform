@@ -1,4 +1,4 @@
-import { Component, inject, model } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavCloseModel } from '../../core/generated/contracts';
 import { OverlayRef } from '../../overlay/overlay-ref';
@@ -20,5 +20,5 @@ import { OverlayRef } from '../../overlay/overlay-ref';
 export class NavCloseComponent {
   protected readonly ref = inject(OverlayRef, { optional: true });
 
-  readonly model = model<NavCloseModel | null>();
+  readonly model = input<NavCloseModel | null>();
 }
