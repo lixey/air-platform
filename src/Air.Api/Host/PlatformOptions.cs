@@ -10,6 +10,9 @@ public sealed class PlatformOptions
   public IReadOnlyList<Action<WebApplicationBuilder>> BuilderActions => _builderActions;
   public IReadOnlyList<Action<WebApplication>> AppActions => _appActions;
   public string DefaultCurrency { get; set; } = "UAH";
+  public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(30);
+  public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(30);
+  public bool UseForwardedHeaders { get; set; }
 
   public PlatformOptions AddModule<TModule>() where TModule : IPlatformModule, new()
   {

@@ -182,44 +182,51 @@ public static class ServiceEndpointsExtensions
     }
 
     var args = new object?[parameters.Length];
-    for (var i = 0; i < parameters.Length; i++)
+    try
     {
-      var pType = parameters[i].ParameterType;
-      if (pType == typeof(CancellationToken))
+      for (var i = 0; i < parameters.Length; i++)
       {
-        args[i] = ct;
+        var pType = parameters[i].ParameterType;
+        if (pType == typeof(CancellationToken))
+        {
+          args[i] = ct;
+        }
+        else if (pType == typeof(HttpRequest))
+        {
+          args[i] = httpRequest;
+        }
+        else if (pType == typeof(HttpContext))
+        {
+          args[i] = httpRequest.HttpContext;
+        }
+        else if (pType == typeof(IServiceProvider))
+        {
+          args[i] = services;
+        }
+        else if (customParameterBinder?.Invoke(pType, httpRequest, rawBody) is { } boundCustom)
+        {
+          args[i] = boundCustom;
+        }
+        else if (pType == typeof(long) && parsedId.HasValue)
+        {
+          args[i] = parsedId.Value;
+        }
+        else if (services.GetService(pType) is { } resolvedService)
+        {
+          args[i] = resolvedService;
+        }
+        else if (pType.IsClass && pType != typeof(string))
+        {
+          args[i] = DeserializeOrCreateRequest(pType, rawBody);
+        }
       }
-      else if (pType == typeof(HttpRequest))
-      {
-        args[i] = httpRequest;
-      }
-      else if (pType == typeof(HttpContext))
-      {
-        args[i] = httpRequest.HttpContext;
-      }
-      else if (pType == typeof(IServiceProvider))
-      {
-        args[i] = services;
-      }
-      else if (customParameterBinder?.Invoke(pType, httpRequest, rawBody) is { } boundCustom)
-      {
-        args[i] = boundCustom;
-      }
-      else if (pType == typeof(long) && parsedId.HasValue)
-      {
-        args[i] = parsedId.Value;
-      }
-      else if (services.GetService(pType) is { } resolvedService)
-      {
-        args[i] = resolvedService;
-      }
-      else if (pType.IsClass && pType != typeof(string))
-      {
-        args[i] = DeserializeOrCreateRequest(pType, rawBody);
-      }
-    }
 
-    return await InvokeServiceMethodAsync(actionMethod, serviceInstance, args);
+      return await InvokeServiceMethodAsync(actionMethod, serviceInstance, args);
+    }
+    catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
+    {
+      return mapped;
+    }
   }
 
   private static bool TryReadBodyId(JsonElement body, out long id)

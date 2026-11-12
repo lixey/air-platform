@@ -2,7 +2,8 @@ namespace Platform.Api.Auth.Internals;
 
 internal sealed class LoginRateLimiter(TimeProvider? time = null)
 {
-  private const int MaxFailedAttempts = 20;
+  public const int MaxAccountFailuresPerIp = 20;
+  public const int MaxTotalFailuresPerIp = 100;
   private const int MaxEntries = 50_000;
   private static readonly TimeSpan Window = TimeSpan.FromMinutes(5);
 
@@ -10,15 +11,55 @@ internal sealed class LoginRateLimiter(TimeProvider? time = null)
   private readonly ConcurrentDictionary<string, LoginRateBucket> _buckets = new(StringComparer.Ordinal);
   private long _lastPrunedTicks;
 
-  public bool IsLimited(string? ipAddress)
+  public bool IsLimited(string? ipAddress, string? login = null)
   {
-    var key = NormalizeKey(ipAddress);
-    if (key == null)
+    var normalizedIp = NormalizeIp(ipAddress);
+    if (normalizedIp == null)
     {
       return false;
     }
 
     var now = _time.GetUtcNow();
+    if (IsBucketLimited(GlobalIpKey(normalizedIp), MaxTotalFailuresPerIp, now))
+    {
+      return true;
+    }
+
+    return IsBucketLimited(PairKey(normalizedIp, login), MaxAccountFailuresPerIp, now);
+  }
+
+  public void RecordFailure(string? ipAddress, string? login = null)
+  {
+    var normalizedIp = NormalizeIp(ipAddress);
+    if (normalizedIp == null)
+    {
+      return;
+    }
+
+    var now = _time.GetUtcNow();
+    PruneIfNeeded(now);
+
+    IncrementBucket(GlobalIpKey(normalizedIp), now);
+    IncrementBucket(PairKey(normalizedIp, login), now);
+  }
+
+  public void Reset(string? ipAddress, string? login = null)
+  {
+    var normalizedIp = NormalizeIp(ipAddress);
+    if (normalizedIp == null)
+    {
+      return;
+    }
+
+    _buckets.TryRemove(PairKey(normalizedIp, login), out _);
+    if (string.IsNullOrWhiteSpace(login))
+    {
+      _buckets.TryRemove(GlobalIpKey(normalizedIp), out _);
+    }
+  }
+
+  private bool IsBucketLimited(string key, int limit, DateTimeOffset now)
+  {
     if (!_buckets.TryGetValue(key, out var bucket))
     {
       return false;
@@ -30,19 +71,11 @@ internal sealed class LoginRateLimiter(TimeProvider? time = null)
       return false;
     }
 
-    return bucket.Failures >= MaxFailedAttempts;
+    return bucket.Failures >= limit;
   }
 
-  public void RecordFailure(string? ipAddress)
+  private void IncrementBucket(string key, DateTimeOffset now)
   {
-    var key = NormalizeKey(ipAddress);
-    if (key == null)
-    {
-      return;
-    }
-
-    var now = _time.GetUtcNow();
-    PruneIfNeeded(now);
     if (_buckets.Count >= MaxEntries && !_buckets.ContainsKey(key))
     {
       PruneExpired(now);
@@ -64,17 +97,16 @@ internal sealed class LoginRateLimiter(TimeProvider? time = null)
       now);
   }
 
-  public void Reset(string? ipAddress)
-  {
-    var key = NormalizeKey(ipAddress);
-    if (key != null)
-    {
-      _buckets.TryRemove(key, out _);
-    }
-  }
-
-  private static string? NormalizeKey(string? ipAddress) =>
+  private static string? NormalizeIp(string? ipAddress) =>
     string.IsNullOrWhiteSpace(ipAddress) ? null : ipAddress.Trim();
+
+  private static string NormalizeLogin(string? login) =>
+    string.IsNullOrWhiteSpace(login) ? "_" : login.Trim().ToLowerInvariant();
+
+  private static string GlobalIpKey(string normalizedIp) => $"ip:{normalizedIp}";
+
+  private static string PairKey(string normalizedIp, string? login) =>
+    $"pair:{normalizedIp}:{NormalizeLogin(login)}";
 
   private void PruneIfNeeded(DateTimeOffset now)
   {

@@ -5,12 +5,12 @@ namespace Platform.Api.Auth;
 /// </summary>
 public interface IUserAuthCache
 {
-  Task<SessionAuthSnapshot?> GetSessionAsync(long sessionId, IAuthStore store, CancellationToken ct = default);
+  Task<SessionAuthSnapshot?> GetSessionAsync(long sessionId, IAuthStore? store = null, CancellationToken ct = default);
 
   Task<UserAuthSnapshot?> GetUserProfileAsync(
     long userId,
     long? tenantId,
-    IAuthStore store,
+    IAuthStore? store = null,
     CancellationToken ct = default);
 
   Task RemoveSessionAsync(long sessionId, CancellationToken ct = default);

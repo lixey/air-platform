@@ -87,7 +87,7 @@ public sealed class FileLinks(TimeProvider? time = null)
   }
 
   private static byte[] Mac(string payload) =>
-    HMACSHA256.HashData(Auth.SessionTokenService.DeriveSubKey("AirPlatform.FileLinks"), Encoding.ASCII.GetBytes(payload));
+    HMACSHA256.HashData(Auth.SessionTokenService.DeriveSubKey("Platform.FileLinks"), Encoding.ASCII.GetBytes(payload));
 
   private static bool CanSign(string? key, string? contentType, string? name) =>
     FileKeys.IsValid(key) && contentType is not null && FileTypeTable.IsKnown(contentType) &&

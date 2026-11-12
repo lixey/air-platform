@@ -31,15 +31,9 @@ public static class PlatformEndpointsExtensions
     {
       return action(culture);
     }
-    catch (KeyNotFoundException ex)
+    catch (Exception ex) when (TryMapException(ex, out var mapped))
     {
-      var msg = string.IsNullOrWhiteSpace(ex.Message) ? Localizer.Instance["FormNotFound"] : ex.Message;
-      return Results.NotFound(new MutationResultDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Title = msg,
-        Messages = [new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error }]
-      });
+      return mapped;
     }
     finally
     {
@@ -59,20 +53,70 @@ public static class PlatformEndpointsExtensions
     {
       return await action(culture);
     }
-    catch (KeyNotFoundException ex)
+    catch (Exception ex) when (TryMapException(ex, out var mapped))
     {
-      var msg = string.IsNullOrWhiteSpace(ex.Message) ? Localizer.Instance["FormNotFound"] : ex.Message;
-      return Results.NotFound(new MutationResultDto
-      {
-        Outcome = MutationOutcome.Refused,
-        Title = msg,
-        Messages = [new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error }]
-      });
+      return mapped;
     }
     finally
     {
       CultureInfo.CurrentCulture = prevCulture;
       CultureInfo.CurrentUICulture = prevUiCulture;
+    }
+  }
+
+  public static bool TryMapException(Exception ex, out IResult result)
+  {
+    switch (ex)
+    {
+      case JsonException jsonEx:
+        result = Results.BadRequest(new
+        {
+          detail = string.IsNullOrWhiteSpace(jsonEx.Message) ? "Malformed JSON request body." : jsonEx.Message
+        });
+        return true;
+
+      case QueryRequestException queryEx:
+        result = Results.BadRequest(new
+        {
+          code = queryEx.Code,
+          field = queryEx.Field,
+          detail = queryEx.Message
+        });
+        return true;
+
+      case KeyNotFoundException notFoundEx:
+        {
+          var msg = string.IsNullOrWhiteSpace(notFoundEx.Message) ? Localizer.Instance["FormNotFound"] : notFoundEx.Message;
+          result = Results.NotFound(new MutationResultDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Title = msg,
+            Messages = [new MessageDto { Detail = msg, Code = "refused.notFound", Type = MessageType.Error }]
+          });
+          return true;
+        }
+
+      case IdempotencyConflictException idemEx:
+        result = Results.Conflict(new MutationResultDto
+        {
+          Outcome = MutationOutcome.Conflict,
+          Title = Localizer.Instance["MutationConflict"],
+          Messages = [new MessageDto { Detail = idemEx.Message, Code = "conflict.idempotency", Type = MessageType.Error }]
+        });
+        return true;
+
+      case DbUpdateConcurrencyException:
+        result = Results.Conflict(new MutationResultDto
+        {
+          Outcome = MutationOutcome.Conflict,
+          Title = Localizer.Instance["MutationConflict"],
+          Messages = [new MessageDto { Detail = Localizer.Instance["FormRecordChanged"], Code = "conflict.concurrency", Type = MessageType.Error }]
+        });
+        return true;
+
+      default:
+        result = Results.Empty;
+        return false;
     }
   }
 
