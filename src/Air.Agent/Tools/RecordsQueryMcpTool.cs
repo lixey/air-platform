@@ -2,7 +2,7 @@ namespace Platform.Agent.Tools;
 
 public sealed class RecordsQueryMcpTool : IMcpTool
 {
-  public string Name => "air_records_query";
+  public string Name => "platform_records_query";
 
   public string Description =>
     "Queries records (bounded search up to 100 rows) or reads a single record by ID from an agent-enabled grid or form.";

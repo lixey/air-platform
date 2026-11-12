@@ -2,7 +2,7 @@ namespace Platform.Agent.Tools;
 
 public sealed class ProposalStageMcpTool : IMcpTool
 {
-  public string Name => "air_proposal_stage";
+  public string Name => "platform_proposal_stage";
 
   public string Description =>
     "Stages a create or edit confirmation proposal card in the user's chat session without mutating database records directly.";

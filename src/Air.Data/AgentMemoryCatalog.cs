@@ -54,7 +54,7 @@ public static class AgentMemoryCatalog
     {
       Kind = AgentMemoryKinds.Rule,
       Title = "Proposal Confirmation Policy",
-      Content = "Never mutate database records without user confirmation. Always emit <air_proposal> cards so the user can review fields, line items, and any duplicate record warnings before confirming.",
+      Content = "Never mutate database records without user confirmation. Always emit <ui_proposal> cards so the user can review fields, line items, and any duplicate record warnings before confirming.",
       Priority = 190,
       IsPinned = true,
       IsActive = true
@@ -72,7 +72,7 @@ public static class AgentMemoryCatalog
     {
       Kind = AgentMemoryKinds.Preference,
       Title = "Concise Analytical Formatting",
-      Content = "Keep chat explanations concise (1-3 sentences) when presenting proposals, and use structured Markdown tables, <air_kpi>, and <air_chart> blocks when answering analytical or reporting questions.",
+      Content = "Keep chat explanations concise (1-3 sentences) when presenting proposals, and use structured Markdown tables, <ui_kpi>, and <ui_chart> blocks when answering analytical or reporting questions.",
       Priority = 100,
       IsPinned = false,
       IsActive = true
@@ -107,8 +107,8 @@ public static class AgentMemoryCatalog
           existing.Add(seed);
           changed = true;
         }
-        else if (match.UpdatedAt == null &&
-                 match.Ver <= 1 &&
+        else if ((match.UpdatedAt == null && match.Ver <= 1 ||
+                  match.Content.Contains("<air_", StringComparison.OrdinalIgnoreCase)) &&
                  (!string.Equals(match.Title, seed.Title, StringComparison.Ordinal) ||
                   !string.Equals(match.Content, seed.Content, StringComparison.Ordinal)))
         {

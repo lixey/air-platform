@@ -3,19 +3,6 @@ namespace Platform.Agent;
 public static class AgentEndpointsExtensions
 {
   private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-  private static long _lastAutoSyncTicks;
-
-  private static bool ShouldAttemptAutoSync()
-  {
-    var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
-    var prev = Interlocked.Read(ref _lastAutoSyncTicks);
-    if (nowTicks - prev < TimeSpan.FromSeconds(60).Ticks)
-    {
-      return false;
-    }
-
-    return Interlocked.CompareExchange(ref _lastAutoSyncTicks, nowTicks, prev) == prev;
-  }
 
   private static async Task<(List<IAgentProvider> EnabledProviders, List<AppAgentModel> DbModels)> LoadActiveProvidersAndModelsAsync(
     PlatformDbContext db,
@@ -26,7 +13,7 @@ public static class AgentEndpointsExtensions
     CancellationToken ct
   )
   {
-    await store.EnsureCatalogsSeededAsync(db, options.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement, ct);
+    await store.EnsureCatalogsSeededAsync(db, options.DomainKnowledge, ct);
 
     var activeProviderHandles = await AgentModelCatalog.GetActiveProviderHandlesAsync(db, ct);
     var filteredProviders = enabledProviders
@@ -34,7 +21,9 @@ public static class AgentEndpointsExtensions
       .ToList();
 
     var dbModels = await QueryActiveProviderModelsAsync(db, ct);
-    if (dbModels.Count == 0 && filteredProviders.Any(p => p.IsAvailable) && ShouldAttemptAutoSync())
+    if (dbModels.Count == 0 &&
+        filteredProviders.Any(p => p.IsAvailable) &&
+        store.TryClaimAutoSyncCooldown(TimeSpan.FromSeconds(60)))
     {
       try
       {
@@ -168,17 +157,16 @@ public static class AgentEndpointsExtensions
       .ThenBy(m => m.Id)
       .ToListAsync(ct);
 
-  public static IServiceCollection AddAirAgent(this IServiceCollection services, Action<AgentOptions>? configure = null)
+  public static IServiceCollection AddPlatformAgent(this IServiceCollection services, Action<AgentOptions>? configure = null)
   {
     var options = new AgentOptions();
     configure?.Invoke(options);
     if (!string.IsNullOrWhiteSpace(options.DomainKnowledge))
     {
-      AirAgentRuntime.SystemPromptSupplement = options.DomainKnowledge;
       AgentMemoryCatalog.DefaultDomainKnowledge = options.DomainKnowledge;
     }
 
-    services.AddAirMcp();
+    services.AddPlatformMcp();
     services.AddMcpTool<CatalogListMcpTool>();
     services.AddMcpTool<CatalogDescribeMcpTool>();
     services.AddMcpTool<RecordsQueryMcpTool>();
@@ -193,55 +181,21 @@ public static class AgentEndpointsExtensions
     return services;
   }
 
-  public static PlatformOptions AddAirAgent(this PlatformOptions options, Action<AgentOptions>? configure = null)
+  public static PlatformOptions AddPlatformAgent(this PlatformOptions options, Action<AgentOptions>? configure = null)
   {
     ArgumentNullException.ThrowIfNull(options);
-    options.ConfigureBuilder(b => b.Services.AddAirAgent(configure));
-    options.ConfigureApp(app => app.MapAirAgent());
+    options.ConfigureBuilder(b => b.Services.AddPlatformAgent(configure));
+    options.ConfigureApp(app => app.MapPlatformAgent());
     return options;
   }
 
-  public static void MapAirAgent(this IEndpointRouteBuilder app)
+  public static void MapPlatformAgent(this IEndpointRouteBuilder app)
   {
-    app.MapAirMcp();
+    app.MapPlatformMcp();
 
-    try
+    if (app.ServiceProvider.GetService<IHostApplicationLifetime>() is { } lifetime)
     {
-      using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "agent-startup-seed");
-      using var scope = app.ServiceProvider.CreateScope();
-      var db = scope.ServiceProvider.GetService<PlatformDbContext>();
-      if (db is not null)
-      {
-        var opts = scope.ServiceProvider.GetService<AgentOptions>();
-        var store = scope.ServiceProvider.GetService<AgentStore>();
-        if (store is not null)
-        {
-          store.EnsureCatalogsSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter().GetResult();
-        }
-        else
-        {
-          AgentModelCatalog.EnsureSeededAsync(db).GetAwaiter().GetResult();
-          AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge ?? AirAgentRuntime.SystemPromptSupplement).GetAwaiter()
-            .GetResult();
-        }
-
-        if (!db.AppAgentModel.Any() &&
-            scope.ServiceProvider.GetService<IAgentModelSynchronizer>() is { } synchronizer)
-        {
-          try
-          {
-            synchronizer.SyncFromProvidersAsync(db).GetAwaiter().GetResult();
-          }
-          catch
-          {
-            // Non-fatal if CLI provider sync fails on startup
-          }
-        }
-      }
-    }
-    catch
-    {
-      // Non-fatal if DB is not yet migrated on startup
+      lifetime.ApplicationStarted.Register(() => _ = SeedCatalogsInBackgroundAsync(app.ServiceProvider, lifetime.ApplicationStopping));
     }
 
     var group = app.MapGroup("/api/agent")
@@ -485,7 +439,7 @@ public static class AgentEndpointsExtensions
 
         try
         {
-          var result = await AirAgentRuntime.CommitProposalAsync(proposal, ctx.RequestServices, ct);
+          var result = await AgentProposalExecutor.CommitProposalAsync(proposal, ctx.RequestServices, ct);
           return Results.Ok(result);
         }
         catch (Exception ex)
@@ -514,7 +468,7 @@ public static class AgentEndpointsExtensions
 
         try
         {
-          var result = await AirAgentRuntime.CommitBatchAsync(body.ProposalIds, ctx.RequestServices, ct);
+          var result = await AgentProposalExecutor.CommitBatchAsync(body.ProposalIds, ctx.RequestServices, ct);
           return Results.Ok(result);
         }
         catch (Exception ex)
@@ -849,6 +803,36 @@ public static class AgentEndpointsExtensions
         }
       }
     );
+  }
+
+  private static async Task SeedCatalogsInBackgroundAsync(IServiceProvider rootServices, CancellationToken ct)
+  {
+    try
+    {
+      using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "agent-startup-seed");
+      await using var scope = rootServices.CreateAsyncScope();
+      var db = scope.ServiceProvider.GetService<PlatformDbContext>();
+      if (db is null)
+      {
+        return;
+      }
+
+      var opts = scope.ServiceProvider.GetService<AgentOptions>();
+      var store = scope.ServiceProvider.GetService<AgentStore>();
+      if (store is not null)
+      {
+        await store.EnsureCatalogsSeededAsync(db, opts?.DomainKnowledge, ct);
+      }
+      else
+      {
+        await AgentModelCatalog.EnsureSeededAsync(db, ct);
+        await AgentMemoryCatalog.EnsureSeededAsync(db, opts?.DomainKnowledge, ct);
+      }
+    }
+    catch
+    {
+      // Non-fatal if DB is not yet migrated on startup
+    }
   }
 
   private static string? ResolveLoopbackMcpUrl(HttpContext ctx)

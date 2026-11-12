@@ -192,7 +192,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
         psi.ArgumentList.Add("--allowedTools");
         psi.ArgumentList.Add(
           !string.IsNullOrWhiteSpace(mcpConfigPath)
-            ? "Read,mcp__air__air_catalog_list,mcp__air__air_catalog_describe,mcp__air__air_records_query,mcp__air__air_proposal_stage"
+            ? "Read,mcp__platform__platform_catalog_list,mcp__platform__platform_catalog_describe,mcp__platform__platform_records_query,mcp__platform__platform_proposal_stage"
             : "Read"
         );
         if (!string.IsNullOrWhiteSpace(cliModel))
