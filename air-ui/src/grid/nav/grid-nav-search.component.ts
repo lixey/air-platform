@@ -1,4 +1,4 @@
-import { Component, inject, model, viewChild } from '@angular/core';
+import { Component, inject, input, viewChild } from '@angular/core';
 import { SearchBoxComponent } from '../../controls/search-box.component';
 import type { GridNavSearchModel } from '../../core/generated/contracts';
 import type { SelectField } from '../../select/select-source';
@@ -44,7 +44,7 @@ export class GridNavSearchComponent {
   protected readonly grid = inject(GridService, { optional: true });
   private readonly box = viewChild(SearchBoxComponent);
 
-  readonly model = model<GridNavSearchModel | null>();
+  readonly model = input<GridNavSearchModel | null>();
 
   protected autofocus(): boolean {
     return this.grid?.model()?.focusesSearch === true;

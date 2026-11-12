@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, ElementRef, inject, Injector, model } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, Injector, input } from '@angular/core';
 import { BtnTablistDirective } from '../btn/btn-tablist.directive';
 import { BtnComponent } from '../btn/btn.component';
 import type { NavDirection, NavElementModel, NavModel, NavOverflow, OverlayDto } from '../core/generated/contracts';
@@ -131,10 +131,10 @@ export class NavComponent {
   protected readonly moreMenu = this.overlay.menu();
 
   /** The whole nav, as a server describes it. The two inputs below win over its options. */
-  readonly model = model<NavModel | null>();
+  readonly model = input<NavModel | null>();
 
-  readonly direction = model<NavDirection | null>();
-  readonly overflow = model<NavOverflow | null>();
+  readonly direction = input<NavDirection | null>();
+  readonly overflow = input<NavOverflow | null>();
 
   readonly view = computed<NavView>(() =>
     resolveModel(NAV_DEFAULTS, this.model()?.options, {

@@ -1,4 +1,4 @@
-import { Component, computed, DestroyRef, ElementRef, HostAttributeToken, inject, input, model } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, HostAttributeToken, inject, input } from '@angular/core';
 import type { ButtonSize, ButtonVariant, NavButtonModel } from '../core/generated/contracts';
 import { resolveModel } from '../core/resolve-model';
 import type { UiIcon } from '../icon/ui-icon';
@@ -145,30 +145,27 @@ export class BtnComponent {
   /** The tablist that owns a tab's Tab stop; a tab outside one keeps a stop of its own. */
   private readonly tablist = this.isTab ? inject(BtnTablistDirective, { optional: true }) : null;
 
-  /**
-   * The whole look, as a server describes it. Each field below wins over it when set.
-   * Writable signals, so a template may bind either way and a test may set them outright.
-   */
-  readonly model = model<NavButtonModel | null>();
+  /** The whole look, as a server describes it. Each field below wins over it when set. */
+  readonly model = input<NavButtonModel | null>();
 
-  readonly label = model<string | null>();
-  readonly title = model<string | null>();
-  readonly icon = model<UiIcon | null>();
-  readonly color = model<UiColor | null>();
-  readonly variant = model<ButtonVariant | null>();
-  readonly size = model<ButtonSize | null>();
-  readonly badge = model<string | number | null>();
-  readonly disabled = model<boolean | null>();
-  readonly selected = model<boolean | null>();
+  readonly label = input<string | null>();
+  readonly title = input<string | null>();
+  readonly icon = input<UiIcon | null>();
+  readonly color = input<UiColor | null>();
+  readonly variant = input<ButtonVariant | null>();
+  readonly size = input<ButtonSize | null>();
+  readonly badge = input<string | number | null>();
+  readonly disabled = input<boolean | null>();
+  readonly selected = input<boolean | null>();
 
   /** Why the button is unavailable: dimmed and aria-disabled, yet in the tab order and open to hover, deaf to a press. */
-  readonly reason = model<string | null>();
+  readonly reason = input<string | null>();
 
   /** Shows a spinner in place of the icon and swallows clicks until it ends. */
-  readonly loading = model(false);
+  readonly loading = input(false);
 
   /** The badge's own hue. */
-  readonly badgeColor = model<UiColor>('orange');
+  readonly badgeColor = input<UiColor>('orange');
 
   /** Extra classes, for the caller that puts a button somewhere unusual. */
   readonly class = input('');

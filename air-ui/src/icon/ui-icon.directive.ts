@@ -5,6 +5,9 @@ import type { UiIcon } from './ui-icon';
 @Directive({
   selector: 'uiIcon, [uiIcon], i[icon]',
   exportAs: 'uiIcon',
+  host: {
+    class: 'inline-flex items-center justify-center',
+  },
 })
 export class UiIconDirective {
   private readonly el = inject(ElementRef<HTMLElement>);

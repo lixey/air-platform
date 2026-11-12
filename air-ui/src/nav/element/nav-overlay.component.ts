@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, Injector, model } from '@angular/core';
+import { Component, ElementRef, inject, Injector, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavOverlayModel } from '../../core/generated/contracts';
 import { FORM } from '../../form/form-panel-values';
@@ -23,7 +23,7 @@ export class NavOverlayComponent {
   private readonly injector = inject(Injector);
   private readonly context = inject(PanelsContext, { optional: true });
 
-  readonly model = model<NavOverlayModel | null>();
+  readonly model = input<NavOverlayModel | null>();
 
   protected open(): void {
     const model = this.model();
@@ -34,7 +34,7 @@ export class NavOverlayComponent {
       const ref = this.overlay
         .open(model.overlay, this.host.nativeElement, this.injector)
         .name({ label: model.label ?? model.title ?? undefined });
-      if (form && isCurrent && model.key === 'history') {
+      if (form && isCurrent && model.overlay.screen) {
         ref.closed.subscribe(() => {
           if (isCurrent()) {
             form.refresh();

@@ -5,7 +5,7 @@ import type { OverlayRef } from '../overlay/overlay-ref';
 import { OverlayService } from '../overlay/overlay.service';
 import { parentParams, SCREEN_ADDRESS } from '../screen/screen-address';
 import { ScreenMutations } from '../screen/screen-mutations';
-import type { GridRowKey } from './grid-row';
+import { type GridRow, type GridRowKey, keyOf } from './grid-row';
 
 /** What the form half is given of its grid. */
 export interface GridFormsOptions {
@@ -71,6 +71,24 @@ export class GridForms {
 
     this.watch(this.overlay.open(this.addParentParams(overlay), anchor ?? null, this.injector), targetService);
     return true;
+  }
+
+  /** Resolves row-specific form service and overlay metadata from `rows`/`pageForms` before opening the form. */
+  openForRow(
+    id: GridRowKey | null,
+    rows: readonly GridRow[],
+    pageForms: Readonly<Record<string, OverlayDto>> | null | undefined,
+    anchor?: HTMLElement | null,
+    formService?: string | null,
+    customOverlay?: OverlayDto | null,
+  ): boolean {
+    const row = id !== null ? rows.find(r => keyOf(r) === id) : undefined;
+    const rowForm = row?.open?.service ?? null;
+    const targetService = formService ?? rowForm;
+    const rowOverlay =
+      customOverlay ??
+      (targetService !== null && targetService === rowForm ? (row?.open?.overlay ?? pageForms?.[targetService] ?? null) : null);
+    return this.open(id, anchor, targetService, rowOverlay);
   }
 
   /** Whether a form of this service is the grid's: the one its model declares, or one it opened that is still open. */

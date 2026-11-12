@@ -30,29 +30,12 @@ const fileOf = (name: string, type: string, size: number): File => new File([new
 const u32 = (value: number): number[] => [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 const textOf = (text: string): number[] => [...text].map(char => char.charCodeAt(0));
 
-/** A big-endian TIFF whose IFD0 holds one tag, `Make`, naming the camera's maker. */
-function makeTiff(make: string): number[] {
-  const value = [...textOf(make), 0];
-  return [...textOf('MM'), 0, 42, ...u32(8), 0, 1, 0x01, 0x0f, 0, 2, ...u32(value.length), ...u32(26), ...u32(0), ...value];
-}
-
 /** A PNG chunk; its CRC is left zero, which the reader never checks. */
 const chunkOf = (type: string, data: number[]): number[] => [...u32(data.length), ...textOf(type), ...data, ...u32(0)];
 
-/** A PNG of the size given, with an eXIf chunk of the TIFF given, followed by `padding` bytes of its data. */
-function pngOf(name: string, width: number, height: number, tiff: number[] | null = null, padding = 0): File {
-  const head = [
-    0x89,
-    0x50,
-    0x4e,
-    0x47,
-    0x0d,
-    0x0a,
-    0x1a,
-    0x0a,
-    ...chunkOf('IHDR', [...u32(width), ...u32(height), 8, 6, 0, 0, 0]),
-    ...(tiff ? chunkOf('eXIf', tiff) : []),
-  ];
+/** A PNG of the size given, followed by `padding` bytes of its data. */
+function pngOf(name: string, width: number, height: number, padding = 0): File {
+  const head = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...chunkOf('IHDR', [...u32(width), ...u32(height), 8, 6, 0, 0, 0])];
   return new File([new Uint8Array(head), new Uint8Array(padding), new Uint8Array(chunkOf('IEND', []))], name, { type: 'image/png' });
 }
 
@@ -291,25 +274,21 @@ describe('FileUploadQueue', () => {
     expect(nameOf(await answer(1))).toBe('small.png');
   });
 
-  it("posts an image's metadata beside it, as picked under keep", async () => {
-    queue.add([pngOf('photo.png', 640, 480, makeTiff('Apple'))], target);
+  it('posts an image as picked under keep without client metadata', async () => {
+    queue.add([pngOf('photo.png', 640, 480)], target);
     await settle();
 
     const request = await answer(1);
-    expect(JSON.parse(bodyOf(request).get('metadata') as string)).toEqual({ make: 'Apple' });
+    expect(bodyOf(request).has('metadata')).toBe(false);
     expect((bodyOf(request).get('file') as File).type).toBe('image/png');
   });
 
-  it('takes a picked image up to the source bound and posts what it becomes, with its metadata, refused above the stored bound', async () => {
+  it('takes a picked image up to the source bound and posts what it becomes, refused above the stored bound', async () => {
     webpBrowser(4000, 3000, 200_000);
     const optimized: FileUploadTarget = { ...target, images: 'optimize' };
 
     queue.add(
-      [
-        pngOf('scan.png', 4000, 3000, makeTiff('Canon'), 3 * MIB),
-        fileOf('plan.pdf', 'application/pdf', 3 * MIB),
-        fileOf('huge.jpg', 'image/jpeg', 5 * MIB),
-      ],
+      [pngOf('scan.png', 4000, 3000, 3 * MIB), fileOf('plan.pdf', 'application/pdf', 3 * MIB), fileOf('huge.jpg', 'image/jpeg', 5 * MIB)],
       optimized,
     );
     await settle();
@@ -318,10 +297,10 @@ describe('FileUploadQueue', () => {
     const request = await answer(1);
     const posted = bodyOf(request).get('file') as File;
     expect([posted.name, posted.type, posted.size]).toEqual(['scan.webp', 'image/webp', 200_000]);
-    expect(JSON.parse(bodyOf(request).get('metadata') as string)).toEqual({ make: 'Canon' });
+    expect(bodyOf(request).has('metadata')).toBe(false);
 
     webpBrowser(4000, 3000, 2 * MIB);
-    queue.add([pngOf('poster.png', 4000, 3000, null, 3 * MIB)], optimized);
+    queue.add([pngOf('poster.png', 4000, 3000, 3 * MIB)], optimized);
     await settle();
 
     expect(statuses().at(-1)).toBe('refused');

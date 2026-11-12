@@ -1,4 +1,6 @@
 import type { GridRequest, SortRule } from '../core/generated/contracts';
+import { parentParams, type ScreenAddress } from '../screen/screen-address';
+import type { SelectSource } from '../select/select-source';
 import { type GridFilter, toFilterNode } from './filter/grid-filter-set';
 import { type GridRow, type GridRowKey, keyOf } from './grid-row';
 
@@ -53,6 +55,41 @@ export function buildGridRequest(state: GridQueryState): GridRequest {
   }
 
   return request;
+}
+
+/** Builds the full `GridRequest` for a `GridService`, merging screen parent params and select-picker options. */
+export function buildServiceGridRequest(
+  address: ScreenAddress | null | undefined,
+  service: string | null,
+  selectModel: SelectSource | undefined,
+  state: GridQueryState,
+): GridRequest {
+  return {
+    ...parentParams(address, service),
+    ...(selectModel?.parent ?? {}),
+    ...buildGridRequest(state),
+    ...(selectModel?.patchSourceColumns?.length ? { patchSourceColumns: [...selectModel.patchSourceColumns] } : {}),
+    ...(selectModel?.formDraft ? { formDraft: selectModel.formDraft } : {}),
+  };
+}
+
+/** Builds the `get-count` body for a `GridService`. */
+export function buildGridCountRequest(
+  address: ScreenAddress | null | undefined,
+  service: string,
+  filters: readonly GridFilter[],
+  columnFilters: readonly GridFilter[],
+  search: string,
+  namedFilters: readonly string[],
+): GridRequest {
+  return {
+    ...parentParams(address, service),
+    filter: toFilterNode(filters),
+    columnFilter: toFilterNode(columnFilters),
+    search: search ? search : undefined,
+    ...(namedFilters.length > 0 ? { namedFilters: [...namedFilters] } : {}),
+    isDataOnly: true,
+  };
 }
 
 /**

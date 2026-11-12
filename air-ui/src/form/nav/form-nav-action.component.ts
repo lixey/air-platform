@@ -1,4 +1,4 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { FormNavActionModel } from '../../core/generated/contracts';
 import { unavailableReasonOf } from '../../nav/nav-availability';
@@ -22,7 +22,7 @@ import { injectForm } from '../inject-form';
   `,
 })
 export class FormNavActionComponent {
-  readonly model = model<FormNavActionModel | null>();
+  readonly model = input<FormNavActionModel | null>();
 
   protected readonly form = injectForm();
   private readonly menu = inject(NAV_MENU, { optional: true });

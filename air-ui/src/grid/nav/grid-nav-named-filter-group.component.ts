@@ -1,4 +1,4 @@
-import { Component, computed, inject, LOCALE_ID, model } from '@angular/core';
+import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import type { GridNavNamedFilterGroupModel, NavMenuModel } from '../../core/generated/contracts';
 import { NavMenuComponent } from '../../nav/element/nav-menu.component';
 import { formatCount } from '../cell/grid-cell-format';
@@ -30,7 +30,7 @@ export class GridNavNamedFilterGroupComponent {
   protected readonly grid = inject(GridService, { optional: true });
   private readonly locale = inject(LOCALE_ID);
 
-  readonly model = model<GridNavNamedFilterGroupModel | null>();
+  readonly model = input<GridNavNamedFilterGroupModel | null>();
 
   /** The menu of the items under the chosen item's label, colour and live count; the group's own label while none is chosen. */
   protected readonly menu = computed<NavMenuModel | null>(() => {

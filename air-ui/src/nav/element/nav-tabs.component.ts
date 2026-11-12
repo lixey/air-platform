@@ -1,4 +1,4 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { BtnTablistDirective } from '../../btn/btn-tablist.directive';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavLabelModel, NavTabsModel } from '../../core/generated/contracts';
@@ -51,7 +51,7 @@ import { NavLabelComponent } from './nav-label.component';
 export class NavTabsComponent {
   private readonly node = inject(PANEL_NODE, { optional: true });
 
-  readonly model = model<NavTabsModel | null>();
+  readonly model = input<NavTabsModel | null>();
 
   /** The exclusive container around the nav; the chain of nodes never changes under a mounted element. */
   private readonly container = exclusiveContainerOf(this.node);

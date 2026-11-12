@@ -73,7 +73,7 @@ function fileOf(name: string, type: string, size: number): File {
 }
 
 /** A phone's photo, 4032 by 3024 pixels as stored, taken on its side. */
-const PHOTO_FACTS: ImageFacts = { width: 4032, height: 3024, orientation: 6, metadata: { make: 'Apple', latitude: 50.46 } };
+const PHOTO_FACTS: ImageFacts = { width: 4032, height: 3024, orientation: 6 };
 const photo = (): File => fileOf('IMG_0042.jpg', 'image/jpeg', 480_000);
 
 /** Gives `<img>` the `decode` jsdom lacks. */

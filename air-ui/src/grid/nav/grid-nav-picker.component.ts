@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, inject, Injector, model, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, inject, Injector, input, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { AlertService } from '../../app/alert/alert.service';
@@ -102,7 +102,7 @@ export class GridNavPickerComponent {
   private readonly box = viewChild(SearchBoxComponent);
   private readonly anchor = viewChild(SearchBoxComponent, { read: ElementRef<HTMLElement> });
 
-  readonly model = model<GridNavPickerModel | null>();
+  readonly model = input<GridNavPickerModel | null>();
 
   /** The text in the field, and in the search box of the open list. */
   protected readonly text = signal('');

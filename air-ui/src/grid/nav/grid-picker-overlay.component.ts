@@ -1,4 +1,4 @@
-import { Component, model } from '@angular/core';
+import { Component, input } from '@angular/core';
 import type { GridPickerOverlayModel } from '../../ui-components';
 import { GridComponent } from '../grid.component';
 
@@ -23,5 +23,5 @@ import { GridComponent } from '../grid.component';
   host: { class: 'flex flex-col min-w-0 max-h-full overflow-hidden' },
 })
 export class GridPickerOverlayComponent {
-  readonly model = model<GridPickerOverlayModel | null>();
+  readonly model = input<GridPickerOverlayModel | null>();
 }

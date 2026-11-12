@@ -53,7 +53,7 @@ export function openRecord(
     if (refreshServices && refreshServices.length > 0) {
       ref.closed.subscribe(result => {
         if (result !== undefined) {
-          GridService.reloadServices(refreshServices);
+          GridService.reloadServices(refreshServices, { notifyListeners: false });
         }
       });
     }

@@ -5,99 +5,39 @@ import { AlertService } from '../app/alert/alert.service';
 import { withIdempotencyKey } from '../app/auth/credentials.interceptor';
 import { LocaleService } from '../app/locale.service';
 import { type AnswerOf, serviceUrl } from '../core/api';
-import type { FileGridServiceEndpoints, FileMetadataDto, FileUploadLimitsDto } from '../core/generated/contracts';
+import type { FileGridServiceEndpoints } from '../core/generated/contracts';
 import { type IsCurrent, Lifetime } from '../core/lifetime';
 import { classifyMutationFailure, type MutationFailure, refusalOf } from '../core/mutation-failure';
-import { TextsService, type UiTextKey } from '../core/texts.service';
-import { newUuid } from '../core/uuid';
-import type { GridRowKey } from '../grid/grid-row';
+import { TextsService } from '../core/texts.service';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
-import { isEncodedImage } from './content-type';
 import { isCommitted } from './file-actions';
-import { optimizeImage } from './file-optimize';
-import { formatMegabytes } from './file-size';
-import { thumbnailOf } from './file-thumbnail';
-import { acceptedNamesOf, takenMaxBytesOf, uploadFormOf, uploadRefusalOf } from './file-upload-call';
-import { imageFactsOf } from './image-facts';
+import { uploadFormOf } from './file-upload-call';
+import {
+  createUploadItem,
+  FILE_UPLOAD_CLASSES,
+  FILE_UPLOAD_TEXTS,
+  type FileUpload,
+  type FileUploadStatus,
+  type FileUploadTarget,
+  isUnder,
+  type PreparedUpload,
+  prepareUpload,
+  type ShownFile,
+  TAKING_ROOM,
+  UNDER_WAY,
+} from './file-upload-item';
 
-/**
- * Where a file of the queue stands: refused before posting, waiting for its turn, being prepared at its turn (its facts
- * read and its image treated), posting, answered, or failed.
- */
-export type FileUploadStatus = 'refused' | 'waiting' | 'preparing' | 'uploading' | 'uploaded' | 'failed';
-
-/** The statuses of a file on its way: waiting, being prepared or posting; what a leave asks about and Cancel stops. */
-export const UNDER_WAY: readonly FileUploadStatus[] = ['waiting', 'preparing', 'uploading'];
-
-/**
- * Where the files go: a file grid, the parent they go under, and the title a committed upload's warnings take, with the
- * grid's `FileUploadLimitsDto`: its limits, its image rules, the room a record has (`maxFiles` and `maxTotalBytes`, 0 for
- * no bound) and the server's bounds of every upload (`maxPixels`, `thumbnailMaxBytes`).
- */
-export interface FileUploadTarget extends Readonly<FileUploadLimitsDto> {
-  readonly service: string;
-  readonly parentService?: string | null;
-  readonly parentId?: number | null;
-  readonly committedWarningTitle?: string | null;
-}
-
-/** One file its owner shows under the target: its key and its size in bytes, which take the record's room. */
-export interface ShownFile {
-  readonly id: GridRowKey;
-  readonly size: number;
-}
-
-/** One file the user gave, where it goes, where it stands, how much of it is sent, and why it did not go. */
-export interface FileUpload {
-  readonly id: number;
-  readonly file: File;
-  readonly target: FileUploadTarget;
-  /** The pick, drop or paste the file came in: the files of one are placed first among the record's, in the order given. */
-  readonly batch: number;
-  readonly status: FileUploadStatus;
-  /** The percentage of the body sent, while it posts. */
-  readonly progress: number;
-  readonly detail?: string;
-  /** The key the server answered for the file it stored; none before it is uploaded. */
-  readonly fileId?: number | null;
-}
-
-/** Whether an upload goes under the record of `place`: its file grid and its parent. */
-export function isUnder(upload: FileUpload, place: Pick<FileUploadTarget, 'service' | 'parentId'>): boolean {
-  return upload.target.service === place.service && upload.target.parentId === place.parentId;
-}
-
-/** The text of each status. */
-export const FILE_UPLOAD_TEXTS = {
-  refused: 'FileRefused',
-  waiting: 'FileWaiting',
-  preparing: 'FilePreparing',
-  uploading: 'FileUploading',
-  uploaded: 'FileUploaded',
-  failed: 'FileUploadFailed',
-} satisfies Record<FileUploadStatus, UiTextKey>;
-
-/** The ink of each status: a refused or failed file in the error's hue, an uploaded one in the success hue. */
-export const FILE_UPLOAD_CLASSES = {
-  refused: 'hue-red text-(--hue-ink)',
-  waiting: 'text-muted',
-  preparing: 'text-muted',
-  uploading: 'text-muted',
-  uploaded: 'hue-green text-(--hue-ink)',
-  failed: 'hue-red text-(--hue-ink)',
-} satisfies Record<FileUploadStatus, string>;
-
-/**
- * What a file posts as, made once at its first turn and kept for a retry: the file, its metadata, its thumbnail and the
- * idempotency key every post of it carries, so a file whose answer was lost is added once however often it is retried.
- */
-interface Prepared {
-  readonly file: File;
-  readonly metadata: FileMetadataDto | null;
-  readonly thumbnail: Blob | null;
-  readonly key: string;
-}
+export {
+  FILE_UPLOAD_CLASSES,
+  FILE_UPLOAD_TEXTS,
+  isUnder,
+  UNDER_WAY,
+  type FileUpload,
+  type FileUploadStatus,
+  type FileUploadTarget,
+  type ShownFile,
+};
 
 /** The request in flight: its file, and how to abort it and end its turn. */
 interface InFlight {
@@ -105,9 +45,6 @@ interface InFlight {
   readonly subscription: Subscription;
   readonly settle: () => void;
 }
-
-/** The statuses of a file that takes its record's room when a batch is taken: all but a refused one. */
-const TAKING_ROOM: readonly FileUploadStatus[] = ['waiting', 'preparing', 'uploading', 'uploaded', 'failed'];
 
 /**
  * The files on their way to a file grid, shared by the upload dialog and a form's files element, and provided by the
@@ -117,17 +54,13 @@ const TAKING_ROOM: readonly FileUploadStatus[] = ['waiting', 'preparing', 'uploa
  * beyond the room its record has left: `maxFiles` and `maxTotalBytes` less the files its owner shows
  * (`registerShownFiles`) and the ones the queue holds for it; the files that fit post, in order.
  *
- * The others post one at a time. At its turn a JPEG, PNG or WebP image has its size and metadata read from its leading
- * bytes, and is refused over the target's `maxPixels`; it is then treated by the upload's image rules (`optimizeImage`), and
- * the file it becomes is refused above `maxBytes`, or, with the rest of its batch, when it no longer fits the record's
- * room. Each posts alone as a multipart form with its parent, the thumbnail the browser made of a raster image or of an
- * MP4 video's first frame (none where it could not draw one), the image's `metadata` whatever the image became, and
- * `afterId`: none for the first file of its batch, which is placed first, and for each next one the key the server
- * answered for the nearest file before it in the batch, so the batch keeps its order; a retried file names its own
- * predecessor's. Each shows its status — preparing while its facts are read and its image treated, then uploading — and,
- * while it posts, its progress. A refusal of the server or a failed request marks the file failed with the reason; a
- * committed answer shows its warnings. A failed file may be retried; one on its way (`UNDER_WAY`) cancelled, which
- * removes it and aborts its request; a refused, failed or uploaded one removed.
+ * The others post one at a time. At its turn a JPEG, PNG or WebP image has its dimensions and orientation read from its
+ * leading bytes, and is refused over the target's `maxPixels`; it is then treated by the upload's image rules
+ * (`optimizeImage`), and the file it becomes is refused above `maxBytes`, or, with the rest of its batch, when it no
+ * longer fits the record's room. Each posts alone as a multipart form with its parent, the thumbnail the browser made of
+ * a raster image or of an MP4 video's first frame (none where it could not draw one), and `afterId`: none for the first
+ * file of its batch, which is placed first, and for each next one the key the server answered for the nearest file before
+ * it in the batch, so the batch keeps its order; a retried file names its own predecessor's.
  *
  * The queue works while the screen and the overlay it stands in do; its owner going away aborts the post in flight.
  */
@@ -149,7 +82,7 @@ export class FileUploadQueue {
   /** The queue's own lifetime inside its screen's: over once its overlay closes or its owner goes away. */
   private readonly lifetime = (inject(SCREEN_LIFETIME, { optional: true }) ?? new Lifetime()).child(() => !this.ref?.isClosed);
   private readonly drainedCallbacks = new Set<() => void>();
-  private readonly prepared = new Map<number, Prepared>();
+  private readonly prepared = new Map<number, PreparedUpload>();
   /** The upload ids of each batch, in the order given; kept after a file leaves the queue, for its batch's order. */
   private readonly batches = new Map<number, readonly number[]>();
   /** The key the server answered for each uploaded file, by its upload id; kept after it leaves the queue. */
@@ -192,7 +125,7 @@ export class FileUploadQueue {
     const batch = ++this.nextBatch;
     let room = target.maxFiles > 0 ? target.maxFiles - this.roomTakenBy(target, TAKING_ROOM).files : Infinity;
     const added = files.map(file => {
-      const upload = this.uploadOf(file, target, batch);
+      const upload = createUploadItem(++this.nextId, file, target, batch, this.texts, this.locale());
       if (upload.status !== 'waiting') {
         return upload;
       }
@@ -267,19 +200,6 @@ export class FileUploadQueue {
     return () => this.drainedCallbacks.delete(callback);
   }
 
-  private uploadOf(file: File, target: FileUploadTarget, batch: number): FileUpload {
-    const id = ++this.nextId;
-    const refusal = uploadRefusalOf(file, target);
-    if (!refusal) {
-      return { id, file, target, batch, status: 'waiting', progress: 0 };
-    }
-    const detail =
-      refusal === 'size'
-        ? this.texts.of('FileTooLarge', formatMegabytes(takenMaxBytesOf(file.type, target), this.locale()))
-        : this.texts.of('FileTypeRefused', acceptedNamesOf(target));
-    return { id, file, target, batch, status: 'refused', progress: 0, detail };
-  }
-
   /**
    * The files and bytes of the target's record: those its owner shows, and the queue's own files for it of the
    * statuses given, an uploaded one only while its owner does not show it yet.
@@ -323,11 +243,6 @@ export class FileUploadQueue {
     return this._uploads().find(upload => upload.status === 'waiting');
   }
 
-  /**
-   * Prepares the file at its first turn, checks it against its record's room, posts it and settles once its answer, its
-   * failure or its cancel comes; answers whether a request went. An owner that goes away meanwhile aborts the request;
-   * the loop that awaits it goes with the owner.
-   */
   private async post(upload: FileUpload): Promise<boolean> {
     const isCurrent = this.lifetime.capture();
     const prepared = await this.admit(upload, isCurrent);
@@ -339,16 +254,11 @@ export class FileUploadQueue {
     return true;
   }
 
-  /**
-   * The file prepared at its first turn and let into its record's room; null where it was cancelled meanwhile,
-   * refused, or left with the rest of its batch for want of room.
-   */
-  private async admit(upload: FileUpload, isCurrent: IsCurrent): Promise<Prepared | null> {
+  private async admit(upload: FileUpload, isCurrent: IsCurrent): Promise<PreparedUpload | null> {
     const { id, target } = upload;
     this.update(id, { status: this.prepared.has(id) ? 'uploading' : 'preparing', progress: 0 });
-    const prepared = this.prepared.get(id) ?? (await this.prepare(upload));
+    const prepared = this.prepared.get(id) ?? (await prepareUpload(upload, this.texts, this.locale()));
     if (!isCurrent() || !this.isUnderWay(id)) {
-      // Cancelled while it was being prepared
       return null;
     }
     if (typeof prepared === 'string') {
@@ -364,12 +274,12 @@ export class FileUploadQueue {
   }
 
   /** The request of the grid's `upload` for the prepared file: its form under its key, its progress reported, the alert silent. */
-  private requestOf(upload: FileUpload, prepared: Prepared): HttpRequest<FormData> {
+  private requestOf(upload: FileUpload, prepared: PreparedUpload): HttpRequest<FormData> {
     const { target } = upload;
     return new HttpRequest<FormData>(
       'POST',
       serviceUrl<FileGridServiceEndpoints>(target.service, 'upload'),
-      uploadFormOf(target, prepared.file, prepared.thumbnail, { metadata: prepared.metadata, afterId: this.predecessorIdOf(upload) }),
+      uploadFormOf(target, prepared.file, prepared.thumbnail, { afterId: this.predecessorIdOf(upload) }),
       { reportProgress: true, ...withIdempotencyKey(prepared.key) },
     );
   }
@@ -401,7 +311,6 @@ export class FileUploadQueue {
           }
         },
         error: (error: unknown) => {
-          // The failure is this file's, shown with it: the global alert was told to stay silent
           if (isCurrent()) {
             this.fail(id, classifyMutationFailure(error));
           }
@@ -415,34 +324,10 @@ export class FileUploadQueue {
     });
   }
 
-  /**
-   * What the file posts as: an image of more than the target's `maxPixels` refused by the size its leading bytes tell,
-   * else the file treated by the target's image rules, refused above `maxBytes`, with the metadata its leading bytes
-   * carry and the thumbnail of what it became, within `thumbnailMaxBytes`. A refusal is its reason.
-   */
-  private async prepare(upload: FileUpload): Promise<Prepared | string> {
-    const { file, target } = upload;
-    const facts = isEncodedImage(file.type) ? await imageFactsOf(file) : null;
-    if (facts && facts.width * facts.height > target.maxPixels) {
-      return this.texts.of('FilePixelsRefused', new Intl.NumberFormat(this.locale()).format(target.maxPixels / 1_000_000));
-    }
-    const posted = await optimizeImage(file, target, facts);
-    if (posted.size > target.maxBytes) {
-      return this.texts.of('FileTooLarge', formatMegabytes(target.maxBytes, this.locale()));
-    }
-    return {
-      file: posted,
-      metadata: facts?.metadata ?? null,
-      thumbnail: await thumbnailOf(posted, target.thumbnailMaxBytes),
-      key: newUuid(),
-    };
-  }
-
   private isUnderWay(id: number): boolean {
     return this._uploads().some(upload => upload.id === id && UNDER_WAY.includes(upload.status));
   }
 
-  /** Whether one more file of `size` bytes goes beyond the room of the target's record, by what it holds now. */
   private exceedsRoom(target: FileUploadTarget, size: number): boolean {
     const taken = this.roomTakenBy(target, ['uploaded']);
     return (
@@ -450,7 +335,6 @@ export class FileUploadQueue {
     );
   }
 
-  /** Refuses the file, and every file of its batch still waiting, as its record having no room left. */
   private refuseRestOf(upload: FileUpload): void {
     const detail = this.texts.of('FilesNoRoom');
     this._uploads.update(uploads =>
@@ -462,7 +346,6 @@ export class FileUploadQueue {
     );
   }
 
-  /** The key the server answered for the nearest file before this one in its batch; none for the first one posted. */
   private predecessorIdOf(upload: FileUpload): number | null {
     const order = this.batches.get(upload.batch) ?? [];
     for (let index = order.indexOf(upload.id) - 1; index >= 0; index--) {
@@ -474,7 +357,6 @@ export class FileUploadQueue {
     return null;
   }
 
-  /** A committed answer marks the file uploaded with its key and shows its warnings; any other outcome is the file's failure. */
   private answered(id: number, answer: AnswerOf<FileGridServiceEndpoints, 'upload'> | null, target: FileUploadTarget): void {
     if (!isCommitted(answer)) {
       this.fail(id, classifyMutationFailure(answer));
@@ -488,7 +370,6 @@ export class FileUploadQueue {
     this.alert.warnings(answer?.warnings, target.committedWarningTitle);
   }
 
-  /** The file failed, with what the server said of it, or of the request, as its detail. */
   private fail(id: number, failure: MutationFailure): void {
     const refusal = refusalOf(failure, this.texts);
     this.update(id, { status: 'failed', detail: refusal.detail ?? refusal.title });

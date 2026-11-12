@@ -1,4 +1,4 @@
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, model, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, signal } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
 import type { FormAskModel, FormElementDto, MessageDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
@@ -80,7 +80,7 @@ export class FormAskComponent {
   /** The id the title carries, so the dialog can be named by it. */
   protected readonly id = `ui-ask-${++FormAskComponent.next}`;
 
-  readonly model = model<FormAskModel | null>();
+  readonly model = input<FormAskModel | null>();
 
   /** The title the opener gave, the button's label; the platform's `Confirm` without one. */
   protected readonly title = computed(() => this.model()?.title || this.texts.of('Confirm'));

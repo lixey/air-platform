@@ -33,9 +33,9 @@ export interface ScreenLoader {
 
 /**
  * Loads a screen by address, for a route and for an overlay alike: posts the address's params
- * to `/api/{service}/get-data` and exposes what comes back. When the address targets a standalone
- * grid, `/api/{service}/get-count` is started in parallel with `get-data` using the same initial
- * parameters (including remembered named filters from browser storage).
+ * to `/api/{service}/get-data` and exposes what comes back. Standalone grids include any
+ * remembered named filters from browser storage in the initial `get-data` request; `GridCount`
+ * requests `/api/{service}/get-count` only when the returned page leaves `total` open.
  */
 export function screenLoader(
   address: () => ScreenAddress | null,
@@ -62,16 +62,15 @@ export function screenLoader(
     }
     const rawParams: Readonly<Record<string, unknown>> =
       target.params && typeof target.params === 'object' ? (target.params as Readonly<Record<string, unknown>>) : {};
-    const isGrid = isCountedGridTarget(target.service, rawParams);
     const remembered =
-      isGrid && rawParams['namedFilters'] === undefined
+      isStandaloneGridTarget(target.service, rawParams) && rawParams['namedFilters'] === undefined
         ? rememberedNamedFiltersOf(
             untracked(() => auth?.currentUser() ?? null),
             target.service,
           )
         : undefined;
     const body = remembered ? { ...rawParams, namedFilters: remembered } : rawParams;
-    return { service: target.service, body, isGrid };
+    return { service: target.service, body };
   });
 
   const resource = httpResource<AnswerOf<ScreenServiceEndpoints, 'get-data'>>(() => {
@@ -106,7 +105,7 @@ export function screenLoader(
   };
 }
 
-function isCountedGridTarget(service: string, params: Readonly<Record<string, unknown>>): boolean {
+function isStandaloneGridTarget(service: string, params: Readonly<Record<string, unknown>>): boolean {
   return service.toLowerCase().endsWith('-grid') && params['isReferencePicker'] !== true && !Array.isArray(params['referenceLabelPaths']);
 }
 

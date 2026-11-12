@@ -90,7 +90,7 @@ describe('GridNavUploadComponent', () => {
       hasMore: false,
     });
     component = createComponent(GridNavUploadComponent, { environmentInjector: injector });
-    component.instance.model.set(upload);
+    component.setInput('model', upload);
     component.changeDetectorRef.detectChanges();
   });
   afterEach(() => {

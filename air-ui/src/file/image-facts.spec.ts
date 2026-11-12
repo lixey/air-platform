@@ -2,16 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { FACTS_HEAD_BYTES, imageFactsOf } from './image-facts';
 
 const BYTE = 1;
-const ASCII = 2;
 const SHORT = 3;
 const LONG = 4;
-const RATIONAL = 5;
 
-/** A TIFF tag: ASCII takes a string, RATIONAL numerator and denominator pairs, flattened. */
 interface Tag {
   readonly id: number;
   readonly type: number;
-  readonly value: string | readonly number[];
+  readonly value: readonly number[];
 }
 
 /** A byte writer in one byte order that grows as it is written. */
@@ -46,103 +43,40 @@ class Writer {
   }
 }
 
-/** The bytes of a tag's value and its count of values. */
-function valueOf(tag: Tag, isLittle: boolean): { bytes: number[]; count: number } {
-  const writer = new Writer(isLittle);
-  if (typeof tag.value === 'string') {
-    writer.text(tag.value).u8(0);
-    return { bytes: writer.bytes, count: tag.value.length + 1 };
-  }
-  for (const value of tag.value) {
-    if (tag.type === BYTE) {
-      writer.u8(value);
-    } else if (tag.type === SHORT) {
-      writer.u16(value);
-    } else {
-      writer.u32(value);
-    }
-  }
-  return { bytes: writer.bytes, count: tag.type === RATIONAL ? tag.value.length / 2 : tag.value.length };
-}
-
-/** A TIFF structure of IFD0 and, where given, the Exif IFD and the GPS IFD it points to. */
-function tiffOf(isLittle: boolean, ifd0: Tag[], exif: Tag[] = [], gps: Tag[] = []): number[] {
-  const sizeOf = (count: number): number => 2 + count * 12 + 4;
-  const ifd0Count = ifd0.length + (exif.length > 0 ? 1 : 0) + (gps.length > 0 ? 1 : 0);
-  const exifAt = 8 + sizeOf(ifd0Count);
-  const gpsAt = exifAt + (exif.length > 0 ? sizeOf(exif.length) : 0);
-  let dataAt = gpsAt + (gps.length > 0 ? sizeOf(gps.length) : 0);
-  const pointers: Tag[] = [
-    ...(exif.length > 0 ? [{ id: 0x8769, type: LONG, value: [exifAt] }] : []),
-    ...(gps.length > 0 ? [{ id: 0x8825, type: LONG, value: [gpsAt] }] : []),
-  ];
+/** A TIFF header with IFD0 entries sorted by tag id. */
+function tiffOf(isLittle: boolean, ifd0: Tag[]): number[] {
   const head = new Writer(isLittle)
     .text(isLittle ? 'II' : 'MM')
     .u16(42)
-    .u32(8);
-  const data = new Writer(isLittle);
-  for (const tags of [[...ifd0, ...pointers], exif, gps].filter(list => list.length > 0)) {
-    head.u16(tags.length);
-    for (const tag of [...tags].sort((a, b) => a.id - b.id)) {
-      const { bytes, count } = valueOf(tag, isLittle);
-      head.u16(tag.id).u16(tag.type).u32(count);
-      if (bytes.length <= 4) {
-        head.put([...bytes, 0, 0, 0, 0].slice(0, 4));
+    .u32(8)
+    .u16(ifd0.length);
+  for (const tag of [...ifd0].sort((a, b) => a.id - b.id)) {
+    const val = new Writer(isLittle);
+    for (const item of tag.value) {
+      if (tag.type === BYTE) {
+        val.u8(item);
+      } else if (tag.type === SHORT) {
+        val.u16(item);
       } else {
-        head.u32(dataAt);
-        data.put(bytes);
-        dataAt += bytes.length;
+        val.u32(item);
       }
     }
-    head.u32(0);
+    head
+      .u16(tag.id)
+      .u16(tag.type)
+      .u32(tag.value.length)
+      .put([...val.bytes, 0, 0, 0, 0].slice(0, 4));
   }
-  return [...head.bytes, ...data.bytes];
+  head.u32(0);
+  return head.bytes;
 }
 
-/** A phone's photo: the camera, the moment, the exposure, orientation 6 and where it was taken. */
-function phoneTiff(isLittle: boolean): number[] {
-  return tiffOf(
-    isLittle,
-    [
-      { id: 0x010f, type: ASCII, value: 'Apple' },
-      { id: 0x0110, type: ASCII, value: 'iPhone 15 Pro' },
-      { id: 0x0112, type: SHORT, value: [6] },
-      { id: 0x0131, type: ASCII, value: '17.4' },
-    ],
-    [
-      { id: 0x829a, type: RATIONAL, value: [1, 120] },
-      { id: 0x829d, type: RATIONAL, value: [178, 100] },
-      { id: 0x8827, type: SHORT, value: [80] },
-      { id: 0x9003, type: ASCII, value: '2024:05:01 12:30:45' },
-      { id: 0x920a, type: RATIONAL, value: [6860, 1000] },
-      { id: 0xa434, type: ASCII, value: 'iPhone 15 Pro back camera' },
-    ],
-    [
-      { id: 0x0001, type: ASCII, value: 'N' },
-      { id: 0x0002, type: RATIONAL, value: [50, 1, 27, 1, 36, 1] },
-      { id: 0x0003, type: ASCII, value: 'W' },
-      { id: 0x0004, type: RATIONAL, value: [30, 1, 31, 1, 1800, 100] },
-      { id: 0x0005, type: BYTE, value: [1] },
-      { id: 0x0006, type: RATIONAL, value: [125, 10] },
-    ],
-  );
+function orientationTiff(isLittle: boolean, orientation: number, type = SHORT): number[] {
+  return tiffOf(isLittle, [
+    { id: 0x0100, type: SHORT, value: [4032] },
+    { id: 0x0112, type, value: [orientation] },
+  ]);
 }
-
-const PHONE_METADATA = {
-  make: 'Apple',
-  model: 'iPhone 15 Pro',
-  lens: 'iPhone 15 Pro back camera',
-  takenAt: '2024-05-01T12:30:45',
-  exposureTime: '1/120',
-  fNumber: 1.8,
-  iso: 80,
-  focalLength: 6.9,
-  orientation: 6,
-  software: '17.4',
-  latitude: 50.46,
-  longitude: -30.5216667,
-  altitude: -12.5,
-};
 
 /** A JPEG: SOI, an APP1 segment with the EXIF given, others given, SOF0 of the size, then SOS and a little scan. */
 function jpegOf(width: number, height: number, tiff: number[] | null, before: number[] = []): Blob {
@@ -199,67 +133,53 @@ function vp8xOf(width: number, height: number): number[] {
 }
 
 describe('imageFactsOf', () => {
-  it("reads a phone JPEG's size, its orientation 6 and its tags with the place, in either byte order", async () => {
+  it("reads a phone JPEG's size and its orientation 6, in either byte order", async () => {
     for (const isLittle of [false, true]) {
-      const facts = await imageFactsOf(jpegOf(4032, 3024, phoneTiff(isLittle)));
+      const facts = await imageFactsOf(jpegOf(4032, 3024, orientationTiff(isLittle, 6)));
 
-      expect(facts).toEqual({ width: 4032, height: 3024, orientation: 6, metadata: PHONE_METADATA });
+      expect(facts).toEqual({ width: 4032, height: 3024, orientation: 6 });
     }
   });
 
-  it('reads a place south of the equator, east of Greenwich and above the sea', async () => {
-    const tiff = tiffOf(
-      false,
-      [],
-      [],
-      [
-        { id: 0x0001, type: ASCII, value: 'S' },
-        { id: 0x0002, type: RATIONAL, value: [33, 1, 51, 1, 36, 1] },
-        { id: 0x0003, type: ASCII, value: 'E' },
-        { id: 0x0004, type: RATIONAL, value: [151, 1, 12, 1, 1800, 100] },
-        { id: 0x0005, type: BYTE, value: [0] },
-        { id: 0x0006, type: RATIONAL, value: [585, 10] },
-      ],
-    );
-
-    expect(await imageFactsOf(jpegOf(640, 480, tiff))).toEqual({
+  it('reads orientation stored as BYTE or LONG and ignores out-of-range values', async () => {
+    expect(await imageFactsOf(jpegOf(640, 480, orientationTiff(false, 3, BYTE)))).toEqual({
+      width: 640,
+      height: 480,
+      orientation: 3,
+    });
+    expect(await imageFactsOf(jpegOf(640, 480, orientationTiff(true, 8, LONG)))).toEqual({
+      width: 640,
+      height: 480,
+      orientation: 8,
+    });
+    expect(await imageFactsOf(jpegOf(640, 480, orientationTiff(false, 9)))).toEqual({
       width: 640,
       height: 480,
       orientation: 1,
-      metadata: { latitude: -33.86, longitude: 151.205, altitude: 58.5 },
     });
   });
 
-  it('reads the size of a JPEG without EXIF past its other segments, with orientation 1 and no metadata', async () => {
+  it('reads the size of a JPEG without EXIF past its other segments, with orientation 1', async () => {
     const icc = new Writer()
       .u8(0xff, 0xe2)
       .u16(2 + 100)
       .put(new Uint8Array(100)).bytes;
 
-    expect(await imageFactsOf(jpegOf(800, 600, null, icc))).toEqual({ width: 800, height: 600, orientation: 1, metadata: null });
+    expect(await imageFactsOf(jpegOf(800, 600, null, icc))).toEqual({ width: 800, height: 600, orientation: 1 });
   });
 
-  it("reads a PNG's IHDR and the tags of its eXIf chunk", async () => {
-    const tiff = tiffOf(false, [
-      { id: 0x0131, type: ASCII, value: 'Screenshot' },
-      { id: 0x0112, type: SHORT, value: [1] },
-    ]);
-
-    expect(await imageFactsOf(pngOf(1920, 1080, tiff))).toEqual({
+  it("reads a PNG's IHDR and the orientation of its eXIf chunk", async () => {
+    expect(await imageFactsOf(pngOf(1920, 1080, orientationTiff(false, 5)))).toEqual({
       width: 1920,
       height: 1080,
-      orientation: 1,
-      metadata: { software: 'Screenshot', orientation: 1 },
+      orientation: 5,
     });
-    expect(await imageFactsOf(pngOf(1, 1, null))).toEqual({ width: 1, height: 1, orientation: 1, metadata: null });
+    expect(await imageFactsOf(pngOf(1, 1, null))).toEqual({ width: 1, height: 1, orientation: 1 });
   });
 
-  it("reads a WebP's canvas from VP8X and the tags of its EXIF chunk, with or without the JPEG's prefix", async () => {
-    const tiff = tiffOf(true, [
-      { id: 0x010f, type: ASCII, value: 'Canon' },
-      { id: 0x0112, type: SHORT, value: [8] },
-    ]);
-    const expected = { width: 5000, height: 3000, orientation: 8, metadata: { make: 'Canon', orientation: 8 } };
+  it("reads a WebP's canvas from VP8X and the orientation of its EXIF chunk, with or without the JPEG's prefix", async () => {
+    const tiff = orientationTiff(true, 8);
+    const expected = { width: 5000, height: 3000, orientation: 8 };
 
     expect(await imageFactsOf(webpOf([vp8xOf(5000, 3000), riffChunkOf('EXIF', tiff)]))).toEqual(expected);
     const prefixed = [...new Writer().text('Exif\0\0').bytes, ...tiff];
@@ -273,27 +193,23 @@ describe('imageFactsOf', () => {
     const bits = w | (h << 14);
     const lossless = riffChunkOf('VP8L', new Writer(true).u8(0x2f).u32(bits).bytes);
 
-    expect(await imageFactsOf(webpOf([lossy]))).toEqual({ width: 640, height: 480, orientation: 1, metadata: null });
-    expect(await imageFactsOf(webpOf([lossless]))).toEqual({ width: 1024, height: 768, orientation: 1, metadata: null });
+    expect(await imageFactsOf(webpOf([lossy]))).toEqual({ width: 640, height: 480, orientation: 1 });
+    expect(await imageFactsOf(webpOf([lossless]))).toEqual({ width: 1024, height: 768, orientation: 1 });
   });
 
-  it('keeps the size and drops the tags of EXIF that is malformed or points outside itself', async () => {
+  it('keeps the size and defaults orientation to 1 when EXIF is malformed or points outside itself', async () => {
     const badOrder = [...new Writer().text('XX').u16(42).u32(8).bytes, 0, 0];
     const outside = new Writer().text('MM').u16(42).u32(0x7fff_fff0).bytes;
-    const tiff = phoneTiff(false);
-    const cut = tiff.slice(0, 40);
+    const cut = orientationTiff(false, 6).slice(0, 14);
 
-    for (const exif of [badOrder, outside]) {
-      expect(await imageFactsOf(jpegOf(640, 480, exif))).toEqual({ width: 640, height: 480, orientation: 1, metadata: null });
+    for (const exif of [badOrder, outside, cut]) {
+      expect(await imageFactsOf(jpegOf(640, 480, exif))).toEqual({ width: 640, height: 480, orientation: 1 });
     }
-    const facts = await imageFactsOf(pngOf(640, 480, cut));
-    expect(facts?.width).toBe(640);
-    expect(facts?.metadata?.latitude).toBeUndefined();
   });
 
   it('tells nothing of a truncated image, one whose size lies past the bytes read, or a file of another kind', async () => {
-    const whole = new Uint8Array(await blobBytes(jpegOf(4032, 3024, phoneTiff(false))));
-    const truncated = new Blob([whole.slice(0, 60)], { type: 'image/jpeg' });
+    const whole = new Uint8Array(await blobBytes(jpegOf(4032, 3024, orientationTiff(false, 6))));
+    const truncated = new Blob([whole.slice(0, 20)], { type: 'image/jpeg' });
     const padding = new Writer().u8(0xff, 0xe2).u16(0xfffe).put(new Uint8Array(0xfffc)).bytes;
     const far = jpegOf(640, 480, null, Array.from({ length: 5 }, () => padding).flat());
 

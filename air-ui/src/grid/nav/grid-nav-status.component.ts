@@ -1,4 +1,4 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import type { GridNavStatusModel, NavMenuModel } from '../../core/generated/contracts';
 import { isRecord } from '../../core/json';
 import { NavMenuComponent } from '../../nav/element/nav-menu.component';
@@ -27,7 +27,7 @@ function statusOf(value: unknown): unknown {
 export class GridNavStatusComponent {
   private readonly grid = inject(GridService, { optional: true });
 
-  readonly model = model<GridNavStatusModel | null>();
+  readonly model = input<GridNavStatusModel | null>();
 
   /** The menu of the actions of the moves whose `from` holds the status of every selected row; disabled with the hint for none. */
   protected readonly menu = computed<NavMenuModel | null>(() => {

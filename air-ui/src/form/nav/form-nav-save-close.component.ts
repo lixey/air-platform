@@ -1,4 +1,4 @@
-import { Component, computed, model } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { ButtonVariant, FormNavSaveCloseModel } from '../../core/generated/contracts';
 import { injectForm } from '../inject-form';
@@ -25,7 +25,7 @@ import { injectForm } from '../inject-form';
   `,
 })
 export class FormNavSaveCloseComponent {
-  readonly model = model<FormNavSaveCloseModel | null>();
+  readonly model = input<FormNavSaveCloseModel | null>();
 
   protected readonly form = injectForm();
 

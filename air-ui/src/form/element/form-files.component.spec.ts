@@ -1320,7 +1320,10 @@ describe('The files in a form', () => {
     const body = (fixture.nativeElement as HTMLElement).querySelector('[data-form-body] .grid') as HTMLElement;
     const wrapper = body.querySelector('[data-form-files]') as HTMLElement;
     expect(body.lastElementChild).toBe(wrapper);
-    expect(wrapper.querySelector('ui-form-files')).not.toBeNull();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(wrapper.querySelector('ui-form-files')).not.toBeNull();
+    });
     expect(wrapper.hidden).toBe(true);
 
     fixture.debugElement.injector.get(PanelsContext).of(FORM_TAB).set('details');

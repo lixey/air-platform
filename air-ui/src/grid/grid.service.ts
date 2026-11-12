@@ -1,53 +1,32 @@
 import { computed, DestroyRef, effect, inject, linkedSignal, Service, type Signal, signal, untracked } from '@angular/core';
-import type { Subscription } from 'rxjs';
-import { shownByCaller } from '../app/alert/error-alert.interceptor';
-import { AuthService, identityOf } from '../app/auth/auth.service';
+import { AuthService } from '../app/auth/auth.service';
 import { Api } from '../core/api';
-import type {
-  GridColumnDto,
-  GridModel,
-  GridPageDto,
-  GridRequest,
-  GridServiceEndpoints,
-  OverlayDto,
-  SortDirection,
-  SortRule,
-} from '../core/generated/contracts';
+import type { GridColumnDto, GridModel, GridPageDto, GridRequest, OverlayDto, SortDirection } from '../core/generated/contracts';
 import { type IsCurrent, Lifetime } from '../core/lifetime';
 import type { OverlayRef } from '../overlay/overlay-ref';
 import { parentParams, SCREEN_ADDRESS } from '../screen/screen-address';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
 import type { SelectOption } from '../select/select-option';
-import { optionOfPickedValue } from '../select/select-option';
 import type { SelectField } from '../select/select-source';
 import { SelectService } from '../select/select.service';
-import { emptySelectRowOf } from './column/grid-column-select-source';
 import { GridColumnState } from './column/grid-column-state';
 import { SELECTION_COLUMN_DTO } from './column/grid-selection-column';
-import {
-  conjunctsOf,
-  fieldOf,
-  type GridFilter,
-  GridFilterSet,
-  initialFiltersOf,
-  isEmptyFilter,
-  isPick,
-  normalizedFilter,
-  referenceFilterOf,
-  rulesOf,
-  toFilterNode,
-} from './filter/grid-filter-set';
+import type { GridFilter } from './filter/grid-filter-set';
 import { GridActiveRow } from './grid-active-row';
 import { GridCellEdits } from './grid-cell-edits';
 import { GridChangedCells } from './grid-changed-cells';
 import { GridCount } from './grid-count';
 import { GridDeletion } from './grid-deletion';
 import { GridForms } from './grid-forms';
-import { GridNamedFilters } from './grid-named-filters';
-import { buildGridRequest } from './grid-request';
+import { GridLiveRegistry, GridMutationSync } from './grid-mutation-sync';
+import { attachGridSelect, GridPageLoader, isPage, NO_ROWS, type PageRequest, projectGridRows } from './grid-page-loader';
+import { GridQueryState } from './grid-query-state';
+import { buildGridCountRequest, buildServiceGridRequest } from './grid-request';
 import { type GridRow, type GridRowKey, keyOf } from './grid-row';
 import { GridSelection } from './grid-selection';
+
+export { isPage };
 
 /** What the table that draws a grid names for a search box that drives it. */
 export interface GridTableIds {
@@ -56,242 +35,135 @@ export interface GridTableIds {
   readonly tableWidth?: Signal<number>;
 }
 
-/** The rows of a picker's list while its text is shorter than the least length: one list, so nothing is drawn anew. */
-const NO_ROWS: readonly GridRow[] = [];
-
 /**
- * Everything one grid holds on the client: the model the server described, the query state — page, sort, filters,
- * the columns' filters, the search, the named filters — the selection and the active row, and the page of rows
- * the state asks for. The page that came with the screen is the first answer; the server is
- * asked, for the data alone, only when something changes. A sort, a filter, a search or a press of a named filter
- * returns the grid to the first page and clears the selection; a page change clears it too.
- * A new model, or an invalidation of the screen's mutation scope, starts the whole state over: the search from the
- * model's initial search, the general filters from its initial filter and the named filters from the elements the
- * model marks selected and the choice the browser keeps (`GridNamedFilters`). A state that starts apart from what the
- * opening page was read under, a kept choice that differs, asks page 1 and the count again at once.
- *
- * A failed page leaves the rows and the page number of the last answer, and `retry` asks the failed
- * request again; a failed count leaves the total open until `recount`.
- *
- * The active row is deliberate: none when the grid opens; after a change of sort, filter,
- * search or page the first row, if a row was active; after a reload of the same page the row
- * with the same key, or the first when it is gone.
- *
- * A save confirmed by a form this grid opened itself — from the nav's Add or from a row — while it is open marks,
- * on the page its refresh loads, the saved record's cells whose value or hue changed (`GridChangedCells`); a record
- * the form added has its non-empty cells marked. The marks add up over saves and survive a reload of the same page;
- * a change of sort, filter, search or page clears them, and a new model or an invalidated scope starts them over.
- *
- * A cell of a column the model marks editable is edited in place and saved by the grid's form (`GridCellEdits`): its
- * answer replaces the row, tells the screen, marks the cells it changed and loads the page again; a change of the
- * request or of the model cancels the edit.
- *
- * Provided by the grid component, so the nav's elements, the cells and the overlays
- * opened from the grid find it by injection. What the user changes about the columns — a
- * width, a fit to content, a hiding — lasts the session: remembering it across visits is
- * parked, and nothing is written to the panels storage.
+ * Everything one grid holds on the client: the model the server described, the query state (`GridQueryState`), the
+ * selection and the active row, the row counter (`GridCount`), inline cell edits (`GridCellEdits`), and the page of rows
+ * (`GridPageLoader`). Provided by the grid component so nav elements, cells, and overlays find it by injection.
  */
 @Service({ autoProvided: false })
 export class GridService {
-  private static readonly liveGrids = new Set<GridService>();
-  private static readonly reloadListeners = new Set<() => void>();
+  private static readonly registry = new GridLiveRegistry();
 
   /** Registers a listener invoked whenever `reloadServices` runs (e.g. live reports). */
   static onReloadServices(listener: () => void): () => void {
-    GridService.reloadListeners.add(listener);
-    return () => GridService.reloadListeners.delete(listener);
+    return GridService.registry.onReloadServices(listener);
   }
 
   /** Reloads every active grid on screen, or those matching the given service names. */
-  static reloadServices(services?: readonly string[]): void {
-    const filter = services && services.length > 0 ? new Set(services.map(s => s.toLowerCase())) : null;
-    for (const grid of GridService.liveGrids) {
-      const svc = grid.service()?.toLowerCase();
-      if (!filter || (svc && filter.has(svc))) {
-        grid.reload();
-      }
-    }
-    for (const listener of GridService.reloadListeners) {
-      listener();
-    }
+  static reloadServices(services?: readonly string[], options?: { readonly notifyListeners?: boolean }): void {
+    GridService.registry.reloadServices(services, options);
   }
 
   private readonly address = inject(SCREEN_ADDRESS, { optional: true });
   private readonly api = inject(Api);
   private readonly auth = inject(AuthService);
   private readonly mutations = inject(ScreenMutations, { optional: true });
-  /** The select this grid stands in, when it is the list of one: rows are picked, not selected or opened. */
   private readonly select = inject(SelectService, { optional: true });
-  /** A child of the screen's lifetime; a capture of it also holds the generation it was taken in. */
   private readonly lifetime = (inject(SCREEN_LIFETIME, { optional: true }) ?? new Lifetime()).child();
 
-  /** The model and data inputs of the component that draws the grid. */
   private readonly bound = signal<{ readonly model: Signal<GridModel | null | undefined>; readonly data: Signal<unknown> } | null>(null);
   readonly model = computed<GridModel | null>(() => this.bound()?.model() ?? null);
-  /** Advanced by an invalidation of the screen's mutation scope. */
   private readonly invalidations = signal(0);
-  /** What the whole state belongs to: a new model or an invalidated scope starts it over. */
   private readonly generation = computed(() => ({ model: this.model(), invalidations: this.invalidations() }));
-  /**
-   * The page that came with the screen: the answer to page one, so opening asks nothing more. An invalidated scope
-   * forgets it, so the rows of the former identity are not drawn again; the next data the screen hands is the next one.
-   */
   private readonly opening = linkedSignal<unknown, GridPageDto<GridRow> | null>({
     source: () => this.bound()?.data(),
     computation: data => (isPage(data) ? data : null),
   });
-  /** What the page state belongs to: the generation and the page that came with the screen. */
   private readonly held = computed(() => ({ generation: this.generation(), opening: this.opening() }));
 
   readonly selection = new GridSelection(this.held);
   readonly deletion = new GridDeletion(this.generation);
-  /** The cells the saves of the forms this grid opened changed, settled whenever a page of rows arrives. */
   private readonly changes = new GridChangedCells(this.generation);
   readonly columnState = new GridColumnState(() => this.model()?.columns ?? [], this.generation);
-  /** The general filters' picks, started from the model's initial filter at every generation. */
-  private readonly filterSet = new GridFilterSet(this.generation, generation => initialFiltersOf(generation.model).filter(isPick));
-  private readonly columnFilterSet = new GridFilterSet(this.generation);
-  /** Every declared column with the opening fit and the user's widths and hiding applied, in the server's order. */
   readonly allColumns = this.columnState.columns;
   readonly service = computed(() => this.model()?.service ?? null);
   readonly isSelectable = computed(() => this.model()?.isSelectable !== false && !this.select);
-  /** Whether the grid is the list of a select. */
   readonly isPicking = computed(() => this.select !== null);
-  /** Whether the grid is the list of a picker: it stands under its own nav, which a select's list does not draw. */
   readonly isPickerList = computed(() => this.select?.model().isPicker === true);
-  /** The field the picker's list was opened from, whose remote the list's search box is; null in any other grid. */
   readonly pickerField = computed<SelectField | null>(() => (this.isPickerList() ? (this.select?.model().field ?? null) : null));
-  /** The ids the table that draws the grid names, its own and its active cell's; null while no table draws it. */
   readonly tableIds = signal<GridTableIds | null>(null);
-  /** The least length the text of a picker's list does not reach; null in any other grid. */
   readonly shortOf = computed<number | null>(() => (this.isPickerList() ? (this.select?.shortOf() ?? null) : null));
-  /** The columns the table draws: the selection column first when rows can be selected, the hidden ones out. */
   readonly tableColumns = computed<readonly GridColumnDto[]>(() => {
     const visible = this.allColumns().filter(column => !column.isHidden);
     return this.isSelectable() ? [SELECTION_COLUMN_DTO, ...visible] : visible;
   });
-  private unsubscribeMutations: (() => void) | undefined;
-  private lastIdentity = identityOf(this.auth.currentUser());
-  /** The form half: opening the declared form and watching the forms opened, so their saves refresh the grid. */
+
   private readonly forms = new GridForms({
     model: this.model,
     service: this.service,
     capture: () => this.capture(),
     reload: () => this.reload(),
   });
-  private readonly operations = new Set<ScreenOperation>();
 
-  /** The page asked for, and the page of the rows held once they arrived. */
-  private readonly _page = linkedSignal({ source: this.held, computation: held => held.opening?.page ?? 1 });
-  readonly page = this._page.asReadonly();
-  private readonly _sort = linkedSignal<unknown, readonly SortRule[]>({ source: this.generation, computation: () => [] });
-  readonly sort = this._sort.asReadonly();
-  /** The search; the opening page was searched by the model's initial search, so the box shows it and asks nothing. */
-  private readonly _search = linkedSignal({ source: this.generation, computation: generation => generation.model?.initialSearch ?? '' });
-  readonly search = this._search.asReadonly();
-  /**
-   * The general filters' picks: one `in` rule per reference column, by its key (`referenceFilterOf`). The opening page
-   * was read under the model's initial filter, so the general filters start from it and ask nothing.
-   */
-  readonly filterPicks = this.filterSet.state;
-  /** The general filters' tree over the other columns, in normal form; none while it holds nothing. */
-  private readonly _filterTree = linkedSignal<{ readonly model: GridModel | null }, GridFilter | undefined>({
-    source: this.generation,
-    computation: generation => toFilterNode(initialFiltersOf(generation.model).filter(filter => !isPick(filter))),
-  });
-  readonly filterTree = this._filterTree.asReadonly();
-  /** The general filters as the request joins them by AND: the picks, then the tree, and any select reference filter. */
-  readonly filters = computed<readonly GridFilter[]>(() => {
-    const tree = this.filterTree();
-    const refFilter = this.select?.model().referenceFilter;
-    const base = tree ? [...this.filterPicks(), tree] : this.filterPicks();
-    return refFilter ? [...base, refFilter] : base;
-  });
-  /** The filters the columns hold, one per column. */
-  readonly columnFilters = this.columnFilterSet.state;
-
-  /** The named filters: the toggles that are on and the item each group stands on. */
-  private readonly named = new GridNamedFilters({
+  private readonly query = new GridQueryState({
     model: this.model,
-    resetBy: this.generation,
+    generation: this.generation,
+    held: this.held,
     user: () => this.auth.currentUser(),
+    select: this.select,
   });
-  /** The keys of the pressed named filters, in the nav's order, as every request of the grid carries them. */
-  readonly namedFilters = this.named.chosen;
 
-  /** The page on screen: the last answer, or the one that came with the screen until the first answer. */
-  private readonly _data = linkedSignal({ source: this.held, computation: held => held.opening });
-  readonly data = this._data.asReadonly();
-  /** Whether a page is held: the one that came with the screen, or one the server answered. */
-  private readonly hasPage = computed(() => this.data() !== null);
-  readonly pageSize = computed(() => this.data()?.pageSize ?? this.model()?.pageSize ?? 200);
+  readonly page = this.query.page;
+  readonly sort = this.query.sort;
+  readonly search = this.query.search;
+  readonly filterPicks = this.query.filterPicks;
+  readonly filterTree = this.query.filterTree;
+  readonly filters = this.query.filters;
+  readonly columnFilters = this.query.columnFilters;
+  readonly namedFilters = this.query.namedFilters;
 
-  /** The request the state makes; data only once an answer is held, so the layout is never sent twice. */
-  readonly request = computed<GridRequest>(() => ({
-    ...parentParams(this.address?.(), this.service()),
-    ...(this.select?.model().parent ?? {}),
-    ...buildGridRequest({
-      page: this.page(),
-      pageSize: this.pageSize(),
-      sort: this.sort(),
-      filters: this.filters(),
-      columnFilters: this.columnFilters(),
-      search: this.search(),
-      namedFilters: this.namedFilters(),
-      isDataOnly: this.hasPage(),
-      referenceLabelPaths: this.select?.model().labelPaths ?? null,
-      isReferencePicker: this.select?.model().isPicker,
-    }),
-    ...(this.select?.model().patchSourceColumns?.length ? { patchSourceColumns: [...(this.select.model().patchSourceColumns ?? [])] } : {}),
-    ...(this.select?.model().formDraft ? { formDraft: this.select.model().formDraft } : {}),
-  }));
+  private readonly loader = new GridPageLoader({
+    api: this.api,
+    model: this.model,
+    generation: this.generation,
+    held: this.held,
+    onAdopt: (answer, askedPage) => this.adopt(answer, askedPage),
+    onVerified: result => this.deletion.verified(result),
+    onFailed: fallbackPage => this.query.setPage(fallbackPage),
+  });
 
-  /** The last page asked of the server, which a retry asks again. */
-  private pageRequest: PageRequest | undefined;
-  private inFlight: Subscription | undefined;
-  private readonly _isLoading = linkedSignal({ source: this.generation, computation: () => false });
-  readonly isLoading = this._isLoading.asReadonly();
-  /** The failure of the last page asked; the rows and the page on screen are the last answer's. */
-  private readonly _error = linkedSignal<unknown, unknown>({ source: this.generation, computation: () => undefined });
-  readonly error = this._error.asReadonly();
+  readonly data = this.loader.data;
+  readonly pageSize = this.loader.pageSize;
+  readonly isLoading = this.loader.isLoading;
+  readonly error = this.loader.error;
 
-  /** The row counter: a count is asked at once when the opening page leaves the total open. */
+  private readonly mutationSync = new GridMutationSync({
+    auth: this.auth,
+    mutations: this.mutations,
+    model: this.model,
+    followsForm: service => this.forms.follows(service),
+    isTrackingForm: () => this.forms.isTracking(),
+    expectChange: recordId => this.changes.expect(recordId, untracked(this.data)?.rows ?? []),
+    reload: () => this.reload(),
+    onIdentityChanged: () => {
+      this.opening.set(null);
+      this.invalidations.update(n => n + 1);
+    },
+    cancelPage: () => this.loader.cancelPage(),
+  });
+
+  readonly request = computed<GridRequest>(() =>
+    buildServiceGridRequest(
+      this.address?.(),
+      this.service(),
+      this.select?.model(),
+      this.query.snapshot(this.pageSize(), this.loader.hasPage()),
+    ),
+  );
+
   private readonly count = new GridCount({
     capture: () => this.capture(),
     service: () => this.service(),
-    body: service => ({
-      ...parentParams(this.address?.(), service),
-      filter: toFilterNode(this.filters()),
-      columnFilter: toFilterNode(this.columnFilters()),
-      search: this.search() ? this.search() : undefined,
-      ...(this.namedFilters().length > 0 ? { namedFilters: [...this.namedFilters()] } : {}),
-      isDataOnly: true,
-    }),
+    body: service =>
+      buildGridCountRequest(this.address?.(), service, this.filters(), this.columnFilters(), this.search(), this.namedFilters()),
     isCounted: () => !this.isPicking(),
     resetBy: this.held,
     totalAtStart: () => this.opening()?.total ?? null,
   });
 
-  /**
-   * The page's rows; in a multi-pick select, minus the rows picked already. A picker's list whose text is shorter than
-   * the least length shows none, pinned or not, whatever page it holds or receives: the page is kept, not shown.
-   */
-  readonly rows = computed<readonly GridRow[]>(() => {
-    if (this.shortOf() !== null) {
-      return NO_ROWS;
-    }
-    const baseRows = this.data()?.rows ?? [];
-    const select = this.select;
-    const rows =
-      select?.model().allowEmpty && this.page() === 1 && !this.search() && !baseRows.some(r => keyOf(r) === null)
-        ? [emptySelectRowOf(select.model().labelPaths, this.allColumns()), ...baseRows]
-        : baseRows;
-    if (!select || !select.isMultiple()) {
-      return rows;
-    }
-    const picked = new Set(select.draft().map(o => o.id));
-    return rows.filter(row => !picked.has(keyOf(row)));
-  });
+  readonly rows = computed<readonly GridRow[]>(() =>
+    projectGridRows(this.shortOf(), this.data()?.rows ?? [], this.select, this.page(), this.search(), this.allColumns()),
+  );
   readonly topRows = computed<readonly GridRow[]>(() => (this.shortOf() !== null ? NO_ROWS : (this.data()?.topRows ?? [])));
   readonly bottomRows = computed<readonly GridRow[]>(() => (this.shortOf() !== null ? NO_ROWS : (this.data()?.bottomRows ?? [])));
   readonly hasMore = computed(() => this.data()?.hasMore ?? false);
@@ -299,32 +171,14 @@ export class GridService {
   readonly pageCount = computed(() => Math.max(1, Math.ceil(this.total() / Math.max(1, this.pageSize()))));
   readonly isCountLoading = this.count.isCountLoading;
   readonly isCountPending = this.count.isCountPending;
-  /** Whether the total is unknown because its count failed. */
   readonly isCountFailed = this.count.isCountFailed;
-  /** The deletion the answer to one page request verifies, kept through a retry of that request. */
-  private verification: { request: PageRequest; result: NonNullable<ReturnType<GridDeletion['result']>> } | undefined;
 
-  /** A new model or an invalidated scope cancels the page request of the former one: its answer would be dropped. */
-  private readonly cancelObsoletePage = effect(() => {
-    this.generation();
-    untracked(() => {
-      if (this.pageRequest && !this.pageRequest.isCurrent()) {
-        this.cancelPage();
-      }
-    });
-  });
-
-  /**
-   * A state of the named filters that starts apart from what the opening page was read under asks page 1 for the data
-   * alone and the count under it, when the opening page is held: the screen read that page under no kept choice.
-   */
   private readonly rereadApart = effect(() => {
-    if (this.held().opening && this.named.startsApart()) {
+    if (this.held().opening && this.query.startsApart()) {
       untracked(() => this.changeQuery(() => undefined));
     }
   });
 
-  /** The active row, settled on the rows above whenever a page of them arrives. */
   private readonly active = new GridActiveRow(
     () => this.rows(),
     this.generation,
@@ -333,7 +187,6 @@ export class GridService {
   readonly activeRowIndex = this.active.index;
   readonly activeRow = computed<GridRow | null>(() => this.rows()[this.activeRowIndex()] ?? null);
 
-  /** The cells edited in place: one edit, held by its row and column, cancelled by a change of the request or the model. */
   readonly edits = new GridCellEdits({
     resetBy: computed(() => [this.generation(), this.request()]),
     model: this.model,
@@ -351,35 +204,19 @@ export class GridService {
   });
 
   constructor() {
-    GridService.liveGrids.add(this);
+    GridService.registry.add(this);
     inject(DestroyRef).onDestroy(() => {
-      GridService.liveGrids.delete(this);
+      GridService.registry.delete(this);
       this.release();
       this.lifetime.end();
     });
-    this.subscribeMutations();
-    this.select?.attachGrid({
-      setSearch: text => this.setSearch(text),
-      moveActive: delta => this.moveActive(delta),
-      setActive: index => this.setActive(index),
-      activeRow: () => this.activeRow(),
-      rowCount: () => this.rows().length,
-      isLoading: () => this.isLoading(),
-      tableId: () => this.tableIds()?.table ?? null,
-      activeCellId: () => this.tableIds()?.activeCell() ?? null,
-      tableWidth: () => this.tableIds()?.tableWidth?.() ?? 0,
-    });
+    attachGridSelect(this.select, this);
   }
 
-  /**
-   * Binds the component's inputs: the model the grid draws — another model starts from nothing — and the screen's
-   * data, whose page is the first answer.
-   */
   bind(model: Signal<GridModel | null | undefined>, data: Signal<unknown>): void {
     this.bound.set({ model, data });
   }
 
-  /** The same page again: the active row is found by its key, or the first row takes its place. */
   reload(): void {
     if (!this.lifetime.isCurrent()) {
       return;
@@ -391,15 +228,10 @@ export class GridService {
     }
   }
 
-  /** The page request that failed, asked again. */
   retry(): void {
-    const request = this.pageRequest;
-    if (request && this.error() !== undefined && request.isCurrent()) {
-      this.send(request);
-    }
+    this.loader.retry();
   }
 
-  /** Asks the count again, after it failed. */
   recount(): void {
     if (this.lifetime.isCurrent()) {
       this.count.requestCount();
@@ -416,46 +248,20 @@ export class GridService {
     this.selection.clear();
     this.changes.clear();
     this.active.leave();
-    this._page.set(next);
+    this.query.setPage(next);
     this.requestPage();
   }
 
-  /**
-   * A direction sorts by the field, `null` returns to the default order. With `multi` the field
-   * joins the columns already sorted, after them, or changes its direction there; without, it is
-   * the only sort.
-   */
   setSort(field: string, direction: SortDirection | null, multi = false): void {
-    this.changeQuery(() => {
-      if (!multi) {
-        this._sort.set(direction ? [{ field, direction }] : []);
-      } else {
-        const current = [...this.sort()];
-        const index = current.findIndex(s => s.field === field);
-        if (direction === null) {
-          if (index >= 0) {
-            current.splice(index, 1);
-          }
-        } else if (index >= 0) {
-          current[index] = { ...current[index], direction };
-        } else {
-          current.push({ field, direction });
-        }
-        this._sort.set(current);
-      }
-    }, false);
+    this.changeQuery(() => this.query.applySort(field, direction, multi), false);
   }
 
   sortOf(field: string | null | undefined): SortDirection | null {
-    const found = this.sort().find(s => s.field === field);
-    return found?.direction ?? null;
+    return this.query.sortOf(field);
   }
 
-  /** The field's place in the sort, from 1, while more than one column is sorted; `null` otherwise. */
   sortPositionOf(field: string | null | undefined): number | null {
-    const sort = this.sort();
-    const index = sort.findIndex(s => s.field === field);
-    return sort.length > 1 && index >= 0 ? index + 1 : null;
+    return this.query.sortPositionOf(field);
   }
 
   setSearch(text: string): void {
@@ -463,126 +269,66 @@ export class GridService {
     if (next === this.search()) {
       return;
     }
-    this.changeQuery(() => this._search.set(next));
+    this.changeQuery(() => this.query.setSearchValue(next));
   }
 
-  /**
-   * Replaces the general filters, as the nav's overlay applies them: a rule that carries what a select picked is
-   * its field's pick, the others are joined by AND into the tree, two on one field both kept.
-   */
   setFilters(filters: readonly GridFilter[]): void {
-    this.changeQuery(() => {
-      this.filterSet.set(filters.filter(isPick));
-      this._filterTree.set(toFilterNode(filters.filter(filter => !isPick(filter))));
-    });
+    this.changeQuery(() => this.query.applyFilters(filters));
   }
 
-  /**
-   * Sets one column's filter. A filter without a value is tolerated as a removal, for an application's header that
-   * hands over what its control holds; the library's own headers and menus remove by `clearColumnFilter`.
-   */
   setColumnFilter(filter: GridFilter): void {
-    this.changeQuery(() => {
-      if (isEmptyFilter(filter)) {
-        this.columnFilterSet.removeByField(fieldOf(filter));
-      } else {
-        this.columnFilterSet.add(filter);
-      }
-    });
+    this.changeQuery(() => this.query.applyColumnFilter(filter));
   }
 
-  /** Removes one column's filter, as its header's or its menu's clear asks. */
   clearColumnFilter(field: string): void {
-    this.changeQuery(() => this.columnFilterSet.removeByField(field));
+    this.changeQuery(() => this.query.clearColumnFilter(field));
   }
 
   columnFilterOf(field: string | null | undefined): GridFilter | undefined {
-    return field ? this.columnFilterSet.get(field) : undefined;
+    return this.query.columnFilterOf(field);
   }
 
-  /**
-   * Sets the one general filter of a reference column (`referenceFilterOf`),
-   * replacing the field's filter, or removes it when nothing is picked.
-   */
   setReferenceFilter(field: string, options: readonly SelectOption[]): void {
-    this.changeQuery(() => {
-      const filter = referenceFilterOf(field, options);
-      if (filter) {
-        this.filterSet.add(filter);
-      } else {
-        this.filterSet.removeByField(field);
-      }
-    });
+    this.changeQuery(() => this.query.applyReferenceFilter(field, options));
   }
 
-  /**
-   * What a reference column's filter picked, as options: the header's count and the
-   * select's initial state. Reads the filters signal, so a `computed` follows it.
-   */
   referencePicksOf(field: string | null | undefined): readonly SelectOption[] {
-    if (!field) {
-      return [];
-    }
-    const filter = this.filterPicks().find(f => fieldOf(f) === field);
-    return (filter ? (rulesOf(filter)[0]?.picked ?? []) : []).map(optionOfPickedValue);
+    return this.query.referencePicksOf(field);
   }
 
-  /** Removes the pick of a reference column's key. */
   removeFilter(field: string): void {
-    this.changeQuery(() => this.filterSet.removeByField(field));
+    this.changeQuery(() => this.query.removeFilter(field));
   }
 
-  /**
-   * Removes one filter the tree's AND joins (`conjunctsOf`) — a condition, or a group of them — as its chip asks; a
-   * tree joined by OR is one such filter, so its chip clears the tree. The tree is in normal form again.
-   */
   removeFilterItem(index: number): void {
-    const tree = this.filterTree();
-    if (!tree) {
+    if (!this.filterTree()) {
       return;
     }
-    this.changeQuery(() => {
-      const items = conjunctsOf(tree).filter((_, i) => i !== index);
-      this._filterTree.set(normalizedFilter({ kind: 'FilterGroup', logic: 'and', items }));
-    });
+    this.changeQuery(() => this.query.removeFilterItem(index));
   }
 
-  /**
-   * Removes the general filters, the ones the grid opened with among them: the model's initial filter returns only
-   * with a new generation. The columns keep theirs, cleared from their headers, and the named filters stay pressed.
-   */
   clearFilters(): void {
     if (this.filters().length === 0) {
       return;
     }
-    this.changeQuery(() => {
-      this.filterSet.clear();
-      this._filterTree.set(undefined);
-    });
+    this.changeQuery(() => this.query.clearGeneralFilters());
   }
 
-  /** Whether the toggle or the group's item of this key is pressed; reads a signal. */
   isNamedFilterOn(key: string): boolean {
-    return this.named.isOn(key);
+    return this.query.isNamedFilterOn(key);
   }
 
-  /** The live row count the last page answered for a named filter key; `null` when none was reported. */
   namedFilterCountOf(key: string): number | null {
     const count = this.data()?.namedFilterCounts?.[key];
     return typeof count === 'number' ? count : null;
   }
 
-  /**
-   * Presses a toggle, which flips it, or an item, which takes its group's place; a press of the chosen item changes
-   * nothing and asks nothing. The general filters stay as they are.
-   */
   pressNamedFilter(key: string): void {
-    if (this.named.press(key)) {
+    if (this.query.pressNamedFilter(key)) {
       this.changeQuery(() => undefined);
     }
   }
 
-  /** Whether a save of a form this grid opened changed the row's cell at the column's path; reads a signal. */
   isChanged(row: GridRow | null | undefined, path: string | null | undefined): boolean {
     return this.changes.isChanged(row, path);
   }
@@ -595,49 +341,27 @@ export class GridService {
     this.active.move(delta);
   }
 
-  /** In a select, the active row is picked; elsewhere nothing happens and the caller opens the row instead. */
   pickActive(): boolean {
     return this.select?.pickActive() ?? false;
   }
 
-  /**
-   * Opens the form for the row with this key, by address: the form `formService` names, else the one the row
-   * resolves, else the grid's own; returns `false` when the grid names no form. It opens in the overlay the page
-   * carries under `forms` for that form when the row with this key names it, else in the overlay of the grid's own
-   * form addressed to it, else in a dialog. In a select, picks the row instead.
-   */
   openForm(id: GridRowKey | null, anchor?: HTMLElement | null, formService?: string | null, customOverlay?: OverlayDto | null): boolean {
-    // In a select the row's link picks the row, as a click on it does
     if (this.select) {
       const row = this.rows().find(r => keyOf(r) === id) ?? null;
       if (row) this.select.pickRow(row);
       return row !== null;
     }
-    const row = id !== null ? this.rows().find(r => keyOf(r) === id) : undefined;
-    const rowForm = row?.open?.service ?? null;
-    const targetService = formService ?? rowForm;
-    // The page's overlay is the row's alone: a form opened by a name the row does not carry takes none
-    const rowOverlay =
-      customOverlay ??
-      (targetService !== null && targetService === rowForm ? (row?.open?.overlay ?? this.data()?.forms?.[targetService] ?? null) : null);
-    return this.forms.open(id, anchor, targetService, rowOverlay);
+    return this.forms.openForRow(id, this.rows(), this.data()?.forms, anchor, formService, customOverlay);
   }
 
-  /** Nav Add and row edit share the same verified parent address. */
   withParentParams(model: OverlayDto): OverlayDto {
     return this.forms.withParentParams(model);
   }
 
-  /** Only the explicitly associated form is a freshness trigger. */
   trackForm(ref: OverlayRef): void {
     this.forms.track(ref);
   }
 
-  /**
-   * Whether what is captured now is still current: the screen's lifetime, this grid's, the same model and the screen's
-   * mutation scope, whose currency is asked on the fly, so an answer arriving after a change of session or address and
-   * before the scope's owner resets it is dropped.
-   */
   capture(): IsCurrent {
     const generation = untracked(this.generation);
     const isCurrent = this.lifetime.capture();
@@ -646,16 +370,11 @@ export class GridService {
   }
 
   beginMutation(): ScreenOperation | undefined {
-    const operation = this.mutations?.begin();
-    if (operation) this.operations.add(operation);
-    return operation;
+    return this.mutationSync.begin();
   }
 
   finishMutation(operation: ScreenOperation | undefined): void {
-    if (operation) {
-      this.operations.delete(operation);
-      this.mutations?.finish(operation);
-    }
+    this.mutationSync.finish(operation);
   }
 
   deselectFailedRows(): void {
@@ -672,85 +391,35 @@ export class GridService {
     this.active.keepKey();
     const request = this.requestPage();
     if (request) {
-      this.verification = { request, result };
+      this.loader.trackVerification(request, result);
     }
   }
 
-  /** A change of the query and, unless only the order changed, a cleared count settled by page 1, then back to the first page. */
   private changeQuery(change: () => void, recount = true): void {
     change();
     this.selection.clear();
     this.changes.clear();
     this.active.leave();
-    this._page.set(1);
+    this.query.setPage(1);
     if (recount) {
       this.count.clear();
     }
     this.requestPage();
   }
 
-  /** Asks the server for the page the state names, for the data alone once a page is held. */
   private requestPage(): PageRequest | undefined {
-    this.verification = undefined;
-    const service = this.service();
-    if (!service) {
-      return undefined;
-    }
-    const request: PageRequest = { service, body: untracked(this.request), isCurrent: this.capture() };
-    this.pageRequest = request;
-    this.send(request);
-    return request;
+    return this.loader.requestPage(this.service(), untracked(this.request), this.capture());
   }
 
-  /** Posts a page request; its answer is adopted only while it is the last one asked and its grid is current. */
-  private send(request: PageRequest): void {
-    this.inFlight?.unsubscribe();
-    this._isLoading.set(true);
-    this._error.set(undefined);
-    const isLast = () => request === this.pageRequest && request.isCurrent();
-    this.inFlight = this.api
-      .postTo<GridServiceEndpoints, 'get-data'>(request.service, 'get-data', request.body, shownByCaller())
-      .subscribe({
-        next: screen => {
-          if (!isLast()) {
-            return;
-          }
-          this._isLoading.set(false);
-          if (isPage(screen?.data)) {
-            this.adopt(screen.data, request.body.page);
-          }
-          if (this.verification?.request === request) {
-            this.deletion.verified(this.verification.result);
-            this.verification = undefined;
-          }
-        },
-        error: (error: unknown) => {
-          if (!isLast()) {
-            return;
-          }
-          // The rows and the page on screen stay the last answer's; the failed request waits for a retry
-          this._isLoading.set(false);
-          this._error.set(error ?? new Error('The page could not be loaded'));
-          this._page.set(this.data()?.page ?? 1);
-        },
-      });
-  }
-
-  /** An answer: the rows on screen, its page and page size, and its total when it carries one (or a count request when open). */
   private adopt(answer: GridPageDto<GridRow>, askedPage: number | null | undefined): void {
     if (answer.page !== askedPage) {
       this.selection.clear();
     } else {
       this.selection.retain(answer.rows);
     }
-    const prevCounts = untracked(this.data)?.namedFilterCounts;
-    this._data.set(
-      answer.page > 1 && answer.namedFilterCounts === undefined && prevCounts !== undefined
-        ? { ...answer, namedFilterCounts: prevCounts }
-        : answer,
-    );
+    this.loader.setPageData(answer);
     this.changes.settle(answer.rows, untracked(this.tableColumns));
-    this._page.set(answer.page);
+    this.query.setPage(answer.page);
     if (typeof answer.total === 'number') {
       this.count.adoptTotal(answer.total);
     } else if (this.count.countedTotal() === null && !this.count.isCountLoading()) {
@@ -758,75 +427,14 @@ export class GridService {
     }
   }
 
-  /**
-   * A cell's committed answer: the record's cells are to be marked against the rows on screen on the page the reload
-   * loads, and its row is replaced by the answered one, when there is one.
-   */
   private adoptRow(id: GridRowKey, row: GridRow | null): void {
-    const page = untracked(this.data);
-    this.changes.expect(id, page?.rows ?? []);
-    if (page && row) {
-      this._data.set({ ...page, rows: page.rows.map(held => (keyOf(held) === id ? row : held)) });
-    }
-  }
-
-  /** Listens to the mutations of the screen for the current model; an invalidation of the scope starts the state over. */
-  private subscribeMutations(): void {
-    this.unsubscribeMutations = this.mutations?.subscribe({
-      accepts: event => {
-        const model = untracked(this.model);
-        return (
-          !!model &&
-          ((event.operation === 'save' ? untracked(() => this.forms.follows(event.service)) : event.service === model.service) ||
-            !!event.affected?.some(a => a.service === model.service))
-        );
-      },
-      refresh: event => {
-        // A save of a form this grid opened, which is open while it saves, is to be marked on the page the reload loads
-        if (event?.operation === 'save' && event.recordId != null && this.forms.isTracking()) {
-          this.changes.expect(event.recordId, untracked(this.data)?.rows ?? []);
-        }
-        this.reload();
-      },
-      invalidate: () => {
-        const nextIdentity = identityOf(this.auth.currentUser());
-        if (nextIdentity !== this.lastIdentity) {
-          this.lastIdentity = nextIdentity;
-          this.opening.set(null);
-          this.invalidations.update(n => n + 1);
-        } else {
-          this.cancelPage();
-        }
-        this.subscribeMutations();
-      },
-    });
-  }
-
-  private cancelPage(): void {
-    this.inFlight?.unsubscribe();
-    this.pageRequest = undefined;
-    this.verification = undefined;
-    this._isLoading.set(false);
+    const previousRows = this.loader.replaceRow(id, row);
+    this.changes.expect(id, previousRows);
   }
 
   private release(): void {
-    this.cancelPage();
-    this.unsubscribeMutations?.();
-    this.unsubscribeMutations = undefined;
+    this.loader.cancelPage();
+    this.mutationSync.release();
     this.forms.stop();
-    for (const operation of this.operations) this.mutations?.finish(operation);
-    this.operations.clear();
   }
-}
-
-/** One page asked of the server: the service, the request, and whether its grid is still current. */
-interface PageRequest {
-  readonly service: string;
-  readonly body: GridRequest;
-  readonly isCurrent: IsCurrent;
-}
-
-/** A page by the contract: an object with its rows. */
-export function isPage(data: unknown): data is GridPageDto<GridRow> {
-  return !!data && typeof data === 'object' && Array.isArray((data as GridPageDto<GridRow>).rows);
 }

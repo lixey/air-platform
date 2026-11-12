@@ -116,9 +116,8 @@ export const SHELL_LAYOUT: PanelLayoutDto = {
     @if (overlay.bounds(); as b) {
       <button
         type="button"
-        class="fixed z-40 flex h-10 w-10 -translate-y-full cursor-pointer items-center justify-center rounded-tr-xl rounded-bl-xl border border-slate-400 bg-slate-200 text-mark transition-colors hover:bg-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:hover:bg-slate-600"
-        [class.bg-slate-300!]="isAgentOpen()"
-        [class.dark:bg-slate-600!]="isAgentOpen()"
+        class="ui-work fixed z-40 flex h-10 w-10 -translate-y-full cursor-pointer items-center justify-center rounded-tr-xl rounded-bl-xl border border-edge bg-surface-2 text-mark transition-colors hover:bg-surface-3"
+        [class.bg-surface-3!]="isAgentOpen()"
         [style.left.px]="b.left"
         [style.top.px]="b.top + b.height"
         [title]="texts.of('AgentTitle')"

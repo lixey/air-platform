@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, model } from '@angular/core';
+import { Component, ElementRef, inject, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavAddModel } from '../../core/generated/contracts';
 import { GridService } from '../grid.service';
@@ -22,7 +22,7 @@ export class GridNavAddComponent {
   private readonly host = inject(ElementRef<HTMLElement>);
   protected readonly grid = inject(GridService, { optional: true });
 
-  readonly model = model<GridNavAddModel | null>();
+  readonly model = input<GridNavAddModel | null>();
 
   protected add(): void {
     const m = this.model();

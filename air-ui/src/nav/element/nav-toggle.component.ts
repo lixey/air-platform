@@ -1,4 +1,4 @@
-import { Component, computed, inject, model } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { NavToggleModel } from '../../core/generated/contracts';
 import { PANELS } from '../../panels/panels-tokens';
@@ -22,7 +22,7 @@ import { PANELS } from '../../panels/panels-tokens';
 export class NavToggleComponent {
   private readonly panels = inject(PANELS, { optional: true });
 
-  readonly model = model<NavToggleModel | null>();
+  readonly model = input<NavToggleModel | null>();
 
   private readonly target = computed(() => (this.model()?.targetsRoot ? this.panels?.root : this.panels));
 

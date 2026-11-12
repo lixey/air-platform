@@ -1,4 +1,4 @@
-import { Component, model } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { FormNavSaveModel } from '../../core/generated/contracts';
 import { injectForm } from '../inject-form';
@@ -20,7 +20,7 @@ import { injectForm } from '../inject-form';
   `,
 })
 export class FormNavSaveComponent {
-  readonly model = model<FormNavSaveModel | null>();
+  readonly model = input<FormNavSaveModel | null>();
 
   protected readonly form = injectForm();
 }
