@@ -412,6 +412,8 @@ public abstract partial class GridService<TEntity, TRow>
     return null;
   }
 
+  bool IGridService.HasStatusFlow() => CreateColumns().StatusFlow is IRecordStatuses<TEntity>;
+
   public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default)
   {
     ParentService = request.ParentService;

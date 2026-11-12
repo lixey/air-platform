@@ -31,17 +31,37 @@ internal static class AgentFlowHelper
     return null;
   }
 
-  public static bool CanMoveTransition(Feature feature, IUserContext user, string transitionName)
+  public static bool CanMoveTransition(Feature feature, IUserContext user, string transitionName, Right? explicitRight = null)
   {
     if (user is not { IsAuthenticated: true } || string.IsNullOrEmpty(feature.Module))
     {
       return false;
     }
 
+    if (explicitRight != null)
+    {
+      return user.Can(explicitRight) ||
+             explicitRight.Feature != null && user.Can(explicitRight.Feature.All) ||
+             user.Can("*");
+    }
+
     return feature.TryGetRight(transitionName, out var right) && user.Can(right) ||
            !feature.IsReadOnly && user.Can(feature.Edit) ||
            user.Can(feature.All) ||
            user.Can("*");
+  }
+
+  public static Right? FindDeclaredTransitionRight(Type flowServiceType, string transitionName, PlatformDbContext db, PlatformAppService app)
+  {
+    if (ModuleCatalog.Instance.CreateServiceInstance(flowServiceType, db, app) is not IRecordStatuses flowObj)
+    {
+      return null;
+    }
+
+    flowObj.AttachPlatformApp(app);
+    return flowObj.AllTransitions
+      .FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase))
+      ?.RequiredRight;
   }
 
   public static async Task<(IReadOnlyList<OptionDto> Statuses, IReadOnlyList<AgentFlowTransitionDescriptor> Transitions)> DiscoverFeatureFlowAsync(
@@ -142,34 +162,22 @@ internal static class AgentFlowHelper
     MutationResultDto? result = null;
 
     if (formServiceType != null &&
-        ModuleCatalog.Instance.CreateServiceInstance(formServiceType, db, app) is IFormService formInst)
+        ModuleCatalog.Instance.CreateServiceInstance(formServiceType, db, app) is IFormService formInst &&
+        await formInst.HasStatusFlowAsync(ct))
     {
-      try
-      {
-        result = await formInst.MoveStatusAsync(recordId, transitionName, askBody, ver, ct);
-      }
-      catch (InvalidOperationException ex) when (ex.Message.Contains("does not use a status flow", StringComparison.OrdinalIgnoreCase))
-      {
-        result = null;
-      }
+      result = await formInst.MoveStatusAsync(recordId, transitionName, askBody, ver, ct);
     }
 
     if (result == null &&
         gridServiceType != null &&
-        ModuleCatalog.Instance.CreateServiceInstance(gridServiceType, db, app) is IGridService gridInst)
+        ModuleCatalog.Instance.CreateServiceInstance(gridServiceType, db, app) is IGridService gridInst &&
+        gridInst.HasStatusFlow())
     {
-      try
-      {
-        result = await gridInst.MoveStatusAsync(
-          new GridRequest { SelectedIds = [recordId], SelectedVersions = ver.HasValue ? [ver.Value] : null },
-          transitionName,
-          askBody,
-          ct);
-      }
-      catch (InvalidOperationException ex) when (ex.Message.Contains("does not use a status flow", StringComparison.OrdinalIgnoreCase))
-      {
-        result = null;
-      }
+      result = await gridInst.MoveStatusAsync(
+        new GridRequest { SelectedIds = [recordId], SelectedVersions = ver.HasValue ? [ver.Value] : null },
+        transitionName,
+        askBody,
+        ct);
     }
 
     if (result == null)
@@ -213,16 +221,15 @@ internal static class AgentFlowHelper
       .Select(s => new OptionDto { Id = s.Id, Name = flow.NameOf(s.Id), Color = s.Color })
       .ToList();
 
-    var rightByTransition = ReadRequiredRightsByTransitionName(flow);
     var list = new List<AgentFlowTransitionDescriptor>();
     if (!feature.AllowsAgentWrite)
     {
       return (statuses, list);
     }
 
-    foreach (var t in flow.Transitions)
+    foreach (var t in flow.AllTransitions)
     {
-      if (!CanMoveTransition(feature, app.User, t.Name))
+      if (!CanMoveTransition(feature, app.User, t.Name, t.RequiredRight))
       {
         continue;
       }
@@ -232,7 +239,7 @@ internal static class AgentFlowHelper
         : [];
       var toOpt = flow.Statuses.FirstOrDefault(s => s.Id == t.To);
       var fromNames = t.From.Select(flow.NameOf).ToList();
-      rightByTransition.TryGetValue(t.Name, out var reqRightKey);
+      var reqRightKey = t.RequiredRight?.Key;
       if (string.IsNullOrEmpty(reqRightKey) && feature.TryGetRight(t.Name, out var namedRight))
       {
         reqRightKey = namedRight.Key;
@@ -255,25 +262,6 @@ internal static class AgentFlowHelper
     }
 
     return (statuses, list);
-  }
-
-  private static Dictionary<string, string> ReadRequiredRightsByTransitionName<TEntity>(StatusFlowService<TEntity> flow)
-    where TEntity : class, IEntity, new()
-  {
-    var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    var dictField = typeof(StatusFlowService<TEntity>).GetField("_transitionsByName", BindingFlags.NonPublic | BindingFlags.Instance);
-    if (dictField?.GetValue(flow) is System.Collections.IDictionary rawDict)
-    {
-      foreach (System.Collections.DictionaryEntry entry in rawDict)
-      {
-        if (entry.Key is string key && entry.Value is Transition<TEntity> { RequiredRight.Key: { Length: > 0 } rightKey })
-        {
-          dict[key] = rightKey;
-        }
-      }
-    }
-
-    return dict;
   }
 
   private static async Task<(long, string, int?)> ValidateRecordForTransitionTypedAsync<TEntity>(

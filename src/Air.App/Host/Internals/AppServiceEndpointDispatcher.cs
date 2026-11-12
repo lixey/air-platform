@@ -60,7 +60,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadJsonOrDefaultAsync<ReportRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           return req.IsDataOnly
@@ -144,7 +144,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           if (!await AuthorizeAndSanitizeGridReadAsync(serviceType, grid, req, userContext!, services, ct))
@@ -171,7 +171,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           if (!await AuthorizeAndSanitizeGridReadAsync(serviceType, grid, req, userContext!, services, ct))
@@ -187,7 +187,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           if (!grid.CanView(req, userContext!))
@@ -214,7 +214,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           return PlatformEndpointsExtensions.ToMutationResult(await grid.Delete(req, ct));
@@ -230,7 +230,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadGridRequestAsync<GridCellRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           return PlatformEndpointsExtensions.ToMutationResult(await grid.SaveCellAsync(req, services, ct));
@@ -246,7 +246,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
           if (isMalformed || !TryDeserializeOptional(body, out GridRequest req))
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           var actionMethodKey = ResolveActionMethodKey(subMethod, body);
@@ -260,7 +260,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
           if (isMalformed || !TryDeserializeOptional(body, out GridRequest req))
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           ApplyGridMutationContext(httpRequest, body, req);
@@ -277,7 +277,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadGridRequestAsync<GridRequest>(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           return await grid.ExportAsync(req, ct);
@@ -360,7 +360,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
       var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
       if (isMalformed || !TryDeserializeOptional(body, out GridRequest req))
       {
-        return Results.BadRequest(new { detail = "Malformed JSON request body." });
+        return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
       }
 
       ApplyGridMutationContext(httpRequest, body, req);
@@ -412,7 +412,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (req, isMalformed) = await ReadFormRequestAsync(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           var screen = await form.BuildScreenAsync(serviceName, req, ct);
@@ -439,7 +439,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           }
           catch (JsonException)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
           catch (FormRefusedException ex)
           {
@@ -479,7 +479,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           var actionMethodKey = ResolveActionMethodKey(subMethod, body);
@@ -493,7 +493,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
           var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
           if (isMalformed)
           {
-            return Results.BadRequest(new { detail = "Malformed JSON request body." });
+            return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
           }
 
           var req = BindFormRequest(httpRequest, body ?? default);
@@ -528,7 +528,7 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
             var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
             if (isMalformed)
             {
-              return Results.BadRequest(new { detail = "Malformed JSON request body." });
+              return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
             }
 
             var req = BindFormRequest(httpRequest, body ?? default);

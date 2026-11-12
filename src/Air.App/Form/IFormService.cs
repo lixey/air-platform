@@ -17,6 +17,7 @@ public interface IFormService : IPlatformService
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default);
+  internal Task<bool> HasStatusFlowAsync(CancellationToken ct = default) => Task.FromResult(false);
   Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) => Task.FromResult(false);
   Task<FormActionDto?> ExecuteDeclaredActionAsync(string actionKey, FormRequest request, JsonElement? body, CancellationToken ct = default) => Task.FromResult<FormActionDto?>(null);
   Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<RowDto?>> readRow, CancellationToken ct = default);

@@ -220,6 +220,9 @@ public abstract partial class FormService<TEntity>
     return result;
   }
 
+  async Task<bool> IFormService.HasStatusFlowAsync(CancellationToken ct) =>
+    (await ProbeElementsForOverlayAsync(ct)).StatusFlow is IRecordStatuses<TEntity>;
+
   public virtual async Task<FormActionDto> MoveStatusAsync(
     long id,
     string transitionName,

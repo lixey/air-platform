@@ -1372,4 +1372,7 @@
   <data name="AgentMemoryUndone" xml:space="preserve">
     <value>Memory removed</value>
   </data>
+  <data name="InvalidJsonRequest" xml:space="preserve">
+    <value>Invalid JSON request payload.</value>
+  </data>
 </root>

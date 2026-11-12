@@ -411,10 +411,12 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     Assert.Equal(StatusCodes.Status200OK, okStatus);
     Assert.Contains("sum:5:25.5", okBody, StringComparison.Ordinal);
 
-    // 2. JsonException during typed request deserialization -> 400 Bad Request
+    // 2. JsonException during typed request deserialization -> 400 Bad Request without leaking CLR internals
     var badTypedJson = """{"count":"12.9","total":1,"amount":1,"createdOn":"2026-05-10T00:00:00Z"}""";
-    var (jsonErrStatus, _) = await InvokeCustomActionAsync(service, feat, services, "calculate-summary", badTypedJson);
+    var (jsonErrStatus, jsonErrBody) = await InvokeCustomActionAsync(service, feat, services, "calculate-summary", badTypedJson);
     Assert.Equal(StatusCodes.Status400BadRequest, jsonErrStatus);
+    Assert.DoesNotContain("Int32", jsonErrBody, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains(Localizer.Instance["InvalidJsonRequest"], jsonErrBody, StringComparison.Ordinal);
 
     // 3. QueryRequestException -> 400 Bad Request (both via DispatchCustomServiceMethodAsync & WithRequestCultureAsync)
     var (queryStatus, queryBody) = await InvokeCustomActionAsync(service, feat, services, "throw-query-error", "{}");
@@ -508,7 +510,8 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
       ["Auth:TokenSecret"] = "wave1-unit-test-secret-with-more-than-32-characters",
       ["ForwardedHeaders:Enabled"] = "true",
       ["ForwardedHeaders:ForwardLimit"] = "1",
-      ["ForwardedHeaders:KnownProxies:0"] = "10.0.0.5"
+      ["ForwardedHeaders:KnownProxies:0"] = "10.0.0.5",
+      ["ForwardedHeaders:KnownProxies:1"] = "172.16.0.0/12"
     });
     enabledBuilder.AddPlatformApiModule<TestApiModule>();
     await using var enabledApp = enabledBuilder.Build();
@@ -537,6 +540,23 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     trustedProxyCtx.Request.Headers["X-Forwarded-For"] = "198.51.100.1, 198.51.100.2";
     await enabledDelegate(trustedProxyCtx);
     Assert.Equal(IPAddress.Parse("198.51.100.2"), observedEnabledIp);
+
+    // CIDR KnownProxies entry (172.16.0.0/12) populates KnownIPNetworks and honors X-Forwarded-For.
+    var trustedCidrCtx = new DefaultHttpContext { RequestServices = enabledApp.Services };
+    trustedCidrCtx.Connection.RemoteIpAddress = IPAddress.Parse("172.20.4.9");
+    trustedCidrCtx.Request.Headers["X-Forwarded-For"] = "198.51.100.44";
+    await enabledDelegate(trustedCidrCtx);
+    Assert.Equal(IPAddress.Parse("198.51.100.44"), observedEnabledIp);
+
+    // Invalid KnownProxies entry fails closed at startup instead of running with an empty trust list.
+    var invalidProxyBuilder = WebApplication.CreateBuilder();
+    invalidProxyBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+      ["Auth:TokenSecret"] = "wave1-unit-test-secret-with-more-than-32-characters",
+      ["ForwardedHeaders:Enabled"] = "true",
+      ["ForwardedHeaders:KnownProxies:0"] = "not-an-ip-or-cidr"
+    });
+    Assert.Throws<InvalidOperationException>(() => invalidProxyBuilder.AddPlatformApiModule<TestApiModule>());
   }
 
   private static DefaultHttpContext CreateHttpContext(IServiceProvider services, bool includeClientHeader)

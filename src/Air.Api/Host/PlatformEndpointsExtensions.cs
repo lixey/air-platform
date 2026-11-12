@@ -68,10 +68,10 @@ public static class PlatformEndpointsExtensions
   {
     switch (ex)
     {
-      case JsonException jsonEx:
+      case JsonException:
         result = Results.BadRequest(new
         {
-          detail = string.IsNullOrWhiteSpace(jsonEx.Message) ? "Malformed JSON request body." : jsonEx.Message
+          detail = Localizer.Instance["InvalidJsonRequest"]
         });
         return true;
 

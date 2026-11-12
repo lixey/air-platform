@@ -342,7 +342,8 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
         Title = t.TitleText,
         Confirm = t.Question,
         Ask = t.Asked,
-        Offers = t.Availability
+        Offers = t.Availability,
+        RequiredRight = t.RequiredRight
       })
       .ToList();
 

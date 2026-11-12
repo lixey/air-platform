@@ -296,7 +296,8 @@ public static class AgentProposalExecutor
     }
 
     var stepScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, formType ?? gridType ?? flowType, scopes[0]);
-    if (!AgentFlowHelper.CanMoveTransition(feature, stepScope.App.User, payload.Transition))
+    var explicitRight = AgentFlowHelper.FindDeclaredTransitionRight(flowType, payload.Transition, stepScope.Db, stepScope.App);
+    if (!AgentFlowHelper.CanMoveTransition(feature, stepScope.App.User, payload.Transition, explicitRight))
     {
       throw new InvalidOperationException(L["MutationRefused"]);
     }

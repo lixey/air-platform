@@ -74,20 +74,50 @@ public static class PlatformApiExtensions
 
       if (hasExplicitForwardedOption || IsForwardedHeadersConfigured(builder.Configuration))
       {
+        var parsedProxies = new List<System.Net.IPAddress>();
+        var parsedNetworks = new List<System.Net.IPNetwork>();
+        if (builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() is { Length: > 0 } proxies)
+        {
+          foreach (var rawProxy in proxies)
+          {
+            var trimmed = rawProxy?.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+              throw new InvalidOperationException("ForwardedHeaders:KnownProxies cannot contain empty entries.");
+            }
+
+            if (System.Net.IPAddress.TryParse(trimmed, out var ip))
+            {
+              parsedProxies.Add(ip);
+            }
+            else if (System.Net.IPNetwork.TryParse(trimmed, out var network))
+            {
+              parsedNetworks.Add(network);
+            }
+            else
+            {
+              throw new InvalidOperationException(
+                $"Invalid ForwardedHeaders:KnownProxies entry '{rawProxy}'. Expected an IP address or CIDR network.");
+            }
+          }
+        }
+
         builder.Services.Configure<ForwardedHeadersOptions>(fwd =>
         {
           fwd.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
           fwd.ForwardLimit = builder.Configuration.GetValue("ForwardedHeaders:ForwardLimit", 1);
-          if (builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() is { Length: > 0 } proxies)
+          if (parsedProxies.Count > 0 || parsedNetworks.Count > 0)
           {
             fwd.KnownProxies.Clear();
             fwd.KnownIPNetworks.Clear();
-            foreach (var rawProxy in proxies)
+            foreach (var ip in parsedProxies)
             {
-              if (System.Net.IPAddress.TryParse(rawProxy, out var ip))
-              {
-                fwd.KnownProxies.Add(ip);
-              }
+              fwd.KnownProxies.Add(ip);
+            }
+
+            foreach (var network in parsedNetworks)
+            {
+              fwd.KnownIPNetworks.Add(network);
             }
           }
         });
@@ -183,8 +213,9 @@ public static class PlatformApiExtensions
           context.RequestServices.GetService<IUserAuthCache>() is { } authCache &&
           HasAuthStoreRegistered(context.RequestServices, authCache, out var fallbackStore))
       {
+        var now = (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         var session = await authCache.GetSessionAsync(sessionId, fallbackStore, context.RequestAborted);
-        if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > DateTimeOffset.UtcNow)
+        if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > now)
         {
           var user = await authCache.GetUserProfileAsync(userId, session.TenantId, fallbackStore, context.RequestAborted);
           if (user != null && user.IsActive && user.TokenVersion == tokenVersion)

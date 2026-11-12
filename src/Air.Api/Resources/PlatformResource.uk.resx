@@ -1372,4 +1372,7 @@
   <data name="AgentMemoryUndone" xml:space="preserve">
     <value>Запис пам'яті видалено</value>
   </data>
+  <data name="InvalidJsonRequest" xml:space="preserve">
+    <value>Некоректний формат JSON-запиту.</value>
+  </data>
 </root>

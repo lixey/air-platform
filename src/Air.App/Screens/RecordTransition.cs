@@ -10,4 +10,5 @@ public sealed class RecordTransition
   public string? Confirm { get; init; }
   public RecordAsk? Ask { get; init; }
   public IReadOnlyList<RecordAvailability> Offers { get; init; } = [];
+  internal Right? RequiredRight { get; init; }
 }

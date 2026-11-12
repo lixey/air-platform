@@ -324,6 +324,7 @@
   "RightsRootDeleted": "The root user cannot be deleted.",
   "AgentRetryMessage": "Run again",
   "NextMonth": "Next month",
+  "InvalidJsonRequest": "Invalid JSON request payload.",
   "Expires At": "Expires At",
   "AuthRole": "Role",
   "FormDirtyDiscard": "Discard changes",
