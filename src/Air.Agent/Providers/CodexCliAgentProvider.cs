@@ -1,3 +1,4 @@
+using Platform.Agent.Internals;
 using Platform.Agent.Providers.Internals;
 
 namespace Platform.Agent.Providers;
@@ -146,12 +147,9 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     }
 
     var idx = rawTitle.IndexOf('-', 4);
-    if (idx > 0 && idx + 1 < rawTitle.Length)
-    {
-      return $"{rawTitle[..idx]} {rawTitle[(idx + 1)..]}";
-    }
-
-    return rawTitle;
+    return idx > 0 && idx + 1 < rawTitle.Length
+      ? $"{rawTitle[..idx]} {rawTitle[(idx + 1)..]}"
+      : rawTitle;
   }
 
   public static string? ResolveExecutablePath()
@@ -162,6 +160,90 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       "/opt/homebrew/bin/codex",
       "/usr/local/bin/codex",
       Path.Combine(home, ".local", "bin", "codex"));
+  }
+
+  internal static string ConfigureTurnStartInfo(
+    ProcessStartInfo psi,
+    string prompt,
+    string cliModel,
+    string effort,
+    string? existingConvId,
+    string sessionAttachmentsDir,
+    IReadOnlyList<AgentAttachmentDto> attachments)
+  {
+    psi.ArgumentList.Add("exec");
+
+    if (!string.IsNullOrWhiteSpace(existingConvId))
+    {
+      psi.ArgumentList.Add("resume");
+      psi.ArgumentList.Add("--json");
+      psi.ArgumentList.Add("--skip-git-repo-check");
+      psi.ArgumentList.Add("--ignore-user-config");
+      psi.ArgumentList.Add("--ignore-rules");
+
+      if (!string.IsNullOrWhiteSpace(cliModel))
+      {
+        psi.ArgumentList.Add("-m");
+        psi.ArgumentList.Add(cliModel);
+      }
+
+      psi.ArgumentList.Add("-c");
+      psi.ArgumentList.Add("sandbox_mode=\"read-only\"");
+      psi.ArgumentList.Add("-c");
+      psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
+
+      foreach (var att in attachments)
+      {
+        if (AgentAttachmentValidator.IsInlineSafeImage(att.ContentType) &&
+            !string.IsNullOrWhiteSpace(att.LocalPath) &&
+            File.Exists(att.LocalPath))
+        {
+          psi.ArgumentList.Add("-i");
+          psi.ArgumentList.Add(att.LocalPath);
+        }
+      }
+
+      psi.ArgumentList.Add(existingConvId);
+      psi.ArgumentList.Add("-");
+      return prompt;
+    }
+
+    psi.ArgumentList.Add("--json");
+    psi.ArgumentList.Add("--skip-git-repo-check");
+    psi.ArgumentList.Add("--ignore-user-config");
+    psi.ArgumentList.Add("--ignore-rules");
+    psi.ArgumentList.Add("-s");
+    psi.ArgumentList.Add("read-only");
+    psi.ArgumentList.Add("--add-dir");
+    psi.ArgumentList.Add(psi.WorkingDirectory);
+    if (!string.IsNullOrWhiteSpace(sessionAttachmentsDir))
+    {
+      psi.ArgumentList.Add("--add-dir");
+      psi.ArgumentList.Add(sessionAttachmentsDir);
+    }
+
+    if (!string.IsNullOrWhiteSpace(cliModel))
+    {
+      psi.ArgumentList.Add("-m");
+      psi.ArgumentList.Add(cliModel);
+    }
+
+    psi.ArgumentList.Add("-c");
+    psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
+
+    foreach (var att in attachments)
+    {
+      if (AgentAttachmentValidator.IsInlineSafeImage(att.ContentType) &&
+          !string.IsNullOrWhiteSpace(att.LocalPath) &&
+          File.Exists(att.LocalPath))
+      {
+        psi.ArgumentList.Add("-i");
+        psi.ArgumentList.Add(att.LocalPath);
+      }
+    }
+
+    psi.ArgumentList.Add("-");
+    return prompt;
   }
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
@@ -183,71 +265,8 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, _) =>
-      {
-        psi.ArgumentList.Add("exec");
-
-        if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
-        {
-          psi.ArgumentList.Add("resume");
-          psi.ArgumentList.Add("--json");
-          psi.ArgumentList.Add("--skip-git-repo-check");
-          psi.ArgumentList.Add("--ignore-user-config");
-          psi.ArgumentList.Add("--ignore-rules");
-          psi.ArgumentList.Add("--add-dir");
-          psi.ArgumentList.Add(psi.WorkingDirectory);
-          if (!string.IsNullOrWhiteSpace(cliModel))
-          {
-            psi.ArgumentList.Add("-m");
-            psi.ArgumentList.Add(cliModel);
-          }
-
-          psi.ArgumentList.Add("-c");
-          psi.ArgumentList.Add("sandbox_mode=\"read-only\"");
-          psi.ArgumentList.Add("-c");
-          psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
-          psi.ArgumentList.Add(existingConvId);
-          psi.ArgumentList.Add("-");
-        }
-        else
-        {
-          psi.ArgumentList.Add("--json");
-          psi.ArgumentList.Add("--skip-git-repo-check");
-          psi.ArgumentList.Add("--ignore-user-config");
-          psi.ArgumentList.Add("--ignore-rules");
-          psi.ArgumentList.Add("-s");
-          psi.ArgumentList.Add("read-only");
-          psi.ArgumentList.Add("--add-dir");
-          psi.ArgumentList.Add(psi.WorkingDirectory);
-          if (!string.IsNullOrWhiteSpace(cliModel))
-          {
-            psi.ArgumentList.Add("-m");
-            psi.ArgumentList.Add(cliModel);
-          }
-
-          psi.ArgumentList.Add("-c");
-          psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
-
-          foreach (var att in request.Attachments)
-          {
-            var stagedCandidate = !string.IsNullOrWhiteSpace(att.LocalPath)
-              ? Path.Combine(psi.WorkingDirectory, Path.GetFileName(att.LocalPath))
-              : null;
-            var pathToUse = !string.IsNullOrWhiteSpace(stagedCandidate) && File.Exists(stagedCandidate)
-              ? stagedCandidate
-              : att.LocalPath;
-            if (!string.IsNullOrWhiteSpace(pathToUse) && File.Exists(pathToUse))
-            {
-              psi.ArgumentList.Add("-i");
-              psi.ArgumentList.Add(pathToUse);
-            }
-          }
-
-          psi.ArgumentList.Add("-");
-        }
-
-        return prompt;
-      },
+      (psi, prompt, existingConvId, _, sessionAttachmentsDir, effectiveRequest) =>
+        ConfigureTurnStartInfo(psi, prompt, cliModel, effort, existingConvId, sessionAttachmentsDir, effectiveRequest.Attachments),
       (root, fullAssistantText, pendingEvents) =>
       {
         var type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
@@ -265,11 +284,7 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
           var itemType = startedItem.TryGetProperty("type", out var itProp) ? itProp.GetString() : null;
           if (itemType is "command_execution" or "mcp_tool_call" or "web_search")
           {
-            pendingEvents.Add(new AgentStreamEventDto
-            {
-              Type = "status",
-              Text = L["AgentStatusPreparing"]
-            });
+            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = L["AgentStatusPreparing"] });
           }
         }
         else if (type == "item.completed" && root.TryGetProperty("item", out var completedItem))
@@ -287,43 +302,17 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
             }
 
             fullAssistantText.Append(chunk);
-            pendingEvents.Add(new AgentStreamEventDto
-            {
-              Type = "delta",
-              Text = chunk
-            });
+            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = chunk });
           }
         }
         else if (type is "turn.failed" or "error" ||
                  root.TryGetProperty("is_error", out var isErrProp) && isErrProp.ValueKind == JsonValueKind.True)
         {
-          string? errMsg = null;
-          if (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String)
-          {
-            errMsg = msgProp.GetString();
-          }
-          else if (root.TryGetProperty("error", out var errObj))
-          {
-            if (errObj.ValueKind == JsonValueKind.String)
-            {
-              errMsg = errObj.GetString();
-            }
-            else if (errObj.ValueKind == JsonValueKind.Object &&
-                     errObj.TryGetProperty("message", out var nestedMsg) &&
-                     nestedMsg.ValueKind == JsonValueKind.String)
-            {
-              errMsg = nestedMsg.GetString();
-            }
-          }
-
+          var errMsg = ExtractCodexErrorMessage(root);
           if (!string.IsNullOrWhiteSpace(errMsg))
           {
             emittedError = true;
-            pendingEvents.Add(new AgentStreamEventDto
-            {
-              Type = "error",
-              Text = errMsg
-            });
+            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = errMsg });
           }
         }
 
@@ -333,5 +322,30 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
     {
       yield return evt;
     }
+  }
+
+  private static string? ExtractCodexErrorMessage(JsonElement root)
+  {
+    if (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String)
+    {
+      return msgProp.GetString();
+    }
+
+    if (root.TryGetProperty("error", out var errObj))
+    {
+      if (errObj.ValueKind == JsonValueKind.String)
+      {
+        return errObj.GetString();
+      }
+
+      if (errObj.ValueKind == JsonValueKind.Object &&
+          errObj.TryGetProperty("message", out var nestedMsg) &&
+          nestedMsg.ValueKind == JsonValueKind.String)
+      {
+        return nestedMsg.GetString();
+      }
+    }
+
+    return null;
   }
 }

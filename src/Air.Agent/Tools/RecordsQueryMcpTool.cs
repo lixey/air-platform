@@ -5,7 +5,7 @@ public sealed class RecordsQueryMcpTool : IMcpTool
   public string Name => "platform_records_query";
 
   public string Description =>
-    "Queries records (bounded search up to 100 rows) or reads a single record by ID from an agent-enabled grid or form.";
+    "Queries records (bounded paginated search up to 100 rows per page) or reads a single record with its child grids by ID from an agent-enabled grid or form.";
 
   public object InputSchema => new
   {
@@ -16,6 +16,7 @@ public sealed class RecordsQueryMcpTool : IMcpTool
       service = new { type = "string" },
       id = new { type = "integer" },
       search = new { type = "string" },
+      page = new { type = "integer", minimum = 0 },
       limit = new { type = "integer", minimum = 1, maximum = 100 }
     }
   };

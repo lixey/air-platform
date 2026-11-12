@@ -98,95 +98,129 @@ public static class McpEndpointsExtensions
             ? tokenContext.Rights
             : tenantContext?.Rights ?? userContext?.Permissions;
           var effectiveSessionId = tokenContext?.SessionId;
+          var effectiveLocale = tokenContext?.Locale ?? userContext?.Language;
+          var effectiveTimeZone = tokenContext?.TimeZone ?? userContext?.TimeZone;
 
-          using var ambientScope = tokenContext is not null
-            ? AsyncLocalTenantContext.Use(effectiveTenantId, effectiveRights, effectiveUserId)
-            : null;
-
-          await using var serviceScope = httpContext.RequestServices.CreateAsyncScope();
-          var tools = serviceScope.ServiceProvider.GetServices<IMcpTool>().ToList();
-
-          switch (method)
+          var prevCulture = CultureInfo.CurrentCulture;
+          var prevUiCulture = CultureInfo.CurrentUICulture;
+          if (tokenContext?.Locale is { Length: > 0 } loopbackLocale)
           {
-            case "initialize":
-              return JsonRpcResult(
-                rpcId,
-                new
+            try
+            {
+              var culture = CultureInfo.GetCultureInfo(loopbackLocale);
+              CultureInfo.CurrentCulture = culture;
+              CultureInfo.CurrentUICulture = culture;
+            }
+            catch (CultureNotFoundException)
+            {
+              // Ignore invalid locale tags and keep ambient request culture.
+            }
+          }
+
+          if (tokenContext?.TimeZone is { Length: > 0 } loopbackTimeZone &&
+              !httpContext.Request.Headers.ContainsKey(AuthClaims.TimeZoneHeader))
+          {
+            httpContext.Request.Headers[AuthClaims.TimeZoneHeader] = loopbackTimeZone;
+          }
+
+          try
+          {
+            using var ambientScope = tokenContext is not null
+              ? AsyncLocalTenantContext.Use(effectiveTenantId, effectiveRights, effectiveUserId)
+              : null;
+
+            await using var serviceScope = httpContext.RequestServices.CreateAsyncScope();
+            var tools = serviceScope.ServiceProvider.GetServices<IMcpTool>().ToList();
+
+            switch (method)
+            {
+              case "initialize":
+                return JsonRpcResult(
+                  rpcId,
+                  new
+                  {
+                    protocolVersion = "2024-11-05",
+                    capabilities = new { tools = new { } },
+                    serverInfo = new { name = "platform-mcp", version = "1.0.0" }
+                  });
+
+              case "ping":
+                return JsonRpcResult(rpcId, new { });
+
+              case "tools/list":
+                var toolSpecs = tools
+                  .OrderBy(t => t.Name, StringComparer.Ordinal)
+                  .Select(t => new
+                  {
+                    name = t.Name,
+                    description = t.Description,
+                    inputSchema = t.InputSchema
+                  })
+                  .ToList();
+                return JsonRpcResult(rpcId, new { tools = toolSpecs });
+
+              case "tools/call":
+                if (!root.TryGetProperty("params", out var paramsEl) || paramsEl.ValueKind != JsonValueKind.Object ||
+                    !paramsEl.TryGetProperty("name", out var toolNameEl) || toolNameEl.ValueKind != JsonValueKind.String)
                 {
-                  protocolVersion = "2024-11-05",
-                  capabilities = new { tools = new { } },
-                  serverInfo = new { name = "platform-mcp", version = "1.0.0" }
-                });
-
-            case "ping":
-              return JsonRpcResult(rpcId, new { });
-
-            case "tools/list":
-              var toolSpecs = tools
-                .OrderBy(t => t.Name, StringComparer.Ordinal)
-                .Select(t => new
-                {
-                  name = t.Name,
-                  description = t.Description,
-                  inputSchema = t.InputSchema
-                })
-                .ToList();
-              return JsonRpcResult(rpcId, new { tools = toolSpecs });
-
-            case "tools/call":
-              if (!root.TryGetProperty("params", out var paramsEl) || paramsEl.ValueKind != JsonValueKind.Object ||
-                  !paramsEl.TryGetProperty("name", out var toolNameEl) || toolNameEl.ValueKind != JsonValueKind.String)
-              {
-                return JsonRpcError(rpcId, -32602, "Invalid params: missing tool name.");
-              }
-
-              var toolName = toolNameEl.GetString()!;
-              var tool = tools.FirstOrDefault(t => string.Equals(t.Name, toolName, StringComparison.OrdinalIgnoreCase));
-              if (tool is null)
-              {
-                return JsonRpcError(rpcId, -32601, $"Unknown tool '{toolName}'.");
-              }
-
-              var arguments = paramsEl.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind == JsonValueKind.Object
-                ? argsEl.Clone()
-                : JsonSerializer.SerializeToElement(new { }, WebJson);
-
-              var callSessionId = tokenContext is not null
-                ? tokenContext.SessionId
-                : arguments.TryGetProperty("sessionId", out var sEl) && sEl.ValueKind == JsonValueKind.String
-                  ? sEl.GetString()
-                  : effectiveSessionId;
-
-              using (var _ = tokenContext is not null
-                       ? bridge.UseTurnContext(tokenContext)
-                       : bridge.BeginTurn(effectiveTenantId, effectiveUserId, effectiveRights, callSessionId))
-              {
-                try
-                {
-                  var output = await tool.ExecuteAsync(arguments, serviceScope.ServiceProvider, ct);
-                  var text = output is string s ? s : JsonSerializer.Serialize(output, WebJson);
-                  return JsonRpcResult(
-                    rpcId,
-                    new
-                    {
-                      content = new[] { new { type = "text", text } },
-                      isError = false
-                    });
+                  return JsonRpcError(rpcId, -32602, "Invalid params: missing tool name.");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                  return JsonRpcResult(
-                    rpcId,
-                    new
-                    {
-                      content = new[] { new { type = "text", text = ex.Message } },
-                      isError = true
-                    });
-                }
-              }
 
-            default:
-              return JsonRpcError(rpcId, -32601, $"Method '{method}' not found.");
+                var toolName = toolNameEl.GetString()!;
+                var tool = tools.FirstOrDefault(t => string.Equals(t.Name, toolName, StringComparison.OrdinalIgnoreCase));
+                if (tool is null)
+                {
+                  return JsonRpcError(rpcId, -32601, $"Unknown tool '{toolName}'.");
+                }
+
+                var arguments = paramsEl.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind == JsonValueKind.Object
+                  ? argsEl.Clone()
+                  : JsonSerializer.SerializeToElement(new { }, WebJson);
+
+                var callSessionId = tokenContext is not null
+                  ? tokenContext.SessionId
+                  : arguments.TryGetProperty("sessionId", out var sEl) && sEl.ValueKind == JsonValueKind.String
+                    ? sEl.GetString()
+                    : effectiveSessionId;
+
+                using (var _ = tokenContext is not null
+                         ? bridge.UseTurnContext(tokenContext)
+                         : bridge.BeginTurn(effectiveTenantId, effectiveUserId, effectiveRights, callSessionId, effectiveLocale, effectiveTimeZone))
+                {
+                  try
+                  {
+                    var output = await tool.ExecuteAsync(arguments, serviceScope.ServiceProvider, ct);
+                    var text = output is string s ? s : JsonSerializer.Serialize(output, WebJson);
+                    return JsonRpcResult(
+                      rpcId,
+                      new
+                      {
+                        content = new[] { new { type = "text", text } },
+                        isError = false
+                      });
+                  }
+                  catch (Exception ex) when (ex is not OperationCanceledException)
+                  {
+                    var logger = serviceScope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Platform.Mcp");
+                    logger?.LogWarning(ex, "MCP tool '{ToolName}' failed.", toolName);
+                    return JsonRpcResult(
+                      rpcId,
+                      new
+                      {
+                        content = new[] { new { type = "text", text = ex.Message } },
+                        isError = true
+                      });
+                  }
+                }
+
+              default:
+                return JsonRpcError(rpcId, -32601, $"Method '{method}' not found.");
+            }
+          }
+          finally
+          {
+            CultureInfo.CurrentCulture = prevCulture;
+            CultureInfo.CurrentUICulture = prevUiCulture;
           }
         }
       });

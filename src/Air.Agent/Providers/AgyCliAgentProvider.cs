@@ -115,6 +115,43 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
         }
       }) + "\n";
 
+  internal static string ConfigureTurnStartInfo(
+    ProcessStartInfo psi,
+    string prompt,
+    string? selectedModel,
+    string? existingConvId,
+    string sessionAttachmentsDir)
+  {
+    psi.ArgumentList.Add("--input-format");
+    psi.ArgumentList.Add("stream-json");
+    psi.ArgumentList.Add("--output-format");
+    psi.ArgumentList.Add("stream-json");
+    psi.ArgumentList.Add("--sandbox");
+    psi.ArgumentList.Add("--disable-slash-commands");
+    psi.ArgumentList.Add("--print=");
+    if (!string.IsNullOrWhiteSpace(selectedModel))
+    {
+      psi.ArgumentList.Add("--model");
+      psi.ArgumentList.Add(selectedModel);
+    }
+
+    psi.ArgumentList.Add("--add-dir");
+    psi.ArgumentList.Add(psi.WorkingDirectory);
+    if (!string.IsNullOrWhiteSpace(sessionAttachmentsDir))
+    {
+      psi.ArgumentList.Add("--add-dir");
+      psi.ArgumentList.Add(sessionAttachmentsDir);
+    }
+
+    if (!string.IsNullOrWhiteSpace(existingConvId))
+    {
+      psi.ArgumentList.Add("--conversation");
+      psi.ArgumentList.Add(existingConvId);
+    }
+
+    return FormatStdinTurnLine(prompt);
+  }
+
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
@@ -134,32 +171,8 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, _) =>
-      {
-        psi.ArgumentList.Add("--input-format");
-        psi.ArgumentList.Add("stream-json");
-        psi.ArgumentList.Add("--output-format");
-        psi.ArgumentList.Add("stream-json");
-        psi.ArgumentList.Add("--sandbox");
-        psi.ArgumentList.Add("--disable-slash-commands");
-        psi.ArgumentList.Add("--print=");
-        if (!string.IsNullOrWhiteSpace(selectedModel))
-        {
-          psi.ArgumentList.Add("--model");
-          psi.ArgumentList.Add(selectedModel);
-        }
-
-        psi.ArgumentList.Add("--add-dir");
-        psi.ArgumentList.Add(psi.WorkingDirectory);
-
-        if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
-        {
-          psi.ArgumentList.Add("--conversation");
-          psi.ArgumentList.Add(existingConvId);
-        }
-
-        return FormatStdinTurnLine(prompt);
-      },
+      (psi, prompt, existingConvId, _, sessionAttachmentsDir, _) =>
+        ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir),
       (root, fullAssistantText, pendingEvents) =>
       {
         var evtType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;
@@ -177,11 +190,7 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
           if (!string.IsNullOrWhiteSpace(errMsg))
           {
             emittedError = true;
-            pendingEvents.Add(new AgentStreamEventDto
-            {
-              Type = "error",
-              Text = errMsg
-            });
+            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = errMsg });
           }
         }
         else if (evtType == "step_update" && root.TryGetProperty("step_update", out var step))
@@ -193,20 +202,12 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
             if (!string.IsNullOrEmpty(delta))
             {
               fullAssistantText.Append(delta);
-              pendingEvents.Add(new AgentStreamEventDto
-              {
-                Type = "delta",
-                Text = delta
-              });
+              pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = delta });
             }
           }
           else if (stepType is "tool_call" or "mcp_tool_call")
           {
-            pendingEvents.Add(new AgentStreamEventDto
-            {
-              Type = "status",
-              Text = L["AgentStatusPreparing"]
-            });
+            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = L["AgentStatusPreparing"] });
           }
         }
 

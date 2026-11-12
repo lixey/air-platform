@@ -1,11 +1,24 @@
 namespace Platform.Agent.Tests.Internals;
 
 [ModuleSchema("Test")]
-internal sealed class AgentTestDbContext(DbContextOptions<AgentTestDbContext> options, ITenantContext tenant)
-  : PlatformDbContext(options, tenant)
+internal class AgentTestDbContext : PlatformDbContext
 {
+  public AgentTestDbContext(DbContextOptions<AgentTestDbContext> options, ITenantContext tenant)
+    : base(options, tenant)
+  {
+  }
+
+  protected AgentTestDbContext(DbContextOptions options, ITenantContext tenant)
+    : base(options, tenant)
+  {
+  }
+
   public DbSet<AgentTestCategory> Categories => Set<AgentTestCategory>();
   public DbSet<AgentTestReceipt> Receipts => Set<AgentTestReceipt>();
   public DbSet<AgentTestReceiptLine> ReceiptLines => Set<AgentTestReceiptLine>();
+  public DbSet<AgentTestInspection> Inspections => Set<AgentTestInspection>();
+  public DbSet<AgentTestCheckpoint> Checkpoints => Set<AgentTestCheckpoint>();
+  public DbSet<AgentTestMeasurement> Measurements => Set<AgentTestMeasurement>();
+  public DbSet<AgentTestAuditNote> AuditNotes => Set<AgentTestAuditNote>();
   public DbSet<AgentTestSecret> Secrets => Set<AgentTestSecret>();
 }

@@ -1,170 +1,32 @@
+using Platform.Agent.Internals;
+
 namespace Platform.Agent.Providers.Internals;
 
 internal static class CliTurnRunner
 {
-  private static readonly JsonSerializerOptions PromptJsonOptions = new(JsonSerializerDefaults.Web)
-  {
-    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-  };
-
-  private static readonly HashSet<string> AllowedExactEnvVars = new(StringComparer.OrdinalIgnoreCase)
-  {
-    "PATH",
-    "HOME",
-    "USER",
-    "LOGNAME",
-    "SHELL",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    "SSL_CERT_FILE",
-    "SSL_CERT_DIR",
-    "NODE_EXTRA_CA_CERTS",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "ALL_PROXY",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "USERPROFILE",
-    "SYSTEMROOT",
-    "COMSPEC",
-    "PATHEXT"
-  };
-
-  private static readonly string[] AllowedEnvPrefixes =
-  [
-    "XDG_",
-    "AGY_",
-    "ANTHROPIC_",
-    "CLAUDE_",
-    "OPENAI_",
-    "CODEX_",
-    "GEMINI_"
-  ];
-
-  internal static bool IsAllowedEnvironmentVariable(string name)
-  {
-    if (string.IsNullOrWhiteSpace(name))
-    {
-      return false;
-    }
-
-    if (AllowedExactEnvVars.Contains(name))
-    {
-      return true;
-    }
-
-    foreach (var prefix in AllowedEnvPrefixes)
-    {
-      if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-      {
-        return true;
-      }
-    }
-
-    return false;
-  }
+  internal static bool IsAllowedEnvironmentVariable(string name) =>
+    CliEnvironmentHelper.IsAllowedEnvironmentVariable(name);
 
   internal static void ConfigureSanitizedEnvironment(
     IDictionary<string, string?> targetEnv,
     IReadOnlyDictionary<string, string?> sourceEnv,
     string? mcpTurnToken = null,
     string? sessionId = null,
-    string? mcpServerUrl = null
-  )
-  {
-    targetEnv.Clear();
-    foreach (var (key, value) in sourceEnv)
-    {
-      if (value is not null && IsAllowedEnvironmentVariable(key))
-      {
-        targetEnv[key] = value;
-      }
-    }
-
-    targetEnv["NO_COLOR"] = "1";
-    if (!string.IsNullOrWhiteSpace(mcpTurnToken))
-    {
-      targetEnv["PLATFORM_MCP_TOKEN"] = mcpTurnToken;
-    }
-
-    if (!string.IsNullOrWhiteSpace(sessionId))
-    {
-      targetEnv["PLATFORM_SESSION_ID"] = sessionId;
-    }
-
-    if (!string.IsNullOrWhiteSpace(mcpServerUrl))
-    {
-      targetEnv["PLATFORM_MCP_URL"] = mcpServerUrl;
-    }
-  }
+    string? mcpServerUrl = null) =>
+    CliEnvironmentHelper.ConfigureSanitizedEnvironment(targetEnv, sourceEnv, mcpTurnToken, sessionId, mcpServerUrl);
 
   internal static void ScrubStartInfoEnvironment(
     ProcessStartInfo psi,
     string? mcpTurnToken = null,
     string? sessionId = null,
-    string? mcpServerUrl = null
-  )
-  {
-    var hostVars = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-    foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
-    {
-      if (entry.Key is string key)
-      {
-        hostVars[key] = entry.Value as string;
-      }
-    }
+    string? mcpServerUrl = null) =>
+    CliEnvironmentHelper.ScrubStartInfoEnvironment(psi, mcpTurnToken, sessionId, mcpServerUrl);
 
-    ConfigureSanitizedEnvironment(psi.Environment, hostVars, mcpTurnToken, sessionId, mcpServerUrl);
-  }
+  public static string? ResolveExecutablePath(string binaryName, params string[] preferredPaths) =>
+    CliEnvironmentHelper.ResolveExecutablePath(binaryName, preferredPaths);
 
-  public static string? ResolveExecutablePath(string binaryName, params string[] preferredPaths)
-  {
-    foreach (var candidate in preferredPaths)
-    {
-      if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
-      {
-        return candidate;
-      }
-    }
-
-    var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-    foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-    {
-      var full = Path.Combine(dir, binaryName);
-      if (File.Exists(full))
-      {
-        return full;
-      }
-    }
-
-    return null;
-  }
-
-  public static (string Model, string Effort) ResolveCliModelArgs(string selectedModel, params string[] effortSuffixes)
-  {
-    var lower = selectedModel.Trim().ToLowerInvariant();
-    var effort = "high";
-    var baseModel = lower;
-
-    foreach (var suffix in effortSuffixes)
-    {
-      if (lower.EndsWith(suffix, StringComparison.Ordinal) && lower.Length > suffix.Length)
-      {
-        effort = suffix[1..];
-        baseModel = lower[..^suffix.Length];
-        break;
-      }
-    }
-
-    return (baseModel, effort);
-  }
+  public static (string Model, string Effort) ResolveCliModelArgs(string selectedModel, params string[] effortSuffixes) =>
+    CliEnvironmentHelper.ResolveCliModelArgs(selectedModel, effortSuffixes);
 
   public static async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentStore store,
@@ -173,29 +35,20 @@ internal static class CliTurnRunner
     AgentTurnRequest request,
     string selectedModel,
     string modelDisplayName,
-    Func<ProcessStartInfo, string, string?, string?, string> configureStartInfoAndStdin,
+    Func<ProcessStartInfo, string, string?, string?, string, AgentTurnRequest, string> configureStartInfoAndStdin,
     Func<JsonElement, StringBuilder, List<AgentStreamEventDto>, (bool ShouldBreak, bool EmittedError)> handleJsonLine,
-    [EnumeratorCancellation] CancellationToken ct
-  )
+    [EnumeratorCancellation] CancellationToken ct)
   {
     var L = Localizer.Instance;
     if (executablePath is null)
     {
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = L["AgentErrorCliMissing"]
-      };
+      yield return new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = L["AgentErrorCliMissing"] };
       yield break;
     }
 
     if (!store.TryAcquireSessionTurn(request.SessionId, request.Owner, out var sessionLease) || sessionLease is null)
     {
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = L["AgentErrorSessionBusy"]
-      };
+      yield return new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = L["AgentErrorSessionBusy"] };
       yield break;
     }
 
@@ -203,92 +56,25 @@ internal static class CliTurnRunner
     using var globalLease = await store.AcquireGlobalTurnSlotAsync(ct);
 
     var turnWorkspaceDir = store.CreateTurnWorkspaceDirectory(request.Owner, request.SessionId);
+    var sessionAttachmentsDir = store.GetSessionAttachmentsDirectory(request.Owner, request.SessionId);
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, providerHandle);
-    var contextFilePath = AgentStore.GetContextFilePath(turnWorkspaceDir);
-    var recordsFilePath = AgentStore.GetRecordsFilePath(turnWorkspaceDir);
 
     var fullAssistantText = new StringBuilder();
     var emittedProposals = 0;
     var emittedError = false;
     var timedOut = false;
     Task<string>? stderrTask = null;
+    var effectiveRequest = request;
 
     try
     {
-      var effectiveRequest = request;
       if (request.Attachments.Count > 0)
       {
-        var stagedAttachments = new List<AgentAttachmentDto>(request.Attachments.Count);
-        foreach (var att in request.Attachments)
-        {
-          if (!string.IsNullOrWhiteSpace(att.LocalPath) && File.Exists(att.LocalPath))
-          {
-            var stagedPath = Path.Combine(turnWorkspaceDir, Path.GetFileName(att.LocalPath));
-            if (!string.Equals(Path.GetFullPath(att.LocalPath), Path.GetFullPath(stagedPath), StringComparison.OrdinalIgnoreCase))
-            {
-              File.Copy(att.LocalPath, stagedPath, overwrite: true);
-            }
-
-            stagedAttachments.Add(
-              new AgentAttachmentDto
-              {
-                Id = att.Id,
-                FileName = att.FileName,
-                ContentType = att.ContentType,
-                Size = att.Size,
-                PreviewUrl = att.PreviewUrl,
-                LocalPath = stagedPath,
-                Sha256 = att.Sha256
-              }
-            );
-          }
-          else
-          {
-            stagedAttachments.Add(att);
-          }
-        }
-
-        effectiveRequest = request with
-        {
-          Attachments = stagedAttachments
-        };
+        var stagedAttachments = AgentAttachmentValidator.StageSessionAttachments(request.Attachments, sessionAttachmentsDir);
+        effectiveRequest = request with { Attachments = stagedAttachments };
       }
 
-      string? contextJson = null;
-      if (effectiveRequest.Services is not null)
-      {
-        try
-        {
-          var hasPhoto = effectiveRequest.Attachments.Any(a =>
-            string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-          );
-          var includeReports = !hasPhoto;
-          var ctxObj = await AgentContextQueryService.BuildContextAsync(
-            effectiveRequest.Services,
-            effectiveRequest.Message,
-            ct,
-            includeReports,
-            includeRecentRecords: true
-          );
-          contextJson = JsonSerializer.Serialize(ctxObj, PromptJsonOptions);
-          if (Encoding.UTF8.GetByteCount(contextJson) > 98_000)
-          {
-            await File.WriteAllTextAsync(contextFilePath, contextJson, Encoding.UTF8, ct);
-            if (ctxObj is IDictionary<string, object?> ctxDict && ctxDict.Remove("reports"))
-            {
-              contextJson = JsonSerializer.Serialize(ctxDict, PromptJsonOptions);
-            }
-          }
-
-          var extendedRecordsObj = await AgentContextQueryService.BuildExtendedWorkspaceRecordsAsync(effectiveRequest.Services, ct);
-          await File.WriteAllTextAsync(recordsFilePath, JsonSerializer.Serialize(extendedRecordsObj, PromptJsonOptions), Encoding.UTF8, ct);
-        }
-        catch
-        {
-          // Ignore context prefetch errors
-        }
-      }
-
+      var contextJson = await CliEnvironmentHelper.PrepareContextFilesAsync(effectiveRequest, turnWorkspaceDir, ct);
       var prompt = await AgentPromptBuilder.BuildPromptAsync(effectiveRequest, contextJson, turnWorkspaceDir, ct);
       var utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
@@ -306,34 +92,13 @@ internal static class CliTurnRunner
         StandardErrorEncoding = Encoding.UTF8
       };
 
-      var mcpBridge = effectiveRequest.Services?.GetService<McpExecutionBridge>();
-      var mcpTurnToken = mcpBridge?.Active?.TurnToken;
-      string? mcpConfigPath = null;
-      if (!string.IsNullOrWhiteSpace(request.McpServerUrl) && !string.IsNullOrWhiteSpace(mcpTurnToken))
-      {
-        mcpConfigPath = Path.Combine(turnWorkspaceDir, "mcp-config.json");
-        var mcpConfigJson = JsonSerializer.Serialize(
-          new
-          {
-            mcpServers = new
-            {
-              platform = new
-              {
-                type = "http",
-                url = request.McpServerUrl,
-                headers = new Dictionary<string, string>
-                {
-                  ["X-Platform-Mcp-Token"] = mcpTurnToken
-                }
-              }
-            }
-          },
-          PromptJsonOptions);
-        await File.WriteAllTextAsync(mcpConfigPath, mcpConfigJson, utf8NoBom, ct);
-      }
+      var mcpTurnToken = effectiveRequest.Services?.GetService<McpExecutionBridge>()?.Active?.TurnToken;
+      var mcpConfigPath = await CliEnvironmentHelper.WriteMcpConfigAsync(
+        turnWorkspaceDir, request.McpServerUrl, mcpTurnToken, utf8NoBom, ct);
 
       ScrubStartInfoEnvironment(psi, mcpTurnToken, request.SessionId, request.McpServerUrl);
-      var stdinPayload = configureStartInfoAndStdin(psi, prompt, existingConvId, mcpConfigPath);
+      var stdinPayload = configureStartInfoAndStdin(
+        psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest);
 
       using var process = new Process { StartInfo = psi };
       var pendingEvents = new List<AgentStreamEventDto>();
@@ -361,15 +126,13 @@ internal static class CliTurnRunner
         }
         catch (IOException)
         {
-          // Child CLI exited before draining stdin; let stdout/stderr reading report the actual CLI error.
+          // Child CLI exited before draining stdin
         }
 
-        var hasImageAttachment = request.Attachments.Any(a =>
-          string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-        );
+        var hasImageAttachment = effectiveRequest.Attachments.Any(a => AgentAttachmentValidator.IsInlineSafeImage(a.ContentType));
         yield return new AgentStreamEventDto
         {
-          Type = "status",
+          Type = AgentStreamEventType.Status,
           Text = hasImageAttachment ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
           ModelId = selectedModel,
           ModelName = modelDisplayName
@@ -402,7 +165,7 @@ internal static class CliTurnRunner
             continue;
           }
 
-          JsonDocument? doc = null;
+          JsonDocument? doc;
           try
           {
             doc = JsonDocument.Parse(line);
@@ -412,9 +175,8 @@ internal static class CliTurnRunner
             continue;
           }
 
-          var shouldBreak = false;
+          bool shouldBreak;
           pendingEvents.Clear();
-
           using (doc)
           {
             var outcome = handleJsonLine(doc.RootElement, fullAssistantText, pendingEvents);
@@ -435,7 +197,7 @@ internal static class CliTurnRunner
           {
             yield return new AgentStreamEventDto
             {
-              Type = "supersede",
+              Type = AgentStreamEventType.Supersede,
               SupersededProposalIds = [.. midTurnSuperseded]
             };
           }
@@ -445,7 +207,7 @@ internal static class CliTurnRunner
             emittedProposals++;
             yield return new AgentStreamEventDto
             {
-              Type = "proposal",
+              Type = AgentStreamEventType.Proposal,
               Proposal = staged
             };
           }
@@ -492,22 +254,18 @@ internal static class CliTurnRunner
     if (timedOut)
     {
       emittedError = true;
-      yield return new AgentStreamEventDto
-      {
-        Type = "error",
-        Text = L["AgentErrorTurnTimeout"]
-      };
+      yield return new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = L["AgentErrorTurnTimeout"] };
     }
 
     var completeText = fullAssistantText.ToString();
-    var stageWarnings = await AgentPromptBuilder.StageInlineProposalsAsync(completeText, request, ct);
+    var (stageWarnings, savedMemories) = await AgentPromptBuilder.StageInlineProposalsAndMemoriesAsync(completeText, effectiveRequest, ct);
 
     var supersededIds = store.DrainSupersededProposalIds(request.SessionId, request.Owner);
     if (supersededIds.Count > 0)
     {
       yield return new AgentStreamEventDto
       {
-        Type = "supersede",
+        Type = AgentStreamEventType.Supersede,
         SupersededProposalIds = [.. supersededIds]
       };
     }
@@ -517,8 +275,17 @@ internal static class CliTurnRunner
       emittedProposals++;
       yield return new AgentStreamEventDto
       {
-        Type = "proposal",
+        Type = AgentStreamEventType.Proposal,
         Proposal = staged
+      };
+    }
+
+    foreach (var savedMem in savedMemories)
+    {
+      yield return new AgentStreamEventDto
+      {
+        Type = AgentStreamEventType.Memory,
+        Memory = savedMem
       };
     }
 
@@ -526,39 +293,33 @@ internal static class CliTurnRunner
     {
       var warningBlock = "\n\n" + string.Join("\n\n", stageWarnings.Select(w => $"> {w}"));
       fullAssistantText.Append(warningBlock);
-      yield return new AgentStreamEventDto
-      {
-        Type = "delta",
-        Text = warningBlock
-      };
+      yield return new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = warningBlock };
     }
 
-    if (!ct.IsCancellationRequested && (emittedError || fullAssistantText.Length == 0 && emittedProposals == 0))
+    if (!ct.IsCancellationRequested && (emittedError || fullAssistantText.Length == 0 && emittedProposals == 0 && savedMemories.Count == 0))
     {
       store.RemoveConversationId(request.SessionId, request.Owner, providerHandle);
     }
 
-    if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && !ct.IsCancellationRequested)
+    if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && savedMemories.Count == 0 && !ct.IsCancellationRequested)
     {
       string? stderr = null;
       try
       {
-        stderr = stderrTask is not null
-          ? (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim()
-          : null;
+        stderr = stderrTask is not null ? (await stderrTask.WaitAsync(TimeSpan.FromSeconds(2), ct)).Trim() : null;
       }
       catch { }
 
       yield return new AgentStreamEventDto
       {
-        Type = "error",
+        Type = AgentStreamEventType.Error,
         Text = !string.IsNullOrWhiteSpace(stderr) ? stderr : L["AgentErrorRequest"]
       };
     }
 
     yield return new AgentStreamEventDto
     {
-      Type = "done",
+      Type = AgentStreamEventType.Done,
       SessionId = request.SessionId,
       ModelId = selectedModel,
       ModelName = modelDisplayName

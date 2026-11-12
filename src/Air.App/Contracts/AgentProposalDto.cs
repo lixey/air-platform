@@ -5,8 +5,15 @@ public sealed class AgentProposalDto
 {
   public string Id { get; set; } = string.Empty;
   public string SessionId { get; set; } = string.Empty;
-  public string Kind { get; set; } = string.Empty;
+
+  [OneOf(typeof(AgentProposalOperation))]
+  public string Operation { get; set; } = AgentProposalOperation.Create;
+
   public string Service { get; set; } = string.Empty;
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Transition { get; set; }
+
   public string Title { get; set; } = string.Empty;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -20,10 +27,7 @@ public sealed class AgentProposalDto
   public string? BadgeColor { get; set; }
 
   public List<AgentProposalFieldDto> Fields { get; set; } = [];
-  public List<AgentProposalLineDto> Lines { get; set; } = [];
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public string? LinesLabel { get; set; }
+  public List<AgentProposalChildGroupDto> Children { get; set; } = [];
 
   public List<string> AttachmentIds { get; set; } = [];
 

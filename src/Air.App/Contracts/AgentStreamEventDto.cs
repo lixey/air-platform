@@ -13,6 +13,9 @@ public sealed class AgentStreamEventDto
   public AgentProposalDto? Proposal { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public AgentSavedMemoryDto? Memory { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? SessionId { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

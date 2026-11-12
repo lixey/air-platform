@@ -9,16 +9,19 @@ public sealed class AgentStore
   private readonly ConcurrentDictionary<string, AgentSessionState> _sessions = new(StringComparer.OrdinalIgnoreCase);
   private readonly SemaphoreSlim _seedLock = new(1, 1);
   private readonly SemaphoreSlim _globalTurnSemaphore;
+  private readonly TimeProvider _time;
   private bool _catalogsSeeded;
   private long _lastAutoSyncTicks;
-  private long _lastCleanupTicks = DateTimeOffset.UtcNow.UtcTicks;
+  private long _lastCleanupTicks;
 
   public AgentOptions Options { get; }
   public string WorkspaceDirectory { get; }
 
-  public AgentStore(AgentOptions? options = null)
+  public AgentStore(AgentOptions? options = null, TimeProvider? time = null)
   {
     Options = options ?? new AgentOptions();
+    _time = time ?? TimeProvider.System;
+    _lastCleanupTicks = _time.GetUtcNow().UtcTicks;
     var maxTurns = Math.Max(1, Options.MaxConcurrentTurns);
     _globalTurnSemaphore = new SemaphoreSlim(maxTurns, maxTurns);
 
@@ -26,38 +29,18 @@ public sealed class AgentStore
       SHA256.HashData(Encoding.UTF8.GetBytes($"{AppContext.BaseDirectory}|{Environment.UserName}")))[..12];
     WorkspaceDirectory = Path.Combine(Path.GetTempPath(), $"platform-agent-{appHash}");
     EnsurePrivateDirectory(WorkspaceDirectory);
-    CleanupStaleDiskFiles();
+    AgentAttachmentStorage.CleanupStaleDiskFiles(WorkspaceDirectory, (_time.GetUtcNow() - Options.SessionTtl).UtcDateTime);
   }
 
-  internal static void EnsurePrivateDirectory(string path)
-  {
-    const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-    const UnixFileMode nonOwnerMask = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
-                                      UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
-
-    if (!OperatingSystem.IsWindows() && !Directory.Exists(path))
-    {
-      Directory.CreateDirectory(path, ownerOnly);
-      return;
-    }
-
-    Directory.CreateDirectory(path);
-    if (!OperatingSystem.IsWindows())
-    {
-      var currentMode = File.GetUnixFileMode(path);
-      if ((currentMode & nonOwnerMask) != 0)
-      {
-        File.SetUnixFileMode(path, ownerOnly);
-      }
-    }
-  }
+  internal static void EnsurePrivateDirectory(string path) =>
+    AgentAttachmentStorage.EnsurePrivateDirectory(path);
 
   public bool TryAcquireSessionTurn(string? sessionId, AgentOwnerScope owner, out IDisposable? lease)
   {
     var safeSessionId = NormalizeSessionId(sessionId);
     var sKey = SessionKey(owner, safeSessionId);
     var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
-    session.LastAccessUtc = DateTimeOffset.UtcNow;
+    session.LastAccessUtc = _time.GetUtcNow();
     if (!session.TurnGate.Wait(0))
     {
       lease = null;
@@ -76,7 +59,7 @@ public sealed class AgentStore
 
   public bool TryClaimAutoSyncCooldown(TimeSpan cooldown)
   {
-    var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+    var nowTicks = _time.GetUtcNow().UtcTicks;
     var prev = Interlocked.Read(ref _lastAutoSyncTicks);
     if (nowTicks - prev < cooldown.Ticks)
     {
@@ -112,20 +95,14 @@ public sealed class AgentStore
     }
   }
 
-  private static readonly HashSet<string> AllowedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
-  {
-    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".pdf", ".txt", ".csv", ".json", ".xml", ".md", ".xlsx", ".xls"
-  };
-
-  private static readonly HashSet<string> BlockedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
-  {
-    ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".msi", ".com", ".scr", ".vbs", ".js"
-  };
-
-  private const long MaxAttachmentSizeBytes = 25 * 1024 * 1024;
-
   public static AgentOwnerScope ResolveOwner(IServiceProvider services)
   {
+    var bridgeCtx = services.GetService<McpExecutionBridge>()?.Active;
+    if (bridgeCtx is { TurnToken.Length: > 0 })
+    {
+      return new AgentOwnerScope(bridgeCtx.TenantId, bridgeCtx.UserId);
+    }
+
     var tenant = services.GetService<ITenantContext>() ?? AsyncLocalTenantContext.Instance;
     var user = services.GetService<IUserContext>();
     var tenantId = tenant?.TenantId;
@@ -136,14 +113,8 @@ public sealed class AgentStore
   private static bool MatchesOwner(AgentOwnerScope entryOwner, AgentOwnerScope caller) =>
     entryOwner.TenantId == caller.TenantId && entryOwner.UserId == caller.UserId;
 
-  private static string FormatTenantSegment(long? tenantId) =>
-    tenantId.HasValue ? $"t_{tenantId.Value.ToString(CultureInfo.InvariantCulture)}" : "t_global";
-
-  private static string FormatUserSegment(long? userId) =>
-    userId.HasValue ? $"u_{userId.Value.ToString(CultureInfo.InvariantCulture)}" : "u_anon";
-
   private static string SessionKey(AgentOwnerScope owner, string sessionId) =>
-    $"{FormatTenantSegment(owner.TenantId)}:{FormatUserSegment(owner.UserId)}:{sessionId}";
+    $"{AgentAttachmentStorage.FormatTenantSegment(owner.TenantId)}:{AgentAttachmentStorage.FormatUserSegment(owner.UserId)}:{sessionId}";
 
   public string GetSessionWorkspaceDirectory(AgentOwnerScope owner, string? sessionId) =>
     GetSessionWorkspaceDirectory(WorkspaceDirectory, owner, sessionId);
@@ -151,7 +122,28 @@ public sealed class AgentStore
   public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId)
   {
     var safeSessionId = NormalizeSessionId(sessionId);
-    var dir = Path.Combine(workspaceDirectory, FormatTenantSegment(owner.TenantId), FormatUserSegment(owner.UserId), safeSessionId);
+    var dir = Path.Combine(
+      workspaceDirectory,
+      AgentAttachmentStorage.FormatTenantSegment(owner.TenantId),
+      AgentAttachmentStorage.FormatUserSegment(owner.UserId),
+      safeSessionId);
+    EnsurePrivateDirectory(dir);
+    return dir;
+  }
+
+  public string GetSessionAttachmentsDirectory(AgentOwnerScope owner, string? sessionId) =>
+    GetSessionAttachmentsDirectory(WorkspaceDirectory, owner, sessionId);
+
+  public static string GetSessionAttachmentsDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId)
+  {
+    var safeSessionId = NormalizeSessionId(sessionId);
+    var dir = Path.Combine(
+      workspaceDirectory,
+      AgentAttachmentStorage.FormatTenantSegment(owner.TenantId),
+      AgentAttachmentStorage.FormatUserSegment(owner.UserId),
+      "sessions",
+      safeSessionId,
+      "attachments");
     EnsurePrivateDirectory(dir);
     return dir;
   }
@@ -190,75 +182,12 @@ public sealed class AgentStore
     string fileName,
     string contentType,
     Stream content,
-    CancellationToken ct
-  )
+    CancellationToken ct)
   {
     CleanupExpiredIfNeeded();
-
-    var id = Guid.NewGuid().ToString("N")[..16];
-    var ext = Path.GetExtension(fileName);
-    if (!string.IsNullOrWhiteSpace(ext) && BlockedAttachmentExtensions.Contains(ext))
-    {
-      throw new InvalidOperationException(Localizer.Instance["FileTypeRefused"]);
-    }
-
-    if (string.IsNullOrWhiteSpace(ext) || !AllowedAttachmentExtensions.Contains(ext))
-    {
-      ext = contentType switch
-      {
-        "image/png" => ".png",
-        "image/webp" => ".webp",
-        "image/gif" => ".gif",
-        "application/pdf" => ".pdf",
-        "text/plain" => ".txt",
-        "text/csv" => ".csv",
-        "application/json" => ".json",
-        _ => ".jpg"
-      };
-    }
-
-    if (content.CanSeek && content.Length > MaxAttachmentSizeBytes)
-    {
-      throw new InvalidOperationException(Localizer.Instance["FileTooLarge"]);
-    }
-
-    var safeFileName = $"attachment-{id}{ext}";
-    var dir = Path.Combine(WorkspaceDirectory, FormatTenantSegment(owner.TenantId), FormatUserSegment(owner.UserId), "uploads");
-    EnsurePrivateDirectory(dir);
-    var localPath = Path.Combine(dir, safeFileName);
-
-    await using (var fs = File.Create(localPath))
-    {
-      await content.CopyToAsync(fs, ct);
-      if (fs.Length > MaxAttachmentSizeBytes)
-      {
-        fs.Close();
-        TryDeleteFile(localPath);
-        throw new InvalidOperationException(Localizer.Instance["FileTooLarge"]);
-      }
-    }
-
-    long fileSize;
-    string sha256;
-    await using (var readFs = File.OpenRead(localPath))
-    {
-      fileSize = readFs.Length;
-      var hashBytes = await SHA256.HashDataAsync(readFs, ct);
-      sha256 = Convert.ToHexStringLower(hashBytes);
-    }
-
-    var dto = new AgentAttachmentDto
-    {
-      Id = id,
-      FileName = string.IsNullOrWhiteSpace(fileName) ? safeFileName : Path.GetFileName(fileName),
-      ContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType,
-      Size = fileSize,
-      PreviewUrl = $"/api/agent/attachments/{id}",
-      LocalPath = localPath,
-      Sha256 = sha256
-    };
-
-    _attachments[id] = new OwnedAttachment(dto, owner, DateTimeOffset.UtcNow);
+    var dto = await AgentAttachmentStorage.WriteValidatedAttachmentAsync(
+      WorkspaceDirectory, owner, fileName, contentType, content, ct);
+    _attachments[dto.Id] = new OwnedAttachment(dto, owner, _time.GetUtcNow());
     return dto;
   }
 
@@ -270,14 +199,14 @@ public sealed class AgentStore
       return null;
     }
 
-    _attachments[id] = entry with { LastAccessUtc = DateTimeOffset.UtcNow };
+    _attachments[id] = entry with { LastAccessUtc = _time.GetUtcNow() };
     return entry.Dto;
   }
 
   public void StageProposal(AgentProposalDto proposal, AgentOwnerScope owner)
   {
     CleanupExpiredIfNeeded();
-    var now = DateTimeOffset.UtcNow;
+    var now = _time.GetUtcNow();
     _proposals[proposal.Id] = new OwnedProposal(proposal, owner, now);
 
     var sKey = SessionKey(owner, proposal.SessionId);
@@ -328,96 +257,12 @@ public sealed class AgentStore
     AgentOwnerScope owner,
     string newTurnId,
     IReadOnlyCollection<(string Service, long RecordId)> editedRecords,
-    IReadOnlyCollection<(string Service, string Name)> createdNames
-  )
+    IReadOnlyCollection<(string Service, string Name)> createdNames)
   {
     var sKey = SessionKey(owner, sessionId);
-    if (!_sessions.TryGetValue(sKey, out var session) || !MatchesOwner(session.Owner, owner))
-    {
-      return [];
-    }
-
-    var superseded = new List<string>();
-    lock (session.Proposals)
-    {
-      var pendingOld = session.Proposals
-        .Where(p => p.Status == "pending" && !string.Equals(p.TurnId, newTurnId, StringComparison.OrdinalIgnoreCase))
-        .ToList();
-      if (pendingOld.Count == 0)
-      {
-        return [];
-      }
-
-      static bool MatchesCandidate(
-        AgentProposalDto p,
-        IReadOnlyCollection<(string Service, long RecordId)> edits,
-        IReadOnlyCollection<(string Service, string Name)> creates
-      )
-      {
-        var normSvc = AgentFeatureRegistry.NormalizeServiceKey(p.Service);
-        if (p.RecordId is > 0 && edits.Any(e =>
-              e.RecordId == p.RecordId.Value && (string.IsNullOrEmpty(e.Service) || string.Equals(
-                e.Service,
-                normSvc,
-                StringComparison.OrdinalIgnoreCase
-              ))
-            ))
-        {
-          return true;
-        }
-
-        if (p.RecordId is null)
-        {
-          var shortLabel = AgentStepGraphHelper.GetProposalShortLabel(p);
-          if (creates.Any(c =>
-                (string.IsNullOrEmpty(c.Service) || string.Equals(c.Service, normSvc, StringComparison.OrdinalIgnoreCase)) &&
-                string.Equals(shortLabel, c.Name, StringComparison.OrdinalIgnoreCase)
-              ))
-          {
-            return true;
-          }
-        }
-
-        return false;
-      }
-
-      var matchedTurnIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-      var matchedDirectIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-      foreach (var old in pendingOld)
-      {
-        if (MatchesCandidate(old, editedRecords, createdNames))
-        {
-          if (!string.IsNullOrEmpty(old.TurnId))
-          {
-            matchedTurnIds.Add(old.TurnId);
-          }
-          else
-          {
-            matchedDirectIds.Add(old.Id);
-          }
-        }
-      }
-
-      foreach (var old in pendingOld)
-      {
-        if (!string.IsNullOrEmpty(old.TurnId) && matchedTurnIds.Contains(old.TurnId) ||
-            matchedDirectIds.Contains(old.Id))
-        {
-          lock (old)
-          {
-            if (old.Status == "pending")
-            {
-              old.Status = "superseded";
-              superseded.Add(old.Id);
-              session.SupersededProposalIds.Enqueue(old.Id);
-            }
-          }
-        }
-      }
-    }
-
-    return superseded;
+    return _sessions.TryGetValue(sKey, out var session) && MatchesOwner(session.Owner, owner)
+      ? AgentProposalSuperseder.SupersedeOverlapping(session, newTurnId, editedRecords, createdNames)
+      : [];
   }
 
   public IReadOnlyList<string> DrainSupersededProposalIds(string sessionId, AgentOwnerScope owner)
@@ -445,7 +290,7 @@ public sealed class AgentStore
       return null;
     }
 
-    _proposals[proposalId] = entry with { LastAccessUtc = DateTimeOffset.UtcNow };
+    _proposals[proposalId] = entry with { LastAccessUtc = _time.GetUtcNow() };
     return entry.Dto;
   }
 
@@ -458,7 +303,7 @@ public sealed class AgentStore
       return [];
     }
 
-    session.LastAccessUtc = DateTimeOffset.UtcNow;
+    session.LastAccessUtc = _time.GetUtcNow();
     lock (session.Proposals)
     {
       return [.. session.Proposals];
@@ -473,7 +318,7 @@ public sealed class AgentStore
       return [];
     }
 
-    session.LastAccessUtc = DateTimeOffset.UtcNow;
+    session.LastAccessUtc = _time.GetUtcNow();
     var list = new List<AgentProposalDto>();
     while (session.PendingProposals.TryDequeue(out var p))
     {
@@ -492,7 +337,7 @@ public sealed class AgentStore
       return null;
     }
 
-    session.LastAccessUtc = DateTimeOffset.UtcNow;
+    session.LastAccessUtc = _time.GetUtcNow();
     return session.ConversationIds.TryGetValue(providerHandle, out var cid) ? cid : null;
   }
 
@@ -500,7 +345,7 @@ public sealed class AgentStore
   {
     var sKey = SessionKey(owner, sessionId);
     var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
-    session.LastAccessUtc = DateTimeOffset.UtcNow;
+    session.LastAccessUtc = _time.GetUtcNow();
     session.ConversationIds[providerHandle] = conversationId;
   }
 
@@ -509,7 +354,7 @@ public sealed class AgentStore
     var sKey = SessionKey(owner, sessionId);
     if (_sessions.TryGetValue(sKey, out var session) && MatchesOwner(session.Owner, owner))
     {
-      session.LastAccessUtc = DateTimeOffset.UtcNow;
+      session.LastAccessUtc = _time.GetUtcNow();
       session.ConversationIds.TryRemove(providerHandle, out _);
     }
   }
@@ -532,24 +377,46 @@ public sealed class AgentStore
         }
       }
     }
+
+    if (IsValidSessionId(sessionId))
+    {
+      try
+      {
+        var sessionFolder = Path.Combine(
+          WorkspaceDirectory,
+          AgentAttachmentStorage.FormatTenantSegment(owner.TenantId),
+          AgentAttachmentStorage.FormatUserSegment(owner.UserId),
+          "sessions",
+          sessionId);
+        if (Directory.Exists(sessionFolder))
+        {
+          Directory.Delete(sessionFolder, recursive: true);
+        }
+      }
+      catch { }
+    }
   }
+
+  public static string GetContextFilePath(string turnOrSessionDirectory) =>
+    Path.Combine(turnOrSessionDirectory, "context.json");
+
+  public static string GetRecordsFilePath(string turnOrSessionDirectory) =>
+    Path.Combine(turnOrSessionDirectory, "records.json");
+
+  public static string GetSyncContextFilePath(string turnOrSessionDirectory) =>
+    Path.Combine(turnOrSessionDirectory, "sync-context.json");
 
   private void CleanupExpiredIfNeeded()
   {
-    var now = DateTimeOffset.UtcNow;
+    var now = _time.GetUtcNow();
     var prevTicks = Interlocked.Read(ref _lastCleanupTicks);
-    if (now.UtcTicks - prevTicks < TimeSpan.FromMinutes(5).Ticks)
-    {
-      return;
-    }
-
-    if (Interlocked.CompareExchange(ref _lastCleanupTicks, now.UtcTicks, prevTicks) != prevTicks)
+    if (now.UtcTicks - prevTicks < TimeSpan.FromMinutes(5).Ticks ||
+        Interlocked.CompareExchange(ref _lastCleanupTicks, now.UtcTicks, prevTicks) != prevTicks)
     {
       return;
     }
 
     var cutoff = now - Options.SessionTtl;
-
     foreach (var (key, session) in _sessions)
     {
       if (session.LastAccessUtc < cutoff && session.TurnGate.CurrentCount > 0)
@@ -570,60 +437,8 @@ public sealed class AgentStore
     {
       if (att.LastAccessUtc < cutoff && _attachments.TryRemove(key, out var removed))
       {
-        TryDeleteFile(removed.Dto.LocalPath);
+        AgentAttachmentStorage.TryDeleteFile(removed.Dto.LocalPath);
       }
     }
-  }
-
-  public static string GetContextFilePath(string turnOrSessionDirectory) =>
-    Path.Combine(turnOrSessionDirectory, "context.json");
-
-  public static string GetRecordsFilePath(string turnOrSessionDirectory) =>
-    Path.Combine(turnOrSessionDirectory, "records.json");
-
-  public static string GetSyncContextFilePath(string turnOrSessionDirectory) =>
-    Path.Combine(turnOrSessionDirectory, "sync-context.json");
-
-  private void CleanupStaleDiskFiles()
-  {
-    var cutoff = (DateTimeOffset.UtcNow - Options.SessionTtl).UtcDateTime;
-
-    try
-    {
-      if (!Directory.Exists(WorkspaceDirectory))
-      {
-        return;
-      }
-
-      foreach (var file in Directory.EnumerateFiles(WorkspaceDirectory, "*", SearchOption.AllDirectories))
-      {
-        try
-        {
-          if (File.GetLastWriteTimeUtc(file) < cutoff)
-          {
-            File.Delete(file);
-          }
-        }
-        catch { }
-      }
-    }
-    catch { }
-  }
-
-  private static void TryDeleteFile(string? path)
-  {
-    if (string.IsNullOrWhiteSpace(path))
-    {
-      return;
-    }
-
-    try
-    {
-      if (File.Exists(path))
-      {
-        File.Delete(path);
-      }
-    }
-    catch { }
   }
 }

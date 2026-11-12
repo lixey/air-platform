@@ -5,4 +5,6 @@ public sealed record McpCallContext(
   long? UserId,
   IReadOnlySet<string>? Rights,
   string? SessionId,
-  string? TurnToken = null);
+  string? TurnToken = null,
+  string? Locale = null,
+  string? TimeZone = null);

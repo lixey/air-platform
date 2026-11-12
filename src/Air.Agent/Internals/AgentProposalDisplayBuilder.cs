@@ -1,11 +1,11 @@
-using Platform.Agent.Internals;
+using static Platform.Agent.Internals.AgentRowValueHelpers;
 using static Platform.Agent.Internals.AgentValueHelpers;
 
-namespace Platform.Agent;
+namespace Platform.Agent.Internals;
 
-public static partial class AgentProposalBuilder
+internal static class AgentProposalDisplayBuilder
 {
-  private static List<AgentProposalFieldDto> BuildDisplayFields(
+  public static List<AgentProposalFieldDto> BuildDisplayFields(
     IReadOnlyList<FormElementDto> editableElements,
     Dictionary<string, object?> originalFormValues,
     Dictionary<string, object?> formValues,
@@ -13,15 +13,9 @@ public static partial class AgentProposalBuilder
     HashSet<string> explicitlyProvided,
     Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
     bool isEdit,
-    Localizer L,
-    out string? currencyLabel
-  )
+    Localizer L)
   {
     var displayFields = new List<AgentProposalFieldDto>();
-    currencyLabel = ResolveCurrencyLabel(formValues, editableElements, dictionaries);
-    var oldCurrencyLabel = isEdit
-      ? (ResolveCurrencyLabel(originalFormValues, editableElements, dictionaries) ?? currencyLabel)
-      : currencyLabel;
 
     foreach (var el in editableElements)
     {
@@ -33,54 +27,30 @@ public static partial class AgentProposalBuilder
       if (isEdit)
       {
         var changed = HasFieldValueChanged(el, originalFormValues, formValues, elNewRefs);
-        var oldDisplay = FormatFieldDisplayValue(
-          el,
-          originalFormValues,
-          [],
-          oldCurrencyLabel,
-          dictionaries,
-          L,
-          includeZeroMoney: changed
-        );
-        var newDisplay = FormatFieldDisplayValue(
-          el,
-          formValues,
-          elNewRefs,
-          currencyLabel,
-          dictionaries,
-          L,
-          includeZeroMoney: changed
-        );
+        var oldDisplay = FormatFieldDisplayValue(el, originalFormValues, [], dictionaries, L, includeZeroMoney: changed);
+        var newDisplay = FormatFieldDisplayValue(el, formValues, elNewRefs, dictionaries, L, includeZeroMoney: changed);
 
         if (changed)
         {
-          string? valText = null;
-          if (!string.IsNullOrWhiteSpace(oldDisplay) && !string.IsNullOrWhiteSpace(newDisplay) &&
-              !string.Equals(oldDisplay, newDisplay, StringComparison.Ordinal))
-          {
-            valText = $"{oldDisplay} → {newDisplay}";
-          }
-          else if (!string.IsNullOrWhiteSpace(newDisplay))
-          {
-            valText = newDisplay;
-          }
-          else if (!string.IsNullOrWhiteSpace(oldDisplay))
-          {
-            valText = $"{oldDisplay} → —";
-          }
+          var valText = !string.IsNullOrWhiteSpace(oldDisplay) && !string.IsNullOrWhiteSpace(newDisplay) &&
+                        !string.Equals(oldDisplay, newDisplay, StringComparison.Ordinal)
+            ? $"{oldDisplay} → {newDisplay}"
+            : !string.IsNullOrWhiteSpace(newDisplay)
+              ? newDisplay
+              : !string.IsNullOrWhiteSpace(oldDisplay)
+                ? $"{oldDisplay} → —"
+                : null;
 
           if (!string.IsNullOrWhiteSpace(valText))
           {
             var (fieldBadge, fieldColor) = ResolveFieldRefBadge(elNewRefs, L, L["AgentChangedBadge"], UiColor.Amber);
-            displayFields.Add(
-              new AgentProposalFieldDto
-              {
-                Label = label,
-                Value = valText,
-                Badge = fieldBadge,
-                Color = fieldColor
-              }
-            );
+            displayFields.Add(new AgentProposalFieldDto
+            {
+              Label = label,
+              Value = valText,
+              Badge = fieldBadge,
+              Color = fieldColor
+            });
           }
         }
         else
@@ -95,13 +65,7 @@ public static partial class AgentProposalBuilder
 
           if (!string.IsNullOrWhiteSpace(newDisplay))
           {
-            displayFields.Add(
-              new AgentProposalFieldDto
-              {
-                Label = label,
-                Value = newDisplay
-              }
-            );
+            displayFields.Add(new AgentProposalFieldDto { Label = label, Value = newDisplay });
           }
         }
 
@@ -116,39 +80,28 @@ public static partial class AgentProposalBuilder
         continue;
       }
 
-      var createDisplay = FormatFieldDisplayValue(
-        el,
-        formValues,
-        elNewRefs,
-        currencyLabel,
-        dictionaries,
-        L,
-        includeZeroMoney: false
-      );
+      var createDisplay = FormatFieldDisplayValue(el, formValues, elNewRefs, dictionaries, L, includeZeroMoney: false);
       if (!string.IsNullOrWhiteSpace(createDisplay))
       {
         var (createBadge, createColor) = ResolveFieldRefBadge(elNewRefs, L, null, null);
-        displayFields.Add(
-          new AgentProposalFieldDto
-          {
-            Label = label,
-            Value = createDisplay,
-            Badge = createBadge,
-            Color = createColor
-          }
-        );
+        displayFields.Add(new AgentProposalFieldDto
+        {
+          Label = label,
+          Value = createDisplay,
+          Badge = createBadge,
+          Color = createColor
+        });
       }
     }
 
     return displayFields;
   }
 
-  private static (string? Badge, string? Color) ResolveFieldRefBadge(
+  public static (string? Badge, string? Color) ResolveFieldRefBadge(
     IReadOnlyList<PendingNewReference> elNewRefs,
     Localizer L,
     string? fallbackBadge,
-    string? fallbackColor
-  )
+    string? fallbackColor)
   {
     if (elNewRefs.Count == 0)
     {
@@ -165,12 +118,11 @@ public static partial class AgentProposalBuilder
     return (L["AgentNewBadge"], UiColor.Emerald);
   }
 
-  private static bool HasFieldValueChanged(
+  public static bool HasFieldValueChanged(
     FormElementDto el,
     Dictionary<string, object?> oldValues,
     Dictionary<string, object?> newValues,
-    IReadOnlyList<PendingNewReference> elNewRefs
-  )
+    IReadOnlyList<PendingNewReference> elNewRefs)
   {
     if (elNewRefs.Count > 0)
     {
@@ -203,9 +155,7 @@ public static partial class AgentProposalBuilder
 
     if (el.Type == UiFieldType.Checkbox)
     {
-      var oldBool = oldVal is true;
-      var newBool = newVal is true;
-      return oldBool != newBool;
+      return oldVal is true != newVal is true;
     }
 
     var oldStr = oldVal?.ToString()?.Trim() ?? string.Empty;
@@ -213,15 +163,13 @@ public static partial class AgentProposalBuilder
     return !string.Equals(oldStr, newStr, StringComparison.Ordinal);
   }
 
-  private static string? FormatFieldDisplayValue(
+  public static string? FormatFieldDisplayValue(
     FormElementDto el,
     Dictionary<string, object?> values,
     IReadOnlyList<PendingNewReference> elNewRefs,
-    string? currencyLabel,
     Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
     Localizer L,
-    bool includeZeroMoney = false
-  )
+    bool includeZeroMoney = false)
   {
     if (el.Model is FormSelectModel select)
     {
@@ -264,13 +212,23 @@ public static partial class AgentProposalBuilder
       return null;
     }
 
-    if (el.Model is FormMoneyModel)
+    if (el.Model is FormMoneyModel moneyModel)
     {
       if (TryConvertToDecimal(val, out var decVal) && (decVal != 0m || includeZeroMoney))
       {
-        return string.IsNullOrEmpty(currencyLabel)
+        return string.IsNullOrEmpty(moneyModel.Currency)
           ? decVal.ToString("N2", CultureInfo.CurrentUICulture)
-          : $"{decVal.ToString("N2", CultureInfo.CurrentUICulture)} {currencyLabel}";
+          : $"{decVal.ToString("N2", CultureInfo.CurrentUICulture)} {moneyModel.Currency}";
+      }
+
+      return null;
+    }
+
+    if (el.Model is FormPercentModel)
+    {
+      if (TryConvertToDecimal(val, out var pctVal) && (pctVal != 0m || includeZeroMoney))
+      {
+        return $"{pctVal.ToString("0.##", CultureInfo.CurrentUICulture)}%";
       }
 
       return null;
@@ -295,61 +253,11 @@ public static partial class AgentProposalBuilder
     return !string.IsNullOrWhiteSpace(str) ? str : null;
   }
 
-  private static string? ResolveCurrencyLabel(
-    Dictionary<string, object?> formValues,
-    IReadOnlyList<FormElementDto> elements,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries
-  )
-  {
-    foreach (var el in elements)
-    {
-      if (el.Model is not FormSelectModel { ReferenceService: { Length: > 0 } refSvc } ||
-          !formValues.TryGetValue(el.Path, out var val) ||
-          !TryConvertToLong(val, out var id) ||
-          id <= 0 ||
-          !dictionaries.TryGetValue(refSvc, out var rows))
-      {
-        continue;
-      }
-
-      var row = rows.FirstOrDefault(r => TryGetRowId(r, out var rid) && rid == id);
-      if (row == null)
-      {
-        continue;
-      }
-
-      if (row.TryGetValue("currency", out var currObj))
-      {
-        if (currObj is IDictionary<string, object?> currDict)
-        {
-          if (currDict.TryGetValue("code", out var cCode) && cCode?.ToString() is { Length: > 0 } codeStr)
-          {
-            return codeStr;
-          }
-
-          if (currDict.TryGetValue("name", out var cName))
-          {
-            return cName?.ToString();
-          }
-        }
-
-        if (currObj is string cStr)
-        {
-          return cStr;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private static string BuildProposalTitle(
+  public static string BuildProposalTitle(
     GridCreateDescriptor desc,
     Dictionary<string, object?> formValues,
     IReadOnlyList<PendingNewReference> newReferences,
-    IReadOnlyList<FormElementDto> elements,
-    string? currencyLabel
-  )
+    IReadOnlyList<FormElementDto> elements)
   {
     var primaryTextPath = ResolvePrimaryTextFieldPath(elements);
     if (formValues.TryGetValue(primaryTextPath, out var nameVal) && nameVal is string nameStr && !string.IsNullOrWhiteSpace(nameStr))
@@ -358,12 +266,14 @@ public static partial class AgentProposalBuilder
     }
 
     var moneyEl = elements.FirstOrDefault(e => e.Model is FormMoneyModel);
-    if (moneyEl != null && formValues.TryGetValue(moneyEl.Path, out var amtVal) && TryConvertToDecimal(amtVal, out var decAmt) &&
+    if (moneyEl?.Model is FormMoneyModel moneyModel &&
+        formValues.TryGetValue(moneyEl.Path, out var amtVal) &&
+        TryConvertToDecimal(amtVal, out var decAmt) &&
         decAmt > 0)
     {
-      var amtText = string.IsNullOrEmpty(currencyLabel)
+      var amtText = string.IsNullOrEmpty(moneyModel.Currency)
         ? decAmt.ToString("N2", CultureInfo.CurrentUICulture)
-        : $"{decAmt.ToString("N2", CultureInfo.CurrentUICulture)} {currencyLabel}";
+        : $"{decAmt.ToString("N2", CultureInfo.CurrentUICulture)} {moneyModel.Currency}";
       return $"{desc.Label} {amtText}";
     }
 
@@ -375,12 +285,11 @@ public static partial class AgentProposalBuilder
     return desc.Label;
   }
 
-  private static string? BuildProposalSubtitle(
+  public static string? BuildProposalSubtitle(
     Dictionary<string, object?> formValues,
     IReadOnlyList<PendingNewReference> newReferences,
     IReadOnlyList<FormElementDto> elements,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries
-  )
+    Dictionary<string, List<Dictionary<string, object?>>> dictionaries)
   {
     var primaryTextPath = ResolvePrimaryTextFieldPath(elements);
     var parts = new List<string>();
@@ -391,16 +300,8 @@ public static partial class AgentProposalBuilder
         continue;
       }
 
-      if (el.Model is FormSelectModel { ReferenceService: { Length: > 0 } refSvc } &&
-          dictionaries.TryGetValue(refSvc, out var refRows) &&
-          refRows.Any(r => r.ContainsKey("currency")))
-      {
-        continue;
-      }
-
       var pending = newReferences.FirstOrDefault(nr =>
-        nr.LineIndex == null && !nr.IsMultiple && string.Equals(nr.FieldPath, el.Path, StringComparison.OrdinalIgnoreCase)
-      );
+        nr.LineIndex == null && !nr.IsMultiple && string.Equals(nr.FieldPath, el.Path, StringComparison.OrdinalIgnoreCase));
       if (pending != null)
       {
         parts.Add(pending.Name);

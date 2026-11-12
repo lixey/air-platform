@@ -8,6 +8,7 @@ public static class AgentStreamEventType
   public const string Supersede = "supersede";
   public const string Refresh = "refresh";
   public const string Proposal = "proposal";
+  public const string Memory = "memory";
   public const string Error = "error";
   public const string Done = "done";
 }

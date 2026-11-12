@@ -8,7 +8,8 @@ internal sealed class FixedUser(long userId, params string[] rights) : IUserCont
   public string? Login => "tester";
   public int TokenVersion => 1;
   public bool IsAuthenticated => true;
-  public string Language => "en-US";
+  public string Language { get; init; } = "en-US";
+  public string TimeZone { get; init; } = "UTC";
   public IReadOnlySet<string> Permissions => _rights;
   public bool Can(string right) => _rights.Contains("*") || _rights.Contains(right);
   public string? Claim(string type) => null;

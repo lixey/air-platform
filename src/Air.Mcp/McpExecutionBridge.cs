@@ -87,11 +87,19 @@ public sealed class McpExecutionBridge
     });
   }
 
-  public IDisposable BeginTurn(long? tenantId, long? userId, IReadOnlySet<string>? rights, string? sessionId)
+  public IDisposable BeginTurn(
+    long? tenantId,
+    long? userId,
+    IReadOnlySet<string>? rights,
+    string? sessionId,
+    string? locale = null,
+    string? timeZone = null)
   {
     var prev = CurrentContext.Value;
     var turnToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
-    var ctx = new McpCallContext(tenantId, userId, rights, sessionId, turnToken);
+    var normalizedLocale = string.IsNullOrWhiteSpace(locale) ? null : locale.Trim();
+    var normalizedTimeZone = string.IsNullOrWhiteSpace(timeZone) ? null : timeZone.Trim();
+    var ctx = new McpCallContext(tenantId, userId, rights, sessionId, turnToken, normalizedLocale, normalizedTimeZone);
     CurrentContext.Value = ctx;
     _turnTokens[turnToken] = ctx;
 

@@ -7,139 +7,23 @@ namespace Platform.Agent.Providers;
 /// </summary>
 public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 {
-  private readonly CliModelCache _modelCache = new();
-
-  private static readonly Regex BinaryModelRegex = new(
-    @"\bclaude-(?<family>opus|sonnet|haiku)-(?<major>\d{1,2})(?:-(?<minor>\d{1,2}))?(?![0-9-])\b",
-    RegexOptions.Compiled | RegexOptions.CultureInvariant);
+  private static readonly IReadOnlyList<AgentModelDto> CuratedClaudeModels =
+  [
+    new() { Id = "opus-high", Name = "Claude Opus (High)", Provider = "Claude" },
+    new() { Id = "opus-medium", Name = "Claude Opus (Medium)", Provider = "Claude" },
+    new() { Id = "opus-low", Name = "Claude Opus (Low)", Provider = "Claude" },
+    new() { Id = "sonnet-high", Name = "Claude Sonnet (High)", Provider = "Claude" },
+    new() { Id = "sonnet-medium", Name = "Claude Sonnet (Medium)", Provider = "Claude" },
+    new() { Id = "sonnet-low", Name = "Claude Sonnet (Low)", Provider = "Claude" },
+    new() { Id = "haiku", Name = "Claude Haiku", Provider = "Claude" }
+  ];
 
   public string Handle => "Claude";
   public string Name => "Claude CLI (claude)";
   public bool IsAvailable => ResolveExecutablePath() is not null;
 
-  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
-  {
-    var claudePath = ResolveExecutablePath();
-    var realPath = claudePath is not null
-      ? (File.ResolveLinkTarget(claudePath, returnFinalTarget: true)?.FullName ?? claudePath)
-      : null;
-    var cacheKey = realPath is not null && File.Exists(realPath)
-      ? $"{realPath}|{File.GetLastWriteTimeUtc(realPath).Ticks}"
-      : null;
-    return _modelCache.GetOrLoadAsync(
-      cacheKey,
-      forceRefresh,
-      token => DiscoverModelsFromBinaryStreamAsync(realPath!, token),
-      ct);
-  }
-
-  private static async Task<List<AgentModelDto>> DiscoverModelsFromBinaryStreamAsync(string realPath, CancellationToken ct)
-  {
-    const int chunkSize = 1024 * 1024;
-    const int overlapSize = 64;
-
-    var found = new HashSet<(string Family, int Major, int? Minor)>();
-    var buffer = new byte[chunkSize + overlapSize];
-    var carryLen = 0;
-
-    await using var fs = new FileStream(realPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 65536, useAsync: true);
-    while (true)
-    {
-      var read = await fs.ReadAsync(buffer.AsMemory(carryLen, chunkSize), ct);
-      if (read <= 0)
-      {
-        break;
-      }
-
-      var totalLen = carryLen + read;
-      var chunkText = Encoding.Latin1.GetString(buffer, 0, totalLen);
-      foreach (Match match in BinaryModelRegex.Matches(chunkText))
-      {
-        var family = match.Groups["family"].Value.ToLowerInvariant();
-        if (!int.TryParse(match.Groups["major"].Value, out var major) || major <= 0)
-        {
-          continue;
-        }
-
-        int? minor = null;
-        if (match.Groups["minor"].Success && int.TryParse(match.Groups["minor"].Value, out var parsedMinor))
-        {
-          if (parsedMinor > 20)
-          {
-            continue;
-          }
-
-          minor = parsedMinor;
-        }
-
-        found.Add((family, major, minor));
-      }
-
-      if (totalLen > overlapSize)
-      {
-        Buffer.BlockCopy(buffer, totalLen - overlapSize, buffer, 0, overlapSize);
-        carryLen = overlapSize;
-      }
-      else
-      {
-        carryLen = totalLen;
-      }
-    }
-
-    if (found.Count == 0)
-    {
-      return [];
-    }
-
-    static int FamilyRank(string family) => family switch
-    {
-      "opus" => 30,
-      "sonnet" => 20,
-      "haiku" => 10,
-      _ => 0
-    };
-
-    static string FamilyTitle(string family) => family switch
-    {
-      "opus" => "Opus",
-      "sonnet" => "Sonnet",
-      "haiku" => "Haiku",
-      _ => family
-    };
-
-    // Select the latest generation (highest major + minor) per family present in the installed CLI binary
-    var ordered = found
-      .GroupBy(x => x.Family, StringComparer.OrdinalIgnoreCase)
-      .Select(g => g
-        .OrderByDescending(x => x.Major)
-        .ThenByDescending(x => x.Minor ?? 0)
-        .First())
-      .OrderByDescending(x => x.Major)
-      .ThenByDescending(x => x.Minor ?? 0)
-      .ThenByDescending(x => FamilyRank(x.Family))
-      .ToList();
-
-    var result = new List<AgentModelDto>();
-    foreach (var (family, major, minor) in ordered)
-    {
-      var baseId = minor.HasValue ? $"claude-{family}-{major}-{minor}" : $"claude-{family}-{major}";
-      var verText = minor.HasValue ? $"{major}.{minor}" : $"{major}";
-      var title = $"Claude {FamilyTitle(family)} {verText}";
-
-      if (family is "opus" or "sonnet")
-      {
-        result.Add(new AgentModelDto { Id = $"{baseId}-high", Name = $"{title} (High)", Provider = "Claude" });
-        result.Add(new AgentModelDto { Id = $"{baseId}-medium", Name = $"{title} (Medium)", Provider = "Claude" });
-        result.Add(new AgentModelDto { Id = $"{baseId}-low", Name = $"{title} (Low)", Provider = "Claude" });
-      }
-      else
-      {
-        result.Add(new AgentModelDto { Id = baseId, Name = title, Provider = "Claude" });
-      }
-    }
-
-    return result;
-  }
+  public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false) =>
+    Task.FromResult<IReadOnlyList<AgentModelDto>>(IsAvailable ? CuratedClaudeModels : []);
 
   public static string? ResolveExecutablePath()
   {
@@ -151,6 +35,62 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       Path.Combine(home, ".local", "bin", "claude"));
   }
 
+  internal static string ConfigureTurnStartInfo(
+    ProcessStartInfo psi,
+    string prompt,
+    string cliModel,
+    string effort,
+    string? existingConvId,
+    string? mcpConfigPath,
+    string sessionAttachmentsDir)
+  {
+    psi.ArgumentList.Add("--print");
+    psi.ArgumentList.Add("--input-format");
+    psi.ArgumentList.Add("text");
+    psi.ArgumentList.Add("--output-format");
+    psi.ArgumentList.Add("stream-json");
+    psi.ArgumentList.Add("--verbose");
+    psi.ArgumentList.Add("--safe-mode");
+    psi.ArgumentList.Add("--strict-mcp-config");
+    if (!string.IsNullOrWhiteSpace(mcpConfigPath))
+    {
+      psi.ArgumentList.Add("--mcp-config");
+      psi.ArgumentList.Add(mcpConfigPath);
+    }
+
+    psi.ArgumentList.Add("--disable-slash-commands");
+    psi.ArgumentList.Add("--tools");
+    psi.ArgumentList.Add("Read");
+    psi.ArgumentList.Add("--allowedTools");
+    psi.ArgumentList.Add(
+      !string.IsNullOrWhiteSpace(mcpConfigPath)
+        ? "Read,mcp__platform__platform_catalog_list,mcp__platform__platform_catalog_describe,mcp__platform__platform_records_query,mcp__platform__platform_proposal_stage"
+        : "Read");
+    if (!string.IsNullOrWhiteSpace(cliModel))
+    {
+      psi.ArgumentList.Add("--model");
+      psi.ArgumentList.Add(cliModel);
+    }
+
+    psi.ArgumentList.Add("--effort");
+    psi.ArgumentList.Add(effort);
+    psi.ArgumentList.Add("--add-dir");
+    psi.ArgumentList.Add(psi.WorkingDirectory);
+    if (!string.IsNullOrWhiteSpace(sessionAttachmentsDir))
+    {
+      psi.ArgumentList.Add("--add-dir");
+      psi.ArgumentList.Add(sessionAttachmentsDir);
+    }
+
+    if (!string.IsNullOrWhiteSpace(existingConvId))
+    {
+      psi.ArgumentList.Add("--resume");
+      psi.ArgumentList.Add(existingConvId);
+    }
+
+    return prompt;
+  }
+
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
@@ -160,7 +100,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
     var selectedModel = rawModel.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
     var modelDisplayName = !string.IsNullOrWhiteSpace(request.ModelName)
       ? request.ModelName
-      : (_modelCache.CachedModels?.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
+      : (CuratedClaudeModels.FirstOrDefault(m => string.Equals(m.Id, selectedModel, StringComparison.OrdinalIgnoreCase))?.Name ?? selectedModel);
     var (cliModel, effort) = CliTurnRunner.ResolveCliModelArgs(selectedModel, "-high", "-medium", "-low");
 
     await foreach (var evt in CliTurnRunner.StreamTurnAsync(
@@ -170,50 +110,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, mcpConfigPath) =>
-      {
-        psi.ArgumentList.Add("--print");
-        psi.ArgumentList.Add("--input-format");
-        psi.ArgumentList.Add("text");
-        psi.ArgumentList.Add("--output-format");
-        psi.ArgumentList.Add("stream-json");
-        psi.ArgumentList.Add("--verbose");
-        psi.ArgumentList.Add("--safe-mode");
-        psi.ArgumentList.Add("--strict-mcp-config");
-        if (!string.IsNullOrWhiteSpace(mcpConfigPath))
-        {
-          psi.ArgumentList.Add("--mcp-config");
-          psi.ArgumentList.Add(mcpConfigPath);
-        }
-
-        psi.ArgumentList.Add("--disable-slash-commands");
-        psi.ArgumentList.Add("--tools");
-        psi.ArgumentList.Add("Read");
-        psi.ArgumentList.Add("--allowedTools");
-        psi.ArgumentList.Add(
-          !string.IsNullOrWhiteSpace(mcpConfigPath)
-            ? "Read,mcp__platform__platform_catalog_list,mcp__platform__platform_catalog_describe,mcp__platform__platform_records_query,mcp__platform__platform_proposal_stage"
-            : "Read"
-        );
-        if (!string.IsNullOrWhiteSpace(cliModel))
-        {
-          psi.ArgumentList.Add("--model");
-          psi.ArgumentList.Add(cliModel);
-        }
-
-        psi.ArgumentList.Add("--effort");
-        psi.ArgumentList.Add(effort);
-        psi.ArgumentList.Add("--add-dir");
-        psi.ArgumentList.Add(psi.WorkingDirectory);
-
-        if (!string.IsNullOrWhiteSpace(existingConvId) && request.Attachments.Count == 0)
-        {
-          psi.ArgumentList.Add("--resume");
-          psi.ArgumentList.Add(existingConvId);
-        }
-
-        return prompt;
-      },
+      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, _) =>
+        ConfigureTurnStartInfo(psi, prompt, cliModel, effort, existingConvId, mcpConfigPath, sessionAttachmentsDir),
       (root, fullAssistantText, pendingEvents) =>
       {
         if (root.TryGetProperty("session_id", out var sidProp) &&
@@ -239,19 +137,11 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
                 txtProp.GetString() is { Length: > 0 } chunk)
             {
               fullAssistantText.Append(chunk);
-              pendingEvents.Add(new AgentStreamEventDto
-              {
-                Type = "delta",
-                Text = chunk
-              });
+              pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = chunk });
             }
             else if (itemType == "tool_use")
             {
-              pendingEvents.Add(new AgentStreamEventDto
-              {
-                Type = "status",
-                Text = L["AgentStatusPreparing"]
-              });
+              pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = L["AgentStatusPreparing"] });
             }
           }
         }
@@ -265,21 +155,13 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
             emittedError = true;
             if (!string.IsNullOrWhiteSpace(resText))
             {
-              pendingEvents.Add(new AgentStreamEventDto
-              {
-                Type = "error",
-                Text = resText
-              });
+              pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = resText });
             }
           }
           else if (fullAssistantText.Length == 0 && !string.IsNullOrEmpty(resText))
           {
             fullAssistantText.Append(resText);
-            pendingEvents.Add(new AgentStreamEventDto
-            {
-              Type = "delta",
-              Text = resText
-            });
+            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = resText });
           }
         }
 

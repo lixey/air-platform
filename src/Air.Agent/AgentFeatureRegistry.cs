@@ -1,3 +1,5 @@
+using Platform.Agent.Internals;
+
 namespace Platform.Agent;
 
 public static class AgentFeatureRegistry
@@ -17,27 +19,40 @@ public static class AgentFeatureRegistry
     !string.Equals(el.Type, "password", StringComparison.OrdinalIgnoreCase) &&
     el.Model is not FormInfoModel;
 
-  public static IReadOnlyList<GridCreateDescriptor> DiscoverForms(PlatformDbContext db, PlatformAppService app)
+  public static IReadOnlyList<GridCreateDescriptor> DiscoverForms(PlatformDbContext db, PlatformAppService app) =>
+    DiscoverForms(app.Services, db, app);
+
+  public static IReadOnlyList<GridCreateDescriptor> DiscoverForms(
+    IServiceProvider rootServices,
+    PlatformDbContext? fallbackDb = null,
+    PlatformAppService? fallbackApp = null)
   {
     var list = new List<GridCreateDescriptor>();
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     foreach (var feat in ModuleCatalog.Instance.AllFeatures)
     {
-      if (!feat.AllowsAgentWrite || !CanEditFeature(feat, app) || feat.ServiceType == null)
+      if (!feat.AllowsAgentWrite || feat.ServiceType == null)
       {
         continue;
       }
 
       try
       {
-        var inst = ModuleCatalog.Instance.CreateServiceInstance(feat.ServiceType, db, app);
+        using var scope = AgentModuleScope.OpenForService(rootServices, feat.ServiceType, fallbackDb, fallbackApp);
+        if (!CanEditFeature(feat, scope.App))
+        {
+          continue;
+        }
+
+        var inst = ModuleCatalog.Instance.CreateServiceInstance(feat.ServiceType, scope.Db, scope.App);
         if (inst is IGridService grid)
         {
           foreach (var desc in grid.GetAgentForms())
           {
-            if (ModuleCatalog.Instance.CreateServiceInstance(desc.FormServiceType, db, app) is IFormService descForm &&
-                (!descForm.Feature.AllowsAgentWrite || !CanEditFeature(descForm.Feature, app)))
+            using var formScope = AgentModuleScope.OpenForService(rootServices, desc.FormServiceType, scope.Db, scope.App);
+            if (ModuleCatalog.Instance.CreateServiceInstance(desc.FormServiceType, formScope.Db, formScope.App) is IFormService descForm &&
+                (!descForm.Feature.AllowsAgentWrite || !CanEditFeature(descForm.Feature, formScope.App)))
             {
               continue;
             }
@@ -72,7 +87,15 @@ public static class AgentFeatureRegistry
     IReadOnlyList<GridCreateDescriptor> descriptors,
     string? query,
     PlatformDbContext? db = null,
-    PlatformAppService? app = null)
+    PlatformAppService? app = null) =>
+    ResolveFormDescriptor(descriptors, query, app?.Services, db, app);
+
+  public static GridCreateDescriptor? ResolveFormDescriptor(
+    IReadOnlyList<GridCreateDescriptor> descriptors,
+    string? query,
+    IServiceProvider? rootServices,
+    PlatformDbContext? fallbackDb = null,
+    PlatformAppService? fallbackApp = null)
   {
     if (string.IsNullOrWhiteSpace(query))
     {
@@ -84,11 +107,9 @@ public static class AgentFeatureRegistry
 
     var match = descriptors.FirstOrDefault(d => string.Equals(d.ServicePath, q, StringComparison.OrdinalIgnoreCase))
       ?? descriptors.FirstOrDefault(d => string.Equals(NormalizeServiceKey(d.ServicePath), normQ, StringComparison.OrdinalIgnoreCase))
-      ?? descriptors.FirstOrDefault(d => string.Equals(d.Label, q, StringComparison.OrdinalIgnoreCase))
-      ?? descriptors.FirstOrDefault(d => d.FormServiceType.Name.Contains(q.Replace("-", "").Replace("/", ""), StringComparison.OrdinalIgnoreCase))
-      ?? descriptors.FirstOrDefault(d => NormalizeServiceKey(d.ServicePath).Contains(normQ, StringComparison.OrdinalIgnoreCase));
+      ?? descriptors.FirstOrDefault(d => string.Equals(d.Label, q, StringComparison.OrdinalIgnoreCase));
 
-    if (match != null || db == null || app == null)
+    if (match != null || rootServices == null && fallbackDb == null)
     {
       return match;
     }
@@ -98,10 +119,11 @@ public static class AgentFeatureRegistry
     {
       try
       {
+        using var scope = AgentModuleScope.OpenForService(rootServices ?? fallbackApp!.Services, directType, fallbackDb, fallbackApp);
         if (typeof(IGridService).IsAssignableFrom(directType) &&
-            ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IGridService grid &&
+            ModuleCatalog.Instance.CreateServiceInstance(directType, scope.Db, scope.App) is IGridService grid &&
             grid.Feature.AllowsAgentWrite &&
-            CanEditFeature(grid.Feature, app))
+            CanEditFeature(grid.Feature, scope.App))
         {
           var agentForms = grid.GetAgentForms();
           foreach (var create in agentForms)
@@ -117,24 +139,10 @@ public static class AgentFeatureRegistry
         }
 
         if (typeof(IFormService).IsAssignableFrom(directType) &&
-            ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IFormService form &&
+            ModuleCatalog.Instance.CreateServiceInstance(directType, scope.Db, scope.App) is IFormService form &&
             form.Feature.AllowsAgentWrite &&
-            CanEditFeature(form.Feature, app))
+            CanEditFeature(form.Feature, scope.App))
         {
-          if (form.Feature.ServiceType != null &&
-              typeof(IGridService).IsAssignableFrom(form.Feature.ServiceType) &&
-              ModuleCatalog.Instance.CreateServiceInstance(form.Feature.ServiceType, db, app) is IGridService ownerGrid)
-          {
-            foreach (var create in ownerGrid.GetAgentForms())
-            {
-              var found = descriptors.FirstOrDefault(d => string.Equals(d.ServicePath, create.ServicePath, StringComparison.OrdinalIgnoreCase));
-              if (found != null)
-              {
-                return found;
-              }
-            }
-          }
-
           return new GridCreateDescriptor(directType, form.Service, form.GetTitle(), UiColor.Blue);
         }
       }
@@ -144,13 +152,24 @@ public static class AgentFeatureRegistry
     return null;
   }
 
-  public static async Task<GridCreateDescriptor> ResolveEditFormDescriptorAsync(
+  public static Task<GridCreateDescriptor> ResolveEditFormDescriptorAsync(
     IReadOnlyList<GridCreateDescriptor> descriptors,
     GridCreateDescriptor fallbackDesc,
     string? requestedService,
     long recordId,
     PlatformDbContext db,
     PlatformAppService app,
+    CancellationToken ct) =>
+    ResolveEditFormDescriptorAsync(descriptors, fallbackDesc, requestedService, recordId, app.Services, db, app, ct);
+
+  public static async Task<GridCreateDescriptor> ResolveEditFormDescriptorAsync(
+    IReadOnlyList<GridCreateDescriptor> descriptors,
+    GridCreateDescriptor fallbackDesc,
+    string? requestedService,
+    long recordId,
+    IServiceProvider rootServices,
+    PlatformDbContext? fallbackDb,
+    PlatformAppService? fallbackApp,
     CancellationToken ct)
   {
     Type? gridServiceType = null;
@@ -163,48 +182,34 @@ public static class AgentFeatureRegistry
         {
           gridServiceType = directType;
         }
-        else if (typeof(IFormService).IsAssignableFrom(directType))
+        else if (typeof(IFormService).IsAssignableFrom(directType) &&
+                 ModuleCatalog.Instance.FindFeature(directType)?.ServiceType is { } ownerType &&
+                 typeof(IGridService).IsAssignableFrom(ownerType))
         {
-          try
-          {
-            if (ModuleCatalog.Instance.CreateServiceInstance(directType, db, app) is IFormService reqForm &&
-                reqForm.Feature.ServiceType != null &&
-                typeof(IGridService).IsAssignableFrom(reqForm.Feature.ServiceType))
-            {
-              gridServiceType = reqForm.Feature.ServiceType;
-            }
-          }
-          catch { }
+          gridServiceType = ownerType;
         }
       }
     }
 
-    if (gridServiceType == null)
+    if (gridServiceType == null &&
+        ModuleCatalog.Instance.FindFeature(fallbackDesc.FormServiceType)?.ServiceType is { } fallbackGridType &&
+        typeof(IGridService).IsAssignableFrom(fallbackGridType))
     {
-      try
-      {
-        if (ModuleCatalog.Instance.CreateServiceInstance(fallbackDesc.FormServiceType, db, app) is IFormService formInst &&
-            formInst.Feature.ServiceType != null &&
-            typeof(IGridService).IsAssignableFrom(formInst.Feature.ServiceType))
-        {
-          gridServiceType = formInst.Feature.ServiceType;
-        }
-      }
-      catch { }
+      gridServiceType = fallbackGridType;
     }
 
     if (gridServiceType != null)
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(gridServiceType, db, app) is IGridService ownerGrid &&
-            CanViewFeature(ownerGrid.Feature, app))
+        await using var scope = AgentModuleScope.OpenForService(rootServices, gridServiceType, fallbackDb, fallbackApp);
+        if (ModuleCatalog.Instance.CreateServiceInstance(gridServiceType, scope.Db, scope.App) is IGridService ownerGrid &&
+            CanViewFeature(ownerGrid.Feature, scope.App))
         {
           var rowObj = await ownerGrid.ReadRowAsync(recordId, ct);
-          if (rowObj?.Open?.Service is { Length: > 0 } rowFormPath &&
-              !string.IsNullOrWhiteSpace(rowFormPath))
+          if (rowObj?.Open?.Service is { Length: > 0 } rowFormPath)
           {
-            var matched = ResolveFormDescriptor(descriptors, rowFormPath, db, app);
+            var matched = ResolveFormDescriptor(descriptors, rowFormPath, rootServices, scope.Db, scope.App);
             if (matched != null)
             {
               return matched;
@@ -214,7 +219,7 @@ public static class AgentFeatureRegistry
           var creates = ownerGrid.GetAgentForms();
           if (creates.Count == 1)
           {
-            var singleMatch = ResolveFormDescriptor(descriptors, creates[0].ServicePath, db, app);
+            var singleMatch = ResolveFormDescriptor(descriptors, creates[0].ServicePath, rootServices, scope.Db, scope.App);
             if (singleMatch != null)
             {
               return singleMatch;
@@ -232,8 +237,9 @@ public static class AgentFeatureRegistry
     IReadOnlyList<GridCreateDescriptor> agentForms,
     string referenceService,
     FormElementDto element,
-    PlatformDbContext db,
-    PlatformAppService app)
+    IServiceProvider rootServices,
+    PlatformDbContext? fallbackDb,
+    PlatformAppService? fallbackApp)
   {
     if (element.CreateFormServiceType != null)
     {
@@ -250,9 +256,10 @@ public static class AgentFeatureRegistry
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, app) is IGridService refGrid &&
+        using var scope = AgentModuleScope.OpenForService(rootServices, gridType, fallbackDb, fallbackApp);
+        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, scope.Db, scope.App) is IGridService refGrid &&
             refGrid.Feature.AllowsAgentWrite &&
-            CanEditFeature(refGrid.Feature, app))
+            CanEditFeature(refGrid.Feature, scope.App))
         {
           var gridCreate = refGrid.GetAgentForms().FirstOrDefault();
           if (gridCreate != null)
@@ -268,38 +275,14 @@ public static class AgentFeatureRegistry
     return null;
   }
 
-  public static GridCreateDescriptor? ResolveChildCreateForm(
-    Type childGridServiceType,
-    PlatformDbContext db,
-    PlatformAppService app)
-  {
-    try
-    {
-      if (ModuleCatalog.Instance.CreateServiceInstance(childGridServiceType, db, app) is IGridService childGrid &&
-          !childGrid.Feature.IsReadOnly &&
-          CanViewFeature(childGrid.Feature, app) &&
-          CanEditFeature(childGrid.Feature, app))
-      {
-        var createDesc = childGrid.GetCreateForms().FirstOrDefault();
-        if (createDesc != null &&
-            ModuleCatalog.Instance.CreateServiceInstance(createDesc.FormServiceType, db, app) is IFormService childForm &&
-            !childForm.Feature.IsReadOnly &&
-            CanEditFeature(childForm.Feature, app))
-        {
-          return createDesc;
-        }
-      }
-    }
-    catch { }
-
-    return null;
-  }
-
-  public static (ChildGridBuilder Child, IGridService ChildGrid, GridCreateDescriptor ChildCreate, IFormService ChildForm)? ResolveEditableChildLineGrid(
+  internal static IReadOnlyList<AgentEditableChildDescriptor> ResolveEditableChildGrids(
     IReadOnlyList<ChildGridBuilder> children,
-    PlatformDbContext db,
-    PlatformAppService app)
+    Feature parentFeature,
+    IServiceProvider rootServices,
+    PlatformDbContext? fallbackDb = null,
+    PlatformAppService? fallbackApp = null)
   {
+    var list = new List<AgentEditableChildDescriptor>();
     foreach (var c in children)
     {
       if (c.IsFiles || c.IsReadOnly || c.ServiceType == null || !typeof(IGridService).IsAssignableFrom(c.ServiceType))
@@ -309,26 +292,53 @@ public static class AgentFeatureRegistry
 
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(c.ServiceType, db, app) is not IGridService childGrid ||
+        using var scope = AgentModuleScope.OpenForService(rootServices, c.ServiceType, fallbackDb, fallbackApp);
+        if (ModuleCatalog.Instance.CreateServiceInstance(c.ServiceType, scope.Db, scope.App) is not IGridService childGrid ||
             childGrid.Feature.IsReadOnly ||
-            !CanViewFeature(childGrid.Feature, app) ||
-            !CanEditFeature(childGrid.Feature, app))
+            !IsChildAgentWriteAllowed(childGrid.Feature, parentFeature) ||
+            !CanViewFeature(childGrid.Feature, scope.App) ||
+            !CanEditFeature(childGrid.Feature, scope.App))
         {
           continue;
         }
 
-        var childCreate = childGrid.GetCreateForms().FirstOrDefault();
-        if (childCreate != null &&
-            ModuleCatalog.Instance.CreateServiceInstance(childCreate.FormServiceType, db, app) is IFormService childForm &&
-            !childForm.Feature.IsReadOnly &&
-            CanEditFeature(childForm.Feature, app))
+        var childCreate = childGrid.GetAgentForms().FirstOrDefault();
+        if (childCreate == null)
         {
-          return (c, childGrid, childCreate, childForm);
+          continue;
+        }
+
+        using var formScope = AgentModuleScope.OpenForService(rootServices, childCreate.FormServiceType, scope.Db, scope.App);
+        if (ModuleCatalog.Instance.CreateServiceInstance(childCreate.FormServiceType, formScope.Db, formScope.App) is IFormService childForm &&
+            !childForm.Feature.IsReadOnly &&
+            IsChildAgentWriteAllowed(childForm.Feature, parentFeature) &&
+            CanEditFeature(childForm.Feature, formScope.App))
+        {
+          var childKey = !string.IsNullOrWhiteSpace(c.DeclaredKey) ? c.DeclaredKey : c.ServicePath;
+          var title = !string.IsNullOrWhiteSpace(c.DeclaredLabel)
+            ? Localizer.Instance.For(parentFeature.Module)[c.DeclaredLabel]
+            : !string.IsNullOrWhiteSpace(childCreate.Label)
+              ? childCreate.Label
+              : Localizer.Instance.For(childGrid.Feature.Module)[childGrid.Feature.Name];
+          list.Add(new AgentEditableChildDescriptor(
+            c,
+            childKey,
+            c.ServicePath,
+            childCreate.ServicePath,
+            c.ServiceType,
+            childCreate.FormServiceType,
+            title));
         }
       }
       catch { }
     }
 
-    return null;
+    return list;
   }
+
+  internal static bool IsChildAgentReadAllowed(Feature childFeature, Feature parentFeature) =>
+    ReferenceEquals(childFeature, parentFeature) ? parentFeature.AllowsAgent : childFeature.AllowsAgent;
+
+  internal static bool IsChildAgentWriteAllowed(Feature childFeature, Feature parentFeature) =>
+    ReferenceEquals(childFeature, parentFeature) ? parentFeature.AllowsAgentWrite : childFeature.AllowsAgentWrite;
 }

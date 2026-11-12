@@ -1,0 +1,336 @@
+using static Platform.Agent.Internals.AgentValueHelpers;
+
+namespace Platform.Agent.Internals;
+
+internal static class AgentProposalChildBuilder
+{
+  public static HashSet<string> CollectChildReferenceServices(
+    IReadOnlyList<AgentEditableChildDescriptor> editableChildren,
+    bool isEdit,
+    long? recordId,
+    string parentServicePath,
+    IServiceProvider rootServices,
+    PlatformDbContext fallbackDb,
+    PlatformAppService fallbackApp)
+  {
+    var refServices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var childDesc in editableChildren)
+    {
+      using var scope = AgentModuleScope.OpenForService(rootServices, childDesc.ChildFormType, fallbackDb, fallbackApp);
+      if (ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildFormType, scope.Db, scope.App) is not IFormService childForm)
+      {
+        continue;
+      }
+
+      childForm.SetRequest(new FormRequest { ParentId = isEdit ? recordId : null, ParentService = parentServicePath });
+      var (cEls, _) = childForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+      foreach (var cel in cEls.Where(AgentFeatureRegistry.IsEditableElement))
+      {
+        if (cel.Model is FormSelectModel cs && !string.IsNullOrEmpty(cs.ReferenceService))
+        {
+          refServices.Add(cs.ReferenceService);
+        }
+      }
+    }
+
+    return refServices;
+  }
+
+  public static async Task<(List<AgentProposalChildGroupDto> DisplayGroups, List<StagedChildGroupPayload> StagedGroups)> BuildChildGroupsAsync(
+    JsonElement args,
+    JsonElement valuesSource,
+    IReadOnlyList<ChildGridBuilder> allChildren,
+    IReadOnlyList<AgentEditableChildDescriptor> editableChildren,
+    Feature parentFeature,
+    bool isEdit,
+    long? recordId,
+    GridCreateDescriptor targetDesc,
+    Dictionary<string, object?> parentFormValues,
+    HashSet<string> explicitlyProvidedParentFields,
+    List<PendingNewReference> newReferences,
+    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
+    Func<string, string?, AgentProposalDto?> findReferencedProposal,
+    IServiceProvider rootServices,
+    PlatformDbContext fallbackDb,
+    PlatformAppService fallbackApp,
+    Localizer L,
+    CancellationToken ct)
+  {
+    var requestedInputs = ExtractRequestedChildInputs(args, valuesSource, allChildren, editableChildren);
+    var displayGroups = new List<AgentProposalChildGroupDto>();
+    var stagedGroups = new List<StagedChildGroupPayload>();
+    _ = parentFeature;
+
+    foreach (var (childDesc, mode, rowsProp) in requestedInputs)
+    {
+      await using var scope = AgentModuleScope.OpenForService(rootServices, childDesc.ChildFormType, fallbackDb, fallbackApp);
+      var childForm = ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildFormType, scope.Db, scope.App) as IFormService
+        ?? throw new InvalidOperationException(L["MutationRefused"]);
+
+      childForm.SetRequest(new FormRequest { ParentId = isEdit ? recordId : null, ParentService = targetDesc.ServicePath });
+      var (rawElements, _) = await childForm.GetElementsMetadataAsync(ct);
+      var childEditableElements = rawElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
+
+      if (isEdit &&
+          ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildGridType, scope.Db, scope.App) is IGridService childGrid &&
+          string.Equals(mode, AgentProposalChildMode.Replace, StringComparison.OrdinalIgnoreCase) &&
+          !childGrid.CanDelete())
+      {
+        var allHaveIds = rowsProp.GetArrayLength() > 0 &&
+                         rowsProp.EnumerateArray().All(el => el.ValueKind == JsonValueKind.Object && TryGetRecordId(el) is > 0);
+        if (!allHaveIds)
+        {
+          var countDto = await childGrid.GetCountAsync(new GridRequest { ParentId = recordId }, ct);
+          if (countDto.Total > 0)
+          {
+            throw new InvalidOperationException(L["MutationRefused"]);
+          }
+        }
+      }
+
+      var childDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(childForm, ct);
+      var displayRows = new List<AgentProposalChildRowDto>();
+      var rawRows = new List<Dictionary<string, object?>>();
+      var seenColumnKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+      foreach (var item in rowsProp.EnumerateArray())
+      {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+          continue;
+        }
+
+        var rowResult = await AgentProposalChildRowParser.ParseSingleChildRowAsync(
+          item,
+          isEdit,
+          recordId,
+          targetDesc.ServicePath,
+          childForm,
+          childDefaults,
+          childEditableElements,
+          parentFormValues,
+          newReferences,
+          dictionaries,
+          findReferencedProposal,
+          scope.Db,
+          scope.App,
+          L,
+          ct);
+
+        if (rowResult == null)
+        {
+          continue;
+        }
+
+        var (rowDto, rowDict, rowPendingRefs) = rowResult.Value;
+        foreach (var colKey in rowDto.Cells.Keys)
+        {
+          seenColumnKeys.Add(colKey);
+        }
+
+        displayRows.Add(rowDto);
+        rawRows.Add(rowDict);
+        var addedRowIdx = rawRows.Count - 1;
+        foreach (var pr in rowPendingRefs)
+        {
+          pr.ChildKey = childDesc.ChildKey;
+          pr.LineIndex = addedRowIdx;
+          newReferences.Add(pr);
+        }
+      }
+
+      ApplyChildSumMappings(childDesc.Builder, rawRows, parentFormValues, explicitlyProvidedParentFields);
+
+      var columns = childEditableElements
+        .Where(cel => seenColumnKeys.Contains(cel.Path))
+        .Select(cel => new AgentProposalChildColumnDto
+        {
+          Key = cel.Path,
+          Label = cel.Label ?? cel.Path,
+          IsNumeric = cel.Type == UiFieldType.Number || cel.Model is FormMoneyModel or FormPercentModel
+        })
+        .ToList();
+
+      if (displayRows.Count > 0)
+      {
+        displayGroups.Add(new AgentProposalChildGroupDto
+        {
+          ChildKey = childDesc.ChildKey,
+          ChildService = childDesc.ChildGridService,
+          Title = childDesc.Title,
+          Mode = mode,
+          Columns = columns,
+          Rows = displayRows
+        });
+      }
+
+      stagedGroups.Add(new StagedChildGroupPayload
+      {
+        ChildKey = childDesc.ChildKey,
+        ChildGridService = childDesc.ChildGridService,
+        ChildFormService = childDesc.ChildFormService,
+        Mode = mode,
+        HasUpdate = isEdit || rawRows.Count > 0,
+        Rows = rawRows
+      });
+    }
+
+    return (displayGroups, stagedGroups);
+  }
+
+  private static List<(AgentEditableChildDescriptor Descriptor, string Mode, JsonElement Rows)> ExtractRequestedChildInputs(
+    JsonElement args,
+    JsonElement valuesSource,
+    IReadOnlyList<ChildGridBuilder> allChildren,
+    IReadOnlyList<AgentEditableChildDescriptor> editableChildren)
+  {
+    var result = new List<(AgentEditableChildDescriptor, string, JsonElement)>();
+
+    if (TryGetPropertyIgnoreCase(args, "children", out var childrenEl) ||
+        !valuesSource.Equals(args) && TryGetPropertyIgnoreCase(valuesSource, "children", out childrenEl))
+    {
+      if (childrenEl.ValueKind == JsonValueKind.Array)
+      {
+        foreach (var groupEl in childrenEl.EnumerateArray())
+        {
+          if (groupEl.ValueKind != JsonValueKind.Object)
+          {
+            continue;
+          }
+
+          var rawKey = TryGetString(groupEl, "childKey")
+            ?? TryGetString(groupEl, "key")
+            ?? TryGetString(groupEl, "childService")
+            ?? TryGetString(groupEl, "service");
+          var desc = MatchEditableChildDescriptor(rawKey, allChildren, editableChildren);
+          var mode = NormalizeChildMode(TryGetString(groupEl, "mode"));
+          if (TryGetPropertyIgnoreCase(groupEl, "rows", out var rowsEl) && rowsEl.ValueKind == JsonValueKind.Array)
+          {
+            result.Add((desc, mode, rowsEl));
+          }
+        }
+      }
+      else if (childrenEl.ValueKind == JsonValueKind.Object)
+      {
+        foreach (var prop in childrenEl.EnumerateObject())
+        {
+          var desc = MatchEditableChildDescriptor(prop.Name, allChildren, editableChildren);
+          if (prop.Value.ValueKind == JsonValueKind.Array)
+          {
+            result.Add((desc, AgentProposalChildMode.Replace, prop.Value));
+          }
+          else if (prop.Value.ValueKind == JsonValueKind.Object &&
+                   TryGetPropertyIgnoreCase(prop.Value, "rows", out var rowsEl) &&
+                   rowsEl.ValueKind == JsonValueKind.Array)
+          {
+            result.Add((desc, NormalizeChildMode(TryGetString(prop.Value, "mode")), rowsEl));
+          }
+        }
+      }
+    }
+
+    if (result.Count == 0 &&
+        (TryGetPropertyIgnoreCase(args, "lines", out var linesEl) ||
+         !valuesSource.Equals(args) && TryGetPropertyIgnoreCase(valuesSource, "lines", out linesEl)) &&
+        linesEl.ValueKind == JsonValueKind.Array)
+    {
+      if (editableChildren.Count == 0)
+      {
+        if (allChildren.Any(c => !c.IsFiles))
+        {
+          throw new InvalidOperationException("Child grid is read-only or not enabled for AI mutations.");
+        }
+      }
+      else
+      {
+        var rawMode = TryGetString(args, "linesMode") ?? TryGetString(valuesSource, "linesMode");
+        result.Add((editableChildren[0], NormalizeChildMode(rawMode), linesEl));
+      }
+    }
+
+    return result;
+  }
+
+  private static AgentEditableChildDescriptor MatchEditableChildDescriptor(
+    string? rawKey,
+    IReadOnlyList<ChildGridBuilder> allChildren,
+    IReadOnlyList<AgentEditableChildDescriptor> editableChildren)
+  {
+    if (string.IsNullOrWhiteSpace(rawKey))
+    {
+      return editableChildren.Count == 1
+        ? editableChildren[0]
+        : throw new InvalidOperationException("Specify 'childKey' when staging child rows on a multi-child form.");
+    }
+
+    var key = rawKey.Trim();
+    var normKey = AgentFeatureRegistry.NormalizeServiceKey(key);
+    var matched = editableChildren.FirstOrDefault(c =>
+      string.Equals(c.ChildKey, key, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(c.ChildGridService, key, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(c.ChildFormService, key, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(AgentFeatureRegistry.NormalizeServiceKey(c.ChildKey), normKey, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(AgentFeatureRegistry.NormalizeServiceKey(c.ChildGridService), normKey, StringComparison.OrdinalIgnoreCase));
+
+    if (matched != null)
+    {
+      return matched;
+    }
+
+    var declaredNonFile = allChildren.FirstOrDefault(c =>
+      !c.IsFiles &&
+      (string.Equals(c.DeclaredKey, key, StringComparison.OrdinalIgnoreCase) ||
+       string.Equals(c.ServicePath, key, StringComparison.OrdinalIgnoreCase)));
+    if (declaredNonFile != null)
+    {
+      throw new InvalidOperationException($"Child grid '{key}' is read-only or not enabled for AI mutations.");
+    }
+
+    throw new InvalidOperationException($"Unknown child grid '{key}'.");
+  }
+
+  private static string NormalizeChildMode(string? rawMode) =>
+    string.Equals(rawMode?.Trim(), AgentProposalChildMode.Append, StringComparison.OrdinalIgnoreCase)
+      ? AgentProposalChildMode.Append
+      : AgentProposalChildMode.Replace;
+
+  private static void ApplyChildSumMappings(
+    ChildGridBuilder childBuilder,
+    IReadOnlyList<Dictionary<string, object?>> rawRows,
+    Dictionary<string, object?> parentFormValues,
+    HashSet<string> explicitlyProvidedParentFields)
+  {
+    if (rawRows.Count == 0 || childBuilder.SumMappings.Count == 0)
+    {
+      return;
+    }
+
+    foreach (var mapping in childBuilder.SumMappings)
+    {
+      if (string.IsNullOrWhiteSpace(mapping.ParentFieldPath) ||
+          string.IsNullOrWhiteSpace(mapping.ChildFieldPath) ||
+          explicitlyProvidedParentFields.Contains(mapping.ParentFieldPath))
+      {
+        continue;
+      }
+
+      var computedSum = 0m;
+      foreach (var dict in rawRows)
+      {
+        if (dict.TryGetValue(mapping.ChildFieldPath, out var cellVal) && TryConvertToDecimal(cellVal, out var decVal))
+        {
+          computedSum += decVal;
+        }
+      }
+
+      if (computedSum != 0m)
+      {
+        var baseTotal = parentFormValues.TryGetValue(mapping.ParentFieldPath, out var curVal) &&
+                        TryConvertToDecimal(curVal, out var existingTotal)
+          ? existingTotal
+          : 0m;
+        parentFormValues[mapping.ParentFieldPath] = baseTotal + computedSum;
+      }
+    }
+  }
+}

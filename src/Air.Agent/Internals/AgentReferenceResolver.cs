@@ -1,3 +1,4 @@
+using static Platform.Agent.Internals.AgentRowValueHelpers;
 using static Platform.Agent.Internals.AgentValueHelpers;
 
 namespace Platform.Agent.Internals;
