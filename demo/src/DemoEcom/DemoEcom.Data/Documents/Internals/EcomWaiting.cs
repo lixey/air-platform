@@ -1,4 +1,4 @@
-namespace DemoEcom.Data.Documents;
+namespace DemoEcom.Data.Documents.Internals;
 
 /// <summary>
 /// A customer order that waits for an arrival: the order in Confirmed or Paused, every line of it as the context tracks

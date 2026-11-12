@@ -1,6 +1,6 @@
 namespace DemoApp.Role;
 
-public sealed class AppRoleGridService(AppDbContext db, AppService? app = null)
+public sealed class AppRoleGridService(AppDbContext db, AppService app)
   : AppGridService<AppAuthRole>(db, app)
 {
   public override Feature Feature => App.Role;
@@ -22,7 +22,7 @@ public sealed class AppRoleGridService(AppDbContext db, AppService? app = null)
       var roles = c.Records.Select(r => r.Id).ToList();
       foreach (var r in c.Records)
       {
-        if (!await PlatformAppService.CoversRoleGrantsAsync(db, app, User, r.Id, cancellationToken))
+        if (app == null || !await PlatformAppService.CoversRoleGrantsAsync(db, app, User, r.Id, cancellationToken))
         {
           c.Refuse(L["You cannot modify a role with permissions you do not hold."], r.Id);
           return;

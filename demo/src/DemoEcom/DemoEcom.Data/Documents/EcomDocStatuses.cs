@@ -1,3 +1,5 @@
+using DemoEcom.Data.Documents.Internals;
+
 namespace DemoEcom.Data.Documents;
 
 /// <summary>
@@ -60,10 +62,10 @@ public static class EcomDocStatuses
   /// A supplier invoice entered on a purchase order receives it. Entering Posted, its lines take together no more than
   /// their purchase lines have open; it posts itself, a receipt; the purchase lines count the quantity as done, the
   /// received one; a source purchase order in Sent is posted again, so it expects what it asks less what arrived; then
-  /// its waiting orders (<see cref="EcomDocEntering.WaitingAsync"/>), the customer orders those purchase lines were made
+  /// its waiting orders (<see cref="EcomDocPurchasing.WaitingAsync"/>), the customer orders those purchase lines were made
   /// for, in Confirmed or Paused, of the invoice's organisation and warehouse, reserve and are posted, the oldest first,
   /// so the arrival is held for the lines that wait for it and what no waiting order takes stays free; and last the
-  /// purchased quantities of those orders' lines are recomputed (<see cref="EcomDocEntering.PurchasedAsync"/>): what
+  /// purchased quantities of those orders' lines are recomputed (<see cref="EcomDocPurchasing.PurchasedAsync"/>): what
   /// arrived is purchased no more. Leaving Posted, the reserve the waiting orders hold of its products, at most what it
   /// brought, is admitted to its own posting, so it is refused by the stock only when its goods left the warehouse or
   /// another document holds them; the purchase lines count the quantity as done no more and the purchase order is
@@ -123,14 +125,14 @@ public static class EcomDocStatuses
 
     // What the document is entered on: its links, and the sources of its lines when the change counts on them
     var counts = EcomDocEntering.Fulfils(doc.DocTypeId);
-    var purchase = doc.DocTypeId == EcomData.DocType.PurchaseOrderId;
+    var purchase = doc.DocTypeId == EcomDocTypeData.PurchaseOrderId;
     var payment = EcomMoney.Moves(doc.DocTypeId);
     var basis = counts || purchase || payment ? await EcomDocEntering.BasisAsync(db, doc, cancellationToken) : [];
     var entered = counts && (entering || leaving) ? EcomDocEntering.Entered(basis) : [];
     var sources = entered.Count > 0 ? await EcomDocEntering.SourcesAsync(db, entered, cancellationToken) : [];
 
     // A supplier invoice entered on a purchase order arrives for the customer orders that wait for it
-    var arrival = doc.DocTypeId == EcomData.DocType.SupplierInvoiceId && entered.Count > 0;
+    var arrival = doc.DocTypeId == EcomDocTypeData.SupplierInvoiceId && entered.Count > 0;
     IReadOnlyList<EcomWaiting> waiting = [];
     Dictionary<EcomStockKey, decimal>? held = null;
     if (entering && entered.Count > 0)
@@ -146,12 +148,12 @@ public static class EcomDocStatuses
     else if (leaving && arrival)
     {
       // Before the posting: what those orders reserved of the arrival does not keep the invoice from being taken back
-      waiting = await EcomDocEntering.WaitingAsync(db, doc, entered, cancellationToken);
-      held = EcomDocEntering.Waited(doc, lines, waiting);
+      waiting = await EcomDocPurchasing.WaitingAsync(db, doc, entered, cancellationToken);
+      held = EcomDocPurchasing.Waited(doc, lines, waiting);
     }
 
     var reserved = lines.Select(line => line.QtyReserved).ToList();
-    if (doc.DocTypeId == EcomData.DocType.CustomerOrderId)
+    if (doc.DocTypeId == EcomDocTypeData.CustomerOrderId)
     {
       if (to is { IsPosted: true, IsFinal: false })
       {
@@ -229,7 +231,7 @@ public static class EcomDocStatuses
       if (entering)
       {
         // The oldest order first: each reserves what the ones before it left free of the arrival
-        waiting = await EcomDocEntering.WaitingAsync(db, doc, entered, cancellationToken);
+        waiting = await EcomDocPurchasing.WaitingAsync(db, doc, entered, cancellationToken);
         foreach (var of in waiting)
         {
           await EcomStock.ReserveAsync(db, of.Order, of.Lines, cancellationToken);
@@ -248,13 +250,13 @@ public static class EcomDocStatuses
       }
 
       // What arrived is purchased no more, and what was taken back is purchased again
-      await EcomDocEntering.PurchasedAsync(db, PurchaseLines(entered), [], cancellationToken);
+      await EcomDocPurchasing.PurchasedAsync(db, PurchaseLines(entered), [], cancellationToken);
     }
 
-    if (purchase && EcomDocEntering.Asks(from.Id) != EcomDocEntering.Asks(to.Id))
+    if (purchase && EcomDocPurchasing.Asks(from.Id) != EcomDocPurchasing.Asks(to.Id))
     {
       // An order that asks no more gives back what did not arrive
-      await EcomDocEntering.PurchasedAsync(db, [.. lines.Where(line => line.Id != 0).Select(line => line.Id)], [], cancellationToken);
+      await EcomDocPurchasing.PurchasedAsync(db, [.. lines.Where(line => line.Id != 0).Select(line => line.Id)], [], cancellationToken);
     }
 
     return [];

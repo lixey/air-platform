@@ -32,7 +32,7 @@ public sealed class OrgOrganization : AppBaseModel
   public long ColorId { get; set; }
   public AppColor Color { get; set; } = null!;
 
-  public long CurrencyId { get; set; } = OrgData.Currency.UahId;
+  public long CurrencyId { get; set; } = OrgCurrencyData.UahId;
   public OrgCurrency Currency { get; set; } = null!;
 
   public bool IsActive { get; set; } = true;

@@ -5,11 +5,11 @@ namespace DemoEcom.OutgoingPayment;
 /// </summary>
 public sealed class EcomOutgoingPaymentFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.OutgoingPaymentDraftId;
-  private const long Posted = EcomData.DocStatus.OutgoingPaymentPostedId;
-  private const long Canceled = EcomData.DocStatus.OutgoingPaymentCanceledId;
+  private const long Draft = EcomDocStatusData.OutgoingPaymentDraftId;
+  private const long Posted = EcomDocStatusData.OutgoingPaymentPostedId;
+  private const long Canceled = EcomDocStatusData.OutgoingPaymentCanceledId;
 
-  protected override long Type => EcomData.DocType.OutgoingPaymentId;
+  protected override long Type => EcomDocTypeData.OutgoingPaymentId;
 
   public override Feature Feature => Ecom.OutgoingPayment;
 

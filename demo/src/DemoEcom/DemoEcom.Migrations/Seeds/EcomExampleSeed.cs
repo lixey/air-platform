@@ -1,3 +1,5 @@
+using DemoEcom.Migrations.Seeds.Internals;
+
 namespace DemoEcom.Migrations.Seeds;
 
 public static class EcomExampleSeed
@@ -16,8 +18,8 @@ public static class EcomExampleSeed
 
   private static readonly long[] Open =
   [
-    EcomData.DocStatus.CustomerOrderNewId, EcomData.DocStatus.CustomerOrderInProgressId, EcomData.DocStatus.CustomerOrderConfirmedId,
-    EcomData.DocStatus.CustomerOrderPausedId
+    EcomDocStatusData.CustomerOrderNewId, EcomDocStatusData.CustomerOrderInProgressId, EcomDocStatusData.CustomerOrderConfirmedId,
+    EcomDocStatusData.CustomerOrderPausedId
   ];
 
   private static readonly float[] FreshWeights = [0.5f, 0.3f, 0.15f, 0.05f];
@@ -73,7 +75,7 @@ public static class EcomExampleSeed
         {
           TenantId = tenant.Row.Id,
           OrganizationId = counter.Key.OrganizationId,
-          DocTypeId = EcomData.DocType.CustomerOrderId,
+          DocTypeId = EcomDocTypeData.CustomerOrderId,
           Year = counter.Key.Year,
           LastNumber = counter.Value
         }));
@@ -99,12 +101,12 @@ public static class EcomExampleSeed
       return null;
     }
 
-    var prefix = EcomCodeRows.DocTypes().Single(type => type.Id == EcomData.DocType.CustomerOrderId).Prefix;
+    var prefix = EcomCodeRows.DocTypes().Single(type => type.Id == EcomDocTypeData.CustomerOrderId).Prefix;
     var posted = EcomCodeRows.DocStatuses().Where(status => status.IsPosted).Select(status => status.Id).ToHashSet();
     return Orders(scope, volume.CustomerOrders, prefix, posted, EcomSeedClock.Today(scope.Zone, now), counters);
   }
 
-  private static async Task<Scope?> ScopeAsync(
+  private static async Task<EcomExampleScope?> ScopeAsync(
     EcomDbContext db,
     AppSeedTenant tenant,
     IReadOnlyList<AppSeedTenant> tenants,
@@ -117,10 +119,10 @@ public static class EcomExampleSeed
     var tenantId = tenant.Row.Id;
     var products = await db.OrgProduct.IgnoreQueryFilters()
       .Where(product => product.TenantId == tenantId && product.IsActive && product.Supplier.IsSupplier && product.Supplier.IsActive)
-      .Select(product => new Product(
+      .Select(product => new EcomExampleProduct(
         product.Id,
         product.Price,
-        product.UnitId != OrgData.Unit.PieceId && product.UnitId != OrgData.Unit.SetId
+        product.UnitId != OrgUnitData.PieceId && product.UnitId != OrgUnitData.SetId
       ))
       .ToDictionaryAsync(product => product.Id, cancellationToken);
 
@@ -133,7 +135,7 @@ public static class EcomExampleSeed
     var organizations = (await db.OrgOrganization.IgnoreQueryFilters()
         .Where(organization => organization.TenantId == tenantId && organization.IsActive).OrderBy(organization => organization.Id)
         .Select(organization => new { organization.Id, organization.Code, organization.CurrencyId }).ToListAsync(cancellationToken))
-      .Select(organization => new Organization(
+      .Select(organization => new EcomExampleOrganization(
         organization.Id,
         organization.Code,
         organization.CurrencyId,
@@ -143,7 +145,7 @@ public static class EcomExampleSeed
         ]
       )).Where(organization => organization.Warehouses.Length > 0).ToArray();
     var customers = await db.OrgCustomer.IgnoreQueryFilters().Where(customer => customer.TenantId == tenantId)
-      .OrderBy(customer => customer.Id).Select(customer => new Customer(
+      .OrderBy(customer => customer.Id).Select(customer => new EcomExampleCustomer(
         customer.Id,
         customer.Name,
         customer.Phone,
@@ -159,10 +161,10 @@ public static class EcomExampleSeed
       return null;
     }
 
-    var contacts = new Dictionary<long, Contact>();
+    var contacts = new Dictionary<long, EcomExampleContact>();
     foreach (var contact in await db.OrgCustomerContact.IgnoreQueryFilters()
                .Where(contact => contact.TenantId == tenantId && contact.IsPrimary).OrderBy(contact => contact.Id)
-               .Select(contact => new { contact.CustomerId, Row = new Contact(contact.Id, contact.Name, contact.Phone) })
+               .Select(contact => new { contact.CustomerId, Row = new EcomExampleContact(contact.Id, contact.Name, contact.Phone) })
                .ToListAsync(cancellationToken))
     {
       contacts.TryAdd(contact.CustomerId, contact.Row);
@@ -170,7 +172,7 @@ public static class EcomExampleSeed
 
     var deliveryTypes = await db.OrgDeliveryType.IgnoreQueryFilters().Where(type => type.TenantId == tenantId).OrderBy(type => type.Id)
       .Select(type => new { type.Id, type.IsPickup }).ToListAsync(cancellationToken);
-    return new Scope(
+    return new EcomExampleScope(
       tenantId,
       new Faker(tenant.Locale) { Random = random },
       EcomSeedClock.ZoneOf(tenant, tenants),
@@ -190,7 +192,7 @@ public static class EcomExampleSeed
   }
 
   private static IEnumerable<(EcomDoc Doc, EcomDocLine[] Lines)> Orders(
-    Scope scope,
+    EcomExampleScope scope,
     int count,
     string prefix,
     HashSet<long> posted,
@@ -216,7 +218,7 @@ public static class EcomExampleSeed
       {
         TenantId = scope.TenantId,
         OrganizationId = organization.Id,
-        DocTypeId = EcomData.DocType.CustomerOrderId,
+        DocTypeId = EcomDocTypeData.CustomerOrderId,
         DocStatusId = statusId,
         Number = EcomDocNumbers.Format(prefix, organization.Code, date.Year, number),
         Date = date,
@@ -241,12 +243,12 @@ public static class EcomExampleSeed
     }
   }
 
-  private static EcomDocLine[] Lines(Scope scope, EcomDoc doc, decimal discountPercent)
+  private static EcomDocLine[] Lines(EcomExampleScope scope, EcomDoc doc, decimal discountPercent)
   {
     var random = scope.Faker.Random;
     var assortment = scope.Assortments[doc.WarehouseId!.Value];
     var count = Math.Min(random.Int(1, MaxLines), assortment.Length);
-    var products = new List<Product>(count);
+    var products = new List<EcomExampleProduct>(count);
     while (products.Count < count)
     {
       var product = random.ArrayElement(assortment);
@@ -280,10 +282,10 @@ public static class EcomExampleSeed
   {
     <= FreshDays => random.WeightedRandom(Open, FreshWeights),
     <= RecentDays => random.WeightedRandom(Open, RecentWeights),
-    _ => random.Bool(0.9f) ? EcomData.DocStatus.CustomerOrderCompletedId : EcomData.DocStatus.CustomerOrderCanceledId
+    _ => random.Bool(0.9f) ? EcomDocStatusData.CustomerOrderCompletedId : EcomDocStatusData.CustomerOrderCanceledId
   };
 
-  private static string Address(Faker faker, Customer customer)
+  private static string Address(Faker faker, EcomExampleCustomer customer)
   {
     var street = faker.Address.StreetAddress();
     return customer.City is { Length: > 0 } city ? $"{city}, {street}" : street;
@@ -292,38 +294,4 @@ public static class EcomExampleSeed
   private static string NewPhone(Faker faker) => "+380" + faker.PickRandom(PhoneCodes) + faker.Random.ReplaceNumbers("#######");
 
   private static long? OneOf(Randomizer random, long[] keys) => keys.Length > 0 ? random.ArrayElement(keys) : null;
-
-  private sealed record Scope(
-    long TenantId,
-    Faker Faker,
-    TimeZoneInfo Zone,
-    string[] Notes,
-    Organization[] Organizations,
-    Customer[] Customers,
-    Dictionary<long, Contact> Contacts,
-    Dictionary<long, Product[]> Assortments,
-    long[] Managers,
-    long[] DeliveryTypes,
-    HashSet<long> Pickups,
-    long[] PaymentMethods,
-    long[] PaymentTerms
-  );
-
-  private sealed record Organization(long Id, string Code, long CurrencyId, long[] Warehouses);
-
-  private sealed record Customer(
-    long Id,
-    string Name,
-    string? Phone,
-    string? City,
-    decimal DiscountPercent,
-    long? ManagerId,
-    long? DeliveryTypeId,
-    long? PaymentMethodId,
-    long? PaymentTermId
-  );
-
-  private sealed record Contact(long Id, string Name, string? Phone);
-
-  private sealed record Product(long Id, decimal Price, bool Measured);
 }

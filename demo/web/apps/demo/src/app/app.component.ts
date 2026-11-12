@@ -11,7 +11,7 @@ import { RouterOutlet } from '@angular/router';
   imports: [RouterOutlet, AlertComponent],
   template: '<router-outlet/><ui-alert/>',
   host: {
-    class: 'block h-screen w-screen overflow-hidden bg-page',
+    class: 'block h-dvh w-screen overflow-hidden bg-page',
   },
 })
 export class AppComponent {}

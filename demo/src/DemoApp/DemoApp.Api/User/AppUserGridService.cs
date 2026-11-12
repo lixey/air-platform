@@ -1,6 +1,6 @@
 namespace DemoApp.User;
 
-public class AppUserGridService(AppDbContext db, AppService? app = null)
+public class AppUserGridService(AppDbContext db, AppService app)
   : AppGridService<AppUser>(db, app)
 {
   public override Feature Feature => App.User;
@@ -33,7 +33,7 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
 
       foreach (var u in c.Records)
       {
-        if (!await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, cancellationToken))
+        if (app == null || !await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, cancellationToken))
         {
           c.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
           return;
@@ -60,7 +60,7 @@ public class AppUserGridService(AppDbContext db, AppService? app = null)
 
         foreach (var u in ctx.Records)
         {
-          if (!await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, ct))
+          if (app == null || !await PlatformAppService.CoversUserGrantsAsync(db, app, User, u.Id, ct))
           {
             ctx.Refuse(L["You cannot modify a user with permissions you do not hold."], u.Id);
             return;

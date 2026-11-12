@@ -12,7 +12,7 @@ public static class EcomMoney
   /// Whether a document of the type moves money: an incoming and an outgoing payment, and no other type. A type moves
   /// stock or money, never both.
   /// </summary>
-  public static bool Moves(long docTypeId) => docTypeId is EcomData.DocType.IncomingPaymentId or EcomData.DocType.OutgoingPaymentId;
+  public static bool Moves(long docTypeId) => docTypeId is EcomDocTypeData.IncomingPaymentId or EcomDocTypeData.OutgoingPaymentId;
 
   /// <summary>
   /// The moves <paramref name="doc"/> holds in <paramref name="status"/>, not added to any context: while the status is
@@ -50,7 +50,7 @@ public static class EcomMoney
         Date = doc.Date,
         OrganizationId = doc.OrganizationId,
         MoneyAccountId = account,
-        Amount = doc.DocTypeId == EcomData.DocType.IncomingPaymentId ? doc.Amount : -doc.Amount
+        Amount = doc.DocTypeId == EcomDocTypeData.IncomingPaymentId ? doc.Amount : -doc.Amount
       }
     ];
   }

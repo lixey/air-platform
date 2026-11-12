@@ -3,7 +3,7 @@ namespace DemoEcom.PurchaseOrder;
 public sealed class EcomPurchaseOrderFormService(EcomDbContext db, EcomPurchaseOrderFlowService flow, EcomService? ecom = null)
   : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.PurchaseOrderId;
+  protected override long Type => EcomDocTypeData.PurchaseOrderId;
 
   protected override EcomDocFlowService Flow => flow;
 

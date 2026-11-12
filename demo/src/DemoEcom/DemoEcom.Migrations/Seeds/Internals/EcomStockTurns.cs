@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 /// <summary>
 /// The turns the statuses are dealt in, in the order the walk reaches the documents: per type for the supplier
@@ -13,17 +13,17 @@ internal sealed class EcomStockTurns
 
   private static readonly Dictionary<long, long[]> Stages = new()
   {
-    [EcomData.DocType.SupplierInvoiceId] =
+    [EcomDocTypeData.SupplierInvoiceId] =
     [
-      EcomData.DocStatus.SupplierInvoiceDraftId, EcomData.DocStatus.SupplierInvoicePostedId, EcomData.DocStatus.SupplierInvoiceCanceledId
+      EcomDocStatusData.SupplierInvoiceDraftId, EcomDocStatusData.SupplierInvoicePostedId, EcomDocStatusData.SupplierInvoiceCanceledId
     ],
-    [EcomData.DocType.StockIssueId] =
+    [EcomDocTypeData.StockIssueId] =
     [
-      EcomData.DocStatus.StockIssueDraftId, EcomData.DocStatus.StockIssuePostedId, EcomData.DocStatus.StockIssueCanceledId
+      EcomDocStatusData.StockIssueDraftId, EcomDocStatusData.StockIssuePostedId, EcomDocStatusData.StockIssueCanceledId
     ],
-    [EcomData.DocType.StockTransferId] =
+    [EcomDocTypeData.StockTransferId] =
     [
-      EcomData.DocStatus.StockTransferDraftId, EcomData.DocStatus.StockTransferPostedId, EcomData.DocStatus.StockTransferCanceledId
+      EcomDocStatusData.StockTransferDraftId, EcomDocStatusData.StockTransferPostedId, EcomDocStatusData.StockTransferCanceledId
     ]
   };
 
@@ -32,7 +32,7 @@ internal sealed class EcomStockTurns
   /// <summary>The status of the next document of <paramref name="typeId"/>, dated <paramref name="age"/> days before the reference day.</summary>
   public long Next(long typeId, int age)
   {
-    if (typeId != EcomData.DocType.PurchaseOrderId)
+    if (typeId != EcomDocTypeData.PurchaseOrderId)
     {
       var turn = _taken[typeId] = _taken.GetValueOrDefault(typeId) + 1;
       return Stages[typeId][Places[(turn - 1) % Places.Length]];
@@ -40,9 +40,9 @@ internal sealed class EcomStockTurns
 
     if (age <= EcomSeedClock.RecentDays)
     {
-      return _recent++ % 2 == 0 ? EcomData.DocStatus.PurchaseOrderSentId : EcomData.DocStatus.PurchaseOrderNewId;
+      return _recent++ % 2 == 0 ? EcomDocStatusData.PurchaseOrderSentId : EcomDocStatusData.PurchaseOrderNewId;
     }
 
-    return ++_older % CanceledEvery == 0 ? EcomData.DocStatus.PurchaseOrderCanceledId : EcomData.DocStatus.PurchaseOrderCompletedId;
+    return ++_older % CanceledEvery == 0 ? EcomDocStatusData.PurchaseOrderCanceledId : EcomDocStatusData.PurchaseOrderCompletedId;
   }
 }

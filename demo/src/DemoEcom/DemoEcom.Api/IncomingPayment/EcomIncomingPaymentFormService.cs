@@ -4,7 +4,7 @@ public sealed class EcomIncomingPaymentFormService(
   EcomDbContext db, EcomIncomingPaymentFlowService flow, EcomService? ecom = null
 ) : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.IncomingPaymentId;
+  protected override long Type => EcomDocTypeData.IncomingPaymentId;
 
   protected override EcomDocFlowService Flow => flow;
 

@@ -1,6 +1,6 @@
 namespace DemoApp.User;
 
-public class AppUserFormService(AppDbContext db, AppService? app = null)
+public class AppUserFormService(AppDbContext db, AppService app)
   : AppFormService<AppUser>(db, app)
 {
   public override Feature Feature => App.User;
@@ -71,7 +71,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
 
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
-      if (!c.IsNew && !await PlatformAppService.CoversUserGrantsAsync(db, app, User, c.Entity.Id, cancellationToken))
+      if (!c.IsNew && (app == null || !await PlatformAppService.CoversUserGrantsAsync(db, app, User, c.Entity.Id, cancellationToken)))
       {
         c.Refuse(L["You cannot modify a user with permissions you do not hold."]);
         return;
@@ -154,7 +154,7 @@ public class AppUserFormService(AppDbContext db, AppService? app = null)
       })
       .ToListAsync(cancellationToken);
     return roles
-      .Where(r => app == null || app.Covers(r.Grants))
+      .Where(r => app != null && app.Covers(r.Grants))
       .Select(r => new OptionDto { Id = r.Id, Name = L[r.Name] })
       .ToList();
   }

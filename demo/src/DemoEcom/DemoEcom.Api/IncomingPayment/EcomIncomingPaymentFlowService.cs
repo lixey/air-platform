@@ -5,11 +5,11 @@ namespace DemoEcom.IncomingPayment;
 /// </summary>
 public sealed class EcomIncomingPaymentFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.IncomingPaymentDraftId;
-  private const long Posted = EcomData.DocStatus.IncomingPaymentPostedId;
-  private const long Canceled = EcomData.DocStatus.IncomingPaymentCanceledId;
+  private const long Draft = EcomDocStatusData.IncomingPaymentDraftId;
+  private const long Posted = EcomDocStatusData.IncomingPaymentPostedId;
+  private const long Canceled = EcomDocStatusData.IncomingPaymentCanceledId;
 
-  protected override long Type => EcomData.DocType.IncomingPaymentId;
+  protected override long Type => EcomDocTypeData.IncomingPaymentId;
 
   public override Feature Feature => Ecom.IncomingPayment;
 

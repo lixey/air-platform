@@ -27,11 +27,11 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
       .ToListAsync(ct);
     if (currencies.Count == 0)
     {
-      currencies = [OrgData.Currency.UahCode];
+      currencies = [OrgCurrencyData.UahCode];
     }
 
-    var defaultCurrency = currencies.Contains(OrgData.Currency.UahCode)
-      ? OrgData.Currency.UahCode
+    var defaultCurrency = currencies.Contains(OrgCurrencyData.UahCode)
+      ? OrgCurrencyData.UahCode
       : currencies[0];
     var currency = request.Filters != null &&
                    request.Filters.TryGetValue("currency", out var reqCur) &&
@@ -41,7 +41,7 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
 
     var baseQuery = db.EcomDoc
       .AsNoTracking()
-      .Where(d => d.DocTypeId == EcomData.DocType.CustomerOrderId &&
+      .Where(d => d.DocTypeId == EcomDocTypeData.CustomerOrderId &&
                   d.Date >= fromDate &&
                   d.Currency.Code == currency);
 
@@ -74,7 +74,7 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
       })
       .ToListAsync(ct);
 
-    var activeOrders = summaryRows.Where(o => o.DocStatusId != EcomData.DocStatus.CustomerOrderCanceledId).ToList();
+    var activeOrders = summaryRows.Where(o => o.DocStatusId != EcomDocStatusData.CustomerOrderCanceledId).ToList();
     var totalOrders = activeOrders.Count;
     var totalRevenue = activeOrders.Sum(o => o.Amount);
     var totalPaid = activeOrders.Sum(o => o.PaidAmount);
@@ -114,9 +114,13 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
           ["number"] = o.Number,
           ["date"] = o.Date,
           ["customer"] = o.CustomerName,
-          ["status"] = new { label = L[o.StatusName], color = o.StatusColor },
+          ["status"] = L[o.StatusName],
           ["amount"] = o.Amount,
           ["paid"] = o.PaidAmount
+        },
+        Colors = new Dictionary<string, string>
+        {
+          ["status"] = o.StatusColor
         }
       })
       .ToList();

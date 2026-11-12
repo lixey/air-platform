@@ -77,7 +77,7 @@ public static class EcomDocPayments
       link => link.SourceLineId == null
               && link.TargetLineId == null
               && sourceDocIds.Contains(link.SourceDocId)
-              && (link.TargetDoc.DocTypeId == EcomData.DocType.IncomingPaymentId || link.TargetDoc.DocTypeId == EcomData.DocType.OutgoingPaymentId)
+              && (link.TargetDoc.DocTypeId == EcomDocTypeData.IncomingPaymentId || link.TargetDoc.DocTypeId == EcomDocTypeData.OutgoingPaymentId)
               && !link.TargetDoc.DocStatus.IsCanceled
     ).Select(link => new { link.SourceDocId, link.Amount }).ToListAsync(cancellationToken);
     return rows.GroupBy(row => row.SourceDocId).ToDictionary(of => of.Key, of => of.Sum(row => row.Amount ?? 0m));
@@ -101,7 +101,7 @@ public static class EcomDocPayments
   public static bool Counts(EcomDoc payment)
   {
     ArgumentNullException.ThrowIfNull(payment);
-    return payment.DocStatusId is EcomData.DocStatus.IncomingPaymentPostedId or EcomData.DocStatus.OutgoingPaymentPostedId;
+    return payment.DocStatusId is EcomDocStatusData.IncomingPaymentPostedId or EcomDocStatusData.OutgoingPaymentPostedId;
   }
 
   /// <summary>
@@ -146,7 +146,7 @@ public static class EcomDocPayments
       await db.EcomDoc.Where(doc => stored.Contains(doc.Id)).LoadAsync(cancellationToken);
       await db.EcomDocLink
         .Where(link => link.SourceLineId == null && link.TargetLineId == null && stored.Contains(link.SourceDocId))
-        .Where(link => link.TargetDoc.DocTypeId == EcomData.DocType.IncomingPaymentId || link.TargetDoc.DocTypeId == EcomData.DocType.OutgoingPaymentId)
+        .Where(link => link.TargetDoc.DocTypeId == EcomDocTypeData.IncomingPaymentId || link.TargetDoc.DocTypeId == EcomDocTypeData.OutgoingPaymentId)
         .Include(link => link.TargetDoc).LoadAsync(cancellationToken);
     }
 

@@ -3,7 +3,7 @@ namespace DemoEcom.SupplierInvoice;
 public sealed class EcomSupplierInvoiceFormService(EcomDbContext db, EcomSupplierInvoiceFlowService flow, EcomService? ecom = null)
   : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.SupplierInvoiceId;
+  protected override long Type => EcomDocTypeData.SupplierInvoiceId;
 
   protected override EcomDocFlowService Flow => flow;
 

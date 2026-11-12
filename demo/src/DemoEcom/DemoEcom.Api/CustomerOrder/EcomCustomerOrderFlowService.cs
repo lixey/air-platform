@@ -2,14 +2,14 @@ namespace DemoEcom.CustomerOrder;
 
 public sealed class EcomCustomerOrderFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long New = EcomData.DocStatus.CustomerOrderNewId;
-  private const long InProgress = EcomData.DocStatus.CustomerOrderInProgressId;
-  private const long Confirmed = EcomData.DocStatus.CustomerOrderConfirmedId;
-  private const long Paused = EcomData.DocStatus.CustomerOrderPausedId;
-  private const long Completed = EcomData.DocStatus.CustomerOrderCompletedId;
-  private const long Canceled = EcomData.DocStatus.CustomerOrderCanceledId;
+  private const long New = EcomDocStatusData.CustomerOrderNewId;
+  private const long InProgress = EcomDocStatusData.CustomerOrderInProgressId;
+  private const long Confirmed = EcomDocStatusData.CustomerOrderConfirmedId;
+  private const long Paused = EcomDocStatusData.CustomerOrderPausedId;
+  private const long Completed = EcomDocStatusData.CustomerOrderCompletedId;
+  private const long Canceled = EcomDocStatusData.CustomerOrderCanceledId;
 
-  protected override long Type => EcomData.DocType.CustomerOrderId;
+  protected override long Type => EcomDocTypeData.CustomerOrderId;
 
   public override Feature Feature => Ecom.CustomerOrder;
 

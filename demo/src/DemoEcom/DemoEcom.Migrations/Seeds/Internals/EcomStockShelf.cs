@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 /// <summary>
 /// A warehouse with its organisation and that organisation's currency, the products it trades in and the suppliers of

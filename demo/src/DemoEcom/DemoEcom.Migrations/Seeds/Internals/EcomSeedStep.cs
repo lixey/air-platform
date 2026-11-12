@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 internal sealed record EcomSeedStep(DateOnly Date, int Rank, Func<IReadOnlyList<EcomSeedWritten>> Write)
 {

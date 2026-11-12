@@ -5,13 +5,13 @@ namespace DemoEcom.SalesInvoice;
 /// </summary>
 public sealed class EcomSalesInvoiceFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long Draft = EcomData.DocStatus.SalesInvoiceDraftId;
-  private const long ReadyToShip = EcomData.DocStatus.SalesInvoiceReadyToShipId;
-  private const long InTransit = EcomData.DocStatus.SalesInvoiceInTransitId;
-  private const long Delivered = EcomData.DocStatus.SalesInvoiceDeliveredId;
-  private const long Canceled = EcomData.DocStatus.SalesInvoiceCanceledId;
+  private const long Draft = EcomDocStatusData.SalesInvoiceDraftId;
+  private const long ReadyToShip = EcomDocStatusData.SalesInvoiceReadyToShipId;
+  private const long InTransit = EcomDocStatusData.SalesInvoiceInTransitId;
+  private const long Delivered = EcomDocStatusData.SalesInvoiceDeliveredId;
+  private const long Canceled = EcomDocStatusData.SalesInvoiceCanceledId;
 
-  protected override long Type => EcomData.DocType.SalesInvoiceId;
+  protected override long Type => EcomDocTypeData.SalesInvoiceId;
 
   public override Feature Feature => Ecom.SalesInvoice;
 

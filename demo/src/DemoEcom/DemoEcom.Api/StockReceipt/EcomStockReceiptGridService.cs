@@ -4,7 +4,7 @@ public sealed class EcomStockReceiptGridService(
   EcomDbContext db, EcomStockReceiptFlowService flow, EcomService? ecom = null
 ) : EcomDocGridService(db, ecom, flow)
 {
-  protected override long Type => EcomData.DocType.StockReceiptId;
+  protected override long Type => EcomDocTypeData.StockReceiptId;
 
   protected override EcomDocFlowService Flow => flow;
 

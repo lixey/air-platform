@@ -318,21 +318,21 @@ public static class EcomStock
     var promise = status is { IsPosted: true, IsFinal: false };
     switch (doc.DocTypeId)
     {
-      case EcomData.DocType.StockReceiptId or EcomData.DocType.SupplierInvoiceId or EcomData.DocType.SalesReturnId when stock:
+      case EcomDocTypeData.StockReceiptId or EcomDocTypeData.SupplierInvoiceId or EcomDocTypeData.SalesReturnId when stock:
         yield return (doc.WarehouseId, new EcomStockQty(line.Qty, 0m, 0m));
         break;
-      case EcomData.DocType.StockIssueId or EcomData.DocType.SalesInvoiceId or EcomData.DocType.SupplierReturnId when stock:
+      case EcomDocTypeData.StockIssueId or EcomDocTypeData.SalesInvoiceId or EcomDocTypeData.SupplierReturnId when stock:
         yield return (doc.WarehouseId, new EcomStockQty(-line.Qty, 0m, 0m));
         break;
-      case EcomData.DocType.StockTransferId when stock:
+      case EcomDocTypeData.StockTransferId when stock:
         yield return (doc.WarehouseId, new EcomStockQty(-line.Qty, 0m, 0m));
         yield return (doc.WarehouseToId, new EcomStockQty(line.Qty, 0m, 0m));
         break;
-      case EcomData.DocType.PurchaseOrderId when promise:
+      case EcomDocTypeData.PurchaseOrderId when promise:
         yield return (doc.WarehouseId, new EcomStockQty(0m, 0m, Math.Max(line.Qty - line.QtyDone, 0m)));
         break;
       // What the line holds is set before the posting, by Reserve: a line that holds nothing asks for no warehouse
-      case EcomData.DocType.CustomerOrderId when promise && line.QtyReserved > 0m:
+      case EcomDocTypeData.CustomerOrderId when promise && line.QtyReserved > 0m:
         yield return (doc.WarehouseId, new EcomStockQty(0m, line.QtyReserved, 0m));
         break;
     }

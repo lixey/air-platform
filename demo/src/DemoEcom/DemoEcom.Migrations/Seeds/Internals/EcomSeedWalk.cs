@@ -1,4 +1,4 @@
-namespace DemoEcom.Migrations.Seeds;
+namespace DemoEcom.Migrations.Seeds.Internals;
 
 /// <summary>
 /// The walk of Ecom's examples, written once at installation after Org's, one tenant after another: the customer orders
@@ -139,7 +139,7 @@ internal static class EcomSeedWalk
   )
   {
     db.EcomDocCounter.AddRange(
-      numbers.Select(number => (number.Key.OrganizationId, DocTypeId: EcomData.DocType.CustomerOrderId, number.Key.Year, Last: number.Value))
+      numbers.Select(number => (number.Key.OrganizationId, DocTypeId: EcomDocTypeData.CustomerOrderId, number.Key.Year, Last: number.Value))
         .Concat(books.Counters.Select(counter => (counter.Key.OrganizationId, counter.Key.DocTypeId, counter.Key.Year, Last: counter.Value)))
         .OrderBy(counter => counter.OrganizationId).ThenBy(counter => counter.DocTypeId).ThenBy(counter => counter.Year)
         .Select(counter => new EcomDocCounter

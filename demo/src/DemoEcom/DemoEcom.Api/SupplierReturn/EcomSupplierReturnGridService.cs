@@ -7,7 +7,7 @@ public sealed class EcomSupplierReturnGridService(
   EcomDbContext db, EcomSupplierReturnFlowService flow, EcomService? ecom = null
 ) : EcomDocGridService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.SupplierReturnId;
+  protected override long Type => EcomDocTypeData.SupplierReturnId;
 
   protected override EcomDocFlowService Flow => flow;
 

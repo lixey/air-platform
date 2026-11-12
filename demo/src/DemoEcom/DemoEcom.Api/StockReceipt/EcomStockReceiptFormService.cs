@@ -3,7 +3,7 @@ namespace DemoEcom.StockReceipt;
 public sealed class EcomStockReceiptFormService(EcomDbContext db, EcomStockReceiptFlowService flow, EcomService? ecom = null)
   : EcomDocFormService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.StockReceiptId;
+  protected override long Type => EcomDocTypeData.StockReceiptId;
 
   protected override EcomDocFlowService Flow => flow;
 

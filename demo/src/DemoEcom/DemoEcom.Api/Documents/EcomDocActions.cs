@@ -181,7 +181,7 @@ public static class EcomDocActions
     ArgumentNullException.ThrowIfNull(db);
     ArgumentNullException.ThrowIfNull(context);
     ArgumentNullException.ThrowIfNull(texts);
-    var lines = context.Records.Where(line => EcomDocEntering.ToPurchase(line) > 0m).ToList();
+    var lines = context.Records.Where(line => EcomDocPurchasing.ToPurchase(line) > 0m).ToList();
     if (lines.Count == 0)
     {
       context.AddError(EcomDocRefusal.NothingToPurchase, texts.NothingToPurchase);
@@ -195,7 +195,7 @@ public static class EcomDocActions
       .ToDictionaryAsync(product => product.Id, cancellationToken);
 
     var wanted = lines.OrderBy(line => line.DocId).ThenBy(line => line.SortOrder).ThenBy(line => line.Id)
-      .Select(line => new EcomPurchase(orders[line.DocId], line, products[line.ProductId], EcomDocEntering.ToPurchase(line))).ToList();
+      .Select(line => new EcomPurchase(orders[line.DocId], line, products[line.ProductId], EcomDocPurchasing.ToPurchase(line))).ToList();
     var refused = false;
     foreach (var first in wanted.Where(purchase => purchase.Order.WarehouseId is null).DistinctBy(purchase => purchase.Order.Id))
     {
@@ -208,7 +208,7 @@ public static class EcomDocActions
       return;
     }
 
-    var entries = EcomDocEntering.EnterPurchases(wanted, userId, date);
+    var entries = EcomDocPurchasing.EnterPurchases(wanted, userId, date);
     await context.LockAsync<EcomDocCounter>(entries.Select(entry => CounterKey(entry.Doc)), cancellationToken);
     foreach (var entry in entries)
     {

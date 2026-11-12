@@ -4,7 +4,7 @@ public sealed class EcomStockIssueGridService(
   EcomDbContext db, EcomStockIssueFlowService flow, EcomService? ecom = null
 ) : EcomDocGridService(db, ecom, flow)
 {
-  protected override long Type => EcomData.DocType.StockIssueId;
+  protected override long Type => EcomDocTypeData.StockIssueId;
 
   protected override EcomDocFlowService Flow => flow;
 

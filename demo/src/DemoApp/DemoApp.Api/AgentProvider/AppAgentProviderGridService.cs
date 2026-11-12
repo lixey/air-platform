@@ -21,10 +21,10 @@ public sealed class AppAgentProviderGridService(AppDbContext db, AppService? app
     query.SortBy(r => r.SortOrder).ThenBy(r => r.Handle);
     query.RecordLabel(e => e.Name);
     query.SearchBy(r => r.Id, r => r.Name, r => r.Handle);
-    query.NamedFilter("state", L["Status"])
+    query.NamedFilter("State", L["Status"])
       .All(L["All"]).Default()
-      .Item("active", L["Active"], r => r.IsActive).Color(UiColor.Emerald)
-      .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
+      .Item("Active", L["Active"], r => r.IsActive).Color(UiColor.Emerald)
+      .Item("Archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
   protected override void SetHooks(Hooks hooks) =>

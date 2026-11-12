@@ -51,5 +51,5 @@ public static class EcomDocDefaults
     }
   }
 
-  private static bool IsDelivered(long typeId) => typeId is EcomData.DocType.CustomerOrderId or EcomData.DocType.SalesInvoiceId;
+  private static bool IsDelivered(long typeId) => typeId is EcomDocTypeData.CustomerOrderId or EcomDocTypeData.SalesInvoiceId;
 }

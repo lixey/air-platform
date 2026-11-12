@@ -6,7 +6,7 @@ namespace DemoEcom.SalesInvoice;
 public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoiceFlowService flow, EcomService? ecom = null)
   : EcomDocGridService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.SalesInvoiceId;
+  protected override long Type => EcomDocTypeData.SalesInvoiceId;
 
   protected override EcomDocFlowService Flow => flow;
 
@@ -38,8 +38,8 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSalesReturnFormService>(
         db,
         ctx,
-        EcomData.DocType.SalesReturnId,
-        EcomData.DocStatus.SalesReturnDraftId,
+        EcomDocTypeData.SalesReturnId,
+        EcomDocStatusData.SalesReturnDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));
@@ -52,8 +52,8 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
         db,
         ctx,
-        EcomData.DocType.IncomingPaymentId,
-        EcomData.DocStatus.IncomingPaymentDraftId,
+        EcomDocTypeData.IncomingPaymentId,
+        EcomDocStatusData.IncomingPaymentDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));

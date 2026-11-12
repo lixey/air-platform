@@ -33,10 +33,10 @@ public sealed class AppAgentModelGridService(
     query.SortBy(r => r.SortOrder).ThenBy(r => r.ProviderHandle).ThenBy(r => r.Name);
     query.RecordLabel(e => e.Name);
     query.SearchBy(r => r.Id, r => r.Name, r => r.ModelId, r => r.ProviderHandle, r => r.ProviderName);
-    query.NamedFilter("state", L["Status"])
+    query.NamedFilter("State", L["Status"])
       .All(L["All"]).Default()
-      .Item("active", L["Active"], r => r.IsActive).Color(UiColor.Emerald)
-      .Item("archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
+      .Item("Active", L["Active"], r => r.IsActive).Color(UiColor.Emerald)
+      .Item("Archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
   protected override void SetActions(Actions actions)

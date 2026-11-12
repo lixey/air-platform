@@ -5,12 +5,12 @@ namespace DemoEcom.PurchaseOrder;
 /// </summary>
 public sealed class EcomPurchaseOrderFlowService(EcomDbContext db) : EcomDocFlowService(db)
 {
-  private const long New = EcomData.DocStatus.PurchaseOrderNewId;
-  private const long Sent = EcomData.DocStatus.PurchaseOrderSentId;
-  private const long Completed = EcomData.DocStatus.PurchaseOrderCompletedId;
-  private const long Canceled = EcomData.DocStatus.PurchaseOrderCanceledId;
+  private const long New = EcomDocStatusData.PurchaseOrderNewId;
+  private const long Sent = EcomDocStatusData.PurchaseOrderSentId;
+  private const long Completed = EcomDocStatusData.PurchaseOrderCompletedId;
+  private const long Canceled = EcomDocStatusData.PurchaseOrderCanceledId;
 
-  protected override long Type => EcomData.DocType.PurchaseOrderId;
+  protected override long Type => EcomDocTypeData.PurchaseOrderId;
 
   public override Feature Feature => Ecom.PurchaseOrder;
 

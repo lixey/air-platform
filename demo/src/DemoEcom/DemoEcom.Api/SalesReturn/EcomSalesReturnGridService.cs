@@ -6,7 +6,7 @@ namespace DemoEcom.SalesReturn;
 public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturnFlowService flow, EcomService? ecom = null)
   : EcomDocGridService(db, ecom)
 {
-  protected override long Type => EcomData.DocType.SalesReturnId;
+  protected override long Type => EcomDocTypeData.SalesReturnId;
 
   protected override EcomDocFlowService Flow => flow;
 
@@ -38,8 +38,8 @@ public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturn
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
         db,
         ctx,
-        EcomData.DocType.OutgoingPaymentId,
-        EcomData.DocStatus.OutgoingPaymentDraftId,
+        EcomDocTypeData.OutgoingPaymentId,
+        EcomDocStatusData.OutgoingPaymentDraftId,
         Time.Today,
         EcomDocTexts.Of(L),
         ct));

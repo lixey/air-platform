@@ -35,7 +35,7 @@ public sealed class EcomPurchaseOrderLineFormService(EcomDbContext db, EcomServi
     base.SetHooks(hooks);
     hooks.BeforeSave(async (c, cancellationToken) =>
     {
-      if (await EcomDocEntering.PurchaseLineAsync(db, c.Entity, cancellationToken) is { } code)
+      if (await EcomDocPurchasing.PurchaseLineAsync(db, c.Entity, cancellationToken) is { } code)
       {
         c.AddError(code, (_texts ?? EcomDocTexts.Of(L)).Line(code), ProductPath);
         return;
