@@ -15,7 +15,7 @@ public sealed class DbScopeAndWriteGuardTests : IDisposable
 
   public void Dispose() => _connection.Dispose();
 
-  private TestDbContext CreateDbContext(ITenantContext tenant)
+  private TestDbContext CreateDbContext(ITenantContext? tenant = null)
   {
     var options = new DbContextOptionsBuilder<TestDbContext>()
       .UseSqlite(_connection)
@@ -139,5 +139,78 @@ public sealed class DbScopeAndWriteGuardTests : IDisposable
   {
     using var db = CreateDbContext(new FixedTenantContext(tenantId: 1, userId: 10));
     Assert.Throws<NotSupportedException>(() => db.SaveChanges());
+  }
+
+  [Fact]
+  public async Task DefaultTenantContext_AndUnscopedAsyncLocalTenantContext_AreFailClosedForReadsAndWrites()
+  {
+    ITenantContext defaultCtx = new DefaultInterfaceTenantContext(tenantId: null);
+    Assert.False(defaultCtx.IsSystemScope);
+    Assert.Null(AsyncLocalTenantContext.Instance.TenantId);
+    Assert.False(AsyncLocalTenantContext.Instance.IsSystemScope);
+    Assert.False(AsyncLocalTenantContext.Instance.HasExplicitSystemScope);
+
+    await using (var seedSys = CreateDbContext(new UnscopedTenantContext(tenantId: null, isSystemScope: true)))
+    {
+      seedSys.Orders.AddRange(
+        new TestOrder { Name = "T1-Order", Amount = 10m, TenantId = 1 },
+        new TestOrder { Name = "T2-Order", Amount = 20m, TenantId = 2 });
+      seedSys.Roles.AddRange(
+        new TestRole { Name = "Global-Role", TenantId = null },
+        new TestRole { Name = "T1-Role", TenantId = 1 },
+        new TestRole { Name = "T2-Role", TenantId = 2 });
+      await seedSys.SaveChangesAsync();
+    }
+
+    // Unscoped AsyncLocalTenantContext (TenantId == null, no UseSystemScope()) must fail closed
+    await using var ambientDb = CreateDbContext(tenant: null);
+    Assert.Same(AsyncLocalTenantContext.Instance, ambientDb.TenantContext);
+
+    Assert.Empty(await ambientDb.Orders.AsNoTracking().ToListAsync());
+
+    var unscopedRoles = await ambientDb.Roles.AsNoTracking().ToListAsync();
+    var globalRoleOnly = Assert.Single(unscopedRoles);
+    Assert.Equal("Global-Role", globalRoleOnly.Name);
+    Assert.Null(globalRoleOnly.TenantId);
+
+    Assert.Equal(2, await ambientDb.Orders.AsNoTracking().IgnoreTenantFilter().CountAsync());
+    Assert.Equal(3, await ambientDb.Roles.AsNoTracking().IgnoreTenantFilter().CountAsync());
+
+    ambientDb.Orders.Add(new TestOrder { Name = "BlockedOrder", Amount = 5m, TenantId = 1 });
+    await Assert.ThrowsAsync<InvalidOperationException>(() => ambientDb.SaveChangesAsync());
+    ambientDb.ChangeTracker.Clear();
+
+    ambientDb.Roles.Add(new TestRole { Name = "BlockedRole", TenantId = null });
+    await Assert.ThrowsAsync<InvalidOperationException>(() => ambientDb.SaveChangesAsync());
+    ambientDb.ChangeTracker.Clear();
+
+    var trackedGlobalRole = await ambientDb.Roles.FirstAsync(r => r.TenantId == null);
+    trackedGlobalRole.Name = "MutateGlobalWithoutSystemScope";
+    await Assert.ThrowsAsync<InvalidOperationException>(() => ambientDb.SaveChangesAsync());
+    ambientDb.ChangeTracker.Clear();
+
+    // Explicit Use(tenantId: null) also remains fail-closed
+    using (AsyncLocalTenantContext.Use(tenantId: null))
+    {
+      Assert.False(AsyncLocalTenantContext.Instance.IsSystemScope);
+      Assert.Empty(await ambientDb.Orders.AsNoTracking().ToListAsync());
+    }
+
+    // Explicit UseSystemScope() grants cross-tenant read & system write access
+    using (AsyncLocalTenantContext.UseSystemScope(userId: 99, correlationId: "sys-op"))
+    {
+      Assert.True(AsyncLocalTenantContext.Instance.IsSystemScope);
+      Assert.True(AsyncLocalTenantContext.Instance.HasExplicitSystemScope);
+      Assert.Equal(2, await ambientDb.Orders.AsNoTracking().CountAsync());
+      Assert.Equal(3, await ambientDb.Roles.AsNoTracking().CountAsync());
+
+      ambientDb.Roles.Add(new TestRole { Name = "SystemSeededGlobalRole", TenantId = null });
+      ambientDb.Orders.Add(new TestOrder { Name = "SystemSeededT2Order", Amount = 50m, TenantId = 2 });
+      await ambientDb.SaveChangesAsync();
+    }
+
+    // Scope disposal restores fail-closed state
+    Assert.False(AsyncLocalTenantContext.Instance.IsSystemScope);
+    Assert.Empty(await ambientDb.Orders.AsNoTracking().ToListAsync());
   }
 }

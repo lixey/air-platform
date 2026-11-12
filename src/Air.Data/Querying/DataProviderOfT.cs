@@ -108,27 +108,43 @@ public sealed class DataProvider<TEntity, TRow>
   {
     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSize);
-    var plan = Map.Plan(request);
-    var ordered = Project(plan.Order(plan.Filter(Source)));
-    var remaining = limit;
-    var offset = 0;
-    while (remaining > 0)
+
+    var enumerator = StreamAsync(request, limit, cancellationToken).GetAsyncEnumerator(cancellationToken);
+    var disposed = false;
+    try
     {
-      var take = Math.Min(chunkSize, remaining);
-      var chunk = await ExecuteListAsync(ordered.Skip(offset).Take(take), cancellationToken);
-      if (chunk.Count == 0)
+      if (!await enumerator.MoveNextAsync())
       {
+        disposed = true;
+        await enumerator.DisposeAsync();
         yield break;
       }
 
-      yield return chunk;
-      if (chunk.Count < take)
+      var hasCurrent = true;
+      while (hasCurrent)
       {
-        yield break;
-      }
+        var chunk = new List<TRow>(Math.Min(chunkSize, limit));
+        while (hasCurrent && chunk.Count < chunkSize)
+        {
+          chunk.Add(enumerator.Current);
+          hasCurrent = await enumerator.MoveNextAsync();
+        }
 
-      offset += chunk.Count;
-      remaining -= chunk.Count;
+        if (!hasCurrent)
+        {
+          disposed = true;
+          await enumerator.DisposeAsync();
+        }
+
+        yield return chunk;
+      }
+    }
+    finally
+    {
+      if (!disposed)
+      {
+        await enumerator.DisposeAsync();
+      }
     }
   }
 

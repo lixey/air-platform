@@ -19,7 +19,7 @@ public class AsyncLocalTenantContext : ITenantContext
   public static AsyncLocalTenantContext Instance { get; } = new();
 
   public long? TenantId => _box.Value?.TenantId;
-  public bool IsSystemScope => _box.Value?.IsSystemScope ?? (_box.Value?.TenantId == null);
+  public bool IsSystemScope => _box.Value?.IsSystemScope ?? false;
   public bool HasExplicitSystemScope => _box.Value?.IsSystemScope == true;
   public long? UserId => _box.Value?.UserId;
   public string? CorrelationId => _box.Value?.CorrelationId;

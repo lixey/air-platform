@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Platform.Data.Tests.Internals;
 
 namespace Platform.Data.Tests;
@@ -189,5 +190,72 @@ public sealed class PlatformDataTests : IDisposable
 
     var revertChanges = await db.AppPlatformChange.Where(c => c.RunId == revertRunId).ToListAsync();
     Assert.Empty(revertChanges);
+  }
+
+  [Fact]
+  public async Task StreamChunksAsync_StreamsSinglePassBoundedChunks_AndRespectsLimit()
+  {
+    await using var db = CreateDbContext();
+    for (var i = 1; i <= 7; i++)
+    {
+      db.Orders.Add(new TestOrder { Name = $"Order-{i:D2}", Amount = i * 10m });
+    }
+
+    await db.SaveChangesAsync();
+
+    var map = QueryMap.FromEntity<TestOrder>()
+      .DefaultSort(SortRule.Asc(nameof(TestOrder.Name)))
+      .Build();
+    var provider = DataProvider.Create(db.Orders.AsNoTracking(), map);
+
+    var chunks = new List<IReadOnlyList<TestOrder>>();
+    await foreach (var chunk in provider.StreamChunksAsync(new ListRequest(), limit: 5, chunkSize: 2))
+    {
+      chunks.Add(chunk);
+    }
+
+    Assert.Equal(3, chunks.Count);
+    Assert.Equal([10m, 20m], chunks[0].Select(o => o.Amount).ToArray());
+    Assert.Equal([30m, 40m], chunks[1].Select(o => o.Amount).ToArray());
+    Assert.Equal([50m], chunks[2].Select(o => o.Amount).ToArray());
+
+    var exactChunks = new List<IReadOnlyList<TestOrder>>();
+    await foreach (var chunk in provider.StreamChunksAsync(new ListRequest(), limit: 4, chunkSize: 2))
+    {
+      exactChunks.Add(chunk);
+    }
+
+    Assert.Equal(2, exactChunks.Count);
+    Assert.Equal([10m, 20m], exactChunks[0].Select(o => o.Amount).ToArray());
+    Assert.Equal([30m, 40m], exactChunks[1].Select(o => o.Amount).ToArray());
+
+    var emptyChunks = new List<IReadOnlyList<TestOrder>>();
+    await foreach (var chunk in provider.StreamChunksAsync(new ListRequest { Search = "non-existent" }, limit: 10, chunkSize: 3))
+    {
+      emptyChunks.Add(chunk);
+    }
+
+    Assert.Empty(emptyChunks);
+  }
+
+  [Fact]
+  public async Task SqlServerDesignTimeFactory_MigratorCheck_AndEmptyBulkImport_WorkOffline()
+  {
+    var factory = new TestSqlServerDesignTimeFactory();
+    await using var sqlDb = factory.CreateDbContext([]);
+
+    Assert.Contains("platform_design_time", sqlDb.Database.GetConnectionString(), StringComparison.Ordinal);
+
+    var relationalExt = sqlDb.GetService<IDbContextOptions>()
+      .Extensions
+      .OfType<RelationalOptionsExtension>()
+      .Single();
+    Assert.Equal("__Test_EFMigrationsHistory", relationalExt.MigrationsHistoryTableName);
+
+    var checkEx = Assert.Throws<InvalidOperationException>(() => PlatformMigrator.Check([sqlDb]));
+    Assert.Contains("has no EF Core migrations", checkEx.Message, StringComparison.Ordinal);
+
+    var imported = await sqlDb.BulkImportAsync(AsyncEnumerable.Empty<TestOrder>());
+    Assert.Equal(0, imported);
   }
 }

@@ -56,7 +56,7 @@ internal static class ChangeJournalRecorder
       var rowTenantId = entry.Entity switch
       {
         IHasTenant t when t.TenantId > 0 => (long?)t.TenantId,
-        IInheritedByChildTenants it => it.TenantId is > 0 ? it.TenantId : null,
+        IHasOptionalTenant ot => ot.TenantId is > 0 ? ot.TenantId : null,
         _ => contextTenantId
       };
       var excluded = EntityAuditMetadata.For(entry.Metadata.ClrType).ExcludedProperties;

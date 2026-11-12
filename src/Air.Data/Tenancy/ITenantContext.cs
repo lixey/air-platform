@@ -6,7 +6,7 @@ namespace Platform.Data.Tenancy;
 public interface ITenantContext
 {
   long? TenantId { get; }
-  bool IsSystemScope => TenantId == null;
+  bool IsSystemScope => false;
   long? UserId => null;
   string? CorrelationId => null;
   IReadOnlySet<string>? Rights => null;

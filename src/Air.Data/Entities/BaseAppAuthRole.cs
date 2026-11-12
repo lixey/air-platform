@@ -1,9 +1,9 @@
 namespace Platform.Data.Entities;
 
 [Comment("Base user role model")]
-public abstract class BaseAppAuthRole : BaseEntity, IInheritedByChildTenants
+public abstract class BaseAppAuthRole : BaseEntity, IHasOptionalTenant
 {
-  [Comment("Owning tenant, inherited by the tenants under it; null for a global role")]
+  [Comment("Owning tenant; null for a global role")]
   public long? TenantId { get; set; }
 
   [MaxLength(128), Comment("Role display name")]

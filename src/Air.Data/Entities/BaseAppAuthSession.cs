@@ -12,9 +12,6 @@ public abstract class BaseAppAuthSession : BaseEntity
   [Comment("Active tenant identifier")]
   public long? TenantId { get; set; }
 
-  [Comment("Sessions descended from one login share a family; reuse revokes the family")]
-  public Guid FamilyId { get; set; }
-
   [Sensitive, Comment("SHA-256 of the current refresh token")]
   public string RefreshTokenHash { get; set; } = string.Empty;
 

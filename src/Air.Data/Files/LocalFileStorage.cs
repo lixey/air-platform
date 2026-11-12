@@ -6,7 +6,7 @@ public sealed class LocalFileStorage : IFileStorage
 
   public LocalFileStorage(string? baseDirectory = null)
   {
-    _baseDirectory = baseDirectory ?? Path.Combine(AppContext.BaseDirectory, "air_files");
+    _baseDirectory = baseDirectory ?? Path.Combine(AppContext.BaseDirectory, "platform_files");
     Directory.CreateDirectory(_baseDirectory);
   }
 

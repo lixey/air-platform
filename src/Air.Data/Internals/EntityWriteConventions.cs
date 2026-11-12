@@ -39,20 +39,20 @@ internal static class EntityWriteConventions
           }
         }
 
-        if (entry.Entity is IInheritedByChildTenants existingInherited && !isSystemScope)
+        if (entry.Entity is IHasOptionalTenant existingOptional && !isSystemScope)
         {
           if (!tenantId.HasValue)
           {
             throw new InvalidOperationException(
-              $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} without an active tenant.");
+              $"Cannot modify or delete {entry.Metadata.ClrType.Name} without an active tenant.");
           }
 
-          var origInheritedTid = entry.Property(nameof(IInheritedByChildTenants.TenantId)).OriginalValue as long?;
-          if (origInheritedTid != tenantId.Value ||
-              entry.State == EntityState.Modified && existingInherited.TenantId != tenantId.Value)
+          var origOptionalTid = entry.Property(nameof(IHasOptionalTenant.TenantId)).OriginalValue as long?;
+          if (origOptionalTid != tenantId.Value ||
+              entry.State == EntityState.Modified && existingOptional.TenantId != tenantId.Value)
           {
             throw new InvalidOperationException(
-              $"Cannot modify or delete inherited {entry.Metadata.ClrType.Name} belonging to another tenant.");
+              $"Cannot modify or delete {entry.Metadata.ClrType.Name} belonging to another tenant.");
           }
         }
 
@@ -105,29 +105,29 @@ internal static class EntityWriteConventions
           }
         }
 
-        if (entry.Entity is IInheritedByChildTenants inherited)
+        if (entry.Entity is IHasOptionalTenant optionalTenant)
         {
           if (!isSystemScope)
           {
             if (!tenantId.HasValue)
             {
               throw new InvalidOperationException(
-                $"Cannot insert inherited {entry.Metadata.ClrType.Name} without an active tenant.");
+                $"Cannot insert {entry.Metadata.ClrType.Name} without an active tenant.");
             }
 
-            if (inherited.TenantId is null or 0)
+            if (optionalTenant.TenantId is null or 0)
             {
-              inherited.TenantId = tenantId.Value;
+              optionalTenant.TenantId = tenantId.Value;
             }
-            else if (inherited.TenantId != tenantId.Value)
+            else if (optionalTenant.TenantId != tenantId.Value)
             {
               throw new InvalidOperationException(
-                $"Cannot insert inherited {entry.Metadata.ClrType.Name} belonging to another tenant.");
+                $"Cannot insert {entry.Metadata.ClrType.Name} belonging to another tenant.");
             }
           }
-          else if (inherited.TenantId == 0)
+          else if (optionalTenant.TenantId == 0)
           {
-            inherited.TenantId = tenantId;
+            optionalTenant.TenantId = tenantId;
           }
         }
 
@@ -179,9 +179,9 @@ internal static class EntityWriteConventions
           tenantProp.IsModified = false;
         }
 
-        if (entry.Entity is IInheritedByChildTenants && !isSystemScope)
+        if (entry.Entity is IHasOptionalTenant && !isSystemScope)
         {
-          var tenantProp = entry.Property(nameof(IInheritedByChildTenants.TenantId));
+          var tenantProp = entry.Property(nameof(IHasOptionalTenant.TenantId));
           tenantProp.CurrentValue = tenantProp.OriginalValue;
           tenantProp.IsModified = false;
         }

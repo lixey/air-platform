@@ -6,7 +6,7 @@ namespace Platform.Data;
 
 /// <summary>
 /// Base EF Core DbContext for the platform and its modules.
-/// Automates tenant isolation (IHasTenant), audit timestamps (IHasTimestamps),
+/// Automates tenant isolation (IHasTenant, IHasOptionalTenant), audit timestamps (IHasTimestamps),
 /// and optimistic concurrency versioning (IHasVersion).
 /// </summary>
 public abstract class PlatformDbContext : DbContext

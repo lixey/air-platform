@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Air.Data\Air.Data.csproj" />
+    <ProjectReference Include="..\..\src\Air.Data.SqlServer\Air.Data.SqlServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

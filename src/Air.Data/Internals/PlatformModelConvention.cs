@@ -26,13 +26,13 @@ internal sealed class PlatformModelConvention(PlatformDbContext db) : IModelFina
           entityType.SetQueryFilter(TenantFilterExtensions.Name, BuildTenantFilter(clrType));
         }
 
-        if (typeof(IInheritedByChildTenants).IsAssignableFrom(clrType))
+        if (typeof(IHasOptionalTenant).IsAssignableFrom(clrType))
         {
           var filter = clrType == typeof(AppAgentMemory)
             ? BuildAgentMemoryFilter()
-            : BuildInheritedTenantFilter(clrType);
-          entityType.SetQueryFilter(TenantFilterExtensions.Inherited, filter);
-          entityType.FindProperty(nameof(IInheritedByChildTenants.TenantId))?.SetIsConcurrencyToken(true);
+            : BuildOptionalTenantFilter(clrType);
+          entityType.SetQueryFilter(TenantFilterExtensions.OptionalTenant, filter);
+          entityType.FindProperty(nameof(IHasOptionalTenant.TenantId))?.SetIsConcurrencyToken(true);
         }
 
         if (clrType == typeof(AppPlatformChange))
@@ -81,7 +81,7 @@ internal sealed class PlatformModelConvention(PlatformDbContext db) : IModelFina
     return Expression.Lambda(Expression.OrElse(isSystemScope, equality), parameter);
   }
 
-  private LambdaExpression BuildInheritedTenantFilter(Type clrType)
+  private LambdaExpression BuildOptionalTenantFilter(Type clrType)
   {
     var parameter = Expression.Parameter(clrType, "e");
     var property = Expression.Call(
@@ -89,7 +89,7 @@ internal sealed class PlatformModelConvention(PlatformDbContext db) : IModelFina
       nameof(EF.Property),
       [typeof(long?)],
       parameter,
-      Expression.Constant(nameof(IInheritedByChildTenants.TenantId)));
+      Expression.Constant(nameof(IHasOptionalTenant.TenantId)));
 
     var tenantCtx = Expression.Property(Expression.Constant(db), nameof(PlatformDbContext.TenantContext));
     var isSystemScope = Expression.Property(tenantCtx, nameof(ITenantContext.IsSystemScope));
