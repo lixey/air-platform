@@ -1,6 +1,6 @@
 namespace Platform.App.Files.Internals;
 
-public interface IFileCoverSource
+internal interface IFileCoverSource
 {
   bool HasCovers { get; }
   string ParentService { get; }

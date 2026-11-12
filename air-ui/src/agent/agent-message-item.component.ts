@@ -7,6 +7,7 @@ import { AgentChartBlockComponent } from './agent-chart-block.component';
 import { AgentHtmlBlockComponent } from './agent-html-block.component';
 import { AgentKpiBlockComponent } from './agent-kpi-block.component';
 import { AgentMarkdownBlockComponent } from './agent-markdown-block.component';
+import { AgentMemoryPillComponent } from './agent-memory-pill.component';
 import { AgentProposalCardComponent } from './agent-proposal-card.component';
 import { AgentTableBlockComponent } from './agent-table-block.component';
 import { formatFullAgentDateTime, formatShortAgentDateTime } from './agent-ui-helpers';
@@ -23,6 +24,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
     AgentTableBlockComponent,
     AgentKpiBlockComponent,
     AgentHtmlBlockComponent,
+    AgentMemoryPillComponent,
     AgentProposalCardComponent,
   ],
   template: `
@@ -76,7 +78,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
               [attr.aria-label]="copied() ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
               (click)="copy.emit(m)"
             >
-              <i class="flex scale-85 items-center justify-center" [icon]="copied() ? 'checkmark' : 'copy'"></i>
+              <i class="flex items-center justify-center scale-85" [icon]="copied() ? 'checkmark' : 'copy'"></i>
             </button>
             @if (!m.syncSource || m.promptText) {
               <button
@@ -86,7 +88,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
                 [attr.aria-label]="texts.of('AgentReturnToInput')"
                 (click)="returnToInput.emit(m.syncSource ? (m.promptText ?? '') : m.text)"
               >
-                <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
+                <i class="flex items-center justify-center scale-85" [icon]="'reply'"></i>
               </button>
             }
           }
@@ -99,13 +101,13 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
               [disabled]="agent.isStreaming()"
               (click)="agent.retryMessage(m.id)"
             >
-              <i class="flex scale-85 items-center justify-center" [icon]="'refresh'"></i>
+              <i class="flex items-center justify-center scale-85" [icon]="'refresh'"></i>
             </button>
           }
         </div>
       </div>
     } @else {
-      <div class="mr-3 flex flex-col items-start gap-2 min-w-0">
+      <div class="mr-3 flex min-w-0 flex-col items-start gap-2">
         @if (m.blocks && m.blocks.length > 0) {
           @for (block of m.blocks; track block.id) {
             @switch (block.kind) {
@@ -135,12 +137,21 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
           <ui-agent-markdown-block [content]="m.text" />
         }
 
+        @if (m.memories.length > 0) {
+          <div class="flex max-w-full flex-wrap items-center gap-1.5">
+            @for (mem of m.memories; track mem.id) {
+              <ui-agent-memory-pill [memory]="mem" (undo)="agent.undoMemory(m.id, $event)" />
+            }
+          </div>
+        }
+
+        @let liveDuration = effectiveDurationMs(m);
         @if (m.statusText) {
           <div class="flex flex-wrap items-center gap-1.5 px-1 text-xs text-muted">
             <i class="flex h-3.5 w-3.5 items-center justify-center text-mark" [icon]="'spinner'"></i>
             <span>{{ m.statusText }}</span>
-            @if (m.durationMs !== undefined && m.durationMs > 0) {
-              <span class="tabular-nums opacity-75">· {{ formatDuration(m.durationMs) }}</span>
+            @if (liveDuration > 0) {
+              <span class="tabular-nums opacity-75">· {{ formatDuration(liveDuration) }}</span>
             }
             @if (m.modelName) {
               <span class="truncate opacity-75">· {{ m.modelName }}</span>
@@ -163,7 +174,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
         @if (m.proposals.length >= 2 && !isAllSuperseded(m)) {
           @if (isAllCommitted(m)) {
             <div
-              class="flex w-full items-center justify-between gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs font-semibold text-green-700 dark:text-green-300"
+              class="hue-green flex w-full items-center justify-between gap-2 rounded-lg border border-(--btn-edge) bg-(--btn-ground) px-3 py-2 text-xs font-semibold text-(--btn-ink)"
             >
               <div class="flex min-w-0 items-center gap-1.5">
                 <i class="flex h-4 w-4 shrink-0 items-center justify-center" [icon]="'checkmark'"></i>
@@ -203,7 +214,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
           }
         }
 
-        @if (!m.statusText && (m.text || m.proposals.length > 0)) {
+        @if (!m.statusText && (m.text || m.proposals.length > 0 || m.memories.length > 0)) {
           <div class="flex items-center gap-0.5 text-[11px] text-muted">
             @if (m.text) {
               <button
@@ -215,7 +226,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
                 [attr.aria-label]="copied() ? texts.of('AgentCopied') : texts.of('AgentCopyMessage')"
                 (click)="copy.emit(m)"
               >
-                <i class="flex scale-85 items-center justify-center" [icon]="copied() ? 'checkmark' : 'copy'"></i>
+                <i class="flex items-center justify-center scale-85" [icon]="copied() ? 'checkmark' : 'copy'"></i>
               </button>
               <button
                 type="button"
@@ -224,7 +235,7 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
                 [attr.aria-label]="texts.of('AgentReturnToInput')"
                 (click)="returnToInput.emit(m.text)"
               >
-                <i class="flex scale-85 items-center justify-center" [icon]="'reply'"></i>
+                <i class="flex items-center justify-center scale-85" [icon]="'reply'"></i>
               </button>
             }
             @if (!m.syncSource) {
@@ -236,17 +247,17 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
                 [disabled]="agent.isStreaming()"
                 (click)="agent.retryMessage(m.id)"
               >
-                <i class="flex scale-85 items-center justify-center" [icon]="'refresh'"></i>
+                <i class="flex items-center justify-center scale-85" [icon]="'refresh'"></i>
               </button>
             }
             <span class="ml-1 tabular-nums" [title]="formatFullDateTime(m.createdAt)">
               {{ formatShortDateTime(m.createdAt) }}
             </span>
-            @if (m.durationMs !== undefined && m.durationMs > 0) {
+            @if (liveDuration > 0) {
               <span class="flex items-center gap-1 tabular-nums">
                 <span>·</span>
-                <i class="flex scale-75 items-center justify-center opacity-75" [icon]="'clock'"></i>
-                <span>{{ formatDuration(m.durationMs) }}</span>
+                <i class="flex items-center justify-center scale-75 opacity-75" [icon]="'clock'"></i>
+                <span>{{ formatDuration(liveDuration) }}</span>
               </span>
             }
             @if (m.modelName) {
@@ -277,6 +288,10 @@ export class AgentMessageItemComponent {
 
   protected isImageAttachment(contentType: string | null | undefined): boolean {
     return !contentType || contentType.startsWith('image/');
+  }
+
+  protected effectiveDurationMs(msg: AgentChatMessage): number {
+    return this.agent.streamingMessageId() === msg.id ? this.agent.streamingDurationMs() : (msg.durationMs ?? 0);
   }
 
   protected formatDuration(durationMs: number): string {

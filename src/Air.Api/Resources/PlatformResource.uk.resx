@@ -1354,4 +1354,22 @@
   <data name="DeleteRefusedInUse" xml:space="preserve">
     <value>Запис неможливо видалити, оскільки він використовується в інших записах.</value>
   </data>
+  <data name="AgentCheckBeforeMove" xml:space="preserve">
+    <value>Перевірте зміну статусу перед підтвердженням</value>
+  </data>
+  <data name="AgentChildModeAppend" xml:space="preserve">
+    <value>Додати</value>
+  </data>
+  <data name="AgentChildModeReplace" xml:space="preserve">
+    <value>Замінити всі</value>
+  </data>
+  <data name="AgentMemorySaved" xml:space="preserve">
+    <value>Запам'ятовано: {0}</value>
+  </data>
+  <data name="AgentMemoryUndo" xml:space="preserve">
+    <value>Скасувати</value>
+  </data>
+  <data name="AgentMemoryUndone" xml:space="preserve">
+    <value>Запис пам'яті видалено</value>
+  </data>
 </root>

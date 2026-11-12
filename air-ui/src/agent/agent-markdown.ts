@@ -1,4 +1,4 @@
-import type { ReportColumnDto, ReportTableDto, RowDto } from '../core/generated/contracts';
+export { splitMarkdownAndGfmTables } from './agent-gfm-table';
 
 const ALLOWED_TAGS = new Set([
   'a',
@@ -48,16 +48,17 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/**
- * Sanitizes an HTML string against XSS while preserving safe formatting, table, and layout tags.
- */
-export function sanitizeAgentHtml(rawHtml: string): string {
+function isAllowedHref(rawHref: string): boolean {
+  const normalizedUrl = rawHref.replace(/[\u0000-\u0020]+/g, '');
+  return /^(?:https?:\/\/|mailto:|\/|#)/i.test(normalizedUrl);
+}
+
+function tokenizeSafeHtml(rawHtml: string, safeTokens: string[]): string {
   const withoutDangerousBlocks = rawHtml
     .replace(/<(script|style|iframe|object|embed|applet|form|meta|link)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<(script|style|iframe|object|embed|applet|form|meta|link|input|button|textarea)\b[^>]*\/?>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '');
 
-  const safeTags: string[] = [];
   const tokenized = withoutDangerousBlocks.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (full, tagName: string, attrsRaw: string) => {
     const lowerTag = tagName.toLowerCase();
     if (!ALLOWED_TAGS.has(lowerTag)) {
@@ -65,9 +66,9 @@ export function sanitizeAgentHtml(rawHtml: string): string {
     }
 
     if (full.startsWith('</')) {
-      const idx = safeTags.length;
-      safeTags.push(`</${lowerTag}>`);
-      return `\u0000SAFETAG${idx}\u0000`;
+      const idx = safeTokens.length;
+      safeTokens.push(`</${lowerTag}>`);
+      return `\u0000TOK${idx}\u0000`;
     }
 
     const selfClosing = full.endsWith('/>') || lowerTag === 'br' || lowerTag === 'hr';
@@ -82,8 +83,7 @@ export function sanitizeAgentHtml(rawHtml: string): string {
       }
       const attrVal = match[2] ?? match[3] ?? match[4] ?? '';
       if (attrName === 'href') {
-        const normalizedUrl = attrVal.replace(/[\u0000-\u0020]+/g, '');
-        if (!/^(?:https?:\/\/|mailto:|\/|#)/i.test(normalizedUrl)) {
+        if (!isAllowedHref(attrVal)) {
           continue;
         }
         cleanAttrs.push(`href="${escapeHtml(attrVal.trim())}" target="_blank" rel="noopener noreferrer"`);
@@ -96,36 +96,64 @@ export function sanitizeAgentHtml(rawHtml: string): string {
 
     const attrStr = cleanAttrs.length > 0 ? ' ' + cleanAttrs.join(' ') : '';
     const rendered = selfClosing && (lowerTag === 'br' || lowerTag === 'hr') ? `<${lowerTag}${attrStr} />` : `<${lowerTag}${attrStr}>`;
-    const idx = safeTags.length;
-    safeTags.push(rendered);
-    return `\u0000SAFETAG${idx}\u0000`;
+    const idx = safeTokens.length;
+    safeTokens.push(rendered);
+    return `\u0000TOK${idx}\u0000`;
   });
 
-  const escapedRemainder = tokenized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return escapedRemainder.replace(/\u0000SAFETAG(\d+)\u0000/g, (_m, idxStr: string) => safeTags[Number(idxStr)] ?? '');
+  return tokenized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function restoreTokens(text: string, safeTokens: readonly string[]): string {
+  let current = text;
+  for (let pass = 0; pass < 3 && current.includes('\u0000TOK'); pass++) {
+    current = current.replace(/\u0000TOK(\d+)\u0000/g, (_m, idxStr: string) => safeTokens[Number(idxStr)] ?? '');
+  }
+  return current;
+}
+
+/**
+ * Sanitizes an HTML string against XSS while preserving safe formatting, table, and layout tags.
+ */
+export function sanitizeAgentHtml(rawHtml: string): string {
+  const safeTokens: string[] = [];
+  return restoreTokens(tokenizeSafeHtml(rawHtml, safeTokens), safeTokens);
+}
+
+function applyInlineEmphasis(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-ink">$1</strong>')
+    .replace(/(?<![a-zA-Z0-9])__([^_]+)__(?![a-zA-Z0-9])/g, '<strong class="font-semibold text-ink">$1</strong>')
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em class="italic">$1</em>')
+    .replace(/~~([^~]+)~~/g, '<del class="line-through opacity-70">$1</del>');
 }
 
 function renderInlineMarkdown(line: string): string {
-  const codeSpans: string[] = [];
-  let text = line.replace(/`([^`\n]+)`/g, (_m, code: string) => {
-    const idx = codeSpans.length;
-    codeSpans.push(`<code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-ink">${escapeHtml(code)}</code>`);
-    return `\u0000CODE${idx}\u0000`;
+  const tokens: string[] = [];
+  const stash = (rendered: string): string => {
+    const idx = tokens.length;
+    tokens.push(rendered);
+    return `\u0000TOK${idx}\u0000`;
+  };
+
+  let text = line.replace(/`([^`\n]+)`/g, (_m, code: string) =>
+    stash(`<code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-ink">${escapeHtml(code)}</code>`),
+  );
+
+  text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (full, rawLabel: string, rawUrl: string) => {
+    const trimmedUrl = rawUrl.trim();
+    if (!isAllowedHref(trimmedUrl)) {
+      return full;
+    }
+    const labelHtml = applyInlineEmphasis(tokenizeSafeHtml(rawLabel, tokens));
+    return stash(
+      `<a href="${escapeHtml(trimmedUrl)}" target="_blank" rel="noopener noreferrer" class="font-medium text-link underline underline-offset-2 hover:text-link-hover">${labelHtml}</a>`,
+    );
   });
 
-  text = sanitizeAgentHtml(text);
-
-  text = text.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)"'<>]+)\)/g,
-    (_m, label: string, url: string) =>
-      `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="font-medium text-mark underline underline-offset-2 hover:opacity-80">${label}</a>`,
-  );
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-ink">$1</strong>');
-  text = text.replace(/__([^_]+)__/g, '<strong class="font-semibold text-ink">$1</strong>');
-  text = text.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em class="italic">$1</em>');
-  text = text.replace(/~~([^~]+)~~/g, '<del class="line-through opacity-70">$1</del>');
-
-  return text.replace(/\u0000CODE(\d+)\u0000/g, (_m, idxStr: string) => codeSpans[Number(idxStr)] ?? '');
+  text = tokenizeSafeHtml(text, tokens);
+  text = applyInlineEmphasis(text);
+  return restoreTokens(text, tokens);
 }
 
 /**
@@ -183,14 +211,14 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
       const kind = alertMatch[1].toUpperCase();
       const restFirst = alertMatch[2];
       const bodyLines = [restFirst, ...quoteLines.slice(1)].filter(Boolean);
-      const borderCls =
+      const alertTone =
         kind === 'WARNING' || kind === 'CAUTION'
-          ? 'border-amber-500/60 bg-amber-500/10'
+          ? 'hue-amber border-(--btn-edge) bg-(--btn-ground) text-(--btn-ink)'
           : kind === 'TIP'
-            ? 'border-emerald-500/60 bg-emerald-500/10'
-            : 'border-sky-500/60 bg-sky-500/10';
+            ? 'hue-emerald border-(--btn-edge) bg-(--btn-ground) text-(--btn-ink)'
+            : 'hue-sky border-(--btn-edge) bg-(--btn-ground) text-(--btn-ink)';
       out.push(
-        `<blockquote class="my-1.5 rounded-r-lg border-l-3 ${borderCls} px-3 py-2 text-xs leading-relaxed">${bodyLines.map(renderInlineMarkdown).join('<br />')}</blockquote>`,
+        `<blockquote class="my-1.5 rounded-r-lg border-l-3 ${alertTone} px-3 py-2 text-xs leading-relaxed">${bodyLines.map(renderInlineMarkdown).join('<br />')}</blockquote>`,
       );
     } else {
       out.push(
@@ -292,190 +320,4 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
   flushQuote();
 
   return out.join('\n');
-}
-
-function splitMarkdownTableRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return trimmed.split('|').map(cell =>
-    cell
-      .trim()
-      .replace(/^\*\*(.+)\*\*$/, '$1')
-      .replace(/^`(.+)`$/, '$1')
-      .trim(),
-  );
-}
-
-function isSeparatorRow(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed.includes('|') || !trimmed.includes('-')) {
-    return false;
-  }
-  const cells = splitMarkdownTableRow(trimmed);
-  return cells.length >= 2 && cells.every(c => /^:?-{2,}:?$/.test(c));
-}
-
-function parseNumericCell(val: string): { num: number; isPercent: boolean } | null {
-  if (!val) {
-    return null;
-  }
-  const clean = val
-    .replace(/\*\*/g, '')
-    .replace(/(?:грн|uah|usd|eur|₴|\$|€)/gi, '')
-    .trim();
-  if (!clean || /[a-zA-Zа-яА-ЯіїєґІЇЄҐ]/.test(clean)) {
-    return null;
-  }
-  const isPercent = clean.endsWith('%');
-  const numPart = (isPercent ? clean.slice(0, -1) : clean).replace(/[\s\u00A0\u202F']/g, '').replace(',', '.');
-  if (!/^[+-]?\d+(?:\.\d+)?$/.test(numPart)) {
-    return null;
-  }
-  const num = Number(numPart);
-  return Number.isFinite(num) ? { num, isPercent } : null;
-}
-
-/**
- * Splits a markdown chunk into alternating markdown segments and parsed `ReportTableDto` objects whenever
- * a GitHub-Flavored Markdown (GFM) pipe table is encountered.
- */
-export function splitMarkdownAndGfmTables(
-  markdown: string,
-): readonly ({ kind: 'markdown'; content: string } | { kind: 'table'; table: ReportTableDto })[] {
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
-  const result: ({ kind: 'markdown'; content: string } | { kind: 'table'; table: ReportTableDto })[] = [];
-  let mdBuffer: string[] = [];
-  let activeFence: string | null = null;
-  let i = 0;
-
-  const flushMd = (): void => {
-    const text = mdBuffer.join('\n').trim();
-    if (text) {
-      result.push({ kind: 'markdown', content: text });
-    }
-    mdBuffer = [];
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      if (!activeFence) {
-        activeFence = marker;
-      } else if (marker[0] === activeFence[0] && marker.length >= activeFence.length && /^ {0,3}(`{3,}|~{3,})\s*$/.test(line)) {
-        activeFence = null;
-      }
-      mdBuffer.push(line);
-      i++;
-      continue;
-    }
-
-    if (activeFence) {
-      mdBuffer.push(line);
-      i++;
-      continue;
-    }
-
-    const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
-
-    if (line.trim().includes('|') && isSeparatorRow(nextLine)) {
-      const headers = splitMarkdownTableRow(line);
-      const alignments = splitMarkdownTableRow(nextLine).map(sep => (sep.endsWith(':') && !sep.startsWith(':') ? 'right' : 'left'));
-      const rawDataRows: string[][] = [];
-      i += 2;
-
-      while (i < lines.length && lines[i].trim().includes('|') && !/^ {0,3}(`{3,}|~{3,})/.test(lines[i])) {
-        if (!isSeparatorRow(lines[i])) {
-          rawDataRows.push(splitMarkdownTableRow(lines[i]));
-        }
-        i++;
-      }
-
-      if (headers.length >= 2 && rawDataRows.length >= 1) {
-        flushMd();
-
-        const columns: ReportColumnDto[] = headers.map((h, colIdx) => {
-          let numericCount = 0;
-          let percentCount = 0;
-          let nonEmptyCount = 0;
-
-          for (const r of rawDataRows) {
-            const cellVal = r[colIdx] ?? '';
-            if (!cellVal || cellVal === '-' || cellVal === '—') {
-              continue;
-            }
-            nonEmptyCount++;
-            const parsed = parseNumericCell(cellVal);
-            if (parsed) {
-              numericCount++;
-              if (parsed.isPercent) {
-                percentCount++;
-              }
-            }
-          }
-
-          const isMostlyNumeric = colIdx > 0 && nonEmptyCount > 0 && numericCount / nonEmptyCount >= 0.6;
-          const isPercentCol = isMostlyNumeric && percentCount / numericCount >= 0.5;
-          const kind: ReportColumnDto['kind'] = isPercentCol
-            ? 'percent'
-            : isMostlyNumeric || alignments[colIdx] === 'right'
-              ? 'number'
-              : 'text';
-
-          return {
-            key: `c${colIdx}`,
-            label: h,
-            kind,
-          };
-        });
-
-        const mapCellsToRow = (cells: string[]): RowDto => {
-          const rowObj: Record<string, unknown> = {};
-          columns.forEach((col, colIdx) => {
-            const rawCell = cells[colIdx] ?? '';
-            if (col.kind === 'number' || col.kind === 'money' || col.kind === 'percent') {
-              const parsed = parseNumericCell(rawCell);
-              rowObj[col.key] = parsed ? parsed.num : rawCell;
-            } else {
-              rowObj[col.key] = rawCell;
-            }
-          });
-          return { cells: rowObj };
-        };
-
-        let bodyCells = rawDataRows;
-        let bottomRows: RowDto[] | null = null;
-        if (rawDataRows.length > 1) {
-          const lastFirstCell = (rawDataRows[rawDataRows.length - 1][0] ?? '').toLowerCase();
-          if (
-            lastFirstCell.startsWith('разом') ||
-            lastFirstCell.startsWith('всього') ||
-            lastFirstCell.startsWith('усього') ||
-            lastFirstCell.startsWith('итого') ||
-            lastFirstCell.startsWith('всего') ||
-            lastFirstCell.startsWith('total')
-          ) {
-            bodyCells = rawDataRows.slice(0, -1);
-            bottomRows = [mapCellsToRow(rawDataRows[rawDataRows.length - 1])];
-          }
-        }
-
-        result.push({
-          kind: 'table',
-          table: {
-            columns,
-            rows: bodyCells.map(mapCellsToRow),
-            bottomRows,
-          },
-        });
-        continue;
-      }
-    }
-
-    mdBuffer.push(line);
-    i++;
-  }
-
-  flushMd();
-  return result;
 }

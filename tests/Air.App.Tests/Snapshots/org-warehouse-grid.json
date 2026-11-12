@@ -1,0 +1,604 @@
+{
+  "layout": {
+    "key": "org/warehouse-grid",
+    "root": {
+      "key": "",
+      "size": "1fr",
+      "direction": "row",
+      "children": [
+        {
+          "key": "main",
+          "model": {
+            "kind": "Grid",
+            "service": "org/warehouse-grid",
+            "columns": [
+              {
+                "path": "id",
+                "filterPath": "id",
+                "label": "Id",
+                "type": "number",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellOpenForm"
+                }
+              },
+              {
+                "path": "organization",
+                "filterPath": "organizationId",
+                "label": "Organization",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "referenceService": "org/organization-grid",
+                "cell": {
+                  "kind": "GridCellReference",
+                  "colorPath": "organization.color"
+                },
+                "header": {
+                  "kind": "GridHeaderReference"
+                }
+              },
+              {
+                "path": "name",
+                "filterPath": "name",
+                "label": "Name",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "contains",
+                    "label": "Contains",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notContains",
+                    "label": "Not contains",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "startsWith",
+                    "label": "Starts with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notStartsWith",
+                    "label": "Not starts with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "endsWith",
+                    "label": "Ends with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notEndsWith",
+                    "label": "Not ends with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "matches",
+                    "label": "Matches",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notMatches",
+                    "label": "Not matches",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellText"
+                }
+              },
+              {
+                "path": "address",
+                "filterPath": "address",
+                "label": "Address",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "contains",
+                    "label": "Contains",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notContains",
+                    "label": "Not contains",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "startsWith",
+                    "label": "Starts with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notStartsWith",
+                    "label": "Not starts with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "endsWith",
+                    "label": "Ends with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notEndsWith",
+                    "label": "Not ends with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "matches",
+                    "label": "Matches",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notMatches",
+                    "label": "Not matches",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": false,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellText"
+                }
+              },
+              {
+                "path": "isActive",
+                "filterPath": "isActive",
+                "label": "Is Active",
+                "type": "checkbox",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellCheckbox"
+                },
+                "header": {
+                  "kind": "GridHeaderCheckbox"
+                }
+              },
+              {
+                "path": "sortOrder",
+                "filterPath": "sortOrder",
+                "label": "Sort Order",
+                "type": "number",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellNumber",
+                  "decimals": 0,
+                  "isGrouped": true
+                }
+              }
+            ],
+            "headers": [],
+            "nav": {
+              "kind": "Nav",
+              "key": "org/warehouse-grid.nav",
+              "start": [
+                {
+                  "kind": "GridNavAdd",
+                  "label": "Add",
+                  "icon": "plus",
+                  "color": "orange",
+                  "variant": "soft",
+                  "key": "add"
+                }
+              ],
+              "elements": [
+                {
+                  "kind": "GridNavSearch",
+                  "label": "Search",
+                  "key": "search"
+                },
+                {
+                  "kind": "NavOverlay",
+                  "overlay": {
+                    "key": "org/warehouse-grid.filters",
+                    "presentation": "drawer",
+                    "layout": {
+                      "key": "org/warehouse-grid.filters",
+                      "root": {
+                        "key": "",
+                        "size": "1fr",
+                        "direction": "row",
+                        "children": [
+                          {
+                            "key": "filters",
+                            "model": {
+                              "kind": "GridFiltersOverlay"
+                            },
+                            "size": "1fr"
+                          }
+                        ]
+                      }
+                    },
+                    "width": "720px",
+                    "closesOnEscape": true,
+                    "closesOnOutside": true
+                  },
+                  "label": "Filters",
+                  "icon": "filter",
+                  "color": "emerald",
+                  "variant": "soft",
+                  "key": "filters"
+                }
+              ],
+              "end": [],
+              "more": [
+                {
+                  "kind": "GridNavAction",
+                  "service": "org/warehouse-grid",
+                  "method": "export",
+                  "needsSelection": false,
+                  "isDownload": true,
+                  "label": "Export",
+                  "icon": "excel",
+                  "color": "green",
+                  "key": "export"
+                }
+              ],
+              "options": {
+                "direction": "row",
+                "overflow": "scroll"
+              }
+            },
+            "actionNav": {
+              "kind": "Nav",
+              "key": "org/warehouse-grid.actions",
+              "start": [],
+              "elements": [
+                {
+                  "kind": "GridNavAction",
+                  "service": "org/warehouse-grid",
+                  "method": "export",
+                  "needsSelection": true,
+                  "isDownload": true,
+                  "label": "Export",
+                  "icon": "excel",
+                  "color": "green",
+                  "variant": "soft",
+                  "key": "export"
+                }
+              ],
+              "end": [
+                {
+                  "kind": "GridNavAction",
+                  "service": "org/warehouse-grid",
+                  "method": "delete",
+                  "needsSelection": true,
+                  "isSingle": true,
+                  "isDownload": false,
+                  "confirm": {
+                    "kind": "OverlayConfirm",
+                    "message": "Delete the selected rows?",
+                    "color": "red"
+                  },
+                  "label": "Delete",
+                  "icon": "trash",
+                  "color": "red",
+                  "variant": "soft",
+                  "key": "delete"
+                }
+              ],
+              "more": [],
+              "options": {
+                "direction": "row",
+                "overflow": "scroll"
+              }
+            },
+            "pageSize": 200,
+            "isSelectable": true,
+            "isReadOnly": false,
+            "mutationTexts": {
+              "conflictTitle": "The record was changed by someone else. Reload it before saving again.",
+              "reloadLabel": "Reload record",
+              "unknownTitle": "The operation outcome could not be confirmed.",
+              "unknownDescription": "The changes may have been saved. Check the current data before repeating the operation.",
+              "verifyLabel": "Check current data",
+              "committedWarningTitle": "The changes were saved, but a follow-up action could not be completed.",
+              "selectionCorrectionLabel": "Remove blocked or unavailable records from selection"
+            },
+            "form": {
+              "key": "org/warehouse-form.modal",
+              "presentation": "popover",
+              "screen": {
+                "service": "org/warehouse-form"
+              },
+              "width": "720px",
+              "closesOnEscape": true,
+              "closesOnOutside": true
+            }
+          },
+          "size": "1fr"
+        }
+      ]
+    }
+  }
+}

@@ -28,7 +28,7 @@ import { AgentService } from './agent.service';
             }
             <button
               type="button"
-              class="ml-0.5 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-red-500 hover:text-white"
+              class="hue-red ml-0.5 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-(--hue) hover:text-(--btn-on-hue)"
               [title]="texts.of('Delete')"
               [attr.aria-label]="texts.of('Delete')"
               (click)="agent.clearPendingSync()"
@@ -44,7 +44,7 @@ import { AgentService } from './agent.service';
               <img [src]="att.previewUrl" [alt]="att.fileName" class="h-14 w-14 object-cover" />
               <button
                 type="button"
-                class="absolute top-0.5 right-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-surface/90 text-ink hover:bg-red-500 hover:text-white"
+                class="hue-red absolute top-0.5 right-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-surface/90 text-ink hover:bg-(--hue) hover:text-(--btn-on-hue)"
                 [title]="texts.of('Delete')"
                 [attr.aria-label]="texts.of('Delete')"
                 (click)="agent.removePendingAttachment(att.id)"
@@ -58,7 +58,7 @@ import { AgentService } from './agent.service';
               <span class="max-w-40 truncate" [title]="att.fileName">{{ att.fileName }}</span>
               <button
                 type="button"
-                class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-red-500 hover:text-white"
+                class="hue-red flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-(--hue) hover:text-(--btn-on-hue)"
                 [title]="texts.of('Delete')"
                 [attr.aria-label]="texts.of('Delete')"
                 (click)="agent.removePendingAttachment(att.id)"

@@ -1,16 +1,15 @@
-import { DecimalPipe } from '@angular/common';
 import { Component, inject, input, output } from '@angular/core';
 import { BadgeComponent } from '../badge/badge.component';
 import { BtnComponent } from '../btn/btn.component';
 import type { UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
+import type { AgentProposal, AgentProposalChildGroup } from './agent-models';
 import { asAgentUiColor } from './agent-ui-helpers';
-import type { AgentProposal, AgentProposalLine } from './agent.service';
 
 @Component({
   selector: 'ui-agent-proposal-card',
-  imports: [DecimalPipe, BadgeComponent, BtnComponent, UiIconDirective],
+  imports: [BadgeComponent, BtnComponent, UiIconDirective],
   template: `
     @let p = proposal();
     <div
@@ -40,7 +39,7 @@ import type { AgentProposal, AgentProposalLine } from './agent.service';
 
       @if (p.duplicateWarning && p.status !== 'committed' && p.status !== 'superseded') {
         <div
-          class="flex items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+          class="hue-amber flex items-center justify-between gap-2 border-b border-(--btn-edge) bg-(--btn-ground) px-3 py-2 text-xs text-(--btn-ink)"
         >
           <div class="flex min-w-0 items-start gap-1.5">
             <i class="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center" [icon]="'alert'"></i>
@@ -52,68 +51,69 @@ import type { AgentProposal, AgentProposalLine } from './agent.service';
         </div>
       }
 
-      <div class="divide-y divide-line/60 px-3 py-1.5 text-xs">
-        @for (field of p.fields; track field.label) {
-          <div class="flex items-center justify-between gap-2 py-1">
-            <span class="text-muted">{{ field.label }}</span>
-            <span class="flex items-center gap-1.5 font-medium text-ink text-right">
-              <span>{{ field.value }}</span>
-              @if (field.badge) {
-                <ui-badge [label]="field.badge" [color]="asColor(field.color)" />
+      @if (p.fields.length > 0) {
+        <div class="divide-y divide-line/60 px-3 py-1.5 text-xs">
+          @for (field of p.fields; track field.label) {
+            <div class="flex items-center justify-between gap-2 py-1">
+              <span class="text-muted">{{ field.label }}</span>
+              <span class="flex items-center gap-1.5 text-right font-medium text-ink">
+                <span>{{ field.value }}</span>
+                @if (field.badge) {
+                  <ui-badge [label]="field.badge" [color]="asColor(field.color)" />
+                }
+              </span>
+            </div>
+          }
+        </div>
+      }
+
+      @for (group of p.children; track group.childKey) {
+        @if (group.rows.length > 0) {
+          <div class="border-t border-line bg-surface px-3 py-2">
+            <div class="mb-1.5 flex items-center justify-between gap-2">
+              <span class="text-[11px] font-semibold tracking-wide uppercase text-muted">
+                {{ groupTitle(group) }}
+              </span>
+              @if (p.operation === 'update' || group.mode === 'replace') {
+                <ui-badge
+                  [label]="group.mode === 'replace' ? texts.of('AgentChildModeReplace') : texts.of('AgentChildModeAppend')"
+                  [color]="group.mode === 'replace' ? 'amber' : 'slate'"
+                />
               }
-            </span>
+            </div>
+            <div class="max-h-48 overflow-x-auto overflow-y-auto">
+              <table class="w-full border-collapse text-xs">
+                @if (group.columns.length > 0) {
+                  <thead>
+                    <tr class="border-b border-line/60 text-[11px] text-muted">
+                      @for (col of group.columns; track col.key) {
+                        <th class="py-1 pr-2 font-medium last:pr-0" [class.text-left]="!col.isNumeric" [class.text-right]="col.isNumeric">
+                          {{ col.label }}
+                        </th>
+                      }
+                    </tr>
+                  </thead>
+                }
+                <tbody class="divide-y divide-line/40">
+                  @for (row of group.rows; track $index) {
+                    <tr>
+                      @for (col of group.columns; track col.key) {
+                        <td
+                          class="py-1 pr-2 text-ink last:pr-0"
+                          [class.text-right]="col.isNumeric"
+                          [class.tabular-nums]="col.isNumeric"
+                          [class.font-medium]="col.isNumeric && $last"
+                        >
+                          {{ row.cells[col.key] ?? '—' }}
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
           </div>
         }
-      </div>
-
-      @if (p.lines.length > 0) {
-        <div class="border-t border-line bg-surface px-3 py-2">
-          <div class="mb-1.5 text-[11px] font-semibold tracking-wide uppercase text-muted">
-            {{ p.linesLabel || texts.of('AgentLinesTitle', p.lines.length) }}
-          </div>
-          <div class="max-h-44 space-y-1 overflow-y-auto pr-1 text-xs">
-            @for (line of p.lines; track $index) {
-              <div class="flex items-start justify-between gap-2 border-b border-line/40 pb-1 last:border-b-0 last:pb-0">
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-ink" [title]="line.name">{{ line.name }}</div>
-                  @if (hasLineDetails(line)) {
-                    <div class="flex flex-wrap items-center gap-x-1 text-[11px] text-muted">
-                      @if (line.qty !== null && line.qty !== undefined && line.price !== null && line.price !== undefined) {
-                        <span class="tabular-nums">{{ line.qty | number: '1.0-4' }} × {{ line.price | number: '1.2-4' }}</span>
-                      } @else if (line.qty !== null && line.qty !== undefined) {
-                        <span class="tabular-nums">× {{ line.qty | number: '1.0-4' }}</span>
-                      } @else if (line.price !== null && line.price !== undefined) {
-                        <span class="tabular-nums">{{ line.price | number: '1.2-4' }}</span>
-                      }
-                      @if (line.category) {
-                        @if ((line.qty !== null && line.qty !== undefined) || (line.price !== null && line.price !== undefined)) {
-                          <span>·</span>
-                        }
-                        <span>{{ line.category }}</span>
-                      }
-                      @for (f of line.fields ?? []; track $index; let firstField = $first) {
-                        @if (
-                          !firstField ||
-                          !!line.category ||
-                          (line.qty !== null && line.qty !== undefined) ||
-                          (line.price !== null && line.price !== undefined)
-                        ) {
-                          <span>·</span>
-                        }
-                        <span>{{ f.label }}: {{ f.value }}</span>
-                      }
-                    </div>
-                  }
-                </div>
-                @if (line.amount !== null && line.amount !== undefined) {
-                  <div class="shrink-0 font-medium tabular-nums text-ink">
-                    {{ line.amount | number: '1.2-4' }}
-                  </div>
-                }
-              </div>
-            }
-          </div>
-        </div>
       }
 
       @if (p.attachmentIds.length > 0) {
@@ -125,7 +125,7 @@ import type { AgentProposal, AgentProposalLine } from './agent.service';
 
       <div class="flex items-center justify-between gap-2 border-t border-line bg-surface-3 px-3 py-2">
         @if (p.status === 'committed') {
-          <div class="flex items-center gap-1.5 text-xs font-semibold text-green-600 dark:text-green-400">
+          <div class="hue-green flex items-center gap-1.5 text-xs font-semibold text-(--hue-ink)">
             <i class="flex h-4 w-4 items-center justify-center" [icon]="'checkmark'"></i>
             <span>{{ texts.of('AgentSaved', p.committedLabel ?? '') }}</span>
           </div>
@@ -136,7 +136,9 @@ import type { AgentProposal, AgentProposalLine } from './agent.service';
             <span>{{ texts.of('AgentSupersededBadge') }}</span>
           </div>
         } @else {
-          <span class="text-xs text-muted">{{ texts.of('AgentCheckBeforeSave') }}</span>
+          <span class="text-xs text-muted">
+            {{ p.operation === 'move-status' ? texts.of('AgentCheckBeforeMove') : texts.of('AgentCheckBeforeSave') }}
+          </span>
           <ui-btn
             size="small"
             variant="soft"
@@ -167,12 +169,7 @@ export class AgentProposalCardComponent {
     return asAgentUiColor(color) ?? 'slate';
   }
 
-  protected hasLineDetails(line: AgentProposalLine): boolean {
-    return (
-      (line.qty !== null && line.qty !== undefined) ||
-      (line.price !== null && line.price !== undefined) ||
-      !!line.category ||
-      !!line.fields?.length
-    );
+  protected groupTitle(group: AgentProposalChildGroup): string {
+    return group.title ? `${group.title} (${group.rows.length})` : this.texts.of('AgentLinesTitle', group.rows.length);
   }
 }

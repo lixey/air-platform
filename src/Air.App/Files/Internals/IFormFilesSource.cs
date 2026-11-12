@@ -1,6 +1,6 @@
 namespace Platform.App.Files.Internals;
 
-public interface IFormFilesSource
+internal interface IFormFilesSource
 {
   int PageSize { get; }
   Task<FormFilesModel> BuildFormFilesAsync(

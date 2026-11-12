@@ -1,0 +1,202 @@
+{
+  "layout": {
+    "key": "org/warehouse-form",
+    "root": {
+      "key": "",
+      "size": "1fr",
+      "direction": "column",
+      "children": [
+        {
+          "key": "bar",
+          "model": {
+            "kind": "Nav",
+            "key": "org/warehouse-form.nav",
+            "start": [
+              {
+                "kind": "FormNavSaveClose",
+                "label": "Save & Close",
+                "icon": "save",
+                "color": "green",
+                "variant": "soft",
+                "key": "save-close"
+              }
+            ],
+            "elements": [
+              {
+                "kind": "FormNavSave",
+                "label": "Save",
+                "color": "green",
+                "variant": "soft",
+                "key": "save"
+              },
+              {
+                "kind": "NavClose",
+                "label": "Close",
+                "icon": "close",
+                "color": "slate",
+                "variant": "soft",
+                "key": "form-close"
+              },
+              {
+                "kind": "NavLabel",
+                "path": "form",
+                "label": "New Warehouse",
+                "color": "sky",
+                "key": "record"
+              }
+            ],
+            "end": [
+              {
+                "kind": "NavClose",
+                "title": "Close",
+                "icon": "close",
+                "color": "slate",
+                "variant": "ghost",
+                "key": "close"
+              }
+            ],
+            "more": [],
+            "options": {
+              "direction": "row",
+              "overflow": "scroll"
+            }
+          },
+          "size": "auto",
+          "isRigid": true,
+          "isPinned": true
+        },
+        {
+          "key": "form",
+          "model": {
+            "kind": "Form",
+            "service": "org/warehouse-form",
+            "elements": [
+              {
+                "path": "organizationId",
+                "referencePath": "organization",
+                "label": "Organization",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/organization-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 3,
+                "isRequired": true,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "name",
+                "label": "Name",
+                "type": "text",
+                "model": {
+                  "kind": "FormInput"
+                },
+                "span": 3,
+                "isRequired": true,
+                "constraints": {
+                  "allowsNull": false,
+                  "rejectsBlank": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 128
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "isFocused": true,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "address",
+                "label": "Address",
+                "type": "text",
+                "model": {
+                  "kind": "FormInput"
+                },
+                "span": 3,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 512
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "isActive",
+                "label": "Is Active",
+                "type": "checkbox",
+                "model": {
+                  "kind": "FormCheckbox"
+                },
+                "span": 6,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "sortOrder",
+                "label": "Sort Order",
+                "type": "number",
+                "model": {
+                  "kind": "FormNumber",
+                  "step": 1
+                },
+                "span": 6,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              }
+            ],
+            "isReadOnly": false,
+            "dirtyDialog": {
+              "kind": "OverlayDirty",
+              "title": "Save changes?",
+              "description": "You have unsaved changes. Choose what to do before leaving.",
+              "saveLabel": "Save",
+              "discardLabel": "Discard changes",
+              "continueLabel": "Continue editing"
+            },
+            "mutationTexts": {
+              "conflictTitle": "The record was changed by someone else. Reload it before saving again.",
+              "reloadLabel": "Reload record",
+              "unknownTitle": "The operation outcome could not be confirmed.",
+              "unknownDescription": "The changes may have been saved. Check the current data before repeating the operation.",
+              "verifyLabel": "Check current data",
+              "committedWarningTitle": "The changes were saved, but a follow-up action could not be completed.",
+              "selectionCorrectionLabel": "Remove blocked or unavailable records from selection"
+            }
+          },
+          "size": "auto"
+        }
+      ]
+    }
+  },
+  "overlayWidth": "720px"
+}

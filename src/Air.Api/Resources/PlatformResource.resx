@@ -1351,4 +1351,25 @@
   <data name="DeleteRefusedInUse" xml:space="preserve">
     <value>Record cannot be deleted because it is used in other records.</value>
   </data>
+  <data name="New User" xml:space="preserve">
+    <value>New User</value>
+  </data>
+  <data name="AgentCheckBeforeMove" xml:space="preserve">
+    <value>Check the status change before confirming</value>
+  </data>
+  <data name="AgentChildModeAppend" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="AgentChildModeReplace" xml:space="preserve">
+    <value>Replace all</value>
+  </data>
+  <data name="AgentMemorySaved" xml:space="preserve">
+    <value>Remembered: {0}</value>
+  </data>
+  <data name="AgentMemoryUndo" xml:space="preserve">
+    <value>Undo</value>
+  </data>
+  <data name="AgentMemoryUndone" xml:space="preserve">
+    <value>Memory removed</value>
+  </data>
 </root>

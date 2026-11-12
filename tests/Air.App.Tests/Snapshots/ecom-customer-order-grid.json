@@ -1,0 +1,1139 @@
+{
+  "layout": {
+    "key": "ecom/customer-order-grid",
+    "root": {
+      "key": "",
+      "size": "1fr",
+      "direction": "row",
+      "children": [
+        {
+          "key": "main",
+          "model": {
+            "kind": "Grid",
+            "service": "ecom/customer-order-grid",
+            "columns": [
+              {
+                "path": "id",
+                "filterPath": "id",
+                "label": "Id",
+                "type": "number",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellOpenForm"
+                }
+              },
+              {
+                "path": "number",
+                "filterPath": "number",
+                "label": "Number",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "contains",
+                    "label": "Contains",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notContains",
+                    "label": "Not contains",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "startsWith",
+                    "label": "Starts with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notStartsWith",
+                    "label": "Not starts with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "endsWith",
+                    "label": "Ends with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notEndsWith",
+                    "label": "Not ends with",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "matches",
+                    "label": "Matches",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notMatches",
+                    "label": "Not matches",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellText"
+                }
+              },
+              {
+                "path": "date",
+                "filterPath": "date",
+                "label": "Date",
+                "type": "date",
+                "temporalType": "dateOnly",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellDate"
+                },
+                "header": {
+                  "kind": "GridHeaderDate"
+                }
+              },
+              {
+                "path": "docStatusId",
+                "filterPath": "docStatusId",
+                "label": "Status",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "options": [
+                  {
+                    "id": 101,
+                    "name": "New",
+                    "color": "sky"
+                  },
+                  {
+                    "id": 102,
+                    "name": "In progress",
+                    "color": "amber"
+                  },
+                  {
+                    "id": 103,
+                    "name": "Confirmed",
+                    "color": "blue"
+                  },
+                  {
+                    "id": 104,
+                    "name": "Paused",
+                    "color": "amber"
+                  },
+                  {
+                    "id": 105,
+                    "name": "Completed",
+                    "color": "green"
+                  },
+                  {
+                    "id": 106,
+                    "name": "Canceled",
+                    "color": "red"
+                  }
+                ],
+                "cell": {
+                  "kind": "GridCellSelect"
+                },
+                "header": {
+                  "kind": "GridHeaderReference"
+                }
+              },
+              {
+                "path": "organization",
+                "filterPath": "organizationId",
+                "label": "Organization",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "referenceService": "org/organization-grid",
+                "cell": {
+                  "kind": "GridCellReference",
+                  "colorPath": "organization.color"
+                },
+                "header": {
+                  "kind": "GridHeaderReference"
+                }
+              },
+              {
+                "path": "customer",
+                "filterPath": "customerId",
+                "label": "Customer",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": false,
+                "isSticky": false,
+                "isStickyRight": false,
+                "referenceService": "org/customer-grid",
+                "cell": {
+                  "kind": "GridCellReference"
+                },
+                "header": {
+                  "kind": "GridHeaderReference"
+                }
+              },
+              {
+                "path": "warehouse",
+                "filterPath": "warehouseId",
+                "label": "Warehouse",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": false,
+                "isSticky": false,
+                "isStickyRight": false,
+                "referenceService": "org/warehouse-grid",
+                "cell": {
+                  "kind": "GridCellReference"
+                },
+                "header": {
+                  "kind": "GridHeaderReference"
+                }
+              },
+              {
+                "path": "manager",
+                "filterPath": "managerId",
+                "label": "Manager",
+                "type": "text",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": false,
+                "isSticky": false,
+                "isStickyRight": false,
+                "referenceService": "app/user-grid",
+                "cell": {
+                  "kind": "GridCellReference"
+                },
+                "header": {
+                  "kind": "GridHeaderReference"
+                }
+              },
+              {
+                "path": "qty",
+                "filterPath": "qty",
+                "label": "Quantity",
+                "type": "number",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellNumber",
+                  "decimals": 2,
+                  "isGrouped": true
+                }
+              },
+              {
+                "path": "amount",
+                "filterPath": "amount",
+                "label": "Amount",
+                "type": "number",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellMoney",
+                  "decimals": 2
+                }
+              },
+              {
+                "path": "paidAmount",
+                "filterPath": "paidAmount",
+                "label": "Paid",
+                "type": "number",
+                "isSortable": true,
+                "isFilterable": true,
+                "operators": [
+                  {
+                    "handle": "equals",
+                    "label": "Equals",
+                    "symbol": "="
+                  },
+                  {
+                    "handle": "notEquals",
+                    "label": "Not equals",
+                    "symbol": "<>"
+                  },
+                  {
+                    "handle": "greaterThan",
+                    "label": "Greater than",
+                    "symbol": ">"
+                  },
+                  {
+                    "handle": "greaterThanOrEqual",
+                    "label": "Greater than or equal",
+                    "symbol": ">="
+                  },
+                  {
+                    "handle": "lessThan",
+                    "label": "Less than",
+                    "symbol": "<"
+                  },
+                  {
+                    "handle": "lessThanOrEqual",
+                    "label": "Less than or equal",
+                    "symbol": "<="
+                  },
+                  {
+                    "handle": "in",
+                    "label": "In",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "notIn",
+                    "label": "Not in",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNull",
+                    "label": "Is empty",
+                    "symbol": null
+                  },
+                  {
+                    "handle": "isNotNull",
+                    "label": "Is not empty",
+                    "symbol": null
+                  }
+                ],
+                "isResizable": true,
+                "isHidden": false,
+                "isDisabled": false,
+                "isRequired": true,
+                "isSticky": false,
+                "isStickyRight": false,
+                "cell": {
+                  "kind": "GridCellMoney",
+                  "decimals": 2
+                }
+              }
+            ],
+            "headers": [],
+            "nav": {
+              "kind": "Nav",
+              "key": "ecom/customer-order-grid.nav",
+              "start": [
+                {
+                  "kind": "GridNavAdd",
+                  "label": "Add",
+                  "icon": "plus",
+                  "color": "orange",
+                  "variant": "soft",
+                  "key": "add"
+                }
+              ],
+              "elements": [
+                {
+                  "kind": "GridNavSearch",
+                  "label": "Search",
+                  "key": "search"
+                },
+                {
+                  "kind": "NavOverlay",
+                  "overlay": {
+                    "key": "ecom/customer-order-grid.filters",
+                    "presentation": "drawer",
+                    "layout": {
+                      "key": "ecom/customer-order-grid.filters",
+                      "root": {
+                        "key": "",
+                        "size": "1fr",
+                        "direction": "row",
+                        "children": [
+                          {
+                            "key": "filters",
+                            "model": {
+                              "kind": "GridFiltersOverlay"
+                            },
+                            "size": "1fr"
+                          }
+                        ]
+                      }
+                    },
+                    "width": "720px",
+                    "closesOnEscape": true,
+                    "closesOnOutside": true
+                  },
+                  "label": "Filters",
+                  "icon": "filter",
+                  "color": "emerald",
+                  "variant": "soft",
+                  "key": "filters"
+                },
+                {
+                  "kind": "GridNavNamedFilterGroup",
+                  "items": [
+                    {
+                      "kind": "GridNavNamedFilter",
+                      "label": "In work",
+                      "color": "amber",
+                      "isSelected": true,
+                      "key": "Status.Open"
+                    },
+                    {
+                      "kind": "GridNavNamedFilter",
+                      "label": "Completed",
+                      "color": "emerald",
+                      "key": "Status.Completed"
+                    },
+                    {
+                      "kind": "GridNavNamedFilter",
+                      "label": "Canceled",
+                      "color": "rose",
+                      "key": "Status.Canceled"
+                    },
+                    {
+                      "kind": "GridNavNamedFilter",
+                      "label": "All",
+                      "key": "Status.all"
+                    }
+                  ],
+                  "isInline": true,
+                  "label": "Status",
+                  "key": "Status"
+                },
+                {
+                  "kind": "GridNavNamedFilter",
+                  "isRemembered": true,
+                  "label": "Mine",
+                  "key": "Mine"
+                }
+              ],
+              "end": [],
+              "more": [
+                {
+                  "kind": "GridNavAction",
+                  "service": "ecom/customer-order-grid",
+                  "method": "export",
+                  "needsSelection": false,
+                  "isDownload": true,
+                  "label": "Export",
+                  "icon": "excel",
+                  "color": "green",
+                  "key": "export"
+                }
+              ],
+              "options": {
+                "direction": "row",
+                "overflow": "scroll"
+              }
+            },
+            "actionNav": {
+              "kind": "Nav",
+              "key": "ecom/customer-order-grid.actions",
+              "start": [],
+              "elements": [
+                {
+                  "kind": "GridNavStatus",
+                  "path": "docStatusId",
+                  "emptyTitle": "No status change is available.",
+                  "moves": [
+                    {
+                      "from": [
+                        102,
+                        103,
+                        104
+                      ],
+                      "action": {
+                        "kind": "GridNavAction",
+                        "service": "ecom/customer-order-grid",
+                        "method": "move-status/reopen",
+                        "needsSelection": true,
+                        "isDownload": false,
+                        "label": "New",
+                        "color": "sky",
+                        "key": "status.reopen"
+                      }
+                    },
+                    {
+                      "from": [
+                        101,
+                        103,
+                        104
+                      ],
+                      "action": {
+                        "kind": "GridNavAction",
+                        "service": "ecom/customer-order-grid",
+                        "method": "move-status/start",
+                        "needsSelection": true,
+                        "isDownload": false,
+                        "label": "In progress",
+                        "color": "amber",
+                        "key": "status.start"
+                      }
+                    },
+                    {
+                      "from": [
+                        101,
+                        102,
+                        104
+                      ],
+                      "action": {
+                        "kind": "GridNavAction",
+                        "service": "ecom/customer-order-grid",
+                        "method": "move-status/confirm",
+                        "needsSelection": true,
+                        "isDownload": false,
+                        "unavailableReasons": [
+                          "An order without lines takes no status."
+                        ],
+                        "label": "Confirmed",
+                        "color": "blue",
+                        "key": "status.confirm"
+                      }
+                    },
+                    {
+                      "from": [
+                        101,
+                        102,
+                        103
+                      ],
+                      "action": {
+                        "kind": "GridNavAction",
+                        "service": "ecom/customer-order-grid",
+                        "method": "move-status/pause",
+                        "needsSelection": true,
+                        "isDownload": false,
+                        "unavailableReasons": [
+                          "An order without lines takes no status."
+                        ],
+                        "label": "Paused",
+                        "color": "amber",
+                        "key": "status.pause"
+                      }
+                    },
+                    {
+                      "from": [
+                        101,
+                        102,
+                        103,
+                        104
+                      ],
+                      "action": {
+                        "kind": "GridNavAction",
+                        "service": "ecom/customer-order-grid",
+                        "method": "move-status/complete",
+                        "needsSelection": true,
+                        "isDownload": false,
+                        "unavailableReasons": [
+                          "An order without lines takes no status."
+                        ],
+                        "label": "Completed",
+                        "color": "green",
+                        "key": "status.complete"
+                      }
+                    },
+                    {
+                      "from": [
+                        101,
+                        102,
+                        103,
+                        104
+                      ],
+                      "action": {
+                        "kind": "GridNavAction",
+                        "service": "ecom/customer-order-grid",
+                        "method": "move-status/cancel",
+                        "needsSelection": true,
+                        "isDownload": false,
+                        "ask": {
+                          "kind": "FormAsk",
+                          "elements": [
+                            {
+                              "path": "reason",
+                              "label": "Reason",
+                              "type": "text",
+                              "model": {
+                                "kind": "FormTextarea"
+                              },
+                              "span": 12,
+                              "isRequired": true,
+                              "constraints": {
+                                "allowsNull": false,
+                                "rejectsBlank": true,
+                                "lengthUnit": "utf16",
+                                "maxLength": 200
+                              },
+                              "isDisabled": false,
+                              "isHidden": false,
+                              "isServerOwned": false,
+                              "isInputOnly": false,
+                              "valueKind": "scalar"
+                            }
+                          ],
+                          "title": "Canceled",
+                          "message": "Change the status to Canceled?",
+                          "color": "red"
+                        },
+                        "label": "Canceled",
+                        "color": "red",
+                        "key": "status.cancel"
+                      }
+                    }
+                  ],
+                  "label": "Status",
+                  "key": "status"
+                },
+                {
+                  "kind": "NavMenu",
+                  "elements": [
+                    {
+                      "kind": "GridNavAction",
+                      "service": "ecom/customer-order-grid",
+                      "method": "create-sales-invoice",
+                      "needsSelection": true,
+                      "isDownload": false,
+                      "label": "Create sales invoice",
+                      "icon": "plus",
+                      "color": "blue",
+                      "variant": "soft",
+                      "key": "createsalesinvoice"
+                    },
+                    {
+                      "kind": "GridNavAction",
+                      "service": "ecom/customer-order-grid",
+                      "method": "create-incoming-payment",
+                      "needsSelection": true,
+                      "isDownload": false,
+                      "label": "Create incoming payment",
+                      "icon": "plus",
+                      "color": "blue",
+                      "variant": "soft",
+                      "key": "createincomingpayment"
+                    }
+                  ],
+                  "label": "Actions",
+                  "variant": "soft",
+                  "key": "actions"
+                },
+                {
+                  "kind": "GridNavAction",
+                  "service": "ecom/customer-order-grid",
+                  "method": "export",
+                  "needsSelection": true,
+                  "isDownload": true,
+                  "label": "Export",
+                  "icon": "excel",
+                  "color": "green",
+                  "variant": "soft",
+                  "key": "export"
+                }
+              ],
+              "end": [
+                {
+                  "kind": "GridNavAction",
+                  "service": "ecom/customer-order-grid",
+                  "method": "delete",
+                  "needsSelection": true,
+                  "isSingle": true,
+                  "isDownload": false,
+                  "confirm": {
+                    "kind": "OverlayConfirm",
+                    "message": "Delete the selected rows?",
+                    "color": "red"
+                  },
+                  "label": "Delete",
+                  "icon": "trash",
+                  "color": "red",
+                  "variant": "soft",
+                  "key": "delete"
+                }
+              ],
+              "more": [],
+              "options": {
+                "direction": "row",
+                "overflow": "scroll"
+              }
+            },
+            "pageSize": 200,
+            "isSelectable": true,
+            "isReadOnly": false,
+            "mutationTexts": {
+              "conflictTitle": "The record was changed by someone else. Reload it before saving again.",
+              "reloadLabel": "Reload record",
+              "unknownTitle": "The operation outcome could not be confirmed.",
+              "unknownDescription": "The changes may have been saved. Check the current data before repeating the operation.",
+              "verifyLabel": "Check current data",
+              "committedWarningTitle": "The changes were saved, but a follow-up action could not be completed.",
+              "selectionCorrectionLabel": "Remove blocked or unavailable records from selection"
+            },
+            "form": {
+              "key": "ecom/customer-order-form.modal",
+              "presentation": "drawer",
+              "screen": {
+                "service": "ecom/customer-order-form"
+              },
+              "closesOnEscape": true,
+              "closesOnOutside": true
+            }
+          },
+          "size": "1fr"
+        }
+      ]
+    }
+  }
+}

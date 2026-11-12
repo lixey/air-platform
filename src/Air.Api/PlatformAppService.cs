@@ -225,7 +225,7 @@ public class PlatformAppService(
       return;
     }
 
-    var now = DateTimeOffset.UtcNow;
+    var now = (app?.Time ?? TimeProvider.System).GetUtcNow();
     var sessions = await sessionsSet
       .IgnoreQueryFilters()
       .Where(s => userIds.Contains(s.UserId) && s.RevokedAt == null)

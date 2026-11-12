@@ -1,0 +1,35 @@
+{
+  "layout": {
+    "key": "ecom/sales-workspace",
+    "root": {
+      "key": "",
+      "size": "1fr",
+      "direction": "row",
+      "children": [
+        {
+          "key": "orders",
+          "model": {
+            "kind": "PanelScreen",
+            "service": "ecom/customer-order-grid"
+          },
+          "label": "Customer Orders",
+          "size": "1fr",
+          "minSize": "520px"
+        },
+        {
+          "key": "stock",
+          "model": {
+            "kind": "PanelScreen",
+            "service": "ecom/stock-balance-grid"
+          },
+          "label": "Stock Balances",
+          "size": "480px",
+          "minSize": "320px",
+          "maxSize": "720px",
+          "isResizable": true,
+          "isCollapsible": true
+        }
+      ]
+    }
+  }
+}

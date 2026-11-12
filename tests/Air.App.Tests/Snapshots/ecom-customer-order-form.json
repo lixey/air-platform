@@ -1,0 +1,576 @@
+{
+  "layout": {
+    "key": "ecom/customer-order-form",
+    "root": {
+      "key": "",
+      "size": "1fr",
+      "direction": "column",
+      "children": [
+        {
+          "key": "bar",
+          "model": {
+            "kind": "Nav",
+            "key": "ecom/customer-order-form.nav",
+            "start": [
+              {
+                "kind": "FormNavSaveClose",
+                "label": "Save & Close",
+                "icon": "save",
+                "color": "green",
+                "variant": "soft",
+                "key": "save-close"
+              }
+            ],
+            "elements": [
+              {
+                "kind": "FormNavSave",
+                "label": "Save",
+                "color": "green",
+                "variant": "soft",
+                "key": "save"
+              },
+              {
+                "kind": "NavClose",
+                "label": "Close",
+                "icon": "close",
+                "color": "slate",
+                "variant": "soft",
+                "key": "form-close"
+              },
+              {
+                "kind": "NavLabel",
+                "path": "form",
+                "label": "New Customer Order",
+                "color": "sky",
+                "key": "record"
+              },
+              {
+                "kind": "FormNavSaveOpen",
+                "path": "lines",
+                "label": "Lines",
+                "color": "indigo",
+                "variant": "soft",
+                "key": "lines"
+              },
+              {
+                "kind": "FormNavSaveOpen",
+                "path": "followers",
+                "label": "Followed by",
+                "color": "indigo",
+                "variant": "soft",
+                "key": "followers"
+              },
+              {
+                "kind": "FormNavSaveOpen",
+                "path": "history",
+                "label": "History",
+                "color": "indigo",
+                "variant": "soft",
+                "key": "history"
+              }
+            ],
+            "end": [
+              {
+                "kind": "NavClose",
+                "title": "Close",
+                "icon": "close",
+                "color": "slate",
+                "variant": "ghost",
+                "key": "close"
+              }
+            ],
+            "more": [],
+            "options": {
+              "direction": "row",
+              "overflow": "scroll"
+            }
+          },
+          "size": "auto",
+          "isRigid": true,
+          "isPinned": true
+        },
+        {
+          "key": "form",
+          "model": {
+            "kind": "Form",
+            "service": "ecom/customer-order-form",
+            "elements": [
+              {
+                "path": "number",
+                "label": "Number",
+                "type": "text",
+                "model": {
+                  "kind": "FormInfo"
+                },
+                "span": 3,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": false,
+                  "lengthUnit": "utf16",
+                  "maxLength": 32
+                },
+                "isDisabled": true,
+                "isHidden": false,
+                "isServerOwned": true,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "docStatusId",
+                "label": "Status",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceLabelPaths": [],
+                  "options": [
+                    {
+                      "id": 101,
+                      "name": "New",
+                      "color": "sky"
+                    },
+                    {
+                      "id": 102,
+                      "name": "In progress",
+                      "color": "amber"
+                    },
+                    {
+                      "id": 103,
+                      "name": "Confirmed",
+                      "color": "blue"
+                    },
+                    {
+                      "id": 104,
+                      "name": "Paused",
+                      "color": "amber"
+                    },
+                    {
+                      "id": 105,
+                      "name": "Completed",
+                      "color": "green"
+                    },
+                    {
+                      "id": 106,
+                      "name": "Canceled",
+                      "color": "red"
+                    }
+                  ]
+                },
+                "span": 3,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": true,
+                "isHidden": false,
+                "isServerOwned": true,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "date",
+                "label": "Date",
+                "type": "date",
+                "temporalType": "dateOnly",
+                "model": {
+                  "kind": "FormDate"
+                },
+                "span": 3,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "organizationId",
+                "referencePath": "organization",
+                "label": "Organization",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/organization-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 3,
+                "isRequired": true,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "customerId",
+                "referencePath": "customer",
+                "label": "Customer",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/customer-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 3,
+                "isRequired": true,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "contactId",
+                "referencePath": "contact",
+                "label": "Contact",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/customer-contact-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ],
+                  "referenceDraftRules": [
+                    {
+                      "sourceField": "customerId",
+                      "draftField": "customerId"
+                    }
+                  ]
+                },
+                "span": 3,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "warehouseId",
+                "referencePath": "warehouse",
+                "label": "Warehouse",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/warehouse-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ],
+                  "referenceDraftRules": [
+                    {
+                      "sourceField": "organizationId",
+                      "draftField": "organizationId"
+                    }
+                  ]
+                },
+                "span": 3,
+                "isRequired": true,
+                "constraints": {
+                  "allowsNull": false
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "managerId",
+                "referencePath": "manager",
+                "label": "Manager",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "app/user-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 3,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference",
+                "hasSeparatorAfter": true,
+                "separatorLabel": "Delivery and payment"
+              },
+              {
+                "path": "deliveryTypeId",
+                "referencePath": "deliveryType",
+                "label": "Delivery Type",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/delivery-type-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 4,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "paymentMethodId",
+                "referencePath": "paymentMethod",
+                "label": "Payment Method",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/payment-method-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 4,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "paymentTermId",
+                "referencePath": "paymentTerm",
+                "label": "Payment Term",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/payment-term-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 4,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "dueDate",
+                "label": "Due Date",
+                "type": "date",
+                "temporalType": "dateOnly",
+                "model": {
+                  "kind": "FormDate"
+                },
+                "span": 6,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "externalNumber",
+                "label": "External Number",
+                "type": "text",
+                "model": {
+                  "kind": "FormInput"
+                },
+                "span": 6,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 64
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "recipientName",
+                "label": "Recipient Name",
+                "type": "text",
+                "model": {
+                  "kind": "FormInput"
+                },
+                "span": 6,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 256
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "recipientPhone",
+                "label": "Recipient Phone",
+                "type": "text",
+                "model": {
+                  "kind": "FormPhone",
+                  "masks": [
+                    "+380 (##) ###-##-##"
+                  ]
+                },
+                "span": 6,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 32
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "deliveryAddress",
+                "label": "Delivery Address",
+                "type": "text",
+                "model": {
+                  "kind": "FormInput"
+                },
+                "span": 8,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 512
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "trackingNumber",
+                "label": "Tracking Number",
+                "type": "text",
+                "model": {
+                  "kind": "FormInput"
+                },
+                "span": 4,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 64
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              },
+              {
+                "path": "counterpartyId",
+                "referencePath": "counterparty",
+                "label": "Counterparty",
+                "type": "text",
+                "model": {
+                  "kind": "FormSelect",
+                  "referenceService": "org/counterparty-grid",
+                  "referenceLabelPaths": [
+                    "name"
+                  ]
+                },
+                "span": 12,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "reference"
+              },
+              {
+                "path": "note",
+                "label": "Note",
+                "type": "text",
+                "model": {
+                  "kind": "FormTextarea"
+                },
+                "span": 12,
+                "isRequired": false,
+                "constraints": {
+                  "allowsNull": true,
+                  "lengthUnit": "utf16",
+                  "maxLength": 2000
+                },
+                "isDisabled": false,
+                "isHidden": false,
+                "isServerOwned": false,
+                "isInputOnly": false,
+                "valueKind": "scalar"
+              }
+            ],
+            "isReadOnly": false,
+            "dirtyDialog": {
+              "kind": "OverlayDirty",
+              "title": "Save changes?",
+              "description": "You have unsaved changes. Choose what to do before leaving.",
+              "saveLabel": "Save",
+              "discardLabel": "Discard changes",
+              "continueLabel": "Continue editing"
+            },
+            "mutationTexts": {
+              "conflictTitle": "The record was changed by someone else. Reload it before saving again.",
+              "reloadLabel": "Reload record",
+              "unknownTitle": "The operation outcome could not be confirmed.",
+              "unknownDescription": "The changes may have been saved. Check the current data before repeating the operation.",
+              "verifyLabel": "Check current data",
+              "committedWarningTitle": "The changes were saved, but a follow-up action could not be completed.",
+              "selectionCorrectionLabel": "Remove blocked or unavailable records from selection"
+            }
+          },
+          "size": "1fr"
+        }
+      ]
+    }
+  }
+}
