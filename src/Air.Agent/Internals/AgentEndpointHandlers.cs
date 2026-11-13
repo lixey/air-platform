@@ -275,16 +275,6 @@ internal static class AgentEndpointHandlers
     return Results.File(att.LocalPath, safeMime, safeDownloadName);
   }
 
-  public static async Task<IResult> HandleMemoryUndoAsync(
-    AgentMemoryUndoRequest body,
-    HttpContext ctx,
-    CancellationToken ct)
-  {
-    var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-    var deleted = await AgentMemoryService.UndoPersonalMemoryAsync(body.Id, owner, ctx.RequestServices, ct);
-    return deleted ? Results.Ok(new { ok = true, id = body.Id }) : Results.NotFound(new { ok = false });
-  }
-
   public static async Task HandleChatAsync(
     AgentChatRequest body,
     HttpContext ctx,

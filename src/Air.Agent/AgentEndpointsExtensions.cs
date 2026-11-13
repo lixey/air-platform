@@ -56,7 +56,7 @@ public static class AgentEndpointsExtensions
     group.MapGet("/status", AgentEndpointHandlers.HandleStatusAsync);
     group.MapPost("/upload", AgentEndpointHandlers.HandleUploadAsync);
     group.MapGet("/attachments/{id}", AgentEndpointHandlers.HandleGetAttachment);
-    group.MapPost("/memory-undo", AgentEndpointHandlers.HandleMemoryUndoAsync);
+    group.MapPost("/memory-undo", AgentMemoryEndpointHandlers.HandleMemoryUndoAsync);
 
     group.MapPost("/reset", (AgentResetRequest req, HttpContext ctx, AgentStore store) =>
     {

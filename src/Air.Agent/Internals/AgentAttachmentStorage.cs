@@ -15,6 +15,44 @@ internal static class AgentAttachmentStorage
   public static string FormatUserSegment(long? userId) =>
     userId.HasValue ? $"u_{userId.Value.ToString(CultureInfo.InvariantCulture)}" : "u_anon";
 
+  public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string safeSessionId)
+  {
+    var dir = Path.Combine(workspaceDirectory, FormatTenantSegment(owner.TenantId), FormatUserSegment(owner.UserId), safeSessionId);
+    EnsurePrivateDirectory(dir);
+    return dir;
+  }
+
+  public static string GetSessionAttachmentsDirectory(string workspaceDirectory, AgentOwnerScope owner, string safeSessionId)
+  {
+    var dir = Path.Combine(
+      workspaceDirectory,
+      FormatTenantSegment(owner.TenantId),
+      FormatUserSegment(owner.UserId),
+      "sessions",
+      safeSessionId,
+      "attachments");
+    EnsurePrivateDirectory(dir);
+    return dir;
+  }
+
+  public static void TryDeleteSessionDirectory(string workspaceDirectory, AgentOwnerScope owner, string sessionId)
+  {
+    try
+    {
+      var sessionFolder = Path.Combine(
+        workspaceDirectory,
+        FormatTenantSegment(owner.TenantId),
+        FormatUserSegment(owner.UserId),
+        "sessions",
+        sessionId);
+      if (Directory.Exists(sessionFolder))
+      {
+        Directory.Delete(sessionFolder, recursive: true);
+      }
+    }
+    catch { }
+  }
+
   public static void EnsurePrivateDirectory(string path)
   {
     const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;

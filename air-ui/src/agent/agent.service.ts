@@ -8,7 +8,6 @@ import { AuthService, identityOf } from '../app/auth/auth.service';
 import { LocaleService } from '../app/locale.service';
 import type { AgentModelDto, AgentStatusDto, AgentSyncSourceDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
-import { GridService } from '../grid/grid.service';
 import { OverlayService } from '../overlay/overlay.service';
 import { AGENT_BLOCK_PLUGINS } from './agent-block-models';
 import {
@@ -27,6 +26,7 @@ import {
 } from './agent-models';
 import { type AgentMutationHost, confirmAgentBatch, confirmAgentProposal, undoAgentMemory } from './agent-mutations';
 import { runAgentSseStream } from './agent-stream';
+import { openAgentProposalRecord } from './agent-ui-helpers';
 import { uploadAgentFiles, uploadSingleAgentFile } from './agent-upload';
 
 export type {
@@ -386,29 +386,7 @@ export class AgentService {
   }
 
   openRecord(proposal: AgentProposal, explicitId?: number, explicitService?: string): void {
-    const formService = explicitService ?? proposal.formService ?? proposal.service;
-    const recordId = explicitId ?? proposal.committedRecordId ?? proposal.recordId;
-    if (!formService || !recordId) {
-      return;
-    }
-    const baseOverlay = proposal.overlay ?? {
-      key: formService,
-      presentation: 'drawer' as const,
-      closesOnEscape: true,
-    };
-    const ref = this.overlay.open({
-      ...baseOverlay,
-      screen: {
-        ...(baseOverlay.screen ?? {}),
-        service: formService,
-        params: { id: recordId },
-      },
-    });
-    ref.closed.subscribe(result => {
-      if (result !== undefined) {
-        GridService.reloadServices(proposal.service ? [proposal.service] : undefined);
-      }
-    });
+    openAgentProposalRecord(this.overlay, proposal, explicitId, explicitService);
   }
 
   async reset(): Promise<void> {

@@ -119,34 +119,14 @@ public sealed class AgentStore
   public string GetSessionWorkspaceDirectory(AgentOwnerScope owner, string? sessionId) =>
     GetSessionWorkspaceDirectory(WorkspaceDirectory, owner, sessionId);
 
-  public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId)
-  {
-    var safeSessionId = NormalizeSessionId(sessionId);
-    var dir = Path.Combine(
-      workspaceDirectory,
-      AgentAttachmentStorage.FormatTenantSegment(owner.TenantId),
-      AgentAttachmentStorage.FormatUserSegment(owner.UserId),
-      safeSessionId);
-    EnsurePrivateDirectory(dir);
-    return dir;
-  }
+  public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
+    AgentAttachmentStorage.GetSessionWorkspaceDirectory(workspaceDirectory, owner, NormalizeSessionId(sessionId));
 
   public string GetSessionAttachmentsDirectory(AgentOwnerScope owner, string? sessionId) =>
     GetSessionAttachmentsDirectory(WorkspaceDirectory, owner, sessionId);
 
-  public static string GetSessionAttachmentsDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId)
-  {
-    var safeSessionId = NormalizeSessionId(sessionId);
-    var dir = Path.Combine(
-      workspaceDirectory,
-      AgentAttachmentStorage.FormatTenantSegment(owner.TenantId),
-      AgentAttachmentStorage.FormatUserSegment(owner.UserId),
-      "sessions",
-      safeSessionId,
-      "attachments");
-    EnsurePrivateDirectory(dir);
-    return dir;
-  }
+  public static string GetSessionAttachmentsDirectory(string workspaceDirectory, AgentOwnerScope owner, string? sessionId) =>
+    AgentAttachmentStorage.GetSessionAttachmentsDirectory(workspaceDirectory, owner, NormalizeSessionId(sessionId));
 
   public string CreateTurnWorkspaceDirectory(AgentOwnerScope owner, string? sessionId)
   {
@@ -380,20 +360,7 @@ public sealed class AgentStore
 
     if (IsValidSessionId(sessionId))
     {
-      try
-      {
-        var sessionFolder = Path.Combine(
-          WorkspaceDirectory,
-          AgentAttachmentStorage.FormatTenantSegment(owner.TenantId),
-          AgentAttachmentStorage.FormatUserSegment(owner.UserId),
-          "sessions",
-          sessionId);
-        if (Directory.Exists(sessionFolder))
-        {
-          Directory.Delete(sessionFolder, recursive: true);
-        }
-      }
-      catch { }
+      AgentAttachmentStorage.TryDeleteSessionDirectory(WorkspaceDirectory, owner, sessionId);
     }
   }
 
