@@ -10,6 +10,7 @@ public sealed class AgentOptions
   public string? DomainKnowledge { get; set; }
   public int MaxMemoryChars { get; set; } = 24_000;
   public int MaxConcurrentTurns { get; set; } = 4;
+  public bool AllowLocalCliInProduction { get; set; }
   public TimeSpan TurnTimeout { get; set; } = TimeSpan.FromMinutes(3);
   public TimeSpan IdleOutputTimeout { get; set; } = TimeSpan.FromSeconds(90);
 

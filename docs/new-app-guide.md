@@ -95,7 +95,7 @@ await PlatformHost.RunAsync(
 ```
 
 > [!IMPORTANT]
-> Не додавайте у `Program.cs` ручні виклики `app.UseDefaultFiles()`, `app.UseStaticFiles()` або `app.MapFallbackToFile("index.html")` — `PlatformHost` автоматично монтує API модулів, ШІ-асистента (`AddPlatformAgent` + `MapPlatformAgent` на `/api/agent/*` і `/api/mcp`), статику та безпечний SPA-fallback із захистом `/api/* -> 404 NotFound`. Для запуску в середовищі `Production` обов'язково задайте секрет підпису токенів `PLATFORM_TOKEN_SECRET` (щонайменше 32 символи).
+> Не додавайте у `Program.cs` ручні виклики `app.UseDefaultFiles()`, `app.UseStaticFiles()` або `app.MapFallbackToFile("index.html")` — `PlatformHost` автоматично монтує API модулів, ШІ-асистента (`AddPlatformAgent` + `MapPlatformAgent` на `/api/agent/*` і `/api/mcp`), статику та безпечний SPA-fallback із захистом `/api/* -> 404 NotFound`. Для запуску в середовищі `Production` обов'язково задайте секрет підпису токенів `PLATFORM_TOKEN_SECRET` (щонайменше 32 символи); локальні CLI-провайдери ШІ в `Production` за замовчуванням вимкнені (`AgentOptions.AllowLocalCliInProduction = false` — вмикайте явно в `AddPlatformAgent(o => o.AllowLocalCliInProduction = true)` лише там, де це свідомо дозволено).
 
 ---
 

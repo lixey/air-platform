@@ -6,7 +6,9 @@ namespace Platform.Agent.Providers;
 /// <summary>
 /// Adapter for OpenAI Codex CLI (`codex exec --json`).
 /// </summary>
-public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
+public sealed class CodexCliAgentProvider(
+  AgentStore store,
+  IHostEnvironment? environment = null) : IAgentProvider
 {
   private static readonly Regex SlugMajorRegex = new(
     @"^[a-z]+-(?<major>\d+)(?:\.\d+)?(?:-|$)",
@@ -16,10 +18,15 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
 
   public string Handle => "Codex";
   public string Name => "Codex CLI (codex)";
-  public bool IsAvailable => ResolveExecutablePath() is not null;
+  public bool IsAvailable => CliTurnRunner.IsCliAllowed(store.Options, environment) && ResolveExecutablePath() is not null;
 
   public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
   {
+    if (!CliTurnRunner.IsCliAllowed(store.Options, environment))
+    {
+      return Task.FromResult<IReadOnlyList<AgentModelDto>>([]);
+    }
+
     var cachePath = ResolveModelsCachePath();
     var cacheKey = cachePath is not null && File.Exists(cachePath)
       ? $"{cachePath}|{File.GetLastWriteTimeUtc(cachePath).Ticks}"
@@ -318,7 +325,8 @@ public sealed class CodexCliAgentProvider(AgentStore store) : IAgentProvider
 
         return (type is "turn.completed" or "turn.failed" or "error", emittedError);
       },
-      ct))
+      ct,
+      environment))
     {
       yield return evt;
     }

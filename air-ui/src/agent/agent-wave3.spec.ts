@@ -174,6 +174,68 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     expect((pillFixture.nativeElement as HTMLElement).textContent).toContain('Memory removed: Default currency');
   });
 
+  it('renders pending SSE memory items, confirms via /api/agent/memory-confirm with Idempotency-Key, and supports Dismiss', async () => {
+    const sseFrames = [
+      'data: {"type":"delta","text":"Shall I save this?"}\n\n',
+      'data: {"type":"memory","memory":{"id":0,"category":"Preference","title":"Date format","content":"Use ISO","status":"pending","pendingToken":"tok-mem-1"}}\n\n',
+      'data: {"type":"memory","memory":{"id":0,"category":"Fact","title":"Skip note","content":"Ignore","status":"pending","pendingToken":"tok-mem-2"}}\n\n',
+      'data: {"type":"done","modelId":"agy-1","modelName":"Agy"}\n\n',
+    ].join('');
+
+    const encoder = new TextEncoder();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(sseFrames));
+            controller.close();
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    );
+
+    const agent = TestBed.inject(AgentService);
+    await agent.send('Use ISO dates');
+
+    const assistantMsg = agent.messages().find(m => m.role === 'assistant')!;
+    expect(assistantMsg.memories).toHaveLength(2);
+
+    const pillFixture = TestBed.createComponent(AgentMemoryPillComponent);
+    pillFixture.componentRef.setInput('memory', assistantMsg.memories[0]);
+    let confirmedToken: string | null = null;
+    pillFixture.componentInstance.confirm.subscribe(tok => {
+      confirmedToken = tok;
+    });
+    pillFixture.detectChanges();
+
+    expect((pillFixture.nativeElement as HTMLElement).textContent).toContain('Remember "Date format"?');
+    const buttons = (pillFixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('ui-btn');
+    expect(buttons).toHaveLength(2);
+    buttons[0].click();
+    expect(confirmedToken).toBe('tok-mem-1');
+
+    const confirmPromise = agent.confirmMemory(assistantMsg.id, 'tok-mem-1');
+    const req = http.expectOne('/api/agent/memory-confirm');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ pendingToken: 'tok-mem-1' });
+    expect(req.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBeTruthy();
+    req.flush({ id: 105, category: 'Preference', title: 'Date format', content: 'Use ISO', status: 'saved' });
+    await confirmPromise;
+
+    const afterConfirm = agent.messages().find(m => m.id === assistantMsg.id)!.memories;
+    expect(afterConfirm[0]).toMatchObject({ id: 105, status: 'saved', title: 'Date format' });
+    expect(afterConfirm[0].pendingToken).toBeUndefined();
+
+    agent.dismissMemory(assistantMsg.id, 'tok-mem-2');
+    const afterDismiss = agent.messages().find(m => m.id === assistantMsg.id)!.memories[1];
+    expect(afterDismiss.dismissed).toBe(true);
+
+    pillFixture.componentRef.setInput('memory', afterDismiss);
+    pillFixture.detectChanges();
+    expect((pillFixture.nativeElement as HTMLElement).textContent).toContain('Not saved: Skip note');
+  });
+
   it('sends Idempotency-Key on confirmProposal/confirmBatch and defaults openRecord fallback presentation to drawer', async () => {
     const agent = TestBed.inject(AgentService);
     agent.messages.set([

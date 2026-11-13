@@ -2,16 +2,24 @@ using Platform.Agent.Providers.Internals;
 
 namespace Platform.Agent.Providers;
 
-public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) : IAgentProvider
+public sealed class AgyCliAgentProvider(
+  AgentStore store,
+  AgentOptions options,
+  IHostEnvironment? environment = null) : IAgentProvider
 {
   private readonly CliModelCache _modelCache = new();
 
   public string Handle => "Agy";
   public string Name => "Antigravity CLI (agy)";
-  public bool IsAvailable => ResolveExecutablePath() is not null;
+  public bool IsAvailable => CliTurnRunner.IsCliAllowed(options, environment) && ResolveExecutablePath() is not null;
 
   public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false)
   {
+    if (!CliTurnRunner.IsCliAllowed(options, environment))
+    {
+      return Task.FromResult<IReadOnlyList<AgentModelDto>>([]);
+    }
+
     var agyPath = ResolveExecutablePath();
     return _modelCache.GetOrLoadAsync(
       agyPath,
@@ -213,7 +221,8 @@ public sealed class AgyCliAgentProvider(AgentStore store, AgentOptions options) 
 
         return (evtType == "result", emittedError);
       },
-      ct))
+      ct,
+      environment))
     {
       yield return evt;
     }

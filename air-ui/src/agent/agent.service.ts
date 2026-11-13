@@ -24,7 +24,14 @@ import {
   resolveAgentRetryPlan,
   resolveAgentTurnModel,
 } from './agent-models';
-import { type AgentMutationHost, confirmAgentBatch, confirmAgentProposal, undoAgentMemory } from './agent-mutations';
+import {
+  type AgentMutationHost,
+  confirmAgentBatch,
+  confirmAgentMemory,
+  confirmAgentProposal,
+  dismissAgentMemory,
+  undoAgentMemory,
+} from './agent-mutations';
 import { runAgentSseStream } from './agent-stream';
 import { openAgentProposalRecord } from './agent-ui-helpers';
 import { uploadAgentFiles, uploadSingleAgentFile } from './agent-upload';
@@ -379,6 +386,14 @@ export class AgentService {
 
   confirmBatch(messageId: string): Promise<void> {
     return confirmAgentBatch(this.mutationHost, messageId);
+  }
+
+  confirmMemory(messageId: string, pendingToken: string): Promise<void> {
+    return confirmAgentMemory(this.mutationHost, messageId, pendingToken);
+  }
+
+  dismissMemory(messageId: string, pendingToken: string): void {
+    dismissAgentMemory(this.mutationHost, messageId, pendingToken);
   }
 
   undoMemory(messageId: string, memoryId: number): Promise<void> {

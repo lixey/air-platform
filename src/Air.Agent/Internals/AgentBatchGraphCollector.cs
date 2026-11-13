@@ -24,7 +24,7 @@ internal static class AgentBatchGraphCollector
         continue;
       }
 
-      var prop = store.GetProposal(currentId, owner) ?? throw new InvalidOperationException(L["AgentProposalNotFound"]);
+      var prop = store.GetVerifiedProposal(currentId, owner) ?? throw new InvalidOperationException(L["AgentProposalNotFound"]);
       if (prop.Status == "superseded")
       {
         throw new InvalidOperationException(L["AgentProposalSuperseded"]);
@@ -72,7 +72,7 @@ internal static class AgentBatchGraphCollector
 
       foreach (var prereqId in prereqIds)
       {
-        if (!allProposalsById.ContainsKey(prereqId) && store.GetProposal(prereqId, owner) != null)
+        if (!allProposalsById.ContainsKey(prereqId) && store.GetVerifiedProposal(prereqId, owner) != null)
         {
           queue.Enqueue(prereqId);
         }
@@ -186,11 +186,7 @@ internal static class AgentBatchGraphCollector
       long? committedRefId = null;
       if (!string.IsNullOrEmpty(pendingRef.ProposalId))
       {
-        committedRefId = committedIdsByProposalId.TryGetValue(pendingRef.ProposalId, out var batchId) && batchId > 0
-          ? batchId
-          : store.GetProposal(pendingRef.ProposalId, owner) is { Status: "committed", CommittedRecordId: > 0 } existing
-            ? existing.CommittedRecordId.Value
-            : throw new InvalidOperationException(L["AgentErrorSave"]);
+        committedRefId = ResolveCommittedProposalRecordId(pendingRef.ProposalId, committedIdsByProposalId, store, owner, L);
       }
       else if (!string.IsNullOrEmpty(pendingRef.FormService))
       {
@@ -338,5 +334,25 @@ internal static class AgentBatchGraphCollector
     }
 
     return $"#{recordId}";
+  }
+
+  private static long ResolveCommittedProposalRecordId(
+    string proposalId,
+    Dictionary<string, long> committedIdsByProposalId,
+    AgentStore store,
+    AgentOwnerScope owner,
+    Localizer L)
+  {
+    if (committedIdsByProposalId.TryGetValue(proposalId, out var batchId) && batchId > 0)
+    {
+      return batchId;
+    }
+
+    if (store.GetVerifiedProposal(proposalId, owner) is { Status: "committed", CommittedRecordId: > 0 } existing)
+    {
+      return existing.CommittedRecordId.Value;
+    }
+
+    throw new InvalidOperationException(L["AgentErrorSave"]);
   }
 }

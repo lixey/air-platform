@@ -276,7 +276,7 @@ public static class AgentPromptBuilder
     sb.AppendLine("   - `<ui_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}], \"rows\": [{\"name\": \"...\"}]}</ui_table>` or `<ui_html>...</ui_html>`.");
     sb.AppendLine("   - Allowed `color`: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
     sb.AppendLine("9. MEMORY & RULES (`<agent_memory>` vs `<ui_proposal>`):");
-    sb.AppendLine("   - For personal user preferences or facts ONLY, emit `<agent_memory>{\"kind\": \"Preference\", \"title\": \"Short title\", \"content\": \"Clear preference or fact\"}</agent_memory>` (`kind`: `\"Preference\"` or `\"Fact\"`).");
+    sb.AppendLine("   - For personal user preferences or facts ONLY, emit `<agent_memory>{\"kind\": \"Preference\", \"title\": \"Short title\", \"content\": \"Clear preference or fact\"}</agent_memory>` (`kind`: `\"Preference\"` or `\"Fact\"`). This stages a confirmation pill for the user — tell them they can click Save to remember it, and do not claim it is already saved.");
     sb.AppendLine("   - NEVER emit `<agent_memory>` with `kind: \"Rule\"` or for tenant-wide rules (silent rule writes are rejected). To create or edit a tenant-wide `Rule`, stage a standard `<ui_proposal>` targeting the `AgentMemory` form service when available in `forms`.");
   }
 

@@ -56,6 +56,7 @@ public static class AgentEndpointsExtensions
     group.MapGet("/status", AgentEndpointHandlers.HandleStatusAsync);
     group.MapPost("/upload", AgentEndpointHandlers.HandleUploadAsync);
     group.MapGet("/attachments/{id}", AgentEndpointHandlers.HandleGetAttachment);
+    group.MapPost("/memory-confirm", AgentMemoryEndpointHandlers.HandleMemoryConfirmAsync);
     group.MapPost("/memory-undo", AgentMemoryEndpointHandlers.HandleMemoryUndoAsync);
 
     group.MapPost("/reset", (AgentResetRequest req, HttpContext ctx, AgentStore store) =>
@@ -75,7 +76,7 @@ public static class AgentEndpointsExtensions
       CultureInfo.CurrentUICulture = culture;
 
       var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-      var proposal = store.GetProposal(id, owner);
+      var proposal = store.GetVerifiedProposal(id, owner);
       if (proposal is null)
       {
         return Results.NotFound(new { title = Localizer.Instance["AgentProposalNotFound"] });

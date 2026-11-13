@@ -2,7 +2,13 @@ import type { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type { AlertService } from '../app/alert/alert.service';
 import { withIdempotencyKey } from '../app/auth/credentials.interceptor';
-import type { AgentBatchCommitResultDto, AgentCommitResultDto, AgentMemoryUndoRequest } from '../core/generated/contracts';
+import type {
+  AgentBatchCommitResultDto,
+  AgentCommitResultDto,
+  AgentMemoryConfirmRequest,
+  AgentMemoryUndoRequest,
+  AgentSavedMemoryDto,
+} from '../core/generated/contracts';
 import { isRecord } from '../core/json';
 import { classifyMutationFailure } from '../core/mutation-failure';
 import type { TextsService } from '../core/texts.service';
@@ -120,6 +126,40 @@ export async function confirmAgentBatch(host: AgentMutationHost, messageId: stri
     }));
     host.alert.error(extractAgentErrorMessage(err, host.texts.of('AgentErrorSave')));
   }
+}
+
+export async function confirmAgentMemory(host: AgentMutationHost, messageId: string, pendingToken: string): Promise<void> {
+  host.patchAssistant(messageId, m => ({
+    ...m,
+    memories: m.memories.map(mem => (mem.pendingToken === pendingToken ? { ...mem, confirming: true } : mem)),
+  }));
+  try {
+    const body: AgentMemoryConfirmRequest = { pendingToken };
+    const saved = await postWithIdempotency<AgentSavedMemoryDto>(host, '/api/agent/memory-confirm', body);
+    host.patchAssistant(messageId, m => ({
+      ...m,
+      memories: m.memories.map(mem =>
+        mem.pendingToken === pendingToken ? { ...saved, status: 'saved', pendingToken: undefined, confirming: false } : mem,
+      ),
+    }));
+    GridService.reloadServices(['app/agent-memory']);
+  } catch (err) {
+    const isGone = (err as { status?: number } | null)?.status === 404;
+    host.patchAssistant(messageId, m => ({
+      ...m,
+      memories: m.memories.map(mem =>
+        mem.pendingToken === pendingToken ? { ...mem, confirming: false, dismissed: isGone ? true : mem.dismissed } : mem,
+      ),
+    }));
+    host.alert.error(extractAgentErrorMessage(err, host.texts.of('RequestFailed')));
+  }
+}
+
+export function dismissAgentMemory(host: AgentMutationHost, messageId: string, pendingToken: string): void {
+  host.patchAssistant(messageId, m => ({
+    ...m,
+    memories: m.memories.map(mem => (mem.pendingToken === pendingToken ? { ...mem, dismissed: true } : mem)),
+  }));
 }
 
 export async function undoAgentMemory(host: AgentMutationHost, messageId: string, memoryId: number): Promise<void> {

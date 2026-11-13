@@ -1408,4 +1408,19 @@
   <data name="LastAdminRoleCannotBeDeleted" xml:space="preserve">
     <value>Останню роль адміністратора не можна видалити.</value>
   </data>
+  <data name="AgentMemoryPending" xml:space="preserve">
+    <value>Запам'ятати «{0}»?</value>
+  </data>
+  <data name="AgentMemoryConfirm" xml:space="preserve">
+    <value>Зберегти</value>
+  </data>
+  <data name="AgentMemoryDismiss" xml:space="preserve">
+    <value>Відхилити</value>
+  </data>
+  <data name="AgentMemoryDismissed" xml:space="preserve">
+    <value>Не збережено</value>
+  </data>
+  <data name="AgentErrorCliDisabledInProduction" xml:space="preserve">
+    <value>Локальні CLI-провайдери ШІ вимкнені у промисловому середовищі.</value>
+  </data>
 </root>

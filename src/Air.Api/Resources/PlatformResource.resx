@@ -1408,4 +1408,19 @@
   <data name="LastAdminRoleCannotBeDeleted" xml:space="preserve">
     <value>The last administrator role cannot be deleted.</value>
   </data>
+  <data name="AgentMemoryPending" xml:space="preserve">
+    <value>Remember "{0}"?</value>
+  </data>
+  <data name="AgentMemoryConfirm" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="AgentMemoryDismiss" xml:space="preserve">
+    <value>Dismiss</value>
+  </data>
+  <data name="AgentMemoryDismissed" xml:space="preserve">
+    <value>Not saved</value>
+  </data>
+  <data name="AgentErrorCliDisabledInProduction" xml:space="preserve">
+    <value>Local CLI AI providers are disabled in production.</value>
+  </data>
 </root>

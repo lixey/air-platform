@@ -121,12 +121,15 @@ internal static class AgentMemoryService
     AgentTurnRequest request,
     CancellationToken ct)
   {
-    const string startTag = "<agent_memory>";
-    const string endTag = "</agent_memory>";
-    if (string.IsNullOrWhiteSpace(text) ||
-        text.IndexOf(startTag, StringComparison.OrdinalIgnoreCase) < 0 ||
+    if (!AgentMemoryTagParser.ContainsTag(text) ||
         request.Services is not { } services ||
         services.GetService<DbScope>() == null && services.GetService<PlatformDbContext>() == null)
+    {
+      return [];
+    }
+
+    var candidates = AgentMemoryTagParser.ParsePersonalCandidates(text);
+    if (candidates.Count == 0)
     {
       return [];
     }
@@ -146,175 +149,177 @@ internal static class AgentMemoryService
       return [];
     }
 
+    var store = services.GetService<AgentStore>();
+    if (store is null)
+    {
+      return [];
+    }
+
     const int maxPersonalMemories = 100;
+    const int maxInlinePerTurn = 5;
     var personalCount = await db.AppAgentMemory
       .IgnoreQueryFilters()
       .CountAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);
 
-    var jsonOpts = new JsonDocumentOptions
+    var stagedItems = new List<(string Kind, string Title, string Content)>();
+    foreach (var (kind, title, content) in candidates)
     {
-      AllowTrailingCommas = true,
-      CommentHandling = JsonCommentHandling.Skip
-    };
-
-    var savedEntities = new List<AppAgentMemory>();
-    var idx = 0;
-
-    while (idx < text.Length)
-    {
-      var start = text.IndexOf(startTag, idx, StringComparison.OrdinalIgnoreCase);
-      if (start < 0)
+      var existing = await db.AppAgentMemory
+        .IgnoreQueryFilters()
+        .AsNoTracking()
+        .FirstOrDefaultAsync(m => m.Title == title && m.TenantId == tenantId && m.UserId == userId, ct);
+      if (existing is not null)
       {
-        break;
+        if (AgentMemoryTagParser.IsProtectedRow(existing))
+        {
+          continue;
+        }
       }
-
-      var end = text.IndexOf(endTag, start + startTag.Length, StringComparison.OrdinalIgnoreCase);
-      if (end < 0)
-      {
-        break;
-      }
-
-      var json = text[(start + startTag.Length)..end].Trim();
-      idx = end + endTag.Length;
-      if (string.IsNullOrWhiteSpace(json))
+      else if (personalCount >= maxPersonalMemories)
       {
         continue;
       }
-
-      try
+      else
       {
-        using var doc = JsonDocument.Parse(json, jsonOpts);
-        var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-          continue;
-        }
-
-        var title = root.TryGetProperty("title", out var tProp) && tProp.ValueKind == JsonValueKind.String
-          ? tProp.GetString()?.Trim()
-          : null;
-        var content = root.TryGetProperty("content", out var cProp) && cProp.ValueKind == JsonValueKind.String
-          ? cProp.GetString()?.Trim()
-          : null;
-        var rawKind = root.TryGetProperty("kind", out var kProp) && kProp.ValueKind == JsonValueKind.String
-          ? kProp.GetString()?.Trim()
-          : null;
-        var rawCategory = root.TryGetProperty("category", out var catProp) && catProp.ValueKind == JsonValueKind.String
-          ? catProp.GetString()?.Trim()
-          : null;
-        var rawScope = root.TryGetProperty("scope", out var sProp) && sProp.ValueKind == JsonValueKind.String
-          ? sProp.GetString()?.Trim()
-          : null;
-
-        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(content))
-        {
-          continue;
-        }
-
-        // Silent <agent_memory> writes of tenant/global Rules or Seeds are strictly rejected (#8 Decision #3).
-        if (string.Equals(rawKind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(rawKind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(rawCategory, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(rawCategory, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(rawScope, "tenant", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(rawScope, "global", StringComparison.OrdinalIgnoreCase) ||
-            root.TryGetProperty("userId", out var uProp) && uProp.ValueKind == JsonValueKind.Null)
-        {
-          continue;
-        }
-
-        var effectiveKind = !string.IsNullOrWhiteSpace(rawKind) ? rawKind : rawCategory;
-        var kind = string.Equals(effectiveKind, AgentMemoryKinds.Fact, StringComparison.OrdinalIgnoreCase)
-          ? AgentMemoryKinds.Fact
-          : string.IsNullOrWhiteSpace(effectiveKind) || string.Equals(effectiveKind, AgentMemoryKinds.Preference, StringComparison.OrdinalIgnoreCase)
-            ? AgentMemoryKinds.Preference
-            : null;
-        if (kind == null)
-        {
-          continue;
-        }
-
-        if (title.Length > 200)
-        {
-          title = title[..200];
-        }
-
-        if (content.Length > 8000)
-        {
-          content = content[..8000];
-        }
-
-        var existing = await db.AppAgentMemory
-          .IgnoreQueryFilters()
-          .FirstOrDefaultAsync(m => m.Title == title && m.TenantId == tenantId && m.UserId == userId, ct);
-        if (existing is not null)
-        {
-          if (existing.IsPinned ||
-              string.Equals(existing.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase) ||
-              string.Equals(existing.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase))
-          {
-            continue;
-          }
-
-          existing.Kind = kind;
-          existing.Content = content;
-          existing.IsActive = true;
-          if (!savedEntities.Contains(existing))
-          {
-            savedEntities.Add(existing);
-          }
-        }
-        else
-        {
-          if (personalCount >= maxPersonalMemories)
-          {
-            continue;
-          }
-
-          personalCount++;
-          var created = new AppAgentMemory
-          {
-            TenantId = tenantId,
-            UserId = userId,
-            Kind = kind,
-            Title = title,
-            Content = content,
-            Priority = 100,
-            IsPinned = false,
-            IsActive = true
-          };
-          db.AppAgentMemory.Add(created);
-          savedEntities.Add(created);
-        }
+        personalCount++;
       }
-      catch
+
+      var existingIdx = stagedItems.FindIndex(item => string.Equals(item.Title, title, StringComparison.Ordinal));
+      if (existingIdx >= 0)
       {
-        // Ignore malformed memory blocks
+        stagedItems[existingIdx] = (kind, title, content);
+      }
+      else if (stagedItems.Count < maxInlinePerTurn)
+      {
+        stagedItems.Add((kind, title, content));
       }
     }
 
-    if (savedEntities.Count == 0)
+    if (stagedItems.Count == 0)
     {
       return [];
     }
 
+    var pendingStore = store.PendingMemories;
+    var pendingTtl = store.Options.SessionTtl;
+    var owner = new AgentOwnerScope(tenantId, userId);
+    var results = new List<AgentSavedMemoryDto>(stagedItems.Count);
+    foreach (var (kind, title, content) in stagedItems)
+    {
+      var token = pendingStore.Stage(owner, kind, title, content, pendingTtl);
+      results.Add(new AgentSavedMemoryDto
+      {
+        Id = 0,
+        Category = kind,
+        Title = title,
+        Content = content,
+        Status = AgentSavedMemoryStatus.Pending,
+        PendingToken = token
+      });
+    }
+
+    return results;
+  }
+
+  public static async Task<AgentSavedMemoryDto?> ConfirmInlineMemoryAsync(
+    string? pendingToken,
+    AgentOwnerScope owner,
+    IServiceProvider services,
+    CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(pendingToken) ||
+        owner.UserId is not > 0 ||
+        services.GetService<DbScope>() == null && services.GetService<PlatformDbContext>() == null)
+    {
+      return null;
+    }
+
+    await using var scope = AgentModuleScope.OpenDefault(services);
+    var db = scope.Db;
+    var tenantId = owner.TenantId ?? db.TenantContext.TenantId;
+    if (db.SetOfBase<BaseAppTenant>() != null && tenantId is null or <= 0)
+    {
+      return null;
+    }
+
+    var store = services.GetService<AgentStore>();
+    if (store is null)
+    {
+      return null;
+    }
+
+    var pendingStore = store.PendingMemories;
+    var pendingTtl = store.Options.SessionTtl;
+    var effectiveOwner = owner with { TenantId = tenantId };
+    if (!pendingStore.TryClaim(pendingToken, effectiveOwner, pendingTtl, out var pending) || pending is null)
+    {
+      return null;
+    }
+
+    var completed = false;
     try
     {
-      await db.SaveChangesAsync(ct);
-      return savedEntities
-        .Where(e => e.Id > 0)
-        .Select(e => new AgentSavedMemoryDto
+      var userId = owner.UserId.Value;
+      var existing = await db.AppAgentMemory
+        .IgnoreQueryFilters()
+        .FirstOrDefaultAsync(m => m.Title == pending.Title && m.TenantId == tenantId && m.UserId == userId, ct);
+
+      AppAgentMemory entity;
+      if (existing is not null)
+      {
+        if (AgentMemoryTagParser.IsProtectedRow(existing))
         {
-          Id = e.Id,
-          Category = e.Kind,
-          Title = e.Title,
-          Content = e.Content
-        })
-        .ToList();
+          return null;
+        }
+
+        existing.Kind = pending.Kind;
+        existing.Content = pending.Content;
+        existing.IsActive = true;
+        entity = existing;
+      }
+      else
+      {
+        const int maxPersonalMemories = 100;
+        var personalCount = await db.AppAgentMemory
+          .IgnoreQueryFilters()
+          .CountAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);
+        if (personalCount >= maxPersonalMemories)
+        {
+          return null;
+        }
+
+        entity = new AppAgentMemory
+        {
+          TenantId = tenantId,
+          UserId = userId,
+          Kind = pending.Kind,
+          Title = pending.Title,
+          Content = pending.Content,
+          Priority = 100,
+          IsPinned = false,
+          IsActive = true
+        };
+        db.AppAgentMemory.Add(entity);
+      }
+
+      await db.SaveChangesAsync(ct);
+      pendingStore.Complete(pendingToken);
+      completed = true;
+      return new AgentSavedMemoryDto
+      {
+        Id = entity.Id,
+        Category = entity.Kind,
+        Title = entity.Title,
+        Content = entity.Content,
+        Status = AgentSavedMemoryStatus.Saved
+      };
     }
-    catch
+    finally
     {
-      return [];
+      if (!completed)
+      {
+        pendingStore.Release(pendingToken);
+      }
     }
   }
 

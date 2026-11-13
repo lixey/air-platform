@@ -16,11 +16,13 @@ public sealed class AgentStore
 
   public AgentOptions Options { get; }
   public string WorkspaceDirectory { get; }
+  internal PendingMemoryStore PendingMemories { get; }
 
   public AgentStore(AgentOptions? options = null, TimeProvider? time = null)
   {
     Options = options ?? new AgentOptions();
     _time = time ?? TimeProvider.System;
+    PendingMemories = new PendingMemoryStore(_time);
     _lastCleanupTicks = _time.GetUtcNow().UtcTicks;
     var maxTurns = Math.Max(1, Options.MaxConcurrentTurns);
     _globalTurnSemaphore = new SemaphoreSlim(maxTurns, maxTurns);
@@ -187,7 +189,8 @@ public sealed class AgentStore
   {
     CleanupExpiredIfNeeded();
     var now = _time.GetUtcNow();
-    _proposals[proposal.Id] = new OwnedProposal(proposal, owner, now);
+    var seal = ProposalSeal.Compute(proposal, owner);
+    _proposals[proposal.Id] = new OwnedProposal(proposal, owner, now, seal);
 
     var sKey = SessionKey(owner, proposal.SessionId);
     var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
@@ -268,6 +271,23 @@ public sealed class AgentStore
     if (!_proposals.TryGetValue(proposalId, out var entry) || !MatchesOwner(entry.Owner, owner))
     {
       return null;
+    }
+
+    _proposals[proposalId] = entry with { LastAccessUtc = _time.GetUtcNow() };
+    return entry.Dto;
+  }
+
+  internal AgentProposalDto? GetVerifiedProposal(string proposalId, AgentOwnerScope owner)
+  {
+    CleanupExpiredIfNeeded();
+    if (!_proposals.TryGetValue(proposalId, out var entry) || !MatchesOwner(entry.Owner, owner))
+    {
+      return null;
+    }
+
+    if (!ProposalSeal.Verify(entry.Dto, owner, entry.Seal))
+    {
+      throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
     }
 
     _proposals[proposalId] = entry with { LastAccessUtc = _time.GetUtcNow() };

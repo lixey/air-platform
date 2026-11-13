@@ -6,6 +6,8 @@ export type AgentProposalOperation = 'create' | 'update' | 'move-status';
 
 export type AgentProposalStatus = 'pending' | 'confirming' | 'committing' | 'committed' | 'superseded';
 
+export type AgentSavedMemoryStatus = 'pending' | 'saved';
+
 export type AgentStreamEventType = 'status' | 'delta' | 'supersede' | 'refresh' | 'proposal' | 'memory' | 'error' | 'done';
 
 export type ButtonSize = 'small' | 'medium';
@@ -451,6 +453,10 @@ export interface AgentCommitResultDto {
   warnings?: MessageDto[] | null;
 }
 
+export interface AgentMemoryConfirmRequest {
+  pendingToken: string;
+}
+
 export interface AgentMemoryUndoRequest {
   id: number;
 }
@@ -532,6 +538,8 @@ export interface AgentSavedMemoryDto {
   category: string;
   title: string;
   content: string;
+  status?: AgentSavedMemoryStatus | null;
+  pendingToken?: string | null;
 }
 
 export interface AgentStatusDto {

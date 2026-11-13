@@ -28,6 +28,9 @@ internal static class CliTurnRunner
   public static (string Model, string Effort) ResolveCliModelArgs(string selectedModel, params string[] effortSuffixes) =>
     CliEnvironmentHelper.ResolveCliModelArgs(selectedModel, effortSuffixes);
 
+  internal static bool IsCliAllowed(AgentOptions options, IHostEnvironment? environment) =>
+    environment?.IsProduction() != true || options.AllowLocalCliInProduction;
+
   public static async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentStore store,
     string providerHandle,
@@ -37,9 +40,17 @@ internal static class CliTurnRunner
     string modelDisplayName,
     Func<ProcessStartInfo, string, string?, string?, string, AgentTurnRequest, string> configureStartInfoAndStdin,
     Func<JsonElement, StringBuilder, List<AgentStreamEventDto>, (bool ShouldBreak, bool EmittedError)> handleJsonLine,
-    [EnumeratorCancellation] CancellationToken ct)
+    [EnumeratorCancellation] CancellationToken ct,
+    IHostEnvironment? environment = null)
   {
     var L = Localizer.Instance;
+    var effectiveEnv = environment ?? request.Services?.GetService<IHostEnvironment>();
+    if (!IsCliAllowed(store.Options, effectiveEnv))
+    {
+      yield return new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = L["AgentErrorCliDisabledInProduction"] };
+      yield break;
+    }
+
     if (executablePath is null)
     {
       yield return new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = L["AgentErrorCliMissing"] };

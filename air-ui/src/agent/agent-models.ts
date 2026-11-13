@@ -23,6 +23,8 @@ export type AgentProposal = AgentProposalDto;
 export type AgentModel = AgentModelDto;
 
 export interface AgentMemoryItem extends AgentSavedMemoryDto {
+  readonly confirming?: boolean;
+  readonly dismissed?: boolean;
   readonly undoing?: boolean;
   readonly undone?: boolean;
 }

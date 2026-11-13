@@ -103,7 +103,11 @@ export async function runAgentSseStream(ctx: AgentStreamContext): Promise<number
       const incomingMem = evt.memory;
       ctx.patchAssistant(ctx.assistantMsgId, m => ({
         ...m,
-        memories: m.memories.some(mem => mem.id === incomingMem.id) ? m.memories : [...m.memories, { ...incomingMem }],
+        memories: m.memories.some(mem =>
+          incomingMem.pendingToken ? mem.pendingToken === incomingMem.pendingToken : mem.id > 0 && mem.id === incomingMem.id,
+        )
+          ? m.memories
+          : [...m.memories, { ...incomingMem }],
       }));
     } else if (evt.type === 'error') {
       flushDeltaNow();

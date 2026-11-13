@@ -5,7 +5,9 @@ namespace Platform.Agent.Providers;
 /// <summary>
 /// Adapter for Claude Code CLI (`claude -p --output-format stream-json`).
 /// </summary>
-public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
+public sealed class ClaudeCliAgentProvider(
+  AgentStore store,
+  IHostEnvironment? environment = null) : IAgentProvider
 {
   private static readonly IReadOnlyList<AgentModelDto> CuratedClaudeModels =
   [
@@ -20,7 +22,7 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 
   public string Handle => "Claude";
   public string Name => "Claude CLI (claude)";
-  public bool IsAvailable => ResolveExecutablePath() is not null;
+  public bool IsAvailable => CliTurnRunner.IsCliAllowed(store.Options, environment) && ResolveExecutablePath() is not null;
 
   public Task<IReadOnlyList<AgentModelDto>> GetModelsAsync(CancellationToken ct = default, bool forceRefresh = false) =>
     Task.FromResult<IReadOnlyList<AgentModelDto>>(IsAvailable ? CuratedClaudeModels : []);
@@ -167,7 +169,8 @@ public sealed class ClaudeCliAgentProvider(AgentStore store) : IAgentProvider
 
         return (type == "result", emittedError);
       },
-      ct))
+      ct,
+      environment))
     {
       yield return evt;
     }

@@ -139,8 +139,13 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
 
         @if (m.memories.length > 0) {
           <div class="flex max-w-full flex-wrap items-center gap-1.5">
-            @for (mem of m.memories; track mem.id) {
-              <ui-agent-memory-pill [memory]="mem" (undo)="agent.undoMemory(m.id, $event)" />
+            @for (mem of m.memories; track mem.pendingToken ?? mem.id) {
+              <ui-agent-memory-pill
+                [memory]="mem"
+                (confirm)="agent.confirmMemory(m.id, $event)"
+                (dismiss)="agent.dismissMemory(m.id, $event)"
+                (undo)="agent.undoMemory(m.id, $event)"
+              />
             }
           </div>
         }

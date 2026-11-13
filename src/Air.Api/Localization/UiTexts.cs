@@ -31,6 +31,7 @@ public static class UiTexts
       ["AgentEmptyDescription"] =
         "Describe what you want to create or edit, or attach an image or document (drag & drop or press \u2318V).",
       ["AgentEmptyTitle"] = "AI Assistant",
+      ["AgentErrorCliDisabledInProduction"] = "Local CLI AI providers are disabled in production.",
       ["AgentErrorCliMissing"] = "CLI 'agy' was not found on the system.",
       ["AgentErrorRequest"] = "Could not get a response from the AI assistant.",
       ["AgentErrorSave"] = "Could not save the record.",
@@ -39,6 +40,10 @@ public static class UiTexts
       ["AgentInputPlaceholder"] = "Write a message or paste a photo\u2026",
       ["AgentLinesTitle"] = "Items ({0})",
       ["AgentLinkedSteps"] = "Linked changes ({0})",
+      ["AgentMemoryConfirm"] = "Save",
+      ["AgentMemoryDismiss"] = "Dismiss",
+      ["AgentMemoryDismissed"] = "Not saved",
+      ["AgentMemoryPending"] = "Remember \"{0}\"?",
       ["AgentMemorySaved"] = "Remembered: {0}",
       ["AgentMemoryUndo"] = "Undo",
       ["AgentMemoryUndone"] = "Memory removed",

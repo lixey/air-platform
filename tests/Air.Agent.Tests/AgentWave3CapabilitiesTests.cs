@@ -764,10 +764,19 @@ public sealed class AgentWave3CapabilitiesTests : IDisposable
       turnReq10,
       CancellationToken.None);
 
-    var savedMem = Assert.Single(savedMemories);
-    Assert.Equal(AgentMemoryKinds.Fact, savedMem.Category);
-    Assert.Equal("Default Hub", savedMem.Title);
-    Assert.Equal("Use Lviv hub", savedMem.Content);
+    var pendingMem = Assert.Single(savedMemories);
+    Assert.Equal(AgentMemoryKinds.Fact, pendingMem.Category);
+    Assert.Equal("Default Hub", pendingMem.Title);
+    Assert.Equal("Use Lviv hub", pendingMem.Content);
+    Assert.Equal(AgentSavedMemoryStatus.Pending, pendingMem.Status);
+    Assert.False(string.IsNullOrWhiteSpace(pendingMem.PendingToken));
+
+    var savedMem = await AgentMemoryService.ConfirmInlineMemoryAsync(
+      pendingMem.PendingToken,
+      new AgentOwnerScope(1, 10),
+      servicesUser10,
+      CancellationToken.None);
+    Assert.NotNull(savedMem);
 
     // Cross-user, cross-tenant, and shared-Rule undo attempts MUST all return false and leave rows intact.
     Assert.False(await AgentMemoryService.UndoPersonalMemoryAsync(savedMem.Id, new AgentOwnerScope(1, 20), servicesUser20, CancellationToken.None));
