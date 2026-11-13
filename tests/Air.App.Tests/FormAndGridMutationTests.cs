@@ -345,4 +345,25 @@ public sealed class FormAndGridMutationTests : IDisposable
       .ToListAsync();
     Assert.Equal(2, deletedLineChanges.Count);
   }
+
+  [Fact]
+  public async Task FormSaveContext_Items_PreservesPerSaveStateAcrossComputeBeforeSaveAndAfterSave()
+  {
+    await using var db = CreateDbContext();
+    var fullApp = new TestPlatformAppService(db, new FixedUser(10, "*"));
+    var warnForm = new TestWarnInvoiceFormService(db, fullApp);
+
+    var zeroJson = JsonSerializer.SerializeToElement(new { number = "INV-ITEMS-0", auditedTotal = 0m });
+    var savedZero = Assert.IsType<TestInvoice>(
+      await warnForm.SaveAsync(zeroJson, new FormRequest { Value = zeroJson }, CancellationToken.None));
+    var reloadedZero = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == savedZero.Id);
+    Assert.Equal("zero:INV-ITEMS-0", reloadedZero.InternalMemo);
+
+    // Subsequent save on the same FormService instance starts with a fresh Items bag
+    var nonZeroJson = JsonSerializer.SerializeToElement(new { number = "INV-ITEMS-50", auditedTotal = 50m });
+    var savedNonZero = Assert.IsType<TestInvoice>(
+      await warnForm.SaveAsync(nonZeroJson, new FormRequest { Value = nonZeroJson }, CancellationToken.None));
+    var reloadedNonZero = await db.Invoices.AsNoTracking().FirstAsync(i => i.Id == savedNonZero.Id);
+    Assert.Null(reloadedNonZero.InternalMemo);
+  }
 }

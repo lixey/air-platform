@@ -101,4 +101,42 @@ public sealed class AssemblyGraphTests
       Assert.Empty(sensitiveProps);
     }
   }
+
+  [Fact]
+  public void ModuleFormAndGridServices_DeclareZeroMutableInstanceFields()
+  {
+    Assembly[] appModuleAssemblies =
+    [
+      typeof(DemoApp.AppModule).Assembly,
+      typeof(DemoOrg.OrgModule).Assembly,
+      typeof(DemoEcom.EcomModule).Assembly
+    ];
+
+    var moduleServices = appModuleAssemblies
+      .SelectMany(a => a.GetTypes())
+      .Where(t => t.IsClass &&
+                  (typeof(IFormService).IsAssignableFrom(t) || typeof(IGridService).IsAssignableFrom(t)))
+      .ToList();
+
+    Assert.NotEmpty(moduleServices);
+
+    var mutableFields = new List<string>();
+    foreach (var serviceType in moduleServices)
+    {
+      var fields = serviceType.GetFields(
+        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+      foreach (var field in fields)
+      {
+        var isPrimaryCtorCapture =
+          field.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), inherit: false) &&
+          field.Name.EndsWith(">P", StringComparison.Ordinal);
+        if (!field.IsInitOnly && !isPrimaryCtorCapture)
+        {
+          mutableFields.Add($"{serviceType.FullName}.{field.Name}");
+        }
+      }
+    }
+
+    Assert.Empty(mutableFields);
+  }
 }

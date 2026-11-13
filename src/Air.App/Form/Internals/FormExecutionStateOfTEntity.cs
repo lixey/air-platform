@@ -3,6 +3,9 @@ namespace Platform.App.Form.Internals;
 internal sealed class FormExecutionState<TEntity>
   where TEntity : class, IEntity, new()
 {
+  private Dictionary<string, object?>? _items;
+
+  public IDictionary<string, object?> Items => _items ??= new Dictionary<string, object?>(StringComparer.Ordinal);
   public FormService<TEntity>.Elements? LastElements { get; set; }
   public FormService<TEntity>.Parent? CachedParent { get; set; }
   public FormService<TEntity>.Hooks? CachedHooks { get; set; }
@@ -13,6 +16,8 @@ internal sealed class FormExecutionState<TEntity>
   public long? PreloadedParentId { get; set; }
   public bool ParentRecordLoaded { get; set; }
   public (string? Service, long? ParentId, IReadOnlyList<ChildGridBuilder> Children)? CachedParentChildren { get; set; }
+
+  public void ClearItems() => _items = null;
 
   public void ResetSaveOutcome()
   {

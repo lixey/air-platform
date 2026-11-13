@@ -37,6 +37,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
+  protected IDictionary<string, object?> ExecutionItems => _state.Items;
   public string Service => ServicePathResolver.Resolve(GetType());
 
   public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _state.LastSaveWarnings;
@@ -69,6 +70,12 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   public void SetRequest(FormRequest request)
   {
+    if (Request.Id != request.Id)
+    {
+      _state.LastElements = null;
+      _state.ClearItems();
+    }
+
     if (Request.ParentId != request.ParentId ||
         !string.Equals(Request.ParentService, request.ParentService, StringComparison.OrdinalIgnoreCase))
     {

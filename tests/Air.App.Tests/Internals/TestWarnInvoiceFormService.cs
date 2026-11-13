@@ -28,12 +28,24 @@ internal sealed class TestWarnInvoiceFormService(AppTestDbContext db, PlatformAp
       });
   }
 
-  protected override void SetHooks(Hooks hooks) =>
+  protected override void SetHooks(Hooks hooks)
+  {
+    hooks.Compute(c => c.Items["computedNumber"] = c.Entity.Number);
     hooks.BeforeSave(c =>
     {
       if (c.Entity.AuditedTotal == 0m)
       {
         c.Warn("Zero total invoice saved.", path: "auditedTotal", code: "zero_total");
+        c.Items["zeroFlagged"] = true;
       }
     });
+    hooks.AfterSave(c =>
+    {
+      if (c.Items.TryGetValue("zeroFlagged", out var flag) && flag is true &&
+          c.Items.TryGetValue("computedNumber", out var num) && num is string computedNum)
+      {
+        c.Entity.InternalMemo = $"zero:{computedNum}";
+      }
+    });
+  }
 }

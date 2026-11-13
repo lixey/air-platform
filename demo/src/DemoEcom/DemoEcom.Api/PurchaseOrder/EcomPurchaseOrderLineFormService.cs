@@ -4,7 +4,6 @@ public sealed class EcomPurchaseOrderLineFormService(EcomDbContext db, EcomServi
   : EcomDocLineFormService<EcomPurchaseOrderFormService>(db, ecom)
 {
   private const string ProductPath = "productId";
-  private EcomDocTexts? _texts;
 
   public override Feature Feature => Ecom.PurchaseOrder;
 
@@ -23,11 +22,11 @@ public sealed class EcomPurchaseOrderLineFormService(EcomDbContext db, EcomServi
 
   protected override void SetRules(Rules rules)
   {
-    _texts = EcomDocTexts.Of(L);
+    var texts = EcomDocTexts.Of(L);
     rules.For(e => e.ProductId)
       .MustAsync((_, product, cancellationToken) =>
         EcomDocRules.ProductOfAsync(db, ParentRecord<EcomDoc>()?.CounterpartyId, product, cancellationToken))
-      .WithMessage(_texts.ForeignProduct);
+      .WithMessage(texts.ForeignProduct);
   }
 
   protected override void SetHooks(Hooks hooks)
@@ -37,7 +36,7 @@ public sealed class EcomPurchaseOrderLineFormService(EcomDbContext db, EcomServi
     {
       if (await EcomDocPurchasing.PurchaseLineAsync(db, c.Entity, cancellationToken) is { } code)
       {
-        c.AddError(code, (_texts ?? EcomDocTexts.Of(L)).Line(code), ProductPath);
+        c.AddError(code, EcomDocTexts.Of(L).Line(code), ProductPath);
         return;
       }
 

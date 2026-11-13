@@ -13,6 +13,7 @@ public class FormSaveContext<TEntity> : IMutationContext
   private readonly List<MutationError> _mutationWarnings = [];
   public List<MessageDto> Errors { get; } = [];
   public List<MessageDto> Warnings { get; } = [];
+  public IDictionary<string, object?> Items => field ??= new Dictionary<string, object?>(StringComparer.Ordinal);
 
   public bool HasInput(string path) =>
     !string.IsNullOrEmpty(path) && PresentPaths != null && PresentPaths.Contains(path);

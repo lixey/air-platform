@@ -5,7 +5,6 @@ public sealed class EcomSalesReturnLineFormService(EcomDbContext db, EcomService
 {
   private const string ProductPath = "productId";
   private const string QtyPath = "qty";
-  private EcomDocTexts? _texts;
 
   public override Feature Feature => Ecom.SalesReturn;
 
@@ -24,8 +23,6 @@ public sealed class EcomSalesReturnLineFormService(EcomDbContext db, EcomService
     elements.Add(e => e.Note).AsTextarea().Span(12);
   }
 
-  protected override void SetRules(Rules rules) => _texts = EcomDocTexts.Of(L);
-
   protected override void SetHooks(Hooks hooks)
   {
     base.SetHooks(hooks);
@@ -33,7 +30,7 @@ public sealed class EcomSalesReturnLineFormService(EcomDbContext db, EcomService
     {
       if (await EcomDocEntering.LineAsync(db, c.Entity, cancellationToken) is { } code)
       {
-        c.AddError(code, (_texts ?? EcomDocTexts.Of(L)).Line(code), code == EcomDocRefusal.SourceProduct ? ProductPath : QtyPath);
+        c.AddError(code, EcomDocTexts.Of(L).Line(code), code == EcomDocRefusal.SourceProduct ? ProductPath : QtyPath);
         return;
       }
 

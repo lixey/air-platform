@@ -7,11 +7,19 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
   protected virtual EcomDocFlowService? Flow => null;
 
-  protected IReadOnlyList<EcomDocStatus> Statuses { get; private set; } = [];
+  protected IReadOnlyList<EcomDocStatus> Statuses
+  {
+    get => ExecutionItems.TryGetValue(nameof(Statuses), out var v) && v is IReadOnlyList<EcomDocStatus> list ? list : [];
+    private set => ExecutionItems[nameof(Statuses)] = value;
+  }
 
   protected EcomDoc? Doc => CurrentEntity;
 
-  protected EcomDocStatus? Status { get; private set; }
+  protected EcomDocStatus? Status
+  {
+    get => ExecutionItems.TryGetValue(nameof(Status), out var v) && v is EcomDocStatus s ? s : Doc?.DocStatus;
+    private set => ExecutionItems[nameof(Status)] = value;
+  }
 
   protected bool Frozen => Status is not { IsEditable: true };
 
@@ -30,10 +38,11 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
       elements.UseStatusOf(Flow);
     }
 
-    Statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
+    var statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
+    Statuses = statuses;
     Status = IsNew
-      ? (Statuses.Count > 0 ? Statuses[0] : null)
-      : (Doc?.DocStatus ?? Statuses.FirstOrDefault(s => s.Id == Doc?.DocStatusId));
+      ? statuses.FirstOrDefault()
+      : (Doc?.DocStatus ?? statuses.FirstOrDefault(s => s.Id == Doc?.DocStatusId));
     await base.SetElementsAsync(elements, cancellationToken);
   }
 
@@ -41,20 +50,23 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
   {
     hooks.AfterLoad((c, cancellationToken) =>
       c.IsNew ? EcomDocDefaults.NewAsync(c.Entity, Type, Time.Today, cancellationToken) : Task.CompletedTask);
-    hooks.BeforeSave((c, cancellationToken) =>
+    hooks.BeforeSave(async (c, cancellationToken) =>
     {
       if (c.Entity.DocTypeId == 0)
       {
         c.Entity.DocTypeId = Type;
       }
 
-      var status = Status ?? (Statuses.Count > 0 ? Statuses[0] : null);
+      var statuses = Statuses.Count > 0 ? Statuses : await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
+      var status = c.IsNew
+        ? (statuses.Count > 0 ? statuses[0] : null)
+        : statuses.FirstOrDefault(s => s.Id == c.Entity.DocStatusId);
       if (c.Entity.DocStatusId == 0 && status != null)
       {
         c.Entity.DocStatusId = status.Id;
       }
 
-      return EcomDocActions.SaveAsync(db, c, User?.UserId, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
+      await EcomDocActions.SaveAsync(db, c, User?.UserId, status ?? new EcomDocStatus { IsEditable = true }, cancellationToken);
     });
   }
 }

@@ -5,7 +5,6 @@ public sealed class EcomSupplierInvoiceLineFormService(EcomDbContext db, EcomSer
 {
   private const string ProductPath = "productId";
   private const string QtyPath = "qty";
-  private EcomDocTexts? _texts;
 
   public override Feature Feature => Ecom.SupplierInvoice;
 
@@ -24,11 +23,11 @@ public sealed class EcomSupplierInvoiceLineFormService(EcomDbContext db, EcomSer
 
   protected override void SetRules(Rules rules)
   {
-    _texts = EcomDocTexts.Of(L);
+    var texts = EcomDocTexts.Of(L);
     rules.For(e => e.ProductId)
       .MustAsync((_, product, cancellationToken) =>
         EcomDocRules.ProductOfAsync(db, ParentRecord<EcomDoc>()?.CounterpartyId, product, cancellationToken))
-      .WithMessage(_texts.ForeignProduct);
+      .WithMessage(texts.ForeignProduct);
   }
 
   protected override void SetHooks(Hooks hooks)
@@ -38,7 +37,7 @@ public sealed class EcomSupplierInvoiceLineFormService(EcomDbContext db, EcomSer
     {
       if (await EcomDocEntering.LineAsync(db, c.Entity, cancellationToken) is { } code)
       {
-        c.AddError(code, (_texts ?? EcomDocTexts.Of(L)).Line(code), code == EcomDocRefusal.SourceProduct ? ProductPath : QtyPath);
+        c.AddError(code, EcomDocTexts.Of(L).Line(code), code == EcomDocRefusal.SourceProduct ? ProductPath : QtyPath);
         return;
       }
 
