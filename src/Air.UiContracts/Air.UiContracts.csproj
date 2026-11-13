@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Air.App\Air.App.csproj" />
+    <ProjectReference Include="..\Air.Agent\Air.Agent.csproj" />
   </ItemGroup>
 
 </Project>

@@ -13,5 +13,6 @@
   <ItemGroup>
     <ProjectReference Include="../DemoApp.Data/DemoApp.Data.csproj" />
     <ProjectReference Include="../../../../src/Air.App/Air.App.csproj" />
+    <ProjectReference Include="../../../../src/Air.Agent/Air.Agent.csproj" />
   </ItemGroup>
 </Project>
