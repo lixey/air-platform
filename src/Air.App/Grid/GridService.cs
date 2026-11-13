@@ -1,3 +1,4 @@
+using Platform.App.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
@@ -368,22 +369,59 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return Task.CompletedTask;
   }
 
-  IEnumerable<string> IPlatformService.GetDeclaredActions()
+  private Actions ProbeActions()
   {
     var actions = new Actions();
     try
     {
       SetActionsAsync(actions).GetAwaiter().GetResult();
     }
-    catch (NullReferenceException) when (db == null)
+    catch (NullReferenceException ex) when (db == null)
     {
       actions = new Actions();
       SetActions(actions);
+      var overridesAsync = GetType()
+        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
+        .DeclaringType != typeof(GridService<TEntity, TRow>);
+      if (overridesAsync && actions.Entries.Count == 0 && actions.InheritedFormServiceTypes.Count == 0)
+      {
+        throw new InvalidOperationException(
+          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (db != null)' before registering actions.",
+          ex);
+      }
     }
 
-    return actions.Entries
+    return actions;
+  }
+
+  IEnumerable<string> IPlatformService.GetDeclaredActions() =>
+    ProbeActions().Entries
       .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
       .Where(n => !string.IsNullOrWhiteSpace(n))!;
+
+  IReadOnlyList<string> IGridService.GetRoutableActionMethods(ModuleCatalog catalog)
+  {
+    var actions = ProbeActions();
+    var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in actions.Entries)
+    {
+      routes.Add(entry.Method);
+      routes.Add(entry.Key);
+    }
+
+    foreach (var formType in actions.InheritedFormServiceTypes)
+    {
+      if (catalog.CreateServiceInstance(formType) is IFormService formProbe)
+      {
+        foreach (var inherited in formProbe.GetRoutableActionMethods(catalog))
+        {
+          routes.Add(inherited);
+        }
+      }
+    }
+
+    AppServiceRouteMapper.AddFeatureCustomRightRoutes(routes, Feature);
+    return [.. routes];
   }
 
   public virtual async Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default)

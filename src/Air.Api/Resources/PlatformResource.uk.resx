@@ -1375,4 +1375,37 @@
   <data name="InvalidJsonRequest" xml:space="preserve">
     <value>Некоректний формат JSON-запиту.</value>
   </data>
+  <data name="UserOutOfPermissionScope" xml:space="preserve">
+    <value>Ви не можете змінювати користувача з правами, яких ви не маєте.</value>
+  </data>
+  <data name="RootUserCannotBeModifiedByOther" xml:space="preserve">
+    <value>Головного користувача не може змінювати інший користувач.</value>
+  </data>
+  <data name="RootUserCannotBeDeactivated" xml:space="preserve">
+    <value>Головного користувача не можна деактивувати.</value>
+  </data>
+  <data name="RootUserCannotLoseAdmin" xml:space="preserve">
+    <value>Головного користувача не можна залишити без прав адміністратора.</value>
+  </data>
+  <data name="RootUserCannotBeDeleted" xml:space="preserve">
+    <value>Головного користувача не можна видалити.</value>
+  </data>
+  <data name="Deactivate" xml:space="preserve">
+    <value>Деактивувати</value>
+  </data>
+  <data name="Deactivate the selected users and end their sessions?" xml:space="preserve">
+    <value>Деактивувати вибраних користувачів і завершити їхні сесії?</value>
+  </data>
+  <data name="RoleOutOfPermissionScope" xml:space="preserve">
+    <value>Ви не можете змінювати роль із правами, яких ви не маєте.</value>
+  </data>
+  <data name="RoleNameAlreadyInUse" xml:space="preserve">
+    <value>Ця назва вже використовується.</value>
+  </data>
+  <data name="LastAdminRoleCannotLoseAdmin" xml:space="preserve">
+    <value>Останню роль адміністратора не можна деактивувати або позбавити прав адміністратора.</value>
+  </data>
+  <data name="LastAdminRoleCannotBeDeleted" xml:space="preserve">
+    <value>Останню роль адміністратора не можна видалити.</value>
+  </data>
 </root>

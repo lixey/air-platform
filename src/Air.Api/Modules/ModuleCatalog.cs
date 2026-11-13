@@ -25,6 +25,7 @@ public sealed class ModuleCatalog
   public int ServiceCount => _frozenServicesByPath?.Count ?? _servicesByPath.Count;
   public IEnumerable<Feature> AllFeatures => _frozenFeaturesByKey?.Values ?? (IEnumerable<Feature>)_featuresByKey.Values;
   public IEnumerable<Type> AllServiceTypes => (_frozenServicesByPath?.Values ?? (IEnumerable<Type>)_servicesByPath.Values).Distinct();
+  public IEnumerable<KeyValuePair<string, Type>> ServiceRoutes => _frozenServicesByPath ?? (IEnumerable<KeyValuePair<string, Type>>)_servicesByPath;
 
   public ModuleCatalog Freeze()
   {

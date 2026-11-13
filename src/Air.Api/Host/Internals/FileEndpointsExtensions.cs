@@ -62,6 +62,6 @@ internal static class FileEndpointsExtensions
         await stream.DisposeAsync();
         throw;
       }
-    });
+    }).AllowAnonymous();
   }
 }

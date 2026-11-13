@@ -1,3 +1,5 @@
+using Platform.Api.Auth.Internals;
+
 namespace Platform.Api.Host.Internals;
 
 internal static class AuthEndpointsExtensions
@@ -22,13 +24,14 @@ internal static class AuthEndpointsExtensions
     api.MapPost("/auth/get-login-screen", (HttpContext ctx) =>
       PlatformEndpointsExtensions.WithRequestCulture(
         ctx.Request,
-        culture => Results.Ok(AuthProfileBuilder.BuildLoginScreenDto(culture))));
+        culture => Results.Ok(AuthProfileBuilder.BuildLoginScreenDto(culture))))
+      .AllowAnonymous();
 
     api.MapPost("/auth/get-profile", HandleGetProfileAsync);
-    api.MapPost("/auth/login", HandleLoginAsync);
+    api.MapPost("/auth/login", HandleLoginAsync).AllowAnonymous();
     api.MapPost("/auth/change-password", HandleChangePasswordAsync);
-    api.MapPost("/auth/refresh", HandleRefreshAsync);
-    api.MapPost("/auth/logout", HandleLogoutAsync);
+    api.MapPost("/auth/refresh", HandleRefreshAsync).AllowAnonymous();
+    api.MapPost("/auth/logout", HandleLogoutAsync).AllowAnonymous();
     api.MapSwitcherEndpoints();
   }
 
@@ -87,7 +90,7 @@ internal static class AuthEndpointsExtensions
     }
 
     var login = req?.Login?.Trim() ?? "";
-    var rateLimiter = ctx.RequestServices.GetService<Auth.Internals.LoginRateLimiter>();
+    var rateLimiter = ctx.RequestServices.GetService<LoginRateLimiter>();
     var remoteIp = ctx.Connection.RemoteIpAddress?.ToString();
     if (rateLimiter?.IsLimited(remoteIp, login) == true)
     {
@@ -207,6 +210,14 @@ internal static class AuthEndpointsExtensions
         return Results.Unauthorized();
       }
 
+      var rateLimiter = ctx.RequestServices.GetService<LoginRateLimiter>();
+      var remoteIp = ctx.Connection.RemoteIpAddress?.ToString();
+      var rateKey = $"pwd:{user.Id}";
+      if (rateLimiter?.IsLimited(remoteIp, rateKey) == true)
+      {
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+      }
+
       if (string.Equals(req.NewPassword, user.Login, StringComparison.OrdinalIgnoreCase))
       {
         return Results.BadRequest(new { detail = Localizer.Instance["PasswordIsLogin"] });
@@ -216,9 +227,15 @@ internal static class AuthEndpointsExtensions
           string.IsNullOrEmpty(req.CurrentPassword) ||
           hasher.VerifyPassword(req.CurrentPassword, user.PasswordHash) == PasswordVerification.Failed)
       {
+        rateLimiter?.RecordFailure(remoteIp, rateKey);
         return Results.Json(new { detail = Localizer.Instance["InvalidCredentials"] }, statusCode: StatusCodes.Status401Unauthorized);
       }
 
+      rateLimiter?.Reset(remoteIp, rateKey);
+      var now = ResolveUtcNow(ctx.RequestServices);
+      user.AccessFailedCount = 0;
+      user.LockoutCount = 0;
+      user.LockoutEnd = null;
       user.PasswordHash = hasher.HashPassword(req.NewPassword);
       user.MustChangePassword = false;
       user.TokenVersion++;
@@ -235,7 +252,6 @@ internal static class AuthEndpointsExtensions
         }
       }
 
-      var now = ResolveUtcNow(ctx.RequestServices);
       var options = ResolveOptions(ctx.RequestServices);
       var accessExpiresAt = now + options.AccessTokenLifetime;
       var refreshExpiresAt = now + options.RefreshTokenLifetime;

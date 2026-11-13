@@ -1375,4 +1375,37 @@
   <data name="InvalidJsonRequest" xml:space="preserve">
     <value>Invalid JSON request payload.</value>
   </data>
+  <data name="UserOutOfPermissionScope" xml:space="preserve">
+    <value>You cannot modify a user with permissions you do not hold.</value>
+  </data>
+  <data name="RootUserCannotBeModifiedByOther" xml:space="preserve">
+    <value>The root user cannot be modified by another user.</value>
+  </data>
+  <data name="RootUserCannotBeDeactivated" xml:space="preserve">
+    <value>The root user cannot be deactivated.</value>
+  </data>
+  <data name="RootUserCannotLoseAdmin" xml:space="preserve">
+    <value>The root user cannot be left without administrator rights.</value>
+  </data>
+  <data name="RootUserCannotBeDeleted" xml:space="preserve">
+    <value>The root user cannot be deleted.</value>
+  </data>
+  <data name="Deactivate" xml:space="preserve">
+    <value>Deactivate</value>
+  </data>
+  <data name="Deactivate the selected users and end their sessions?" xml:space="preserve">
+    <value>Deactivate the selected users and end their sessions?</value>
+  </data>
+  <data name="RoleOutOfPermissionScope" xml:space="preserve">
+    <value>You cannot modify a role with permissions you do not hold.</value>
+  </data>
+  <data name="RoleNameAlreadyInUse" xml:space="preserve">
+    <value>This name is already in use.</value>
+  </data>
+  <data name="LastAdminRoleCannotLoseAdmin" xml:space="preserve">
+    <value>The last administrator role cannot be deactivated or stripped of administrator rights.</value>
+  </data>
+  <data name="LastAdminRoleCannotBeDeleted" xml:space="preserve">
+    <value>The last administrator role cannot be deleted.</value>
+  </data>
 </root>

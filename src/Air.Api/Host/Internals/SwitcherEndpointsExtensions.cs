@@ -4,7 +4,7 @@ internal static class SwitcherEndpointsExtensions
 {
   public static void MapSwitcherEndpoints(this RouteGroupBuilder api)
   {
-    api.MapPost("/platform-language/switch", HandleSwitchLanguageAsync);
+    api.MapPost("/platform-language/switch", HandleSwitchLanguageAsync).AllowAnonymous();
     api.MapPost("/platform-tenant/switch", HandleSwitchTenantAsync);
   }
 

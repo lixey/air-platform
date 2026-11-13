@@ -1,16 +1,39 @@
+using Microsoft.AspNetCore.Authorization;
+
 namespace Platform.Api.Host.Internals;
 
 internal static class ServiceRequestBinder
 {
   private static readonly ConcurrentDictionary<Type, IReadOnlyList<MethodInfo>> CallableMethodsCache = new();
 
-  public static MethodInfo? ResolveCallableActionMethod(Type serviceType, string method)
-  {
-    var methods = CallableMethodsCache.GetOrAdd(
+  public static IReadOnlyList<MethodInfo> GetCallableActionMethods(Type serviceType) =>
+    CallableMethodsCache.GetOrAdd(
       serviceType,
       static t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance)
         .Where(ServiceEndpointsExtensions.IsCallableServiceAction)
         .ToList());
+
+  public static IReadOnlyList<string> GetRouteActionNames(MethodInfo method)
+  {
+    var stripped = StripAsyncSuffix(method.Name);
+    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+      ServicePathResolver.ToKebabCase(stripped),
+      ServicePathResolver.ToKebabCase(method.Name),
+      stripped.ToLowerInvariant(),
+      method.Name.ToLowerInvariant()
+    };
+    names.RemoveWhere(string.IsNullOrWhiteSpace);
+    return [.. names];
+  }
+
+  public static bool IsAnonymousCallableMethod(MethodInfo method) =>
+    method.GetCustomAttribute<AllowAnonymousAttribute>(inherit: true) is not null ||
+    method.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) is not null;
+
+  public static MethodInfo? ResolveCallableActionMethod(Type serviceType, string method)
+  {
+    var methods = GetCallableActionMethods(serviceType);
 
     var normalized = StripAsyncSuffix(method.Replace("-", "", StringComparison.Ordinal));
     return methods.FirstOrDefault(m =>

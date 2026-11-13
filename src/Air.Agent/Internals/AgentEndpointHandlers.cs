@@ -262,6 +262,7 @@ internal static class AgentEndpointHandlers
 
     var safeMime = AgentAttachmentValidator.ClampStoredMime(att.ContentType);
     ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'";
 
     if (AgentAttachmentValidator.IsInlineSafeImage(safeMime))
     {

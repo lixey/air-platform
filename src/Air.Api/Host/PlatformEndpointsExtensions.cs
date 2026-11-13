@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Platform.Api.Host.Internals;
 
 namespace Platform.Api.Host;
@@ -11,6 +12,12 @@ public static class PlatformEndpointsExtensions
     PlatformValidator.Validate(catalog, app.Services);
 
     var api = app.MapGroup("/api");
+    api.AddEndpointFilter(static async (ctx, next) =>
+      ctx.HttpContext.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null ||
+      ctx.HttpContext.User.Identity?.IsAuthenticated == true
+        ? await next(ctx)
+        : Results.Unauthorized());
+
     api.MapAuthEndpoints();
     api.MapFileEndpoints();
     api.MapServiceEndpoints();

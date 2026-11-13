@@ -11,6 +11,14 @@ internal sealed class AppServiceEndpointDispatcher : IServiceEndpointDispatcher
     typeof(IReportService).IsAssignableFrom(serviceType) ||
     typeof(IScreenService).IsAssignableFrom(serviceType);
 
+  public void MapServiceEndpoints(
+    RouteGroupBuilder api,
+    ModuleCatalog catalog,
+    Type serviceType,
+    string serviceName,
+    Feature? feature) =>
+    AppServiceRouteMapper.MapServiceEndpoints(this, api, catalog, serviceType, serviceName, feature);
+
   public async Task<IResult> DispatchAsync(
     Type serviceType,
     string serviceName,

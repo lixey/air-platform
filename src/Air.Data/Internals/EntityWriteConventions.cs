@@ -20,6 +20,49 @@ internal static class EntityWriteConventions
         throw new InvalidOperationException("AppPlatformChange rows are immutable and cannot be modified or deleted.");
       }
 
+      if (entry.Entity is BaseAppUser addedUser && entry.State == EntityState.Added && addedUser.IsRoot && !isSystemScope)
+      {
+        throw new InvalidOperationException("Only system scope may set the root user flag.");
+      }
+
+      if (entry.Entity is BaseAppUser baseUser && entry.State is EntityState.Modified or EntityState.Deleted)
+      {
+        var wasRoot = entry.Property(nameof(BaseAppUser.IsRoot)).OriginalValue as bool? ?? baseUser.IsRoot;
+        if (wasRoot)
+        {
+          if (entry.State == EntityState.Deleted)
+          {
+            throw new InvalidOperationException("The root user cannot be deleted.");
+          }
+
+          if (!baseUser.IsActive)
+          {
+            throw new InvalidOperationException("The root user cannot be deactivated.");
+          }
+
+          if (!baseUser.IsRoot)
+          {
+            throw new InvalidOperationException("The root user flag cannot be cleared.");
+          }
+
+          if (!isSystemScope && tenantContext.UserId is { } actorUserId && actorUserId != baseUser.Id)
+          {
+            var actorIsRoot = actorUserId == 1 ||
+                              changeTracker.Context is PlatformDbContext pDb &&
+                              pDb.SetOfBase<BaseAppUser>()?.IgnoreQueryFilters().AsNoTracking()
+                                .Any(u => u.Id == actorUserId && u.IsRoot) == true;
+            if (!actorIsRoot)
+            {
+              throw new InvalidOperationException("The root user cannot be modified by another user.");
+            }
+          }
+        }
+        else if (entry.State == EntityState.Modified && baseUser.IsRoot && !isSystemScope)
+        {
+          throw new InvalidOperationException("Only system scope may set the root user flag.");
+        }
+      }
+
       if (entry.State is EntityState.Modified or EntityState.Deleted)
       {
         if (entry.Entity is IHasTenant existingTenant && !isSystemScope)

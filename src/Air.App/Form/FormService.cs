@@ -1,4 +1,5 @@
 using Platform.App.Form.Internals;
+using Platform.App.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
@@ -319,22 +320,47 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected virtual void SetRules(Rules rules) { }
   protected virtual void SetHooks(Hooks hooks) { }
 
-  IEnumerable<string> IPlatformService.GetDeclaredActions()
+  private Actions ProbeActions()
   {
     var actions = new Actions();
     try
     {
       SetActionsAsync(actions).GetAwaiter().GetResult();
     }
-    catch (NullReferenceException) when (db == null)
+    catch (NullReferenceException ex) when (db == null)
     {
       actions = new Actions();
       SetActions(actions);
+      var overridesAsync = GetType()
+        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
+        .DeclaringType != typeof(FormService<TEntity>);
+      if (overridesAsync && actions.Entries.Count == 0)
+      {
+        throw new InvalidOperationException(
+          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (CurrentEntity != null)' or 'if (db != null)' before registering actions.",
+          ex);
+      }
     }
 
-    return actions.Entries
+    return actions;
+  }
+
+  IEnumerable<string> IPlatformService.GetDeclaredActions() =>
+    ProbeActions().Entries
       .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
       .Where(n => !string.IsNullOrWhiteSpace(n))!;
+
+  IReadOnlyList<string> IFormService.GetRoutableActionMethods(ModuleCatalog catalog)
+  {
+    var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in ProbeActions().Entries)
+    {
+      routes.Add(entry.Method);
+      routes.Add(entry.Key);
+    }
+
+    AppServiceRouteMapper.AddFeatureCustomRightRoutes(routes, Feature);
+    return [.. routes];
   }
 
   public virtual async Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default)

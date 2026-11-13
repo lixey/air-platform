@@ -8,6 +8,13 @@ public interface IServiceEndpointDispatcher
 {
   bool CanDispatch(Type serviceType);
 
+  void MapServiceEndpoints(
+    RouteGroupBuilder api,
+    ModuleCatalog catalog,
+    Type serviceType,
+    string serviceName,
+    Feature? feature);
+
   Task<IResult> DispatchAsync(
     Type serviceType,
     string serviceName,

@@ -6,6 +6,7 @@ namespace Platform.Api.Host;
 public static class PlatformApiExtensions
 {
   private const string ForwardedHeadersRegisteredKey = "Platform.ForwardedHeadersRegistered";
+  private const string SecurityPipelineRegisteredKey = "Platform.SecurityPipelineRegistered";
   public static WebApplicationBuilder AddPlatformApiModule<TModule>(this WebApplicationBuilder builder)
     where TModule : class, IPlatformModule, new() =>
     builder.AddPlatformApiModule(new TModule());
@@ -193,6 +194,11 @@ public static class PlatformApiExtensions
   public static IApplicationBuilder UsePlatformAuth(this IApplicationBuilder app)
   {
     app.UsePlatformForwardedHeaders();
+    if (app.Properties.TryAdd(SecurityPipelineRegisteredKey, true))
+    {
+      app.UseMiddleware<SafeExceptionMiddleware>();
+      app.UseMiddleware<SecurityHeadersMiddleware>();
+    }
 
     return app.Use(async (context, next) =>
     {

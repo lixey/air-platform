@@ -35,6 +35,7 @@ public interface IGridService : IPlatformService
   internal PropertyInfo? GetBoundParentProperty() => null;
   bool CanView(GridRequest request, IUserContext? user) => ServiceEndpointsExtensions.CanView(Feature, user);
   bool CanLookup(GridRequest request, IUserContext? user) => CanView(request, user);
+  IReadOnlyList<string> GetRoutableActionMethods(ModuleCatalog catalog) => [];
   new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }
 }

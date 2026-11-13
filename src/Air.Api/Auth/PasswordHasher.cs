@@ -7,13 +7,22 @@ namespace Platform.Api.Auth;
 /// </summary>
 public sealed class PasswordHasher : IPasswordHasher
 {
-  private readonly PasswordHasher<object> _hasher = new();
+  private static readonly SemaphoreSlim ConcurrencyGate = new(Math.Max(2, Environment.ProcessorCount));
   private static readonly object DummyUser = new();
+  private readonly PasswordHasher<object> _hasher = new();
 
   public string HashPassword(string password)
   {
     ArgumentException.ThrowIfNullOrEmpty(password);
-    return _hasher.HashPassword(DummyUser, password);
+    ConcurrencyGate.Wait();
+    try
+    {
+      return _hasher.HashPassword(DummyUser, password);
+    }
+    finally
+    {
+      ConcurrencyGate.Release();
+    }
   }
 
   public PasswordVerification VerifyPassword(string password, string passwordHash)
@@ -23,6 +32,7 @@ public sealed class PasswordHasher : IPasswordHasher
       return PasswordVerification.Failed;
     }
 
+    ConcurrencyGate.Wait();
     try
     {
       return _hasher.VerifyHashedPassword(DummyUser, passwordHash, password) switch
@@ -35,6 +45,10 @@ public sealed class PasswordHasher : IPasswordHasher
     catch
     {
       return PasswordVerification.Failed;
+    }
+    finally
+    {
+      ConcurrencyGate.Release();
     }
   }
 }

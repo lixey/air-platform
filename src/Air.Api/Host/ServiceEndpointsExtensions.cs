@@ -44,75 +44,75 @@ public static class ServiceEndpointsExtensions
 
   public static void MapServiceEndpoints(this RouteGroupBuilder api)
   {
-    api.MapPost("/{**servicePath}", async (
-      string servicePath,
-      HttpRequest httpRequest,
-      ModuleCatalog catalog,
-      IServiceProvider services,
-      CancellationToken ct) =>
-      await PlatformEndpointsExtensions.WithRequestCultureAsync(httpRequest, async _ =>
+    var rootServices = ((IEndpointRouteBuilder)api).ServiceProvider;
+    var catalog = rootServices.GetRequiredService<ModuleCatalog>();
+    var dispatchers = rootServices.GetServices<IServiceEndpointDispatcher>().ToArray();
+
+    foreach (var (serviceName, serviceType) in catalog.ServiceRoutes)
+    {
+      var exactFeat = catalog.FindFeature(serviceName);
+      var feat = catalog.FindFeature(serviceType) ?? exactFeat;
+      var dispatcher = dispatchers.FirstOrDefault(d => d.CanDispatch(serviceType));
+      if (dispatcher is not null)
       {
-        Localizer.Instance.EnsureManagersLoaded();
-        var parts = servicePath.Trim('/').Split('/');
-        if (parts.Length < 2)
+        dispatcher.MapServiceEndpoints(api, catalog, serviceType, serviceName, feat);
+        continue;
+      }
+
+      MapCustomServiceActionRoutes(api, serviceType, serviceName, feat);
+    }
+  }
+
+  private static void MapCustomServiceActionRoutes(
+    RouteGroupBuilder api,
+    Type serviceType,
+    string serviceName,
+    Feature? feat)
+  {
+    var mappedRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var actionMethod in ServiceRequestBinder.GetCallableActionMethods(serviceType))
+    {
+      var isAnonymous = ServiceRequestBinder.IsAnonymousCallableMethod(actionMethod);
+      foreach (var routeAction in ServiceRequestBinder.GetRouteActionNames(actionMethod))
+      {
+        var pattern = $"/{serviceName}/{routeAction}";
+        if (!mappedRoutes.Add(pattern))
         {
-          return Results.NotFound();
+          continue;
         }
 
-        string serviceName;
-        string method;
-        string? subMethod = null;
-
-        if (parts.Length >= 3 && string.Equals(parts[^2], "move-status", StringComparison.OrdinalIgnoreCase))
-        {
-          serviceName = string.Join('/', parts[..^2]);
-          method = "move-status";
-          subMethod = parts[^1];
-        }
-        else if (parts.Length >= 3 && string.Equals(parts[^2], "get-action-input", StringComparison.OrdinalIgnoreCase))
-        {
-          serviceName = string.Join('/', parts[..^2]);
-          method = "get-action-input";
-          subMethod = parts[^1];
-        }
-        else
-        {
-          serviceName = string.Join('/', parts[..^1]);
-          method = parts[^1];
-        }
-
-        var exactFeat = catalog.FindFeature(serviceName);
-        var serviceType = catalog.FindServiceType(serviceName) ?? exactFeat?.ServiceType;
-        if (serviceType is null)
-        {
-          return Results.NotFound($"Service '{serviceName}' not found.");
-        }
-
-        var feat = catalog.FindFeature(serviceType) ?? exactFeat;
-
-        services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
-
-        foreach (var dispatcher in services.GetServices<IServiceEndpointDispatcher>())
-        {
-          if (dispatcher.CanDispatch(serviceType))
+        var capturedAction = routeAction;
+        var builder = api.MapPost(pattern, async (
+          HttpRequest httpRequest,
+          IServiceProvider services,
+          CancellationToken ct) =>
+          await PlatformEndpointsExtensions.WithRequestCultureAsync(httpRequest, async _ =>
           {
-            return await dispatcher.DispatchAsync(serviceType, serviceName, method, subMethod, feat, httpRequest, services, ct);
-          }
-        }
+            Localizer.Instance.EnsureManagersLoaded();
+            services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
+            var customService = services.GetService(serviceType);
+            if (customService is null)
+            {
+              return Results.NotFound();
+            }
 
-        var customService = services.GetService(serviceType);
-        if (customService is not null)
+            var resolvedFeat = feat ?? (customService as IPlatformService)?.Feature;
+            return await DispatchCustomServiceMethodAsync(
+              serviceType,
+              customService,
+              capturedAction,
+              resolvedFeat,
+              httpRequest,
+              services,
+              ct);
+          }));
+
+        if (isAnonymous)
         {
-          if (customService is IPlatformService ps)
-          {
-            feat ??= ps.Feature;
-          }
-
-          return await DispatchCustomServiceMethodAsync(serviceType, customService, method, feat, httpRequest, services, ct);
+          builder.AllowAnonymous();
         }
-
-        return Results.NotFound();
-      }));
+      }
+    }
   }
 
   public static async Task<IResult> DispatchCustomServiceMethodAsync(
