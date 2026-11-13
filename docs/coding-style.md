@@ -30,9 +30,9 @@
 4. **Строго типізовані дерева виразів (`Expression<Func<TEntity, TProp>>`)**:
    - Усі колонки таблиць, поля форм, правила валідації, реактивні патчі (`PatchOnSelect`), підсумки дочірніх рядків (`SumTo`), фільтри довідників (`FilterBy`) та захист видалення (`PreventDeleteWhenUsedBy`) описуються **виключно через типізовані лямбда-вирази**, а не рядкові назви властивостей:
      ```csharp
-     elements.Add(e => e.ProductId)
+     elements.Add(e => e.Product)
        .AsReference<ProductGridService>(p => p.Name, p => p.Code)
-       .PatchOnSelect<Product>(p => p.SalePrice, e => e.Price);
+       .PatchOnSelect(p => p.SalePrice, e => e.Price);
 
      hooks.PreventDeleteWhenUsedBy<EcomDocLine>(l => l.ProductId);
      ```
@@ -69,6 +69,10 @@
 
 1. `public override Feature Feature => ...;` — явна прив'язка до фічі та прав RBAC.
 2. Опис структури екрана (`SetColumns` / `SetElements` / `SetStates` / `BuildLayout`) — без побічних ефектів у БД.
+   - За замовчуванням перевизначайте **синхронні** методи `SetElements(Elements)` та `SetActions(Actions)`.
+   - **Асинхронні** перевантаження `SetElementsAsync(Elements, CancellationToken)` та `SetActionsAsync(Actions, CancellationToken)` використовуйте лише тоді, коли опис полів або дій справді виконує `await`-запит до БД (наприклад, завантаження переліку ролей). Для динамічних підтверджень дії всередині синхронного `SetActions` використовуйте `.ConfirmAsync((entity, ct) => ...)`. Одночасне перевизначення синхронного й асинхронного варіанта в одному класі заборонене й блокується при старті.
+   - Для посилань на довідники передавайте навігаційну властивість з **одним** типовим параметром (`elements.Add(e => e.Brand).AsReference<OrgBrandGridService>()`), щоб платформа сама виводила тип сутності та зовнішній ключ `BrandId`.
+   - У дочірніх формах і таблицях використовуйте `var doc = RequiredParent<EcomDoc>();` замість `ParentRecord<EcomDoc>()!`, а для типових правил безпеки `AppUserSecurityRules` / `AppRoleSecurityRules` передавайте `this` без лямбда-замикань (`AppRoleSecurityRules.AddFormHooks<AppAuthRole, AppAuthGrant>(this, hooks)`).
 3. Запит та іменовані фільтри (`Query`, `SetNamedFilters`).
 4. Декларативні правила та життєвий цикл запису (`SetRules`, `SetHooks`, `BeforeSave`, `AfterSave`).
 5. Дії користувача (`SetActions`).
@@ -84,7 +88,7 @@
 Ми не пишемо церемоніальні тести «на кожен чих» (на прості декларативні довідники чи порожні DTO), але **залізобетонно покриваємо швидкими детермінованими тестами всі критичні вузли**:
 
 1. **У платформі (`tests/`) — обов'язкові тести**:
-   - **`Air.ArchTests`**: механічні закони архітектури (граф залежностей збірок, чистота шарів без витоку логіки агента в ядро, `1 тип = 1 файл`, маркування секретів `[Sensitive]`, реєстрація культур і паритет `.resx`).
+   - **`Air.Arch.Tests`**: механічні закони архітектури (граф залежностей збірок, чистота шарів без витоку логіки агента в ядро, `1 тип = 1 файл`, простори імен `Platform.*`, ліміти рядків, маркування секретів `[Sensitive]`, реєстрація культур і паритет `.resx`).
    - **Безпека, RBAC та ізоляція тенантів**: перевірка `CanView`/`CanEdit`/`CanLookup`, захист `IsRoot`, делегування прав, сесії та куки.
    - **Рушій запитів, форм і мутацій**: фільтрація, сортування, `PatchOnSelect`, `SumTo`, правила `Error`/`Warning`, статусні переходи та ідемпотентність.
    - **Безпека та контракти ШІ-асистента**: побудова та виконання `<ui_proposal>`, ізоляція пам'яті та захист від ін'єкцій.

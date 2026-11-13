@@ -1,4 +1,4 @@
-namespace Platform.ArchTests;
+namespace Platform.Arch.Tests;
 
 public sealed class AssemblyGraphTests
 {

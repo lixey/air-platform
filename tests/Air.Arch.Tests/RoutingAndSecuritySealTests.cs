@@ -10,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Host.Internals;
 
-namespace Platform.ArchTests;
+namespace Platform.Arch.Tests;
 
 public sealed class RoutingAndSecuritySealTests
 {

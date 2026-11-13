@@ -6,7 +6,7 @@ using DemoEcom;
 using DemoOrg;
 using DemoOrg.Brand;
 
-namespace Platform.ArchTests;
+namespace Platform.Arch.Tests;
 
 public sealed class SecurityAndCultureInvariantsTests
 {

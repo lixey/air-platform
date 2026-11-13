@@ -43,7 +43,7 @@ contracts-check: ## Verify generated TypeScript contracts and UI texts match C# 
 	(cd $(WEB) && npx prettier --write --log-level warn --config .prettierrc --ignore-path /dev/null "$$tmp" >/dev/null) && \
 	diff -ru air-ui/src/core/generated "$$tmp"
 
-gate: format-check check-paths check-arch contracts-check check-ts build test ## Run unified verification gate (format, paths, arch, contracts, ts, build, test)
+gate: format-check check-paths contracts-check check-ts build test ## Run unified verification gate (format, paths, contracts, ts, build, and all tests incl. Air.Arch.Tests)
 
 audit: ## Run controlled code audit on Claude Fable 5.2 (High) via claude CLI with automatic fallback to agy CLI
 	@had_skills=0; [ -d skills/system ] && had_skills=1; \
@@ -58,43 +58,7 @@ audit: ## Run controlled code audit on Claude Fable 5.2 (High) via claude CLI wi
 	fi
 
 check-arch: ## Verify Platform.* namespaces, physical folder matching, Contracts/, Internals/, 1 type per file, *Extensions.cs, semantic tokens, TimeProvider, line caps, and .resx parity
-	@python3 -c 'import glob, os, re, sys; \
-	resolve_ns = lambda n: "Platform." + n[4:] if n.startswith("Air.") else (n.split(".")[0] if n.startswith("Demo") and (n.endswith(".Api") or n.endswith(".Migrations")) and n != "Demo.Api" else n); \
-	csprojs = {os.path.dirname(os.path.abspath(p)): (re.search(r"<RootNamespace>([^<]+)</RootNamespace>", open(p, encoding="utf-8").read()).group(1).strip() if re.search(r"<RootNamespace>([^<]+)</RootNamespace>", open(p, encoding="utf-8").read()) else resolve_ns(os.path.splitext(os.path.basename(p))[0])) for p in glob.glob("**/*.csproj", recursive=True)}; \
-	exp_ns = lambda cs, d: csprojs[d] if os.path.relpath(os.path.dirname(os.path.abspath(cs)), d) == "." else csprojs[d] + "." + os.path.relpath(os.path.dirname(os.path.abspath(cs)), d).replace(os.sep, "."); \
-	cs_cap = lambda cs: 750 if cs.startswith("src/Air.Api/") else (950 if cs.startswith("src/Air.App/") else 450); \
-	pal_re = re.compile(r"\b(?:dark:|(?:text|bg|border|ring|from|to|via)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d+)"); \
-	errs = []; \
-	[errs.extend([f"{cs}: forbidden Air namespace"] if re.search(r"^\s*namespace\s+Air\b", txt, re.M) else []) or \
-	 errs.extend([f"{cs}: namespace {m.group(1)} != expected {exp_ns(cs, max([d for d in csprojs if os.path.abspath(cs).startswith(d + os.sep)], key=len))}" for m in [re.search(r"^\s*namespace\s+([A-Za-z0-9_.]+)\s*;", txt, re.M)] if m and [d for d in csprojs if os.path.abspath(cs).startswith(d + os.sep)] and m.group(1) != exp_ns(cs, max([d for d in csprojs if os.path.abspath(cs).startswith(d + os.sep)], key=len))]) or \
-	 errs.extend([f"{cs}: multiple top-level types" for t in [set(re.findall(r"^(?:public|internal|file)\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+([A-Za-z0-9_]+)", txt, re.M))] if "/Migrations/" not in cs and len(t) > 1]) or \
-	 errs.extend([f"{cs}: extension method in non-Extensions file"] if re.search(r"static\s+[^\(\n]+\(\s*this\s+", txt) and not cs.endswith("Extensions.cs") else []) or \
-	 errs.extend([f"{cs}: internal type must be in Internals/"] if cs.startswith("src/") and re.search(r"^internal\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+", txt, re.M) and "/Internals/" not in cs else []) or \
-	 errs.extend([f"{cs}: public type must not be in Internals/"] if (cs.startswith("src/") or cs.startswith("demo/src/")) and "/Internals/" in cs and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+", txt, re.M) else []) or \
-	 errs.extend([f"{cs}: contract type must be in Contracts/"] if cs.startswith("src/") and re.search(r"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b", txt, re.M) and "/Contracts/" not in cs else []) or \
-	 errs.extend([f"{cs}: forbidden domain hardcoding {m.group(0)}" for m in [re.search(r"\"(?:mccCode|DocStatus|counterpartyId|toAccountId)\"|--dangerously-skip-permissions|Password123", txt, re.I)] if (cs.startswith("src/") or "Password123" in txt) and m]) or \
-	 errs.extend([f"{cs}: [AllowAnonymous] is forbidden on GridService/FormService; use [WebhookEndpoint] with explicit auth"] if cs.endswith(("GridService.cs", "FormService.cs")) and re.search(r"\[\s*AllowAnonymous\b", txt) else []) or \
-	 errs.extend([f"{cs}: use GetParent()/GetHooks() instead of new Parent()/new Hooks()"] if cs.startswith("src/") and os.path.basename(cs) not in ("FormService.cs", "GridService.cs") and re.search(r"new\s+(?:Parent|Hooks)\s*\(\s*\)", txt) else []) or \
-	 errs.extend([f"{cs}: use TimeProvider / Time.Today / Time.UtcNow instead of raw DateTime/DateTimeOffset clock reads"] if (cs.startswith(("src/Air.App/", "src/Air.Mcp/", "src/Air.Agent/", "src/Air.UiContracts/", "demo/src/")) and "/Migrations/" not in cs and "/Demo.DevMigrations/" not in cs) and re.search(r"\bDateTime(?:Offset)?\.(?:UtcNow|Now|Today)\b", txt) else []) or \
-	 errs.extend([f"{cs}: forbidden Air.* string literal in platform source" ] if cs.startswith("src/") and re.search(r"\"Air\.", txt) else []) or \
-	 errs.extend([f"{cs}: exceeds {cs_cap(cs)} lines ({txt.count(chr(10)) + 1})"] if (cs.startswith("src/") or cs.startswith("demo/src/")) and "/Migrations/" not in cs and txt.count(chr(10)) + 1 > cs_cap(cs) else []) \
-	 for cs in sorted(glob.glob("**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs and not cs.endswith(".Designer.cs") and os.path.basename(cs) not in ("GlobalUsings.cs", "Program.cs") for txt in [open(cs, encoding="utf-8").read()]]; \
-	[errs.extend([f"{ts}: exceeds 450 lines ({ttxt.count(chr(10)) + 1})"] if ts.startswith("air-ui/src/") and "/generated/" not in ts and ttxt.count(chr(10)) + 1 > 450 else []) or \
-	 errs.extend([f"{ts}: use newUuid() instead of raw crypto.randomUUID"] if os.path.basename(ts) != "uuid.ts" and "crypto.randomUUID" in ttxt else []) or \
-	 errs.extend([f"{ts}: forbidden bypassSecurityTrust* usage (use native DOM sanitization or structured UI blocks)"] if "bypassSecurityTrust" in ttxt else []) or \
-	 errs.extend([f"{ts}: forbidden non-semantic Tailwind palette or dark: class ({m.group(0)})" for m in [pal_re.search(ttxt)] if os.path.basename(ts) != "ui-color.ts" and "/generated/" not in ts and m]) \
-	 for ts in sorted(glob.glob("air-ui/src/**/*.ts", recursive=True) + glob.glob("demo/web/apps/**/*.ts", recursive=True)) if not ts.endswith(".spec.ts") and not ts.endswith("contracts.ts") for ttxt in [open(ts, encoding="utf-8").read()]]; \
-	[errs.extend([f"{gu}: forbidden .Internals in GlobalUsings.cs (use local using in .cs files)"] if re.search(r"^global\s+using\s+.*\.Internals\b", open(gu, encoding="utf-8").read(), re.M) else []) for gu in sorted(glob.glob("**/GlobalUsings.cs", recursive=True)) if "/obj/" not in gu and "/bin/" not in gu]; \
-	[errs.extend([f"{rx}: missing in .uk.resx: {sorted(b - u)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())))] if b - u]) or \
-	 errs.extend([f"{rx}: missing in neutral .resx: {sorted(u - b)}" for b, u in [(set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx, encoding="utf-8").read())), set(re.findall(r"<data\s+name=\"([^\"]+)\"", open(rx[:-5] + ".uk.resx", encoding="utf-8").read())))] if u - b]) or \
-	 errs.extend([f"{rx}: Cyrillic text in neutral .resx (must be English; put Ukrainian in .uk.resx)"] if re.search(r"<data\s+name=\"(?!Ukrainian\")[^\"]+\"[^>]*>\s*<value>[^<]*[\u0400-\u04FF]", open(rx, encoding="utf-8").read()) else []) \
-	 for rx in sorted(glob.glob("**/*.resx", recursive=True)) if not rx.endswith(".uk.resx") and os.path.exists(rx[:-5] + ".uk.resx")]; \
-	ui_keys = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*:", open("air-ui/src/ui-components.ts", encoding="utf-8").read(), re.M)); \
-	[errs.extend([f"{cs}: ComponentModel kind {(km.group(1) if km else m.group(1))} missing in air-ui/src/ui-components.ts" for m in [re.search(r"public\s+(?:sealed\s+)?class\s+([A-Za-z0-9_]+)Model\s*:\s*ComponentModel\b", txt)] if m for km in [re.search(r"override\s+string\s+Kind\s*=>\s*\"([^\"]+)\"", txt)] if (km.group(1) if km else m.group(1)) not in ui_keys]) for cs in sorted(glob.glob("src/Air.App/**/*.cs", recursive=True)) if "/obj/" not in cs and "/bin/" not in cs for txt in [open(cs, encoding="utf-8").read()]]; \
-	ext_app_re = re.compile(r"\b(?:(?!Demo|Platform|Air|Base|Test|Mock|App|Org|Ecom|Module|Configure|Web|Ui|Dev|Create|Add|Get|Set|Map|Use|Host|Client|InMemory|Sample)[A-Z][a-z0-9]+(?:App|Org|Ecom|Fin|DbContext|Migrations|Transfer)|509[2-9]|519[2-9]|430[1-9]|440[1-9])\b"); \
-	[errs.extend([f"{f}: forbidden external application reference ({m.group(0)})"] if m else []) for f in sorted(set(glob.glob("src/**/*.*", recursive=True) + glob.glob("air-ui/src/**/*.*", recursive=True) + glob.glob("docs/**/*.*", recursive=True) + glob.glob("tests/**/*.*", recursive=True) + ["AGENTS.md", "Makefile"])) if os.path.isfile(f) and "/obj/" not in f and "/bin/" not in f for m in [ext_app_re.search(open(f, encoding="utf-8", errors="ignore").read())]]; \
-	[errs.extend([f"{md}: stale RegisterDomainKnowledge reference in docs (use PlatformModule.Docs)"] if ("RegisterDomain" + "Knowledge") in open(md, encoding="utf-8").read() else []) for md in sorted(glob.glob("docs/**/*.md", recursive=True))]; \
-	print("\n".join(errs)) if errs else None; sys.exit(1 if errs else 0)'
+	dotnet test tests/Air.Arch.Tests/Air.Arch.Tests.csproj --nologo --verbosity quiet
 
 export-contracts: ## Export TypeScript contracts and localized UI texts
 	dotnet run --project src/Air.UiContracts -- air-ui/src/core/generated
