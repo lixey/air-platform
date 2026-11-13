@@ -1,3 +1,4 @@
+using Platform.App.Form.Internals;
 using Platform.App.Internals;
 using Platform.Data.Internals;
 
@@ -339,134 +340,15 @@ public class Elements
     return new FormElement<object, TProp>(el);
   }
 
-  internal static string ToCamelPath(string path)
-  {
-    var parts = path.Split('.');
-    for (var i = 0; i < parts.Length; i++)
-    {
-      if (parts[i].Length > 0)
-      {
-        parts[i] = char.ToLowerInvariant(parts[i][0]) + parts[i][1..];
-      }
-    }
+  internal static string ToCamelPath(string path) => UiMemberDefaults.ToCamelPath(path);
 
-    return string.Join('.', parts);
-  }
+  internal static string PathToLabel(string path, Type? ownerType = null) =>
+    UiMemberDefaults.PathToLabel(path, ownerType);
 
-  internal static string PathToLabel(string path, Type? ownerType = null)
-  {
-    var parts = path.Split('.');
-    var last = parts[^1];
-    if (parts.Length >= 2 &&
-        (string.Equals(last, "name", StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(last, "title", StringComparison.OrdinalIgnoreCase)))
-    {
-      last = parts[^2];
-    }
+  internal static string ResolveFieldType(Type type) => UiMemberDefaults.ResolveFieldType(type);
 
-    if (last.EndsWith("Id", StringComparison.Ordinal) && last.Length > 2)
-    {
-      var navCandidate = last[..^2];
-      if (ownerType?.GetProperty(navCandidate, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase) != null)
-      {
-        last = navCandidate;
-      }
-    }
+  internal static string? ResolveTemporalType(Type type) => UiMemberDefaults.ResolveTemporalType(type);
 
-    if (last.Length > 0)
-    {
-      last = char.ToUpperInvariant(last[0]) + last[1..];
-    }
-
-    return System.Text.RegularExpressions.Regex.Replace(last, "([a-z0-9])([A-Z])", "$1 $2");
-  }
-
-  internal static string ResolveFieldType(Type type)
-  {
-    var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(bool))
-    {
-      return UiFieldType.Checkbox;
-    }
-
-    if (underlying == typeof(DateOnly))
-    {
-      return UiFieldType.Date;
-    }
-
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
-    {
-      return UiFieldType.DateTime;
-    }
-
-    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
-    {
-      return UiFieldType.Time;
-    }
-
-    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte) ||
-        underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
-    {
-      return UiFieldType.Number;
-    }
-
-    return UiFieldType.Text;
-  }
-
-  internal static string? ResolveTemporalType(Type type)
-  {
-    var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(DateOnly))
-    {
-      return UiTemporalType.DateOnly;
-    }
-
-    if (underlying == typeof(DateTime))
-    {
-      return UiTemporalType.DateTime;
-    }
-
-    if (underlying == typeof(DateTimeOffset))
-    {
-      return UiTemporalType.DateTimeOffset;
-    }
-
-    return null;
-  }
-
-  internal static FormElementModel ResolveDefaultModel(Type type)
-  {
-    var underlying = Nullable.GetUnderlyingType(type) ?? type;
-    if (underlying == typeof(bool))
-    {
-      return new FormCheckboxModel();
-    }
-
-    if (underlying == typeof(DateOnly))
-    {
-      return new FormDateModel();
-    }
-
-    if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
-    {
-      return new FormDateTimeModel();
-    }
-
-    if (underlying == typeof(TimeOnly) || underlying == typeof(TimeSpan))
-    {
-      return new FormTimeModel();
-    }
-
-    if (underlying == typeof(decimal) || underlying == typeof(double) || underlying == typeof(float))
-    {
-      return new FormNumberModel { Step = 0.01 };
-    }
-
-    if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short) || underlying == typeof(byte))
-    {
-      return new FormNumberModel { Step = 1.0 };
-    }
-
-    return new FormInputModel();
-  }
+  internal static FormElementModel ResolveDefaultModel(Type type) =>
+    FormElementDefaults.ResolveDefaultModel(type);
 }
