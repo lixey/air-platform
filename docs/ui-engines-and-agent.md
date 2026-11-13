@@ -31,7 +31,7 @@ protected override void SetColumns(Columns columns)
 - **Типи та форматування:** `.AsDate()`, `.AsDateTime()`, `.AsNumber()`, `.AsMoney()`, `.AsPercent()`, `.AsCheckbox()`, `.AsSelect(options)`, `.AsReference<TGridService>()`, `.AsCover<TFileGrid>()`, `.AsImage()`.
 - **Перехід до картки з комірки:** `.AsOpenForm<TFormService>()` або `.AsOpenForm<TFormService>(x => x.TargetId)` (якщо `TargetId == null`, клік безпечно ігнорується).
 - **Редагування в комірці та пікери:** `.Editable()`, `.PickedBy<TSourceGrid>(AttachMethod)`.
-- **Підсумки:** `.Sum()` (агрегат на рівні СУБД у нижньому рядку таблиці) та `.SelectionSum()` (підрахунок виділених рядків у клієнті).
+- **Підсумки:** `.Sum()` (агрегат на рівні СУБД у нижньому рядку таблиці), `.SelectionSum()` та `.SelectionSummary(SummaryKind.Avg)` (агрегація виділених рядків у клієнті: `Sum`, `Avg`, `Count`, `Min`, `Max`).
 - **Підказки (`Title`):** `.Title(tooltip)` або двоскладова підказка джерела `.Title(uiSource, dbSource)`.
 
 ### 1.2. Навігація, іменовані фільтри з живими лічильниками та захист видалення (`SetNav`, `SetQuery`, `SetHooks`)

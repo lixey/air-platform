@@ -74,11 +74,7 @@ public sealed class GridColumnDto
   public HeaderModel? Header { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public string? SelectionSumUnit { get; set; }
-
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [OneOf(typeof(UiColor))]
-  public string? SelectionSumExcludeColor { get; set; }
+  public ColumnSummaryDto? SelectionSummary { get; set; }
 
   [JsonIgnore]
   internal Func<object, string?>? ColorEvaluator { get; set; }

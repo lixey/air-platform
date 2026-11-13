@@ -281,12 +281,33 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     return this;
   }
 
-  public GridColumn<TEntity, TRow, TProp> SelectionSum(string unit = "", string? excludeColor = null)
+  public GridColumn<TEntity, TRow, TProp> SelectionSummary(
+    string kind = SummaryKind.Sum,
+    string unit = "",
+    string? excludeColor = null)
   {
-    dto.SelectionSumUnit = unit;
-    dto.SelectionSumExcludeColor = excludeColor?.ToLowerInvariant();
+    if (kind is not (SummaryKind.Sum or SummaryKind.Avg or SummaryKind.Count or SummaryKind.Min or SummaryKind.Max))
+    {
+      throw new ArgumentOutOfRangeException(nameof(kind), kind, $"Unsupported summary kind '{kind}'.");
+    }
+
+    if (kind != SummaryKind.Count && dto.Type != UiFieldType.Number)
+    {
+      throw new InvalidOperationException(
+        $"Column '{dto.Path}' has type '{dto.Type}'; summary kind '{kind}' requires a numeric column.");
+    }
+
+    dto.SelectionSummary = new ColumnSummaryDto
+    {
+      Kind = kind,
+      Unit = string.IsNullOrWhiteSpace(unit) ? null : unit,
+      ExcludeColor = string.IsNullOrWhiteSpace(excludeColor) ? null : excludeColor.ToLowerInvariant()
+    };
     return this;
   }
+
+  public GridColumn<TEntity, TRow, TProp> SelectionSum(string unit = "", string? excludeColor = null) =>
+    SelectionSummary(SummaryKind.Sum, unit, excludeColor);
 
   public GridColumn<TEntity, TRow, TProp> Stepper(bool hasStepper = true)
   {

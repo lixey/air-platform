@@ -7,12 +7,12 @@ import { UiIconDirective } from '../icon/ui-icon.directive';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { SelectService } from '../select/select.service';
-import { formatCellValue, formatCount } from './cell/grid-cell-format';
+import { formatCount } from './cell/grid-cell-format';
 import { conjunctsOf, fieldOf, type GridFilter } from './filter/grid-filter-set';
 import { chipLabel, connectorOf } from './filter/grid-filter-text';
 import { GridDeleteOutcomeComponent } from './grid-delete-outcome.component';
 import { GridPagerComponent } from './grid-pager.component';
-import { cellValueAt, rowColorAt } from './grid-row';
+import { computeColumnSummary, type GridSelectionSummaryChip } from './grid-selection-summary';
 import { GridService } from './grid.service';
 import { GridActionsService } from './nav/grid-actions.service';
 import { GridTableComponent } from './table/grid-table.component';
@@ -92,7 +92,7 @@ import { GridTableComponent } from './table/grid-table.component';
                 ' inline-flex items-center gap-1.5 min-h-9 px-2.5 rounded-lg border border-(--btn-edge) bg-(--badge-ground) text-(--badge-ink) text-sm font-semibold tabular-nums shrink-0'
               "
             >
-              <span class="font-medium">Σ:</span>
+              <span class="font-medium">{{ sum.symbol }}:</span>
               <span>{{ sum.text }}</span>
             </span>
           }
@@ -153,8 +153,8 @@ export class GridComponent {
   protected readonly selected = computed(() => formatCount(this.grid.selection.count(), this.locale()));
   protected readonly total = computed(() => formatCount(this.grid.total(), this.locale()));
 
-  /** Sums over the selected rows for columns declaring `selectionSumUnit`, shown in `actionNav` after `Export`. */
-  protected readonly selectionSums = computed(() => {
+  /** Summaries over the selected rows for columns declaring `selectionSummary`, shown in `actionNav` after `Export`. */
+  protected readonly selectionSums = computed<readonly GridSelectionSummaryChip[]>(() => {
     const rows = this.grid.selection.selected();
     if (rows.length === 0) {
       return [];
@@ -163,32 +163,8 @@ export class GridComponent {
     const zone = this.zone();
     return this.grid
       .allColumns()
-      .filter(col => col.selectionSumUnit !== undefined && col.selectionSumUnit !== null && !!col.path)
-      .map(col => {
-        const path = col.path!;
-        const colorPath = col.cell && 'colorPath' in col.cell ? col.cell.colorPath : null;
-        const excludeColor = col.selectionSumExcludeColor ?? null;
-        const primaryRows = excludeColor ? rows.filter(r => rowColorAt(r, path, colorPath) !== excludeColor) : rows;
-        const activeRows = primaryRows.length > 0 ? primaryRows : rows;
-        const isExcludedOnly = excludeColor !== null && primaryRows.length === 0;
-        let sum = 0;
-        for (const r of activeRows) {
-          const val = cellValueAt(r, path);
-          const num = typeof val === 'number' ? val : Number(val);
-          if (Number.isFinite(num)) {
-            sum += num;
-          }
-        }
-        const formatted = formatCellValue(sum, col, locale, zone);
-        const unit = col.selectionSumUnit ? ` ${col.selectionSumUnit}` : '';
-        const hue = isExcludedOnly && excludeColor ? excludeColor : sum < 0 ? 'rose' : sum > 0 ? 'emerald' : 'slate';
-        return {
-          key: path,
-          label: col.label ?? null,
-          hue,
-          text: `${formatted}${unit}`,
-        };
-      });
+      .map(col => computeColumnSummary(col, rows, locale, zone))
+      .filter((chip): chip is GridSelectionSummaryChip => chip !== null);
   });
 
   constructor() {

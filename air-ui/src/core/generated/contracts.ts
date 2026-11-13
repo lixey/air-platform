@@ -95,6 +95,8 @@ export type ReportColumnKind = 'text' | 'money' | 'number' | 'percent' | 'badge'
 
 export type SortDirection = 'asc' | 'desc';
 
+export type SummaryKind = 'sum' | 'avg' | 'count' | 'min' | 'max';
+
 export type UiColor =
   | 'primary'
   | 'brand'
@@ -628,6 +630,12 @@ export interface CheckboxTreeNodeDto {
   children: CheckboxTreeNodeDto[];
 }
 
+export interface ColumnSummaryDto {
+  kind: SummaryKind;
+  unit?: string | null;
+  excludeColor?: UiColor | null;
+}
+
 export interface FileInfoDto {
   id: number;
   name: string;
@@ -1059,8 +1067,7 @@ export interface GridColumnDto {
   options?: OptionDto[] | null;
   cell: CellModel;
   header?: HeaderModel | null;
-  selectionSumUnit?: string | null;
-  selectionSumExcludeColor?: UiColor | null;
+  selectionSummary?: ColumnSummaryDto | null;
 }
 
 export interface GridCountDto {
