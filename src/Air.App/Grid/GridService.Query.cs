@@ -68,8 +68,6 @@ public abstract partial class GridService<TEntity, TRow>
     return query;
   }
 
-  private (string? Service, long? ParentId, IReadOnlyList<Form.ChildGridBuilder> Children)? _cachedParentChildren;
-
   private Form.ChildGridBuilder? ResolveParentChildBuilder()
   {
     var myService = ServicePathResolver.Resolve(GetType());
@@ -77,7 +75,7 @@ public abstract partial class GridService<TEntity, TRow>
       ParentService,
       GetParent().BoundParentService,
       ParentId,
-      _cachedParentChildren,
+      _state.CachedParentChildren,
       c => c.ServiceType == GetType() || string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
   }
 
@@ -788,7 +786,7 @@ public abstract partial class GridService<TEntity, TRow>
       if (row.Open?.Service is { Length: > 0 } formHandle &&
           (forms == null || !forms.ContainsKey(formHandle)))
       {
-        if (_cachedFormOverlays.TryGetValue(formHandle, out var cached))
+        if (_state.CachedFormOverlays.TryGetValue(formHandle, out var cached))
         {
           forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
           forms[formHandle] = cached;

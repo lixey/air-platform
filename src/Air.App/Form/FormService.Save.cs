@@ -29,7 +29,7 @@ public abstract partial class FormService<TEntity>
 
     await PreloadParentRecordAsync(parent, ct);
 
-    var elements = _lastElements ?? await EnsureElementsAsync(ct, reload: true);
+    var elements = _state.LastElements ?? await EnsureElementsAsync(ct, reload: true);
 
     TEntity entity;
     if (IsNew)
@@ -115,7 +115,7 @@ public abstract partial class FormService<TEntity>
     }
 
     CurrentEntity = entity;
-    _lastSavedEntity = entity;
+    _state.LastSavedEntity = entity;
 
     var hooks = GetHooks();
     if (IsNew)
@@ -156,10 +156,10 @@ public abstract partial class FormService<TEntity>
     }
 
     var entityId = (entity as IEntity)?.Id
-      ?? (_lastSavedEntity?.Id is > 0 ? _lastSavedEntity.Id : (long?)null)
+      ?? (_state.LastSavedEntity?.Id is > 0 ? _state.LastSavedEntity.Id : (long?)null)
       ?? (outcome == null ? Request.Id : null);
     var ver = (entity as IHasVersion)?.Ver
-      ?? (_lastSavedEntity as IHasVersion)?.Ver
+      ?? (_state.LastSavedEntity as IHasVersion)?.Ver
       ?? (outcome == null && entityId > 0 ? 1 : null);
 
     var jsonText = JsonSerializer.Serialize(entity, PlatformJsonOptions.DefaultOptions);
@@ -198,13 +198,13 @@ public abstract partial class FormService<TEntity>
     }
 
     var elements = await EnsureElementsAsync(ct);
-    _lastSavedEntity = await FormReferenceResolver.PopulateInfoValuesAsync(
+    _state.LastSavedEntity = await FormReferenceResolver.PopulateInfoValuesAsync(
       db,
       Reachable,
       elements.List,
       dict,
       entity,
-      _lastSavedEntity,
+      _state.LastSavedEntity,
       entityId,
       ct);
 
@@ -218,7 +218,7 @@ public abstract partial class FormService<TEntity>
       Outcome = outcome,
       Unavailable = unavailable,
       Warnings = !string.IsNullOrEmpty(outcome) ? GetLastSaveWarnings()?.ToList() : null,
-      Affected = !string.IsNullOrEmpty(outcome) ? _lastAffectedParents : null
+      Affected = !string.IsNullOrEmpty(outcome) ? _state.LastAffectedParents : null
     };
   }
 
@@ -239,7 +239,7 @@ public abstract partial class FormService<TEntity>
       dict,
       entity,
       CurrentEntity,
-      _lastSavedEntity,
+      _state.LastSavedEntity,
       elements.List,
       ct);
   }
@@ -267,7 +267,7 @@ public abstract partial class FormService<TEntity>
       dict,
       entity,
       CurrentEntity,
-      _lastSavedEntity,
+      _state.LastSavedEntity,
       formModel.Elements,
       ct);
   }
@@ -289,9 +289,7 @@ public abstract partial class FormService<TEntity>
     var clientVer = req.Ver;
     SetRequest(req);
     IsNew = id is null or 0;
-    _lastSavedEntity = null;
-    _lastSaveWarnings = null;
-    _lastAffectedParents = null;
+    _state.ResetSaveOutcome();
 
     var savedResult = IsNew
       ? await MutationRunner.RunIdempotentCreateAsync<object>(
@@ -306,16 +304,16 @@ public abstract partial class FormService<TEntity>
           return await GetModelAsync(Request, reloadCt)
             ?? await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == replayedId, reloadCt);
         },
-        _ => _lastSavedEntity?.Id,
+        _ => _state.LastSavedEntity?.Id,
         ct,
         PlatformApp?.Services)
       : await db.RunMutationAsync(
         mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, cellPatch: null, mutationCt),
         ct: ct);
 
-    if (PlatformApp != null && _lastSavedEntity != null)
+    if (PlatformApp != null && _state.LastSavedEntity != null)
     {
-      await PlatformApp.ClearAuthCacheForEntityAsync(_lastSavedEntity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(_state.LastSavedEntity, db, ct);
     }
 
     return savedResult;
@@ -661,7 +659,7 @@ public abstract partial class FormService<TEntity>
         ? oldPid
         : (long?)null;
       var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
-      _lastAffectedParents = await ParentScopeValidator.RecalculateBoundParentsAsync(
+      _state.LastAffectedParents = await ParentScopeValidator.RecalculateBoundParentsAsync(
         db,
         PlatformApp,
         Request.ParentService,
@@ -672,8 +670,8 @@ public abstract partial class FormService<TEntity>
         requestParentId: Request.ParentId);
     }
 
-    _lastSavedEntity = entity;
-    _lastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
+    _state.LastSavedEntity = entity;
+    _state.LastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
     return entity;
   }
 
@@ -688,9 +686,7 @@ public abstract partial class FormService<TEntity>
     request.Id ??= id;
     SetRequest(request);
     IsNew = false;
-    _lastSavedEntity = null;
-    _lastSaveWarnings = null;
-    _lastAffectedParents = null;
+    _state.ResetSaveOutcome();
 
     var result = await db.RunMutationAsync(async mutationCt =>
     {
@@ -724,14 +720,14 @@ public abstract partial class FormService<TEntity>
       {
         Row = row,
         Outcome = MutationOutcome.Committed,
-        Warnings = _lastSaveWarnings?.ToList(),
-        Affected = _lastAffectedParents
+        Warnings = _state.LastSaveWarnings?.ToList(),
+        Affected = _state.LastAffectedParents
       };
     }, ct: ct);
 
-    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && _lastSavedEntity != null)
+    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && _state.LastSavedEntity != null)
     {
-      await PlatformApp.ClearAuthCacheForEntityAsync(_lastSavedEntity, db, ct);
+      await PlatformApp.ClearAuthCacheForEntityAsync(_state.LastSavedEntity, db, ct);
     }
 
     return result;
@@ -769,7 +765,7 @@ public abstract partial class FormService<TEntity>
     };
     SetRequest(req);
     IsNew = !isEdit;
-    _lastElements = null;
+    _state.LastElements = null;
 
     if (isEdit && CurrentEntity?.Id != recordId!.Value)
     {
@@ -797,7 +793,7 @@ public abstract partial class FormService<TEntity>
       Request.ParentId = entityPid;
     }
 
-    if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+    if (Request.ParentId is > 0 && _state.PreloadedParentId != Request.ParentId)
     {
       await PreloadParentRecordAsync(parent, ct);
     }
@@ -824,7 +820,7 @@ public abstract partial class FormService<TEntity>
           Request.ParentId = draftPid;
         }
 
-        if (Request.ParentId is > 0 && _preloadedParentId != Request.ParentId)
+        if (Request.ParentId is > 0 && _state.PreloadedParentId != Request.ParentId)
         {
           await PreloadParentRecordAsync(parent, ct);
         }

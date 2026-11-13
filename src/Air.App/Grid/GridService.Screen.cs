@@ -470,7 +470,7 @@ public abstract partial class GridService<TEntity, TRow>
       ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, nameof(ResolveFormOverlay));
     }
 
-    if (_cachedFormOverlays.TryGetValue(formServicePath, out var cachedOverlay))
+    if (_state.CachedFormOverlays.TryGetValue(formServicePath, out var cachedOverlay))
     {
       return cachedOverlay;
     }
@@ -482,7 +482,7 @@ public abstract partial class GridService<TEntity, TRow>
         if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService formInstance)
         {
           var resolved = await formInstance.OverlayAsync(formServicePath, ct);
-          _cachedFormOverlays[formServicePath] = resolved;
+          _state.CachedFormOverlays[formServicePath] = resolved;
           return resolved;
         }
       }
@@ -493,7 +493,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var fallback = OverlayModel.Drawer($"{formServicePath}.modal").Screen(formServicePath).Build();
-    _cachedFormOverlays[formServicePath] = fallback;
+    _state.CachedFormOverlays[formServicePath] = fallback;
     return fallback;
   }
 

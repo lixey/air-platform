@@ -69,7 +69,7 @@ public abstract partial class FormService<TEntity>
       ct);
 
     await FormReferenceResolver.ResolveTimeZoneInheritLabelsAsync(db, L, ParentId, elements, entity, ct);
-    _lastElements = elements;
+    _state.LastElements = elements;
 
     var formModel = new FormModel
     {

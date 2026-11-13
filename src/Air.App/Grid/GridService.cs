@@ -1,3 +1,4 @@
+using Platform.App.Grid.Internals;
 using Platform.App.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Screens.Internals;
@@ -8,6 +9,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   where TEntity : class, IEntity, new()
   where TRow : class
 {
+  private readonly GridExecutionState<TEntity, TRow> _state = new();
+
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 
   public PlatformAppService? PlatformApp { get; private set; } = app;
@@ -34,32 +37,29 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected internal long? ParentId { get; set; }
   protected IReadOnlyList<long> SelectedIds { get; set; } = [];
 
-  private Parent? _cachedParent;
-  private Hooks? _cachedHooks;
-
   protected Parent GetParent()
   {
-    if (_cachedParent != null)
+    if (_state.CachedParent != null)
     {
-      return _cachedParent;
+      return _state.CachedParent;
     }
 
     var parent = new Parent();
     SetParent(parent);
     ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), parent.BoundParentServiceType, "Parent.Bind/Read");
-    return _cachedParent = parent;
+    return _state.CachedParent = parent;
   }
 
   protected Hooks GetHooks()
   {
-    if (_cachedHooks != null)
+    if (_state.CachedHooks != null)
     {
-      return _cachedHooks;
+      return _state.CachedHooks;
     }
 
     var hooks = new Hooks(Feature.Module);
     SetHooks(hooks);
-    return _cachedHooks = hooks;
+    return _state.CachedHooks = hooks;
   }
 
   public virtual bool CanView(GridRequest request, IUserContext? user) =>
@@ -111,9 +111,6 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ? Reachable(asTracking).Where(e => SelectedIds.Contains(e.Id))
       : Reachable(asTracking).Where(_ => false);
 
-  private object? _preloadedParent;
-  private long? _preloadedParentId;
-
   public async Task<bool> BindParentAsync(string? parentService, long? parentId, CancellationToken ct = default)
   {
     ParentService = parentService;
@@ -143,15 +140,12 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       parent.BoundParentEntityType,
       lockParent,
       ct);
-    _preloadedParent = preloaded;
-    _preloadedParentId = ParentId;
-    var effectiveParentService = !string.IsNullOrEmpty(ParentService)
-      ? ParentService
-      : parent.BoundParentService;
-    if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
-    {
-      _cachedParentChildren = (effectiveParentService, ParentId, parentChildren);
-    }
+    _state.CacheParentScope(
+      preloaded,
+      ParentId,
+      ParentService,
+      parent.BoundParentService,
+      parentChildren);
 
     return allowed;
   }
@@ -161,8 +155,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       db,
       ParentId,
       ParentService,
-      _preloadedParent,
-      _preloadedParentId,
+      _state.PreloadedParent,
+      _state.PreloadedParentId,
       GetParent().BoundParentServiceType);
 
   public virtual bool CanDelete()
@@ -314,27 +308,23 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return m != null && m.DeclaringType != typeof(GridService<TEntity, TRow>);
     });
 
-  private (string? ParentService, long? ParentId, Query Value)? _cachedQuery;
-  private (string? ParentService, long? ParentId, string ServicePath, Nav Value)? _cachedNav;
-  private readonly Dictionary<string, OverlayDto> _cachedFormOverlays = new(StringComparer.OrdinalIgnoreCase);
-
   private Query GetQueryDeclaration()
   {
-    if (_cachedQuery is { } cached && cached.ParentService == ParentService && cached.ParentId == ParentId)
+    if (_state.CachedQuery is { } cached && cached.ParentService == ParentService && cached.ParentId == ParentId)
     {
       return cached.Value;
     }
 
     var q = new Query();
     SetQuery(q);
-    _cachedQuery = (ParentService, ParentId, q);
+    _state.CachedQuery = (ParentService, ParentId, q);
     return q;
   }
 
   private Nav GetNav(string? servicePath = null)
   {
     var effectivePath = servicePath ?? ServicePathResolver.Resolve(GetType());
-    if (_cachedNav is { } cached &&
+    if (_state.CachedNav is { } cached &&
         cached.ParentService == ParentService &&
         cached.ParentId == ParentId &&
         string.Equals(cached.ServicePath, effectivePath, StringComparison.Ordinal))
@@ -355,7 +345,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ReferenceLookupAllowlist.RegisterReferrer(pickerSourceType, GetType());
     }
 
-    _cachedNav = (ParentService, ParentId, effectivePath, nav);
+    _state.CachedNav = (ParentService, ParentId, effectivePath, nav);
     return nav;
   }
 
@@ -695,7 +685,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual IReadOnlyList<GridCreateDescriptor> GetCreateForms()
   {
-    if (Feature.IsReadOnly || IsReadOnly && (_preloadedParentId.HasValue || GetParent().BoundProperty == null))
+    if (Feature.IsReadOnly || IsReadOnly && (_state.PreloadedParentId.HasValue || GetParent().BoundProperty == null))
     {
       return [];
     }

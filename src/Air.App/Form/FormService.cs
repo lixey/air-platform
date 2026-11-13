@@ -10,16 +10,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 {
   private static readonly ConcurrentDictionary<Type, bool> CustomRecalculateTypes = new();
 
-  private Elements? _lastElements;
-  private Parent? _cachedParent;
-  private Hooks? _cachedHooks;
-  private TEntity? _lastSavedEntity;
-  private List<MessageDto>? _lastSaveWarnings;
-  private List<AffectedDto>? _lastAffectedParents;
-  private object? _preloadedParent;
-  private long? _preloadedParentId;
-  private bool _parentRecordLoaded;
-  private (string? Service, long? ParentId, IReadOnlyList<ChildGridBuilder> Children)? _cachedParentChildren;
+  private readonly FormExecutionState<TEntity> _state = new();
 
   public PlatformDbContext DbContext => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
@@ -48,32 +39,32 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected long? ParentId => Request.ParentId;
   public string Service => ServicePathResolver.Resolve(GetType());
 
-  public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _lastSaveWarnings;
+  public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _state.LastSaveWarnings;
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
 
   protected Parent GetParent()
   {
-    if (_cachedParent != null)
+    if (_state.CachedParent != null)
     {
-      return _cachedParent;
+      return _state.CachedParent;
     }
 
     var parent = new Parent();
     SetParent(parent);
     ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), parent.BoundParentServiceType, "Parent.Bind/Read");
-    return _cachedParent = parent;
+    return _state.CachedParent = parent;
   }
 
   protected Hooks GetHooks()
   {
-    if (_cachedHooks != null)
+    if (_state.CachedHooks != null)
     {
-      return _cachedHooks;
+      return _state.CachedHooks;
     }
 
     var hooks = new Hooks();
     SetHooks(hooks);
-    return _cachedHooks = hooks;
+    return _state.CachedHooks = hooks;
   }
 
   public void SetRequest(FormRequest request)
@@ -81,7 +72,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     if (Request.ParentId != request.ParentId ||
         !string.Equals(Request.ParentService, request.ParentService, StringComparison.OrdinalIgnoreCase))
     {
-      _parentRecordLoaded = false;
+      _state.ParentRecordLoaded = false;
     }
 
     Request = request;
@@ -143,22 +134,19 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
         [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
     }
 
-    _preloadedParent = preloaded;
-    _preloadedParentId = Request.ParentId;
-    _parentRecordLoaded = Request.ParentId is > 0;
-    var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
-      ? Request.ParentService
-      : parent.BoundParentService;
-    if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
-    {
-      _cachedParentChildren = (effectiveParentService, Request.ParentId, parentChildren);
-    }
+    _state.CacheParentScope(
+      preloaded,
+      Request.ParentId,
+      Request.ParentService,
+      parent.BoundParentService,
+      parentChildren,
+      resetLoadedWhenMissing: true);
   }
 
   protected async Task PreloadParentRecordAsync(Parent parent, CancellationToken ct)
   {
     var requireBoundParent = !IsNew && CurrentEntity != null && parent.BoundProperty != null && !parent.IsOptional;
-    if (_parentRecordLoaded && _preloadedParentId == Request.ParentId && (!requireBoundParent || Request.ParentId is > 0))
+    if (_state.ParentRecordLoaded && _state.PreloadedParentId == Request.ParentId && (!requireBoundParent || Request.ParentId is > 0))
     {
       return;
     }
@@ -185,20 +173,13 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       throw new KeyNotFoundException(L["FormNotFound"]);
     }
 
-    _preloadedParent = preloaded;
-    _preloadedParentId = Request.ParentId;
-    if (Request.ParentId is > 0)
-    {
-      _parentRecordLoaded = true;
-    }
-
-    var effectiveParentService = !string.IsNullOrEmpty(Request.ParentService)
-      ? Request.ParentService
-      : parent.BoundParentService;
-    if (!string.IsNullOrEmpty(effectiveParentService) && parentChildren != null)
-    {
-      _cachedParentChildren = (effectiveParentService, Request.ParentId, parentChildren);
-    }
+    _state.CacheParentScope(
+      preloaded,
+      Request.ParentId,
+      Request.ParentService,
+      parent.BoundParentService,
+      parentChildren,
+      resetLoadedWhenMissing: false);
   }
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity =>
@@ -206,8 +187,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       db,
       ParentId,
       Request.ParentService,
-      _preloadedParent,
-      _preloadedParentId,
+      _state.PreloadedParent,
+      _state.PreloadedParentId,
       GetParent().BoundParentServiceType);
 
   public bool HasCustomRecalculate =>
@@ -235,9 +216,9 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   private async Task<IReadOnlyList<ChildGridBuilder>> GetSumChildrenAsync(CancellationToken ct)
   {
-    if (_lastElements != null)
+    if (_state.LastElements != null)
     {
-      return _lastElements.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
+      return _state.LastElements.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
     }
 
     var probe = new Elements();
@@ -481,9 +462,9 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   private async Task<Elements> ProbeElementsForOverlayAsync(CancellationToken ct = default)
   {
-    if (_lastElements is not null)
+    if (_state.LastElements is not null)
     {
-      return _lastElements;
+      return _state.LastElements;
     }
 
     try
@@ -516,9 +497,9 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   private Elements ProbeElementsForOverlaySync()
   {
-    if (_lastElements is not null)
+    if (_state.LastElements is not null)
     {
-      return _lastElements;
+      return _state.LastElements;
     }
 
     var probe = new Elements();
@@ -628,7 +609,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
 
     string? label = null;
-    if (_lastElements?.RecordLabelGridType is { } gridType && entity != null)
+    if (_state.LastElements?.RecordLabelGridType is { } gridType && entity != null)
     {
       try
       {
@@ -654,7 +635,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
 
     var label = resolvedLabel;
-    if (label == null && _lastElements?.RecordLabelGridType is { } gridType && entity != null)
+    if (label == null && _state.LastElements?.RecordLabelGridType is { } gridType && entity != null)
     {
       try
       {
@@ -674,9 +655,9 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   }
 
   public string GetTitle() => L[Title];
-  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity ?? _lastSavedEntity, id);
+  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity ?? _state.LastSavedEntity, id);
   public Task<string> GetRecordCaptionAsync(object? entity, long? id, CancellationToken ct = default) =>
-    RecordCaptionAsync(entity as TEntity ?? _lastSavedEntity, id, ct);
+    RecordCaptionAsync(entity as TEntity ?? _state.LastSavedEntity, id, ct);
 
   public async Task RegisterMetadataAsync(CancellationToken ct = default)
   {
@@ -713,7 +694,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       (probe.StatusFlow as IRecordStatuses)?.RegisterMetadata();
     }
 
-    (_lastElements?.StatusFlow as IRecordStatuses)?.RegisterMetadata();
+    (_state.LastElements?.StatusFlow as IRecordStatuses)?.RegisterMetadata();
 
     var actions = new Actions();
     try
@@ -765,9 +746,9 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   private async Task<Elements> EnsureElementsAsync(CancellationToken ct = default, bool reload = false)
   {
-    if (!reload && _lastElements != null)
+    if (!reload && _state.LastElements != null)
     {
-      return _lastElements;
+      return _state.LastElements;
     }
 
     await EnsureEntityAndParentLoadedAsync(ct);
@@ -785,7 +766,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       IsReadOnly,
       elements,
       ct);
-    _lastElements = elements;
+    _state.LastElements = elements;
     return elements;
   }
 
@@ -887,8 +868,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       GetParent().BoundParentService,
       GetParent().BoundParentServiceType,
       Request.ParentId,
-      val => _cachedParentChildren = val,
-      _cachedParentChildren,
+      val => _state.CachedParentChildren = val,
+      _state.CachedParentChildren,
       c => !c.IsFiles &&
            (!requirePreset || c.PresetProvider != null) &&
            ((c.ChildEntityType ?? ParentScopeValidator.GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false),
@@ -899,7 +880,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       Request.ParentService,
       GetParent().BoundParentService,
       Request.ParentId,
-      _cachedParentChildren,
+      _state.CachedParentChildren,
       c => !c.IsFiles &&
            (!requirePreset || c.PresetProvider != null) &&
            ((c.ChildEntityType ?? ParentScopeValidator.GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false));
