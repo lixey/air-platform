@@ -1,3 +1,5 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Changes;
 
 /// <summary>
@@ -27,10 +29,10 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
         return false;
       }
 
-      var parentFeat = ModuleCatalog.Instance.FindFeature(request.ParentService);
+      var parentFeat = Catalog.FindFeature(request.ParentService);
       if (parentFeat == null &&
           services != null &&
-          ModuleCatalog.Instance.FindServiceType(request.ParentService) is { } parentServiceType)
+          Catalog.FindServiceType(request.ParentService) is { } parentServiceType)
       {
         parentFeat = (services.GetService(parentServiceType) as IPlatformService)?.Feature;
       }
@@ -148,11 +150,19 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     columns.Add(r => r.Id).Cell(new GridCellOpenFormModel()).Width(90);
     columns.Add(r => r.At).AsDateTime();
 
+    var userGridType = ResolveUserGridServiceType(Catalog);
+    if (userGridType != null)
+    {
+      ReferenceLookupAllowlist.RegisterReferrer(userGridType, GetType());
+      ReferenceLookupAllowlist.RegisterLabels(userGridType, ["displayName", "login", "name"]);
+      ReferenceLookupAllowlist.RegisterFilterField(userGridType, "id");
+    }
+
     var userCol = columns.Add(r => r.UserId).Label("User");
     userCol.Dto.Type = UiFieldType.Text;
     userCol.Dto.Cell = new GridCellReferenceModel();
     userCol.Dto.Header = new GridHeaderReferenceModel();
-    userCol.Dto.ReferenceService = ResolveUserGridServicePath();
+    userCol.Dto.ReferenceService = userGridType != null ? ServicePathResolver.Resolve(userGridType) : null;
     userCol.Dto.FilterPath = "userId";
 
     columns.Add(r => r.Operation);
@@ -263,7 +273,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   private string ResolveParentTableName(string parentService)
   {
-    var serviceType = ModuleCatalog.Instance.FindServiceType(parentService);
+    var serviceType = Catalog.FindServiceType(parentService);
     var entityType = ModuleCatalog.GetServiceEntityType(serviceType);
     if (entityType == null)
     {
@@ -275,16 +285,16 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     return efEntity?.GetTableName() ?? entityType.Name;
   }
 
-  private static string? ResolveUserGridServicePath()
+  private static Type? ResolveUserGridServiceType(ModuleCatalog catalog)
   {
-    foreach (var feat in ModuleCatalog.Instance.AllFeatures)
+    foreach (var feat in catalog.AllFeatures)
     {
       if (feat.ServiceType != null &&
           typeof(IGridService).IsAssignableFrom(feat.ServiceType) &&
           ModuleCatalog.GetServiceEntityType(feat.ServiceType) is { } entityType &&
           typeof(BaseAppUser).IsAssignableFrom(entityType))
       {
-        return ServicePathResolver.Resolve(feat.ServiceType);
+        return feat.ServiceType;
       }
     }
 
@@ -300,7 +310,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
     if ((services ?? PlatformApp?.Services) is { } sp)
     {
-      foreach (var dbType in ModuleCatalog.Instance.DbContextTypes)
+      foreach (var dbType in Catalog.DbContextTypes)
       {
         if (dbType != db.GetType() &&
             sp.GetService(dbType) is PlatformDbContext otherDb &&

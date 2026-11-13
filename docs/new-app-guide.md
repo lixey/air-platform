@@ -65,7 +65,7 @@
     public static readonly Feature SalesReport = Feature<EcomSalesReportService>().ReadOnly().WithoutExport().AllowAgent(AgentAccess.Read);
   }
   ```
-- **`<Mod>Module.cs`**: спадкоємець `PlatformModule<<Mod>>`, який у `ConfigureServices` реєструє `DbContext`, сервіс модуля (`EcomService`) та предметні знання ШІ (`AgentMemoryCatalog.RegisterDomainKnowledge(...)`), а у властивості `Menu` описує дерево `ModuleMenu`.
+- **`<Mod>Module.cs`**: спадкоємець `PlatformModule<<Mod>>`, який у `ConfigureServices` реєструє `DbContext` та сервіс модуля (`EcomService`), у властивості `Docs` описує предметні правила модуля (`ModuleDoc`), а у властивості `Menu` — дерево `ModuleMenu`.
 - **Базові сервіси модуля**: `<Mod>Service`, `<Mod>GridService<TEntity>`, `<Mod>FormService<TEntity>`, `<Mod>FlowService`.
 - **Папки фіч (`CustomerOrder/`, `SalesReport/`, `SalesWorkspace/` тощо)**:
   - Дотримуйтесь правила **«1 набір сервісів на кожну `Feature`» (ADR #4)**: кожна фіча має власний конкретний `*GridService`, `*FormService`, `*FlowService` в окремому файлі з явною властивістю:

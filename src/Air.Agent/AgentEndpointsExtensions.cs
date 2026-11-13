@@ -31,6 +31,7 @@ public static class AgentEndpointsExtensions
   public static PlatformOptions AddPlatformAgent(this PlatformOptions options, Action<AgentOptions>? configure = null)
   {
     ArgumentNullException.ThrowIfNull(options);
+    options.AddContractAssembly(typeof(AgentEndpointsExtensions).Assembly);
     options.ConfigureBuilder(b => b.Services.AddPlatformAgent(configure));
     options.ConfigureApp(app => app.MapPlatformAgent());
     return options;

@@ -100,7 +100,9 @@ public sealed class AgentWave3CapabilitiesTests : IDisposable
       .Replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", StringComparison.Ordinal)
       .Replace("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ", StringComparison.Ordinal)
       .Replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", StringComparison.Ordinal);
+#pragma warning disable RS0030 // Sanctioned SQLite schema bootstrap in test harness
     db.Database.ExecuteSqlRaw(script);
+#pragma warning restore RS0030
   }
 
   [Fact]

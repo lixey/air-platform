@@ -11,6 +11,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
+  protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
   protected Localizer L => Localizer.Instance.For(Feature.Module);
 
@@ -87,15 +89,14 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
         typeof(BaseAppAuthGrant).IsAssignableFrom(typeof(TEntity)) ||
         typeof(BaseAppAuthAssignment).IsAssignableFrom(typeof(TEntity)) ||
         typeof(BaseAppAuthSession).IsAssignableFrom(typeof(TEntity)) ||
-        typeof(AppPlatformChange).IsAssignableFrom(typeof(TEntity)) ||
         typeof(AppAgentMemory).IsAssignableFrom(typeof(TEntity)) ||
-        typeof(AppAgentModel).IsAssignableFrom(typeof(TEntity)))
+        typeof(AppAgentModel).IsAssignableFrom(typeof(TEntity)) ||
+        typeof(AppPlatformChange).IsAssignableFrom(typeof(TEntity)))
     {
       return false;
     }
 
-    return ModuleCatalog.Instance.AllFeatures.Any(f =>
-      f.ServiceType != GetType() && ServiceEndpointsExtensions.CanView(f, user));
+    return ReferenceLookupAllowlist.CanUserLookup(GetType(), Catalog, user);
   }
 
   protected IQueryable<TEntity> Reachable(bool asTracking = false)
@@ -350,6 +351,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     foreach (var (pickerSourceType, _, pickerModel) in nav.PickerEntries)
     {
       ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), pickerSourceType, $"Nav.AddPicker '{pickerModel.Key}'");
+      ReferenceLookupAllowlist.RegisterReferrer(pickerSourceType, GetType());
     }
 
     _cachedNav = (ParentService, ParentId, effectivePath, nav);
@@ -524,8 +526,9 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     }
 
     var nav = GetNav();
-    foreach (var (_, pickerMethod, _) in nav.PickerEntries)
+    foreach (var (pickerSourceType, pickerMethod, _) in nav.PickerEntries)
     {
+      ReferenceLookupAllowlist.RegisterReferrer(pickerSourceType, GetType());
       if (!ServiceEndpointsExtensions.IsCallableServiceAction(pickerMethod))
       {
         throw new InvalidOperationException(
@@ -605,11 +608,13 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       if (col.PickerSourceType != null)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.PickerSourceType, $"PickedBy on '{col.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(col.PickerSourceType, GetType());
       }
 
       if (col.ReferenceServiceType != null)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.ReferenceServiceType, $"AsReference on '{col.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(col.ReferenceServiceType, GetType());
       }
 
       if (col.Cell is GridCellCoverModel { Service.Length: > 0, ParentService.Length: 0 } cover)

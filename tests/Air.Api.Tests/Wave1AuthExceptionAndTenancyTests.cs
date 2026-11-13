@@ -113,7 +113,7 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
       foundUser.Id,
       1,
       SessionTokenService.HashRefreshToken("initial-refresh-token"),
-      DateTimeOffset.UtcNow.AddDays(30),
+      TimeProvider.System.GetUtcNow().AddDays(30),
       "test-agent",
       "127.0.0.1");
     await authStore.SaveChangesAsync();
@@ -207,7 +207,7 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
   [Fact]
   public async Task AuthEndpoints_LoginRequiresClientHeader_AndRefreshSlidesExpiryAndReissuesGraceCookies()
   {
-    var start = DateTimeOffset.UtcNow;
+    var start = TimeProvider.System.GetUtcNow();
     var clock = new ControllableTimeProvider(start);
     var options = new PlatformOptions
     {

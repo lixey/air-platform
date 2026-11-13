@@ -24,6 +24,7 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
       if (el.ReferenceServiceType != null)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(ownerServiceType, el.ReferenceServiceType, $"Ask.AsReference on '{el.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, ownerServiceType);
       }
 
       if (el.CreateFormServiceType != null)

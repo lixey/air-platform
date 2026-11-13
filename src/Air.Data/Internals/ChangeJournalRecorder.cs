@@ -216,7 +216,7 @@ internal static class ChangeJournalRecorder
       return [];
     }
 
-    var now = DateTimeOffset.UtcNow;
+    var now = TimeProvider.System.GetUtcNow();
     var userId = tenantContext.UserId;
     var correlationId = tenantContext.CorrelationId;
     var rows = new List<AppPlatformChange>(run.JournalEntries.Count);

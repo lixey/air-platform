@@ -43,7 +43,7 @@ internal sealed class DisposableScopedAuthStore(DisposableScopedGate gate) : IAu
       UserId = 7,
       TenantId = 1,
       RefreshTokenHash = "hash",
-      ExpiresAt = DateTimeOffset.UtcNow.AddDays(30)
+      ExpiresAt = TimeProvider.System.GetUtcNow().AddDays(30)
     };
   }
 

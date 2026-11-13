@@ -120,7 +120,9 @@ public static class ModuleSchema
       }
 
       var cmd = $"SELECT {string.Join(", ", columns)} FROM {sql.DelimitIdentifier(table.Name, table.Schema)} WHERE 1 = 0";
+#pragma warning disable RS0030 // Sanctioned delimited identifier schema verification query
       await db.Database.ExecuteSqlRawAsync(cmd, cancellationToken);
+#pragma warning restore RS0030
     }
   }
 

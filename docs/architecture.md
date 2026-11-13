@@ -88,7 +88,7 @@
    ```
    Кожна стандартна `Feature` автоматично формує набір прав (`View`, `MenuView`, `Edit`, `Delete`, `Export`, `All`), а декларативні дії гридів і форм (`SetActions`), методи сервісів із `[RequireAction("...")]` та переходи `StatusFlowService` автоматично додаються до фічі під час реєстрації модуля, після чого фіча заморожується (`Freeze()`). Для тонких обмежень записів використовується `Feature<TService, TAccess>()` разом із `FeatureAccessEvaluator`.
 2. **Клас життєвого циклу модуля (`<Mod>Module : PlatformModule<<Mod>>`)**:
-   реєструє `DbContext` (`builder.AddPlatformPostgres<EcomDbContext>()` або `AddPlatformSqlServer`), сервіс контексту модуля (`EcomService`), предметні знання ШІ (`AgentMemoryCatalog.RegisterDomainKnowledge(...)`) та навігаційне меню `ModuleMenu`.
+   реєструє `DbContext` (`builder.AddPlatformPostgres<EcomDbContext>()` або `AddPlatformSqlServer`), сервіс контексту модуля (`EcomService`), декларативну документацію модуля `Docs` (`IReadOnlyList<ModuleDoc>`) та навігаційне меню `ModuleMenu`.
 
 ### 2.2. Стартова перевірка (`PlatformValidator`) та канонічний RBAC
 

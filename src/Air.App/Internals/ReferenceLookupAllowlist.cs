@@ -5,13 +5,17 @@ internal static class ReferenceLookupAllowlist
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedLabels = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedPatches = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedFilters = new();
+  private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<Type, byte>> AllowedReferrers = new();
   private static readonly SemaphoreSlim WarmSemaphore = new(1, 1);
-  private static ModuleCatalog? _warmedCatalog;
+  private static readonly Lock SyncLock = new();
+  private static (ModuleCatalog? Catalog, int ServiceCount) _warmedAsyncCatalog;
+  private static (ModuleCatalog? Catalog, int ServiceCount) _warmedSyncCatalog;
 
   public static async Task EnsureWarmAsync(IServiceProvider? services, CancellationToken ct = default)
   {
     var catalog = ModuleCatalog.Instance;
-    if (ReferenceEquals(_warmedCatalog, catalog) || services == null)
+    var count = catalog.ServiceCount;
+    if (ReferenceEquals(_warmedAsyncCatalog.Catalog, catalog) && _warmedAsyncCatalog.ServiceCount == count || services == null)
     {
       return;
     }
@@ -20,7 +24,8 @@ internal static class ReferenceLookupAllowlist
     try
     {
       catalog = ModuleCatalog.Instance;
-      if (ReferenceEquals(_warmedCatalog, catalog))
+      count = catalog.ServiceCount;
+      if (ReferenceEquals(_warmedAsyncCatalog.Catalog, catalog) && _warmedAsyncCatalog.ServiceCount == count)
       {
         return;
       }
@@ -57,7 +62,8 @@ internal static class ReferenceLookupAllowlist
         }
       }
 
-      _warmedCatalog = catalog;
+      _warmedAsyncCatalog = (catalog, count);
+      _warmedSyncCatalog = (catalog, count);
     }
     finally
     {
@@ -102,6 +108,66 @@ internal static class ReferenceLookupAllowlist
 
     var set = AllowedFilters.GetOrAdd(serviceType, static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
     set[field] = 1;
+  }
+
+  public static void RegisterReferrer(Type? targetServiceType, Type? referrerServiceType)
+  {
+    if (targetServiceType == null || referrerServiceType == null || targetServiceType == referrerServiceType)
+    {
+      return;
+    }
+
+    var set = AllowedReferrers.GetOrAdd(targetServiceType, static _ => new ConcurrentDictionary<Type, byte>());
+    set[referrerServiceType] = 1;
+  }
+
+  public static bool CanUserLookup(Type targetServiceType, ModuleCatalog catalog, IUserContext user)
+  {
+    EnsureWarmSync(catalog);
+
+    if (!AllowedReferrers.TryGetValue(targetServiceType, out var referrers) || referrers.IsEmpty)
+    {
+      return false;
+    }
+
+    foreach (var referrerType in referrers.Keys)
+    {
+      var referrerFeature = catalog.FindFeature(referrerType);
+      if (referrerFeature != null && ServiceEndpointsExtensions.CanView(referrerFeature, user))
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static void EnsureWarmSync(ModuleCatalog catalog)
+  {
+    var count = catalog.ServiceCount;
+    if (ReferenceEquals(_warmedSyncCatalog.Catalog, catalog) && _warmedSyncCatalog.ServiceCount == count)
+    {
+      return;
+    }
+
+    lock (SyncLock)
+    {
+      count = catalog.ServiceCount;
+      if (ReferenceEquals(_warmedSyncCatalog.Catalog, catalog) && _warmedSyncCatalog.ServiceCount == count)
+      {
+        return;
+      }
+
+      foreach (var serviceType in catalog.AllServiceTypes)
+      {
+        if (catalog.CreateServiceInstance(serviceType) is IPlatformService ps)
+        {
+          ps.ValidateConfiguration(catalog);
+        }
+      }
+
+      _warmedSyncCatalog = (catalog, count);
+    }
   }
 
   public static IReadOnlyCollection<string> GetAllowedFilterFields(Type? serviceType) =>

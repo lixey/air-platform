@@ -9,11 +9,15 @@ public sealed class OrgModule : PlatformModule<Org>
     - Products reference Brand, ProductCategory, Unit, and optional default Supplier.
     """;
 
+  public override IReadOnlyList<ModuleDoc> Docs =>
+  [
+    new("Org Master Data & Catalog", DomainKnowledge)
+  ];
+
   protected override void ConfigureServices(WebApplicationBuilder builder)
   {
     builder.AddPlatformPostgres<OrgDbContext>();
     builder.Services.AddScoped<OrgService>();
-    AgentMemoryCatalog.RegisterDomainKnowledge(OrgData.ModuleHandle, "Org Master Data & Catalog", DomainKnowledge);
   }
 
   public override ModuleMenu Menu => ModuleMenu

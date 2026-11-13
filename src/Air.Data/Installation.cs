@@ -25,7 +25,7 @@ public static class Installation
     }
 
     await seed(cancellationToken);
-    db.AppPlatformInstallation.Add(new AppPlatformInstallation { Module = module, InstalledAt = DateTimeOffset.UtcNow });
+    db.AppPlatformInstallation.Add(new AppPlatformInstallation { Module = module, InstalledAt = TimeProvider.System.GetUtcNow() });
     await db.SaveChangesAsync(cancellationToken);
     return true;
   }

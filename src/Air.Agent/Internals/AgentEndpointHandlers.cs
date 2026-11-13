@@ -9,14 +9,10 @@ internal static class AgentEndpointHandlers
 
   public static CultureInfo ApplyTurnCulture(HttpRequest request, string? locale)
   {
-    var culture = !string.IsNullOrWhiteSpace(locale)
-      ? (locale.StartsWith("uk", StringComparison.OrdinalIgnoreCase) ||
-         locale.StartsWith("ua", StringComparison.OrdinalIgnoreCase)
-        ? CultureInfo.GetCultureInfo("uk-UA")
-        : locale.StartsWith("en", StringComparison.OrdinalIgnoreCase)
-          ? CultureInfo.GetCultureInfo("en-US")
-          : PlatformEndpointsExtensions.ResolveRequestCulture(request))
-      : PlatformEndpointsExtensions.ResolveRequestCulture(request);
+    var cultures = request.HttpContext?.RequestServices?.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance;
+    var culture = (!string.IsNullOrWhiteSpace(locale)
+      ? cultures.Resolve(locale)
+      : cultures.ResolveRequest(request)).CultureInfo;
     CultureInfo.CurrentCulture = culture;
     CultureInfo.CurrentUICulture = culture;
     return culture;
@@ -378,8 +374,9 @@ internal static class AgentEndpointHandlers
       }
       else
       {
+        var catalog = scope.ServiceProvider.GetService<ModuleCatalog>();
         await AgentModelCatalog.EnsureSeededAsync(dbScope.Db, ct);
-        await AgentMemoryCatalog.EnsureSeededAsync(dbScope.Db, opts?.DomainKnowledge, ct);
+        await AgentMemoryCatalog.EnsureSeededAsync(dbScope.Db, opts?.DomainKnowledge, catalog, ct);
       }
     }
     catch

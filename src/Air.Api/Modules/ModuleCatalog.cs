@@ -14,12 +14,34 @@ public sealed class ModuleCatalog
   private readonly Dictionary<string, Type> _servicesByPath = new(StringComparer.OrdinalIgnoreCase);
   private readonly List<IPlatformModule> _modules = [];
   private readonly List<Type> _dbContextTypes = [];
+  private volatile FrozenDictionary<string, Feature>? _frozenFeaturesByPath;
+  private volatile FrozenDictionary<string, Feature>? _frozenFeaturesByKey;
+  private volatile FrozenDictionary<Type, Feature>? _frozenFeaturesByServiceType;
+  private volatile FrozenDictionary<string, Type>? _frozenServicesByPath;
 
+  public bool IsFrozen { get; private set; }
   public IReadOnlyList<IPlatformModule> Modules => _modules;
   public IReadOnlyList<Type> DbContextTypes => _dbContextTypes;
-  public int ServiceCount => _servicesByPath.Count;
-  public IEnumerable<Feature> AllFeatures => _featuresByKey.Values;
-  public IEnumerable<Type> AllServiceTypes => _servicesByPath.Values.Distinct();
+  public int ServiceCount => _frozenServicesByPath?.Count ?? _servicesByPath.Count;
+  public IEnumerable<Feature> AllFeatures => _frozenFeaturesByKey?.Values ?? (IEnumerable<Feature>)_featuresByKey.Values;
+  public IEnumerable<Type> AllServiceTypes => (_frozenServicesByPath?.Values ?? (IEnumerable<Type>)_servicesByPath.Values).Distinct();
+
+  public ModuleCatalog Freeze()
+  {
+    lock (_sync)
+    {
+      if (!IsFrozen)
+      {
+        _frozenFeaturesByPath = _featuresByPath.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+        _frozenFeaturesByKey = _featuresByKey.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+        _frozenFeaturesByServiceType = _featuresByServiceType.ToFrozenDictionary();
+        _frozenServicesByPath = _servicesByPath.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+        IsFrozen = true;
+      }
+
+      return this;
+    }
+  }
 
   public void Register(IPlatformModule module)
   {
@@ -29,6 +51,12 @@ public sealed class ModuleCatalog
       if (_modules.Any(m => m.GetType() == module.GetType()))
       {
         return;
+      }
+
+      if (IsFrozen)
+      {
+        throw new InvalidOperationException(
+          $"ModuleCatalog is frozen and cannot register new module '{module.GetType().Name}' after host startup.");
       }
 
       CodeRows.EnsurePascalCaseHandle(module.Handle, $"Module '{module.GetType().Name}'");
@@ -176,7 +204,14 @@ public sealed class ModuleCatalog
     }
 
     var normalized = path.Trim('/');
-    if (_featuresByPath.TryGetValue(normalized, out var feat))
+    if (_frozenFeaturesByPath is { } frozenByPath)
+    {
+      if (frozenByPath.TryGetValue(normalized, out var frozenFeat))
+      {
+        return frozenFeat;
+      }
+    }
+    else if (_featuresByPath.TryGetValue(normalized, out var feat))
     {
       return feat;
     }
@@ -187,7 +222,10 @@ public sealed class ModuleCatalog
   }
 
   public Feature? FindFeature(Type? serviceType) =>
-    serviceType != null && _featuresByServiceType.TryGetValue(serviceType, out var feat)
+    serviceType != null &&
+    (_frozenFeaturesByServiceType is { } frozen
+      ? frozen.TryGetValue(serviceType, out var feat)
+      : _featuresByServiceType.TryGetValue(serviceType, out feat))
       ? feat
       : null;
 
@@ -341,7 +379,10 @@ public sealed class ModuleCatalog
       return null;
     }
 
-    return _servicesByPath.GetValueOrDefault(path.Trim('/'));
+    var key = path.Trim('/');
+    return _frozenServicesByPath is { } frozen
+      ? frozen.GetValueOrDefault(key)
+      : _servicesByPath.GetValueOrDefault(key);
   }
 
   public object? CreateServiceInstance(Type serviceType, params object?[] availableServices) =>

@@ -20,6 +20,7 @@ public sealed class Localizer : ILocalizer
   private readonly ConcurrentDictionary<(string Culture, string Key), string> _cache = new();
   private readonly ConcurrentDictionary<string, Localizer> _moduleLocalizers = new(StringComparer.OrdinalIgnoreCase);
   private readonly HashSet<string> _loadedNames = new(StringComparer.Ordinal);
+  private volatile ICultureCatalog _cultures = CultureCatalog.DefaultInstance;
   private volatile bool _hasUnindexedManager;
   private int _loadedGeneration;
 
@@ -54,6 +55,27 @@ public sealed class Localizer : ILocalizer
     }
   }
 
+  public void ConfigureCultures(ICultureCatalog cultures)
+  {
+    ArgumentNullException.ThrowIfNull(cultures);
+    if (_root != null)
+    {
+      _root.ConfigureCultures(cultures);
+      return;
+    }
+
+    lock (_sync)
+    {
+      _cultures = cultures;
+      foreach (var mgr in _managers)
+      {
+        IndexManagerCulturesLocked(mgr);
+      }
+
+      _cache.Clear();
+    }
+  }
+
   private void RegisterLocked(Type resourceType)
   {
     if (!_loadedNames.Add(resourceType.FullName ?? resourceType.Name))
@@ -65,20 +87,27 @@ public sealed class Localizer : ILocalizer
     _managers.Add(mgr);
     _managersSnapshot = [.. _managers];
     IndexKeysLocked(mgr, System.Globalization.CultureInfo.InvariantCulture);
-    try
-    {
-      IndexKeysLocked(mgr, new System.Globalization.CultureInfo("uk"));
-    }
-    catch { }
-
+    IndexManagerCulturesLocked(mgr);
     _cache.Clear();
+  }
+
+  private void IndexManagerCulturesLocked(System.Resources.ResourceManager mgr)
+  {
+    foreach (var registered in _cultures.Cultures)
+    {
+      IndexKeysLocked(mgr, registered.CultureInfo);
+      if (!string.IsNullOrEmpty(registered.CultureInfo.Parent.Name))
+      {
+        IndexKeysLocked(mgr, registered.CultureInfo.Parent);
+      }
+    }
   }
 
   private void IndexKeysLocked(System.Resources.ResourceManager mgr, System.Globalization.CultureInfo culture)
   {
     try
     {
-      var set = mgr.GetResourceSet(culture, true, false);
+      var set = mgr.GetResourceSet(culture, true, true);
       if (set == null)
       {
         return;
@@ -216,8 +245,8 @@ public sealed class Localizer : ILocalizer
     if (!string.Equals(key, "LegacyTitleFormat", StringComparison.OrdinalIgnoreCase) &&
         _managersSnapshot is [var rm, ..])
     {
-      if ((TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", System.Globalization.CultureInfo.InvariantCulture), out var uiSource, out var dbSource) ||
-           TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", new System.Globalization.CultureInfo("uk")), out uiSource, out dbSource)) &&
+      var cultures = (_root ?? this)._cultures;
+      if (TryParseSourceTitle(rm, cultures, key, out var uiSource, out var dbSource) &&
           TryGetString("LegacyTitleFormat", out var template))
       {
         formatted = string.Format(System.Globalization.CultureInfo.CurrentUICulture, template, uiSource, dbSource);
@@ -226,6 +255,26 @@ public sealed class Localizer : ILocalizer
     }
 
     formatted = string.Empty;
+    return false;
+  }
+
+  private static bool TryParseSourceTitle(System.Resources.ResourceManager rm, ICultureCatalog cultures, string key, out string uiSource, out string dbSource)
+  {
+    if (TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", System.Globalization.CultureInfo.InvariantCulture), out uiSource, out dbSource))
+    {
+      return true;
+    }
+
+    foreach (var registered in cultures.Cultures)
+    {
+      if (TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", registered.CultureInfo), out uiSource, out dbSource))
+      {
+        return true;
+      }
+    }
+
+    uiSource = string.Empty;
+    dbSource = string.Empty;
     return false;
   }
 

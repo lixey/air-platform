@@ -82,7 +82,7 @@ public static class PlatformSqlServerExtensions
       var currentTx = db.Database.CurrentTransaction?.GetDbTransaction() as SqlTransaction;
       using var bulk = CreateBulkCopy(conn, currentTx, qualifiedTable, properties);
 
-      var now = DateTimeOffset.UtcNow;
+      var now = TimeProvider.System.GetUtcNow();
       var tenantId = db.TenantContext.TenantId;
       var isSystemScope = db.TenantContext.IsSystemScope;
       long maxId = 0;
@@ -155,7 +155,7 @@ public static class PlatformSqlServerExtensions
       var currentTx = db.Database.CurrentTransaction?.GetDbTransaction() as SqlTransaction;
       using var bulk = CreateBulkCopy(conn, currentTx, qualifiedTable, properties);
 
-      var now = DateTimeOffset.UtcNow;
+      var now = TimeProvider.System.GetUtcNow();
       var tenantId = db.TenantContext.TenantId;
       var isSystemScope = db.TenantContext.IsSystemScope;
       long maxId = 0;

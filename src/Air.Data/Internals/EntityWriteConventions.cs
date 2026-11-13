@@ -9,7 +9,7 @@ internal static class EntityWriteConventions
     ITenantContext tenantContext,
     MutationRunScope? activeMutationRun)
   {
-    var now = DateTimeOffset.UtcNow;
+    var now = TimeProvider.System.GetUtcNow();
     var tenantId = tenantContext.TenantId;
     var isSystemScope = tenantContext.IsSystemScope;
 

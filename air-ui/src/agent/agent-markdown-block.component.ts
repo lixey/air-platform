@@ -1,5 +1,4 @@
-import { Component, computed, inject, input } from '@angular/core';
-import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
+import { Component, computed, input } from '@angular/core';
 import { renderMarkdownToSafeHtml } from './agent-markdown';
 
 @Component({
@@ -13,8 +12,7 @@ import { renderMarkdownToSafeHtml } from './agent-markdown';
   host: { class: 'block w-full min-w-0' },
 })
 export class AgentMarkdownBlockComponent {
-  private readonly sanitizer = inject(DomSanitizer);
   readonly content = input.required<string>();
 
-  protected readonly safeHtml = computed<SafeHtml>(() => this.sanitizer.bypassSecurityTrustHtml(renderMarkdownToSafeHtml(this.content())));
+  protected readonly safeHtml = computed<string>(() => renderMarkdownToSafeHtml(this.content()));
 }

@@ -92,7 +92,7 @@ internal static class AgentMemoryService
 
     if (!hasDbSeed)
     {
-      var registeredEntries = AgentMemoryCatalog.DomainKnowledgeEntries;
+      var registeredEntries = AgentMemoryCatalog.ResolveDomainKnowledgeEntries(request.Services?.GetService<ModuleCatalog>());
       if (registeredEntries.Count > 0)
       {
         sb.AppendLine();

@@ -159,7 +159,7 @@ public static class SessionTokenService
       }
 
       expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixExp);
-      if (expiresAt <= DateTimeOffset.UtcNow)
+      if (expiresAt <= TimeProvider.System.GetUtcNow())
       {
         return false;
       }

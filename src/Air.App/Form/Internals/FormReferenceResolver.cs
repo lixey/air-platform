@@ -93,6 +93,7 @@ internal static class FormReferenceResolver
         {
           var targetServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(select.ReferenceService);
           ModuleCatalog.EnsureModuleServiceAccessAllowed(formServiceType, targetServiceType, $"AsReference on '{el.Path}'");
+          ReferenceLookupAllowlist.RegisterReferrer(targetServiceType, formServiceType);
           if (select.ReferenceLabelPaths == null || select.ReferenceLabelPaths.Count == 0 || select.ReferenceLabelPaths.Count == 1 && select.ReferenceLabelPaths[0] == "name")
           {
             if (targetServiceType != null && typeof(IGridService).IsAssignableFrom(targetServiceType))

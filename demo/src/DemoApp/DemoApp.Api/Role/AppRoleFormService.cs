@@ -95,7 +95,7 @@ public sealed class AppRoleFormService(AppDbContext db, AppService app)
 
   private IReadOnlySet<string> ShownKeys() =>
     User is { IsAuthenticated: true }
-      ? RightsTree.FlattenKeys(RightsTree.Build(ModuleCatalog.Instance, User.Permissions))
+      ? RightsTree.FlattenKeys(RightsTree.Build(Catalog, User.Permissions))
       : new HashSet<string>(StringComparer.Ordinal);
 
   private async Task<bool> IsLastActiveAdminRoleAsync(long roleId, long? tenantId, CancellationToken cancellationToken)

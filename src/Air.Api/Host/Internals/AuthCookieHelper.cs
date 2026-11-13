@@ -116,9 +116,9 @@ internal static class AuthCookieHelper
     });
   }
 
-  public static void AppendCultureCookie(HttpContext ctx, bool isUk, DateTimeOffset now)
+  public static void AppendCultureCookie(HttpContext ctx, string cultureShortCode, DateTimeOffset now)
   {
-    ctx.Response.Cookies.Append("culture", isUk ? "uk" : "en", new CookieOptions
+    ctx.Response.Cookies.Append("culture", cultureShortCode, new CookieOptions
     {
       Path = "/",
       Expires = now.AddYears(1),

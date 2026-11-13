@@ -1,0 +1,15 @@
+P:System.DateTime.Now;Use app.Time or TimeProvider instead of ambient system clock.
+P:System.DateTime.UtcNow;Use app.Time or TimeProvider.System.GetUtcNow() instead of ambient system clock.
+P:System.DateTime.Today;Use app.Time.Today() instead of ambient system clock.
+P:System.DateTimeOffset.Now;Use app.Time or TimeProvider instead of ambient system clock.
+P:System.DateTimeOffset.UtcNow;Use app.Time or TimeProvider.System.GetUtcNow() instead of ambient system clock.
+T:System.Security.Cryptography.MD5;MD5 is cryptographically broken; use SHA256 or SHA512.
+T:System.Security.Cryptography.SHA1;SHA1 is cryptographically broken; use SHA256 or SHA512.
+M:Microsoft.AspNetCore.Cors.Infrastructure.CorsPolicyBuilder.AllowAnyOrigin;Use explicit CorsPolicyBuilder.WithOrigins(AllowedOrigins) only.
+M:Microsoft.AspNetCore.Cors.Infrastructure.CorsPolicyBuilder.SetIsOriginAllowed(System.Func{System.String,System.Boolean});Dynamic CORS origin predicates are forbidden; use explicit WithOrigins(AllowedOrigins).
+M:Microsoft.EntityFrameworkCore.RelationalQueryableExtensions.FromSqlRaw``1(Microsoft.EntityFrameworkCore.DbSet{``0},System.String,System.Object[]);Raw SQL strings are forbidden; use LINQ expressions or FromSqlInterpolated.
+M:Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade,System.String,System.Object[]);Raw SQL execution is restricted to sanctioned DDL/migrator infrastructure.
+M:Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRaw(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade,System.String,System.Collections.Generic.IEnumerable{System.Object});Raw SQL execution is restricted to sanctioned DDL/migrator infrastructure.
+M:Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade,System.String,System.Threading.CancellationToken);Raw SQL execution is restricted to sanctioned DDL/migrator infrastructure.
+M:Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade,System.String,System.Object[]);Raw SQL execution is restricted to sanctioned DDL/migrator infrastructure.
+M:Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade,System.String,System.Collections.Generic.IEnumerable{System.Object},System.Threading.CancellationToken);Raw SQL execution is restricted to sanctioned DDL/migrator infrastructure.

@@ -57,6 +57,15 @@ public static class PlatformApiExtensions
       builder.Services.ConfigureHttpJsonOptions(o => PlatformJsonOptions.ConfigurePlatformJson(o.SerializerOptions));
       builder.Services.AddHttpContextAccessor();
       builder.Services.TryAddSingleton<ILocalizer>(Localizer.Instance);
+      builder.Services.TryAddSingleton<ICultureCatalog>(sp =>
+      {
+        var opts = sp.GetRequiredService<PlatformOptions>();
+        var catalog = opts.Cultures.Count > 0
+          ? new CultureCatalog(opts.Cultures, opts.DefaultCulture)
+          : CultureCatalog.CreateDefault(opts.DefaultCulture);
+        Localizer.Instance.ConfigureCultures(catalog);
+        return catalog;
+      });
       builder.Services.TryAddSingleton<IPasswordHasher, PasswordHasher>();
       builder.Services.AddHybridCache();
       builder.Services.TryAddSingleton<ICacheProvider, Caching.Internals.CacheProvider>();
@@ -150,7 +159,7 @@ public static class PlatformApiExtensions
         catalog.Register(m);
       }
 
-      return catalog;
+      return catalog.Freeze();
     });
 
     return builder;

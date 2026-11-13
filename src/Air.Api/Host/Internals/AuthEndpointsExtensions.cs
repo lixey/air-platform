@@ -29,8 +29,7 @@ internal static class AuthEndpointsExtensions
     api.MapPost("/auth/change-password", HandleChangePasswordAsync);
     api.MapPost("/auth/refresh", HandleRefreshAsync);
     api.MapPost("/auth/logout", HandleLogoutAsync);
-    api.MapPost("/platform-language/switch", HandleSwitchLanguageAsync);
-    api.MapPost("/platform-tenant/switch", HandleSwitchTenantAsync);
+    api.MapSwitcherEndpoints();
   }
 
   private static async Task<IResult> HandleGetProfileAsync(
@@ -44,11 +43,12 @@ internal static class AuthEndpointsExtensions
       return Results.Unauthorized();
     }
 
+    var cultures = ResolveCultures(ctx.RequestServices);
     if (ctx.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot && snapshot.IsActive)
     {
       var lang = !string.IsNullOrEmpty(snapshot.LanguageCode)
-        ? snapshot.LanguageCode
-        : AuthProfileBuilder.IsUkrainian(ctx.Request) ? "uk" : "en";
+        ? cultures.Resolve(snapshot.LanguageCode).ShortCode
+        : cultures.ResolveRequest(ctx.Request).ShortCode;
       return Results.Ok(new UserProfileDto
       {
         Id = snapshot.Id,
@@ -70,8 +70,8 @@ internal static class AuthEndpointsExtensions
 
     var activeTenantId = ctx.RequestServices.GetService<ITenantContext>()?.TenantId;
     var securityInfo = await LoadScopedSecurityInfoAsync(authStore, user, activeTenantId, ct);
-    var isUk = await AuthProfileBuilder.ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
-    return Results.Ok(await AuthProfileBuilder.BuildUserProfileDtoAsync(user, securityInfo, isUk, activeTenantId, authStore, ct));
+    var userCulture = await AuthProfileBuilder.ResolveUserCultureAsync(user, ctx.Request, authStore, cultures, ct);
+    return Results.Ok(await AuthProfileBuilder.BuildUserProfileDtoAsync(user, securityInfo, userCulture, activeTenantId, authStore, ct));
   }
 
   internal static async Task<IResult> HandleLoginAsync(
@@ -155,16 +155,17 @@ internal static class AuthEndpointsExtensions
     var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, accessExpiresAt, user.TokenVersion);
     AuthCookieHelper.SetAuthCookies(ctx, accessToken, accessExpiresAt, refreshToken, refreshExpiresAt);
 
-    var isUk = await AuthProfileBuilder.ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+    var cultures = ResolveCultures(ctx.RequestServices);
+    var userCulture = await AuthProfileBuilder.ResolveUserCultureAsync(user, ctx.Request, authStore, cultures, ct);
     if (user.LanguageId is > 0)
     {
-      AuthCookieHelper.AppendCultureCookie(ctx, isUk, now);
+      AuthCookieHelper.AppendCultureCookie(ctx, userCulture.ShortCode, now);
     }
 
     return Results.Ok(await AuthProfileBuilder.BuildSessionDtoAsync(
       user,
       securityInfo,
-      isUk,
+      userCulture,
       tenantId,
       options.AccessTokenLifetime,
       authStore,
@@ -278,11 +279,12 @@ internal static class AuthEndpointsExtensions
       var accessToken = SessionTokenService.CreateAccessToken(session.Id, user.Id, accessExpiresAt, user.TokenVersion);
       AuthCookieHelper.SetAuthCookies(ctx, accessToken, accessExpiresAt, nextRefreshToken, refreshExpiresAt);
 
-      var isUk = await AuthProfileBuilder.ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+      var cultures = ResolveCultures(ctx.RequestServices);
+      var userCulture = await AuthProfileBuilder.ResolveUserCultureAsync(user, ctx.Request, authStore, cultures, ct);
       return Results.Ok(await AuthProfileBuilder.BuildSessionDtoAsync(
         user,
         securityInfo,
-        isUk,
+        userCulture,
         session.TenantId,
         options.AccessTokenLifetime,
         authStore,
@@ -496,11 +498,12 @@ internal static class AuthEndpointsExtensions
       user,
       session.TenantId ?? (user as IHasTenant)?.TenantId,
       ct);
-    var isUk = await AuthProfileBuilder.ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
+    var cultures = ResolveCultures(ctx.RequestServices);
+    var userCulture = await AuthProfileBuilder.ResolveUserCultureAsync(user, ctx.Request, authStore, cultures, ct);
     return Results.Ok(await AuthProfileBuilder.BuildSessionDtoAsync(
       user,
       securityInfo,
-      isUk,
+      userCulture,
       session.TenantId,
       options.AccessTokenLifetime,
       authStore,
@@ -553,130 +556,10 @@ internal static class AuthEndpointsExtensions
     return Results.Ok(new { });
   }
 
-  private static async Task<IResult> HandleSwitchLanguageAsync(
-    SwitchRequest? req,
-    HttpContext ctx,
-    IUserContext userContext,
-    IAuthStore authStore,
-    CancellationToken ct)
-  {
-    if (!AuthCookieHelper.HasClientHeader(ctx.Request))
-    {
-      return Results.StatusCode(StatusCodes.Status403Forbidden);
-    }
+  internal static ICultureCatalog ResolveCultures(IServiceProvider services) =>
+    services.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance;
 
-    var now = ResolveUtcNow(ctx.RequestServices);
-    var resolvedCode = await authStore.ResolveLanguageCodeAsync(req?.Id, ct);
-    var isUk = resolvedCode != null ? resolvedCode == "uk" : req?.Id == 2;
-    AuthCookieHelper.AppendCultureCookie(ctx, isUk, now);
-
-    if (userContext.IsAuthenticated && userContext.UserId is { } uid)
-    {
-      var user = await authStore.FindUserByIdAsync(uid, ct);
-      if (user != null && user.IsActive)
-      {
-        if (resolvedCode != null && req?.Id is > 0 && user.LanguageId != req.Id)
-        {
-          user.LanguageId = req.Id;
-          await authStore.SaveChangesAsync(ct);
-          if (ctx.RequestServices.GetService<IUserAuthCache>() is { } authCache)
-          {
-            await authCache.RemoveUserAsync(user.Id, ct);
-          }
-        }
-
-        var activeTenantId = ctx.RequestServices.GetService<ITenantContext>()?.TenantId;
-        var securityInfo = await LoadScopedSecurityInfoAsync(authStore, user, activeTenantId, ct);
-        return Results.Ok(await AuthProfileBuilder.BuildUserProfileDtoAsync(user, securityInfo, isUk, activeTenantId, authStore, ct));
-      }
-    }
-
-    return Results.Ok(new UserProfileDto
-    {
-      Language = isUk ? "uk" : "en",
-      TimeZone = "UTC",
-      Permissions = []
-    });
-  }
-
-  private static async Task<IResult> HandleSwitchTenantAsync(
-    SwitchRequest? req,
-    HttpContext ctx,
-    IUserContext userContext,
-    IAuthStore authStore,
-    CancellationToken ct)
-  {
-    if (!AuthCookieHelper.HasClientHeader(ctx.Request))
-    {
-      return Results.StatusCode(StatusCodes.Status403Forbidden);
-    }
-
-    if (req == null)
-    {
-      return Results.BadRequest(new { detail = "Tenant id is required." });
-    }
-
-    if (!userContext.IsAuthenticated || userContext.UserId is null)
-    {
-      return Results.Unauthorized();
-    }
-
-    var user = await authStore.FindUserByIdAsync(userContext.UserId.Value, ct);
-    if (user == null || !user.IsActive)
-    {
-      return Results.Unauthorized();
-    }
-
-    var sessionId = AuthCookieHelper.ResolveSessionId(ctx.Request, userContext);
-    if (sessionId == null)
-    {
-      return Results.Unauthorized();
-    }
-
-    var now = ResolveUtcNow(ctx.RequestServices);
-    var session = await authStore.FindSessionAsync(sessionId.Value, ct);
-    if (session == null || session.UserId != user.Id || session.RevokedAt != null || session.ExpiresAt <= now)
-    {
-      return Results.Unauthorized();
-    }
-
-    var targetTenant = await authStore.FindTenantByIdAsync(req.Id, ct);
-    if (targetTenant == null || !targetTenant.IsActive)
-    {
-      return Results.BadRequest(new { detail = "Select an active tenant." });
-    }
-
-    var securityInfo = await LoadScopedSecurityInfoAsync(authStore, user, req.Id, ct);
-    var userHomeTenantId = (user as IHasTenant)?.TenantId;
-    if (!user.IsRoot && !securityInfo.CanAccessTenant(req.Id) && userHomeTenantId != req.Id)
-    {
-      return Results.StatusCode(StatusCodes.Status403Forbidden);
-    }
-
-    session.TenantId = req.Id;
-    session.LastUsedAt = now;
-    await authStore.SaveChangesAsync(ct);
-
-    if (ctx.RequestServices.GetService<IUserAuthCache>() is { } authCache)
-    {
-      await authCache.RemoveSessionAsync(session.Id, ct);
-      await authCache.RemoveUserAsync(user.Id, ct);
-    }
-
-    var options = ResolveOptions(ctx.RequestServices);
-    AuthCookieHelper.IssueAccessCookie(ctx, session.Id, user.Id, now + options.AccessTokenLifetime, user.TokenVersion);
-    var isUk = await AuthProfileBuilder.ResolveIsUkrainianAsync(user, ctx.Request, authStore, ct);
-    return Results.Ok(await AuthProfileBuilder.BuildSessionDtoAsync(
-      user,
-      securityInfo,
-      isUk,
-      req.Id,
-      options.AccessTokenLifetime,
-      authStore,
-      ct));
-  }
-
-  private static async Task<SecurityInfo> LoadScopedSecurityInfoAsync(
+  internal static async Task<SecurityInfo> LoadScopedSecurityInfoAsync(
     IAuthStore authStore,
     BaseAppUser user,
     long? tenantId,
@@ -690,10 +573,10 @@ internal static class AuthEndpointsExtensions
     }
   }
 
-  private static PlatformOptions ResolveOptions(IServiceProvider services) =>
+  internal static PlatformOptions ResolveOptions(IServiceProvider services) =>
     services.GetService<PlatformOptions>() ?? DefaultOptions;
 
-  private static DateTimeOffset ResolveUtcNow(IServiceProvider services) =>
+  internal static DateTimeOffset ResolveUtcNow(IServiceProvider services) =>
     (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
 
   private static void RollbackGraceEntry(

@@ -3,7 +3,9 @@ namespace Platform.Api.Auth;
 /// <summary>
 /// Default generic implementation of IAuthStore over an application's DbContext.
 /// </summary>
-public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTenant, TDbContext>(TDbContext db) : IAuthStore
+public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTenant, TDbContext>(
+  TDbContext db,
+  TimeProvider? timeProvider = null) : IAuthStore
   where TUser : BaseAppUser
   where TSession : BaseAppAuthSession, new()
   where TRole : BaseAppAuthRole
@@ -12,6 +14,7 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
   where TTenant : BaseAppTenant
   where TDbContext : PlatformDbContext
 {
+  private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
   public async Task<BaseAppUser?> FindUserByLoginAsync(string login, CancellationToken ct = default)
   {
     var lower = login.ToLowerInvariant();
@@ -90,7 +93,7 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
       TenantId = tenantId,
       RefreshTokenHash = refreshTokenHash,
       ExpiresAt = expiresAt,
-      LastUsedAt = DateTimeOffset.UtcNow,
+      LastUsedAt = _time.GetUtcNow(),
       Client = client,
       Address = address
     };
@@ -144,7 +147,7 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
 
   public async Task RevokeUserSessionsAsync(long userId, long? exceptSessionId, string reason, CancellationToken ct = default)
   {
-    var now = DateTimeOffset.UtcNow;
+    var now = _time.GetUtcNow();
     List<TSession> sessions;
     using (EnterSystemScope())
     {
@@ -181,8 +184,7 @@ public sealed class AuthStore<TUser, TSession, TRole, TGrant, TAssignment, TTena
       return null;
     }
 
-    var trimmed = code.Trim();
-    return trimmed.Length >= 2 ? trimmed[..2].ToLowerInvariant() : trimmed.ToLowerInvariant();
+    return code.Trim();
   }
 
   public async Task<string?> ResolveTimeZoneAsync(string? userTimeZone, long? tenantId, CancellationToken ct = default)

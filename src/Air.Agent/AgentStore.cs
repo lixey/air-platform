@@ -86,7 +86,7 @@ public sealed class AgentStore
 
       using var _ = AsyncLocalTenantContext.UseSystemScope(correlationId: "agent-catalog-seed");
       await AgentModelCatalog.EnsureSeededAsync(db, ct);
-      await AgentMemoryCatalog.EnsureSeededAsync(db, domainKnowledge ?? Options.DomainKnowledge, ct);
+      await AgentMemoryCatalog.EnsureSeededAsync(db, domainKnowledge ?? Options.DomainKnowledge, ct: ct);
       _catalogsSeeded = true;
     }
     finally

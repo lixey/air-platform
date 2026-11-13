@@ -73,7 +73,9 @@ public class MutationContext(PlatformDbContext? db = null) : IMutationContext
       var lockKeys = keyArrays.Select(k => LockKeyOf(lockedType, k, db)).Distinct().OrderBy(k => k).ToList();
       if (isPostgres && lockKeys.Count > 0)
       {
+#pragma warning disable RS0030 // Sanctioned constant transaction lock_timeout statement
         await db.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '15s'", ct);
+#pragma warning restore RS0030
       }
 
       foreach (var lockKey in lockKeys)

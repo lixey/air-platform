@@ -4,9 +4,6 @@ namespace Platform.Api.Host;
 
 public static class PlatformEndpointsExtensions
 {
-  private static readonly CultureInfo UkCulture = CultureInfo.GetCultureInfo("uk-UA");
-  private static readonly CultureInfo EnCulture = CultureInfo.GetCultureInfo("en-US");
-
   public static RouteGroupBuilder MapPlatformApiEndpoints(this WebApplication app)
   {
     var catalog = app.Services.GetRequiredService<ModuleCatalog>();
@@ -120,51 +117,12 @@ public static class PlatformEndpointsExtensions
     }
   }
 
-  public static CultureInfo ResolveRequestCulture(HttpRequest req)
-  {
-    if (req.Query.TryGetValue("lang", out var langVal) && !string.IsNullOrWhiteSpace(langVal))
-    {
-      var s = langVal.ToString();
-      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase))
-      {
-        return UkCulture;
-      }
+  public static CultureInfo ResolveRequestCulture(HttpRequest req) =>
+    ResolvePlatformCulture(req).CultureInfo;
 
-      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase))
-      {
-        return EnCulture;
-      }
-    }
-
-    if (req.Cookies.TryGetValue("culture", out var cookieVal) && !string.IsNullOrWhiteSpace(cookieVal))
-    {
-      if (cookieVal.StartsWith("uk", StringComparison.OrdinalIgnoreCase))
-      {
-        return UkCulture;
-      }
-
-      if (cookieVal.StartsWith("en", StringComparison.OrdinalIgnoreCase))
-      {
-        return EnCulture;
-      }
-    }
-
-    if (req.Headers.TryGetValue("Accept-Language", out var acceptVal) && !string.IsNullOrWhiteSpace(acceptVal))
-    {
-      var s = acceptVal.ToString();
-      if (s.StartsWith("uk", StringComparison.OrdinalIgnoreCase))
-      {
-        return UkCulture;
-      }
-
-      if (s.StartsWith("en", StringComparison.OrdinalIgnoreCase))
-      {
-        return EnCulture;
-      }
-    }
-
-    return UkCulture;
-  }
+  public static PlatformCulture ResolvePlatformCulture(HttpRequest req) =>
+    (req.HttpContext?.RequestServices?.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance)
+      .ResolveRequest(req);
 
   public static IResult ToMutationResult(object? result, string? refusedFallbackKey = null) =>
     result switch

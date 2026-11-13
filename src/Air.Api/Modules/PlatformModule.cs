@@ -7,6 +7,7 @@ public abstract class PlatformModule : IPlatformModule
   public virtual string Icon => "folder";
   public virtual ModuleMenu Menu => ModuleMenu.Empty;
   public virtual IReadOnlyList<Feature> Features => [];
+  public virtual IReadOnlyList<ModuleDoc> Docs => [];
 
   public virtual void Configure(WebApplicationBuilder builder)
   {

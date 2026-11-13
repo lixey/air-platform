@@ -22,29 +22,23 @@ internal static class AuthProfileBuilder
       Culture = culture.Name
     };
 
-  public static async Task<bool> ResolveIsUkrainianAsync(
+  public static async Task<PlatformCulture> ResolveUserCultureAsync(
     BaseAppUser user,
     HttpRequest request,
     IAuthStore authStore,
+    ICultureCatalog cultures,
     CancellationToken ct)
   {
     var code = await authStore.ResolveLanguageCodeAsync(user.LanguageId, ct);
-    if (!string.IsNullOrEmpty(code))
-    {
-      return code == "uk";
-    }
-
-    return IsUkrainian(request);
+    return !string.IsNullOrWhiteSpace(code)
+      ? cultures.Resolve(code)
+      : cultures.ResolveRequest(request);
   }
-
-  public static bool IsUkrainian(HttpRequest request) =>
-    PlatformEndpointsExtensions.ResolveRequestCulture(request)
-      .TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
 
   public static async Task<UserProfileDto> BuildUserProfileDtoAsync(
     BaseAppUser user,
     SecurityInfo securityInfo,
-    bool isUk,
+    PlatformCulture culture,
     long? tenantId,
     IAuthStore authStore,
     CancellationToken ct)
@@ -57,7 +51,7 @@ internal static class AuthProfileBuilder
       Login = user.Login,
       Name = user.Name ?? user.Login,
       Email = user.Email ?? "",
-      Language = isUk ? "uk" : "en",
+      Language = culture.ShortCode,
       TimeZone = !string.IsNullOrEmpty(resolvedTimeZone) ? resolvedTimeZone : "UTC",
       MustChangePassword = user.MustChangePassword,
       Permissions = securityInfo.Permissions.ToList()
@@ -67,14 +61,14 @@ internal static class AuthProfileBuilder
   public static async Task<SessionDto> BuildSessionDtoAsync(
     BaseAppUser user,
     SecurityInfo securityInfo,
-    bool isUk,
+    PlatformCulture culture,
     long? tenantId,
     TimeSpan accessTokenLifetime,
     IAuthStore authStore,
     CancellationToken ct) =>
     new()
     {
-      User = await BuildUserProfileDtoAsync(user, securityInfo, isUk, tenantId, authStore, ct),
+      User = await BuildUserProfileDtoAsync(user, securityInfo, culture, tenantId, authStore, ct),
       ExpiresIn = (int)Math.Max(1, accessTokenLifetime.TotalSeconds)
     };
 }

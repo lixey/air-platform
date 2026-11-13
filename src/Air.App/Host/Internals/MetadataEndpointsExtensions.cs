@@ -20,7 +20,8 @@ internal static class MetadataEndpointsExtensions
 
         Localizer.Instance.EnsureManagersLoaded();
         var texts = UiTexts.English.Keys.ToDictionary(k => k, k => Localizer.Instance[k]);
-        var isUk = culture.TwoLetterISOLanguageName.Equals("uk", StringComparison.OrdinalIgnoreCase);
+        var cultures = httpContext.RequestServices.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance;
+        var activeCulture = cultures.Resolve(culture.Name);
 
         var tenants = await authStore.GetActiveTenantsAsync(ct);
         if (httpContext.Items[AuthClaims.SnapshotItem] is UserAuthSnapshot snapshot && snapshot.IsActive)
@@ -62,14 +63,8 @@ internal static class MetadataEndpointsExtensions
           Language = new SwitcherDto
           {
             Label = Localizer.Instance["Language"],
-            Current = isUk
-              ? new Reference { Id = 2, Name = "Ua" }
-              : new Reference { Id = 1, Name = "En" },
-            Options =
-            [
-              new Reference { Id = 1, Name = "English" },
-              new Reference { Id = 2, Name = "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430" }
-            ],
+            Current = new Reference { Id = activeCulture.Id, Name = activeCulture.Handle },
+            Options = [.. cultures.Cultures.Select(c => new Reference { Id = c.Id, Name = c.DisplayName })],
             Service = "platform-language",
             Method = "switch"
           },

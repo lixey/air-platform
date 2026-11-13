@@ -25,6 +25,12 @@ public class PlatformAppService(
   /// <summary>The request's localizer.</summary>
   public ILocalizer L { get; } = localizer ?? Localizer.Instance;
 
+  /// <summary>The frozen module catalog for the running host.</summary>
+  public ModuleCatalog Catalog => Services.GetService<ModuleCatalog>() ?? ModuleCatalog.Instance;
+
+  /// <summary>The registered culture catalog for the running host.</summary>
+  public ICultureCatalog Cultures => Services.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance;
+
   /// <summary>Password hasher and verifier.</summary>
   public IPasswordHasher Hasher => Services.GetService<IPasswordHasher>() ?? new PasswordHasher();
 
@@ -255,8 +261,9 @@ public class PlatformAppService(
   /// </summary>
   public bool CanOpen(Type screen)
   {
-    var feat = ModuleCatalog.Instance.FindFeature(screen)
-      ?? ModuleCatalog.Instance.FindFeature(ServicePathResolver.Resolve(screen));
+    var catalog = Catalog;
+    var feat = catalog.FindFeature(screen)
+      ?? catalog.FindFeature(ServicePathResolver.Resolve(screen));
     return feat != null && Host.ServiceEndpointsExtensions.CanView(feat, User);
   }
 

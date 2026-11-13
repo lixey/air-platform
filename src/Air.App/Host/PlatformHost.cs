@@ -22,7 +22,11 @@ public static class PlatformHost
       var outputDir = Path.GetFullPath(args[exportIndex + 1]);
       Directory.CreateDirectory(outputDir);
 
-      var assemblies = options.Modules.Select(m => m.GetType().Assembly).ToArray();
+      var assemblies = options.Modules
+        .Select(static m => m.GetType().Assembly)
+        .Concat(options.ContractAssemblies)
+        .Distinct()
+        .ToArray();
       var contractsTs = ContractExporter.GenerateContracts(assemblies);
       var contractsFile = Path.Combine(outputDir, "contracts.ts");
       await File.WriteAllTextAsync(contractsFile, contractsTs);
@@ -48,24 +52,45 @@ public static class PlatformHost
       builderAction(builder);
     }
 
-    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-    builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy.SetIsOriginAllowed(origin =>
-      {
-        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-        {
-          return false;
-        }
+    var allowedOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+      .Select(o => o?.Trim().TrimEnd('/'))
+      .Where(o => !string.IsNullOrEmpty(o))
+      .Select(o => o!)
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .ToArray();
 
-        return uri.IsLoopback || allowedOrigins.Any(o =>
-          string.Equals(o.TrimEnd('/'), origin.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
-      })
-      .AllowAnyHeader()
-      .AllowAnyMethod()
-      .AllowCredentials()));
+    foreach (var origin in allowedOrigins)
+    {
+      if (origin == "*")
+      {
+        throw new InvalidOperationException(
+          "Wildcard '*' is forbidden in Cors:AllowedOrigins when credentials are enabled. Specify explicit origins.");
+      }
+
+      if (builder.Environment.IsProduction() &&
+          (!Uri.TryCreate(origin, UriKind.Absolute, out var parsedOrigin) || parsedOrigin.IsLoopback))
+      {
+        throw new InvalidOperationException(
+          $"Invalid Cors:AllowedOrigins entry '{origin}' in Production. Loopback and relative origins are forbidden.");
+      }
+    }
+
+    if (allowedOrigins.Length > 0)
+    {
+      builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
+        .WithOrigins(allowedOrigins)
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()));
+    }
 
     var app = builder.Build();
     app.UsePlatformForwardedHeaders();
-    app.UseCors();
+    if (allowedOrigins.Length > 0)
+    {
+      app.UseCors();
+    }
+
     app.MapGet("/api/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
     app.MapPlatform();
 

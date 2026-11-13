@@ -1,5 +1,8 @@
+import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
+import { AgentHtmlBlockComponent } from './agent-html-block.component';
 import { renderMarkdownToSafeHtml, sanitizeAgentHtml, splitMarkdownAndGfmTables } from './agent-markdown';
+import { AgentMarkdownBlockComponent } from './agent-markdown-block.component';
 
 describe('agent-markdown security & rendering', () => {
   it('strips untrusted class, style, and event attributes from raw HTML', () => {
@@ -66,5 +69,26 @@ describe('agent-markdown security & rendering', () => {
       expect(segments[0].table.bottomRows).toHaveLength(1);
       expect(segments[0].table.bottomRows?.[0].cells).toEqual({ c0: 'Total', c1: 1563, c2: 100 });
     }
+  });
+
+  it('passes <ui_html> and markdown blocks through Angular real DOM sanitizer without bypassSecurityTrustHtml', () => {
+    const htmlFixture = TestBed.createComponent(AgentHtmlBlockComponent);
+    htmlFixture.componentRef.setInput(
+      'html',
+      '<table><tr><th>Metric</th></tr><tr><td><svg><style><img src=x onerror=alert(1)></style></svg>42</td></tr></table>',
+    );
+    htmlFixture.detectChanges();
+    const htmlEl = htmlFixture.nativeElement as HTMLElement;
+    expect(htmlEl.innerHTML).not.toContain('onerror');
+    expect(htmlEl.textContent).toContain('Metric');
+    expect(htmlEl.textContent).toContain('42');
+
+    const mdFixture = TestBed.createComponent(AgentMarkdownBlockComponent);
+    mdFixture.componentRef.setInput('content', '**Safe** `code` and [link](https://example.com)');
+    mdFixture.detectChanges();
+    const mdEl = mdFixture.nativeElement as HTMLElement;
+    expect(mdEl.querySelector('strong.font-semibold')).toBeTruthy();
+    expect(mdEl.querySelector('code.font-mono')).toBeTruthy();
+    expect(mdEl.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
   });
 });

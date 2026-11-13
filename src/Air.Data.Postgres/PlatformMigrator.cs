@@ -137,12 +137,14 @@ public static class PlatformMigrator
         await strategy.ExecuteAsync(async () =>
         {
           await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+#pragma warning disable RS0030 // Sanctioned EF Core history repository DDL
           await db.Database.ExecuteSqlRawAsync(createScript, cancellationToken);
           foreach (var migrationId in migrations)
           {
             var insertScript = historyRepo.GetInsertScript(new HistoryRow(migrationId, productVersion));
             await db.Database.ExecuteSqlRawAsync(insertScript, cancellationToken);
           }
+#pragma warning restore RS0030
 
           await tx.CommitAsync(cancellationToken);
         });

@@ -11,14 +11,15 @@ public sealed class EcomModule : PlatformModule<Ecom>
     - StockBalance and MoneyBalance show live inventory and cash balances; SalesReport provides KPI and monthly revenue analytics.
     """;
 
+  public override IReadOnlyList<ModuleDoc> Docs =>
+  [
+    new("Ecom Trade, Warehouse & Money Workflows", DomainKnowledge)
+  ];
+
   protected override void ConfigureServices(WebApplicationBuilder builder)
   {
     builder.AddPlatformPostgres<EcomDbContext>();
     builder.Services.AddScoped<EcomService>();
-    AgentMemoryCatalog.RegisterDomainKnowledge(
-      EcomData.ModuleHandle,
-      "Ecom Trade, Warehouse & Money Workflows",
-      DomainKnowledge);
   }
 
   public override ModuleMenu Menu => ModuleMenu

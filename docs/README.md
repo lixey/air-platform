@@ -12,7 +12,8 @@
 2. **[Архітектура ядра: Дані, Безпека, RBAC, Мутації та API (`docs/architecture.md`)](./architecture.md)** — детальний розбір `Air.Data` (сутності, мульти-тенантність, аудит `AppPlatformChange`, блокування, `DataProvider`, `QueryMap`) та `Air.Api` (модулі `ModuleDefinition<TSelf>`, `Feature`, модель прав `CanView`/`CanEdit`, `PlatformValidator`, сесії, `MutationRunner`, файли, локалізація).
 3. **[Рушії інтерфейсу, `@air/ui` та ШІ-асистент (`docs/ui-engines-and-agent.md`)](./ui-engines-and-agent.md)** — практичний довідник із `GridService`, `FormService`, `StatusFlowService`, `ReportService`, `ScreenService`, `FileGridService`, бібліотеки компонентів `@air/ui` та декларативного ШІ-асистента `Air.Agent`.
 4. **[Посібник зі створення нового застосунку та модуля (`docs/new-app-guide.md`)](./new-app-guide.md)** — покроковий чекліст розгортання нового репозиторію або модуля (`*.Data`, `*.Migrations`, `*.Api`, хост, фронтенд і контракти).
-5. **[Робочий процес, порти, перевірки якості та Git (`docs/workflow-and-git.md`)](./workflow-and-git.md)** — команди `Makefile` (`make format`, `make gate`, `make contracts`, `make audit`), розподіл портів IDE та Агента, стандарти коду й комітів.
+5. **[Канон коду C# 14, виразів та розумного тестування (`docs/coding-style.md`)](./coding-style.md)** — єдиний стандарт ідіом C# 14, типізованих `Expression`-налаштувань, правил читабельності без «заумності» та покриття тестами критичних шляхів і бізнес-логіки.
+6. **[Робочий процес, порти, перевірки якості та Git (`docs/workflow-and-git.md`)](./workflow-and-git.md)** — команди `Makefile` (`make format`, `make gate`, `make contracts`, `make audit`), розподіл портів IDE та Агента, стандарти коду й комітів.
 
 ---
 

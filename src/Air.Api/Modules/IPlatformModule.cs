@@ -7,6 +7,7 @@ public interface IPlatformModule
   string Icon => "folder";
   ModuleMenu Menu { get; }
   IReadOnlyList<Feature> Features { get; }
+  IReadOnlyList<ModuleDoc> Docs => [];
   void Configure(WebApplicationBuilder builder);
   void ConfigureServices(IServiceCollection services) { }
 }

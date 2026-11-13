@@ -7,7 +7,7 @@ public interface IRecordStatuses<TEntity> : IRecordStatuses where TEntity : clas
   OptionDto? Initial { get; }
   TEntity Initialize(TEntity record);
   IReadOnlyList<RecordTransition> Transitions { get; }
-  IReadOnlyList<RecordTransition> AllTransitions => Transitions;
+  new IReadOnlyList<RecordTransition> AllTransitions => Transitions;
   Task LockRecordsAsync(IMutationContext context, IReadOnlyList<TEntity> records, CancellationToken cancellationToken) =>
     Task.CompletedTask;
   Task MoveAsync(

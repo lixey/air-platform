@@ -1,4 +1,4 @@
-namespace Platform.Data;
+namespace Platform.Agent;
 
 public static class AgentMemoryCatalog
 {
@@ -35,6 +35,31 @@ public static class AgentMemoryCatalog
       normalizedTitle,
       content.Trim(),
       priority);
+  }
+
+  public static IReadOnlyList<AgentDomainKnowledgeEntry> ResolveDomainKnowledgeEntries(ModuleCatalog? catalog = null)
+  {
+    var list = new List<AgentDomainKnowledgeEntry>(DomainKnowledgeEntries);
+    foreach (var module in (catalog ?? ModuleCatalog.Instance).Modules)
+    {
+      foreach (var doc in module.Docs)
+      {
+        if (!string.IsNullOrWhiteSpace(doc.Title) &&
+            !string.IsNullOrWhiteSpace(doc.Content) &&
+            !list.Any(e =>
+              string.Equals(e.Module ?? string.Empty, module.Handle, StringComparison.OrdinalIgnoreCase) &&
+              string.Equals(e.Title, doc.Title.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+          list.Add(new AgentDomainKnowledgeEntry(module.Handle, doc.Title.Trim(), doc.Content.Trim(), doc.Priority));
+        }
+      }
+    }
+
+    return list
+      .OrderByDescending(e => e.Priority)
+      .ThenBy(e => e.Module ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+      .ThenBy(e => e.Title, StringComparer.OrdinalIgnoreCase)
+      .ToList();
   }
 
   public static void ClearDomainKnowledge() => RegisteredKnowledge.Clear();
@@ -82,6 +107,7 @@ public static class AgentMemoryCatalog
   public static async Task EnsureSeededAsync(
     PlatformDbContext db,
     string? seedDomainKnowledge = null,
+    ModuleCatalog? catalog = null,
     CancellationToken ct = default)
   {
     seedDomainKnowledge ??= DefaultDomainKnowledge;
@@ -118,7 +144,7 @@ public static class AgentMemoryCatalog
         }
       }
 
-      var entries = new List<AgentDomainKnowledgeEntry>(DomainKnowledgeEntries);
+      var entries = new List<AgentDomainKnowledgeEntry>(ResolveDomainKnowledgeEntries(catalog));
       if (!string.IsNullOrWhiteSpace(seedDomainKnowledge))
       {
         const string legacyTitle = "Application Domain Knowledge & Workflows";

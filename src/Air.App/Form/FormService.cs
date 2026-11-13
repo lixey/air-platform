@@ -23,6 +23,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   public PlatformDbContext DbContext => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
+  protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
   protected TEntity? CurrentEntity { get; private set; }
   protected Localizer L => Localizer.Instance.For(Feature.Module);
@@ -387,6 +389,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
     var probe = new Elements();
     SetElements(probe);
+
     FormConstraintExtractor.ValidateNavigationElements(typeof(TEntity), probe.List);
 
     if (probe.RecordLabelGridType != null)
@@ -409,6 +412,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       if (el.ReferenceServiceType != null)
       {
         ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), el.ReferenceServiceType, $"AsReference on '{el.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, GetType());
       }
 
       if (el.CreateFormServiceType != null)
@@ -672,6 +676,14 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
         }
       }
 
+      foreach (var el in probe.List)
+      {
+        if (el.ReferenceServiceType != null)
+        {
+          ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, GetType());
+        }
+      }
+
       (probe.StatusFlow as IRecordStatuses)?.RegisterMetadata();
     }
 
@@ -696,7 +708,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
     foreach (var entry in actions.Entries)
     {
-      entry.Ask?.BuildElements();
+      entry.Ask?.ValidateConfiguration(GetType());
     }
   }
 
