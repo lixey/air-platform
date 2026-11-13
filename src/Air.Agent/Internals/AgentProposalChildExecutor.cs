@@ -103,7 +103,7 @@ internal static class AgentProposalChildExecutor
 
           if (!TryExtractSavedId(savedLine, out _))
           {
-            var lineName = lineDict.TryGetValue(childPrimaryTextKey, out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
+            var lineName = FormatChildLineLabel(lineDict, childPrimaryTextKey, sortOrder);
             var lineDto = savedLine as FormDataDto;
             var lineErr = lineDto?.Messages?.FirstOrDefault()?.Detail
               ?? lineDto?.Warnings?.FirstOrDefault()?.Detail
@@ -118,7 +118,7 @@ internal static class AgentProposalChildExecutor
         }
         catch (FormRefusedException refusedEx)
         {
-          var lineName = lineDict.TryGetValue(childPrimaryTextKey, out var nObj) ? nObj?.ToString() : $"#{sortOrder}";
+          var lineName = FormatChildLineLabel(lineDict, childPrimaryTextKey, sortOrder);
           throw new InvalidOperationException(FormatRefusedException(refusedEx, childElements, lineName), refusedEx);
         }
       }
@@ -289,6 +289,11 @@ internal static class AgentProposalChildExecutor
       }
     }
   }
+
+  private static string FormatChildLineLabel(Dictionary<string, object?> lineDict, string primaryTextKey, int sortOrder) =>
+    lineDict.TryGetValue(primaryTextKey, out var nObj) && nObj?.ToString() is { } text && !string.IsNullOrWhiteSpace(text)
+      ? text
+      : $"#{sortOrder}";
 
   private static void PropagateUnsetParentIds(Dictionary<string, object?> parentValues, Dictionary<string, object?> lineDict)
   {

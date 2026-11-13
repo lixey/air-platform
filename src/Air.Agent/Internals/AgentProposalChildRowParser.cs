@@ -23,9 +23,19 @@ internal static class AgentProposalChildRowParser
     CancellationToken ct)
   {
     var itemRowId = isEdit ? TryGetRecordId(item) : null;
-    var baseValues = itemRowId is > 0
-      ? (await childForm.PrepareDraftAsync(recordId: itemRowId.Value, parentId: recordId, parentService: parentServicePath, ct: ct)).Values
-      : childDefaults;
+    Dictionary<string, object?> baseValues;
+    if (itemRowId is > 0)
+    {
+      baseValues = (await childForm.PrepareDraftAsync(recordId: itemRowId.Value, parentId: recordId, parentService: parentServicePath, ct: ct)).Values;
+      if (childForm.IsFormReadOnly)
+      {
+        throw new InvalidOperationException(L["FormReadOnly"]);
+      }
+    }
+    else
+    {
+      baseValues = childDefaults;
+    }
 
     var rowDict = new Dictionary<string, object?>(baseValues, StringComparer.OrdinalIgnoreCase);
     if (itemRowId is > 0)

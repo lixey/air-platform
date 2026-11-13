@@ -100,6 +100,11 @@ public static class AgentProposalBuilder
     var recordVer = initialDraft.Ver;
 
     var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
+    if (formInst.IsFormReadOnly)
+    {
+      throw new InvalidOperationException(L["FormReadOnly"]);
+    }
+
     var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
     var editableChildren = AgentFeatureRegistry.ResolveEditableChildGrids(children, formInst.Feature, services, formScope.Db, formScope.App);
 

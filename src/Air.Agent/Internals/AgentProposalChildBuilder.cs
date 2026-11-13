@@ -67,20 +67,29 @@ internal static class AgentProposalChildBuilder
       var childForm = ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildFormType, scope.Db, scope.App) as IFormService
         ?? throw new InvalidOperationException(L["MutationRefused"]);
 
+      var allHaveIds = rowsProp.GetArrayLength() > 0 &&
+                       rowsProp.EnumerateArray().All(el => el.ValueKind == JsonValueKind.Object && TryGetRecordId(el) is > 0);
       childForm.SetRequest(new FormRequest { ParentId = isEdit ? recordId : null, ParentService = targetDesc.ServicePath });
       var (rawElements, _) = await childForm.GetElementsMetadataAsync(ct);
+      if (isEdit && !allHaveIds && childForm.IsFormReadOnly)
+      {
+        throw new InvalidOperationException(L["FormReadOnly"]);
+      }
+
       var childEditableElements = rawElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
 
       if (isEdit &&
           ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildGridType, scope.Db, scope.App) is IGridService childGrid &&
-          string.Equals(mode, AgentProposalChildMode.Replace, StringComparison.OrdinalIgnoreCase) &&
-          !childGrid.CanDelete())
+          string.Equals(mode, AgentProposalChildMode.Replace, StringComparison.OrdinalIgnoreCase))
       {
-        var allHaveIds = rowsProp.GetArrayLength() > 0 &&
-                         rowsProp.EnumerateArray().All(el => el.ValueKind == JsonValueKind.Object && TryGetRecordId(el) is > 0);
-        if (!allHaveIds)
+        if (!await childGrid.BindParentAsync(targetDesc.ServicePath, recordId, ct))
         {
-          var countDto = await childGrid.GetCountAsync(new GridRequest { ParentId = recordId }, ct);
+          throw new InvalidOperationException(L["MutationRefused"]);
+        }
+
+        if (!childGrid.CanDelete() && !allHaveIds)
+        {
+          var countDto = await childGrid.GetCountAsync(new GridRequest { ParentService = targetDesc.ServicePath, ParentId = recordId }, ct);
           if (countDto.Total > 0)
           {
             throw new InvalidOperationException(L["MutationRefused"]);
@@ -88,7 +97,11 @@ internal static class AgentProposalChildBuilder
         }
       }
 
-      var childDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(childForm, ct);
+      var childDefaults = (await childForm.PrepareDraftAsync(
+        recordId: null,
+        parentId: isEdit ? recordId : null,
+        parentService: isEdit ? targetDesc.ServicePath : null,
+        ct: ct)).Values;
       var displayRows = new List<AgentProposalChildRowDto>();
       var rawRows = new List<Dictionary<string, object?>>();
       var seenColumnKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

@@ -4,6 +4,7 @@ public interface IFormService : IPlatformService
 {
   PlatformDbContext DbContext { get; }
   string Service { get; }
+  bool IsFormReadOnly { get; }
   OverlayDto Overlay(string service);
   Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) => Task.FromResult(Overlay(service));
   Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default);

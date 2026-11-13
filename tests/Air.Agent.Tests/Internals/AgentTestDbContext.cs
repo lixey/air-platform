@@ -21,4 +21,7 @@ internal class AgentTestDbContext : PlatformDbContext
   public DbSet<AgentTestMeasurement> Measurements => Set<AgentTestMeasurement>();
   public DbSet<AgentTestAuditNote> AuditNotes => Set<AgentTestAuditNote>();
   public DbSet<AgentTestSecret> Secrets => Set<AgentTestSecret>();
+  public DbSet<AgentTestOrderStatus> OrderStatuses => Set<AgentTestOrderStatus>();
+  public DbSet<AgentTestOrder> Orders => Set<AgentTestOrder>();
+  public DbSet<AgentTestOrderLine> OrderLines => Set<AgentTestOrderLine>();
 }

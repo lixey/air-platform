@@ -39,6 +39,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected long? ParentId => Request.ParentId;
   protected IDictionary<string, object?> ExecutionItems => _state.Items;
   public string Service => ServicePathResolver.Resolve(GetType());
+  public bool IsFormReadOnly => IsReadOnly;
 
   public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _state.LastSaveWarnings;
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
@@ -92,25 +93,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       return null;
     }
 
-    var tracked = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id);
-    var query = Reachable(asTracking: true);
-    if (tracked != null)
-    {
-      var reachableExists = await query.AnyAsync(e => e.Id == id, ct);
-      if (reachableExists)
-      {
-        if (Request.Id is null || Request.Id == id)
-        {
-          CurrentEntity = tracked;
-        }
-
-        return tracked;
-      }
-
-      return null;
-    }
-
-    var loaded = await query.FirstOrDefaultAsync(e => e.Id == id, ct);
+    var loaded = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct);
     if (Request.Id is null || Request.Id == id)
     {
       CurrentEntity = loaded;
@@ -737,8 +720,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     var parent = GetParent();
     if (!IsNew && Request.Id is > 0 && CurrentEntity?.Id != Request.Id.Value)
     {
-      CurrentEntity = db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == Request.Id.Value)
-        ?? await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == Request.Id.Value, ct);
+      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == Request.Id.Value, ct);
       if (CurrentEntity != null)
       {
         RestoreBoundParentId(CurrentEntity, parent);
