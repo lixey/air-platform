@@ -13,6 +13,8 @@ public static class AppUserSecurityRules
     where TRole : BaseAppAuthRole
     where TGrant : BaseAppAuthGrant
   {
+    ArgumentNullException.ThrowIfNull(db);
+
     var roles = await db.Set<TRole>()
       .Where(r => r.IsActive)
       .OrderBy(r => r.SortOrder)
@@ -39,6 +41,35 @@ public static class AppUserSecurityRules
     where TRole : BaseAppAuthRole
     where TGrant : BaseAppAuthGrant =>
     [.. (await GetOfferedRolesAsync<TRole, TGrant>(db, app, localizer: null, ct)).Select(r => r.Id)];
+
+  public static Task<List<OptionDto>> GetOfferedRolesAsync<TUser, TRole, TGrant>(
+    FormService<TUser> service,
+    CancellationToken ct = default)
+    where TUser : BaseAppUser, new()
+    where TRole : BaseAppAuthRole
+    where TGrant : BaseAppAuthGrant =>
+    GetOfferedRolesAsync<TRole, TGrant>(service.DbContext, service.PlatformApp, service.L, ct);
+
+  public static void AddFormHooks<TUser, TRole, TGrant, TAssignment>(
+    FormService<TUser> service,
+    FormService<TUser>.Hooks hooks)
+    where TUser : BaseAppUser, new()
+    where TRole : BaseAppAuthRole
+    where TGrant : BaseAppAuthGrant
+    where TAssignment : BaseAppAuthAssignment, new() =>
+    AddFormHooks<TUser, TRole, TGrant, TAssignment>(hooks, service.DbContext, service.PlatformApp, () => service.User);
+
+  public static void AddDeleteHooks<TUser>(
+    GridService<TUser, TUser> service,
+    GridService<TUser, TUser>.Hooks hooks)
+    where TUser : BaseAppUser, new() =>
+    AddDeleteHooks(hooks, service.DbContext, service.PlatformApp, () => service.User);
+
+  public static void AddDeactivateAction<TUser>(
+    GridService<TUser, TUser> service,
+    GridActions<TUser> actions)
+    where TUser : BaseAppUser, new() =>
+    AddDeactivateAction(actions, service.DbContext, service.PlatformApp, () => service.User);
 
   public static void AddPasswordRules<TUser>(FormService<TUser>.Rules rules)
     where TUser : BaseAppUser, new()

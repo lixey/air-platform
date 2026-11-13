@@ -20,7 +20,7 @@ public sealed class AppUserFormService(AppDbContext db, AppService app)
     elements.Add(e => e.MustChangePassword).AsCheckbox();
 
     elements.AddTab("Roles");
-    var offered = await AppUserSecurityRules.GetOfferedRolesAsync<AppAuthRole, AppAuthGrant>(db, app, L, cancellationToken);
+    var offered = await AppUserSecurityRules.GetOfferedRolesAsync<AppUser, AppAuthRole, AppAuthGrant>(this, cancellationToken);
     elements.Add(e => e.RoleIds).InputOnly().AsCheckboxSet(offered);
 
     elements.AddChild<AppSessionGridService>().Key("sessions").Label("Sessions");
@@ -30,5 +30,5 @@ public sealed class AppUserFormService(AppDbContext db, AppService app)
     AppUserSecurityRules.AddPasswordRules(rules);
 
   protected override void SetHooks(Hooks hooks) =>
-    AppUserSecurityRules.AddFormHooks<AppUser, AppAuthRole, AppAuthGrant, AppAuthAssignment>(hooks, db, app, () => User);
+    AppUserSecurityRules.AddFormHooks<AppUser, AppAuthRole, AppAuthGrant, AppAuthAssignment>(this, hooks);
 }

@@ -1,16 +1,18 @@
-using Platform.App.Grid.Internals;
 using Platform.App.Internals;
 using Platform.Data.Internals;
 
-namespace Platform.App.Grid;
+namespace Platform.App.Grid.Internals;
 
-public abstract partial class GridService<TEntity, TRow>
+internal static class GridSummaryCalculator
 {
-  private async Task<List<RowDto>?> ComputeSumRowsAsync(
+  public static async Task<List<RowDto>?> ComputeSumRowsAsync<TEntity, TRow>(
+    PlatformDbContext db,
     IQueryable<TEntity> filteredEntities,
     Expression<Func<TEntity, TRow>>? selector,
     IReadOnlyList<GridColumnDto> columns,
     CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     var sumCols = columns.Where(c => c.IsSummed && !c.IsComputed && !string.IsNullOrEmpty(c.Path)).ToList();
     if (sumCols.Count == 0)
@@ -31,8 +33,8 @@ public abstract partial class GridService<TEntity, TRow>
         continue;
       }
 
-      Expression? current = null;
-      Type? currentType = null;
+      Expression? current;
+      Type? currentType;
 
       if (selector == null && col.ValueExpression != null)
       {
@@ -79,7 +81,7 @@ public abstract partial class GridService<TEntity, TRow>
     if (!convertDecimalToDouble &&
         resolved.Count > 1 &&
         resolved.All(r => !r.Col.IsSubqueryExpression) &&
-        await TryComputeBatchSumsAsync(filteredEntities, selector, rowParam, resolved, sumRow, ct))
+        await TryComputeBatchSumsAsync<TEntity, TRow>(filteredEntities, selector, rowParam, resolved, sumRow, ct))
     {
       return sumRow.Cells.Count > 0 ? [sumRow] : null;
     }
@@ -107,7 +109,7 @@ public abstract partial class GridService<TEntity, TRow>
               : await filteredEntities.SumAsync(Expression.Lambda<Func<TEntity, decimal?>>(body, rowParam), ct) ?? 0m;
           }
 
-          PutSumValue(sumRow, col, total);
+          PutSumValue<TEntity>(sumRow, col, total);
         }
         else if (underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short))
         {
@@ -115,7 +117,7 @@ public abstract partial class GridService<TEntity, TRow>
           var total = selector != null
             ? await filteredEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, long?>>(body, rowParam), ct) ?? 0L
             : await filteredEntities.SumAsync(Expression.Lambda<Func<TEntity, long?>>(body, rowParam), ct) ?? 0L;
-          PutSumValue(sumRow, col, total);
+          PutSumValue<TEntity>(sumRow, col, total);
         }
         else if (underlying == typeof(double) || underlying == typeof(float))
         {
@@ -123,7 +125,7 @@ public abstract partial class GridService<TEntity, TRow>
           var total = selector != null
             ? await filteredEntities.Select(selector).SumAsync(Expression.Lambda<Func<TRow, double?>>(body, rowParam), ct) ?? 0d
             : await filteredEntities.SumAsync(Expression.Lambda<Func<TEntity, double?>>(body, rowParam), ct) ?? 0d;
-          PutSumValue(sumRow, col, total);
+          PutSumValue<TEntity>(sumRow, col, total);
         }
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -136,22 +138,23 @@ public abstract partial class GridService<TEntity, TRow>
     return sumRow.Cells.Count > 0 ? [sumRow] : null;
   }
 
-  private static async Task<bool> TryComputeBatchSumsAsync(
+  private static async Task<bool> TryComputeBatchSumsAsync<TEntity, TRow>(
     IQueryable<TEntity> filteredEntities,
     Expression<Func<TEntity, TRow>>? selector,
     ParameterExpression rowParam,
     List<(GridColumnDto Col, Expression Expr, Type ValueType, Type UnderlyingType)> resolved,
     RowDto sumRow,
     CancellationToken ct)
+    where TEntity : class, IEntity, new()
   {
     try
     {
       if (selector != null)
       {
-        return await TryComputeBatchSumsCoreAsync(filteredEntities.Select(selector), rowParam, resolved, sumRow, ct);
+        return await TryComputeBatchSumsCoreAsync<TEntity, TRow>(filteredEntities.Select(selector), rowParam, resolved, sumRow, ct);
       }
 
-      return await TryComputeBatchSumsCoreAsync(filteredEntities, rowParam, resolved, sumRow, ct);
+      return await TryComputeBatchSumsCoreAsync<TEntity, TEntity>(filteredEntities, rowParam, resolved, sumRow, ct);
     }
     catch (OperationCanceledException) when (ct.IsCancellationRequested)
     {
@@ -165,12 +168,13 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private static async Task<bool> TryComputeBatchSumsCoreAsync<TSource>(
+  private static async Task<bool> TryComputeBatchSumsCoreAsync<TEntity, TSource>(
     IQueryable<TSource> sourceQuery,
     ParameterExpression rowParam,
     List<(GridColumnDto Col, Expression Expr, Type ValueType, Type UnderlyingType)> resolved,
     RowDto sumRow,
     CancellationToken ct)
+    where TEntity : class, IEntity, new()
   {
     var dCount = 0;
     var lCount = 0;
@@ -249,20 +253,21 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var (col, reader) in readers)
     {
-      PutSumValue(sumRow, col, reader(bucket));
+      PutSumValue<TEntity>(sumRow, col, reader(bucket));
     }
 
     return true;
   }
 
-  private static void PutSumValue(RowDto sumRow, GridColumnDto col, object total)
+  private static void PutSumValue<TEntity>(RowDto sumRow, GridColumnDto col, object total)
+    where TEntity : class, IEntity, new()
   {
     if (string.IsNullOrEmpty(col.Path))
     {
       return;
     }
 
-    PutValue(sumRow.Cells, col.Path, total);
+    GridRowShaper.PutValue(sumRow.Cells, col.Path, total);
 
     if (col.ColorEvaluator == null)
     {

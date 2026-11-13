@@ -305,24 +305,24 @@ public abstract partial class GridService<TEntity, TRow>
       return this;
     }
 
-    internal List<NamedFilterItem> NamedFilters { get; } = [];
-    internal List<NamedFilterGroup> NamedFilterGroups { get; } = [];
+    internal List<GridNamedFilterItem<TEntity>> NamedFilters { get; } = [];
+    internal List<GridNamedFilterGroup<TEntity>> NamedFilterGroups { get; } = [];
 
-    public GridNamedFilterBuilder NamedFilter(
+    public GridNamedFilterBuilder<TEntity> NamedFilter(
       string key,
       string label,
       Expression<Func<TEntity, bool>> predicate)
     {
-      var filter = new NamedFilterItem(key, label, predicate);
+      var filter = new GridNamedFilterItem<TEntity>(key, label, predicate);
       NamedFilters.Add(filter);
-      return new GridNamedFilterBuilder(filter);
+      return new GridNamedFilterBuilder<TEntity>(filter);
     }
 
-    public GridNamedFilterGroupBuilder NamedFilter(string key, string? label = null)
+    public GridNamedFilterGroupBuilder<TEntity> NamedFilter(string key, string? label = null)
     {
-      var group = new NamedFilterGroup(key, label);
+      var group = new GridNamedFilterGroup<TEntity>(key, label);
       NamedFilterGroups.Add(group);
-      return new GridNamedFilterGroupBuilder(group);
+      return new GridNamedFilterGroupBuilder<TEntity>(group);
     }
 
     public sealed class InitialFilterBuilder<TProp>(Query query, string field)
@@ -339,205 +339,6 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  public sealed class GridNamedFilterBuilder(NamedFilterItem item)
-  {
-    public GridNamedFilterBuilder Remember(bool remember = true)
-    {
-      item.IsRemembered = remember;
-      return this;
-    }
-
-    public GridNamedFilterBuilder ShowCount(bool show = true)
-    {
-      item.IsCountShown = show;
-      return this;
-    }
-
-    public GridNamedFilterBuilder Title(string title)
-    {
-      item.Title = title;
-      return this;
-    }
-
-    public GridNamedFilterBuilder Title(string uiSource, string dbSource) =>
-      Title(Feature.FormatSourceTitle(uiSource, dbSource));
-  }
-
-  public sealed class GridNamedFilterGroupBuilder(NamedFilterGroup group)
-  {
-    public GridNamedFilterGroupBuilder Item(string key, string label, Expression<Func<TEntity, bool>> predicate)
-    {
-      group.Items.Add(new NamedFilterItem($"{group.Key}.{key}", label, predicate) { IsCountShown = group.IsCountShown });
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder All(string label)
-    {
-      group.Items.Add(new NamedFilterItem($"{group.Key}.all", label, null) { IsCountShown = group.IsCountShown });
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder Default()
-    {
-      if (group.Items.Count > 0)
-      {
-        group.Items[^1].IsDefault = true;
-      }
-
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder Color(string color)
-    {
-      if (group.Items.Count > 0)
-      {
-        group.Items[^1].Color = color;
-      }
-
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder Title(string title)
-    {
-      if (group.Items.Count > 0)
-      {
-        group.Items[^1].Title = title;
-      }
-
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder Title(string uiSource, string dbSource) =>
-      Title(Feature.FormatSourceTitle(uiSource, dbSource));
-
-    public GridNamedFilterGroupBuilder ShowCount(bool show = true)
-    {
-      if (group.Items.Count > 0)
-      {
-        group.Items[^1].IsCountShown = show;
-      }
-      else
-      {
-        group.IsCountShown = show;
-      }
-
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder ShowCounts(bool show = true)
-    {
-      group.IsCountShown = show;
-      foreach (var item in group.Items)
-      {
-        item.IsCountShown = show;
-      }
-
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder Inline(bool inline = true)
-    {
-      group.IsInline = inline;
-      return this;
-    }
-
-    public GridNamedFilterGroupBuilder Remember(bool remember = true)
-    {
-      group.IsRemembered = remember;
-      return this;
-    }
-  }
-
-  public sealed class NamedFilterItem(string key, string label, Expression<Func<TEntity, bool>>? predicate)
-  {
-    public string Key { get; } = key;
-    public string Label { get; } = label;
-    public Expression<Func<TEntity, bool>>? Predicate { get; } = predicate;
-    public bool IsRemembered { get; set; }
-    public bool IsDefault { get; set; }
-    public bool IsCountShown { get; set; }
-    public string? Color { get; set; }
-    public string? Title { get; set; }
-  }
-
-  public sealed class NamedFilterGroup(string key, string? label)
-  {
-    public string Key { get; } = key;
-    public string? Label { get; } = label;
-    public bool IsRemembered { get; set; }
-    public bool IsCountShown { get; set; }
-    public bool IsInline { get; set; }
-    public List<NamedFilterItem> Items { get; } = [];
-  }
-
-  public sealed class ButtonBuilder
-  {
-    public string? LabelText { get; private set; }
-    public string? TitleText { get; private set; }
-    public string? IconHandle { get; private set; }
-    public string? ColorHandle { get; private set; }
-    public string? VariantHandle { get; private set; }
-    public bool IsInMenu { get; private set; }
-    public bool IsSingle { get; private set; }
-
-    public ButtonBuilder Label(string label)
-    {
-      LabelText = label;
-      return this;
-    }
-    public ButtonBuilder Title(string title)
-    {
-      TitleText = title;
-      return this;
-    }
-    public ButtonBuilder Title(string uiSource, string dbSource) =>
-      Title(Feature.FormatSourceTitle(uiSource, dbSource));
-    public ButtonBuilder Icon(string icon)
-    {
-      IconHandle = icon;
-      return this;
-    }
-    public ButtonBuilder Color(string color)
-    {
-      ColorHandle = color;
-      return this;
-    }
-    public ButtonBuilder Variant(string variant)
-    {
-      VariantHandle = variant;
-      return this;
-    }
-    public ButtonBuilder Soft()
-    {
-      VariantHandle = ButtonVariant.Soft;
-      return this;
-    }
-    public ButtonBuilder InMenu()
-    {
-      IsInMenu = true;
-      return this;
-    }
-    public ButtonBuilder Single(bool single = true)
-    {
-      IsSingle = single;
-      return this;
-    }
-  }
-
-  public sealed class NavPickerBuilder(GridNavPickerModel model)
-  {
-    public NavPickerBuilder MinLength(int len)
-    {
-      model.MinLength = len;
-      return this;
-    }
-    public NavPickerBuilder ReadsParent()
-    {
-      model.ReadsParent = true;
-      return this;
-    }
-  }
-
   public sealed class Actions : GridActions<TEntity>;
 
   public sealed class Nav(Localizer? localizer = null)
@@ -550,9 +351,9 @@ public abstract partial class GridService<TEntity, TRow>
 
     public void AddStart(NavElementModel model) => CustomStart.Add(model);
 
-    public void AddCreate<TFormService>(Action<ButtonBuilder>? look = null) where TFormService : class
+    public void AddCreate<TFormService>(Action<GridButtonBuilder>? look = null) where TFormService : class
     {
-      var b = new ButtonBuilder();
+      var b = new GridButtonBuilder();
       look?.Invoke(b);
       var targetService = ServicePathResolver.Resolve(typeof(TFormService));
       var rawLabel = b.LabelText ?? (b.TitleText != null ? null : "Add");
@@ -568,7 +369,7 @@ public abstract partial class GridService<TEntity, TRow>
       }));
     }
 
-    public NavPickerBuilder AddPicker<TSource>(
+    public GridNavPickerBuilder AddPicker<TSource>(
       Delegate method,
       string? label = null)
     {
@@ -584,7 +385,7 @@ public abstract partial class GridService<TEntity, TRow>
       };
       Pickers.Add(picker);
       PickerEntries.Add((typeof(TSource), method.Method, picker));
-      return new NavPickerBuilder(picker);
+      return new GridNavPickerBuilder(picker);
     }
   }
 
@@ -674,7 +475,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     public void BeforeDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => BeforeDeleteActions.Add(handler);
     public void BeforeDelete(Action<GridDeleteContext<TEntity>> handler) =>
-      BeforeDeleteActions.Add((c, ct) =>
+      BeforeDeleteActions.Add((c, _) =>
       {
         handler(c);
         return Task.CompletedTask;
@@ -682,7 +483,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     public void AfterDelete(Func<GridDeleteContext<TEntity>, CancellationToken, Task> handler) => AfterDeleteActions.Add(handler);
     public void AfterDelete(Action<GridDeleteContext<TEntity>> handler) =>
-      AfterDeleteActions.Add((c, ct) =>
+      AfterDeleteActions.Add((c, _) =>
       {
         handler(c);
         return Task.CompletedTask;

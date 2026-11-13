@@ -12,10 +12,8 @@ public sealed class EcomCustomerOrderFormService(
 
   public override Feature Feature => Ecom.CustomerOrder;
 
-  protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
+  protected override void SetElements(Elements elements)
   {
-    await base.SetElementsAsync(elements, cancellationToken);
-
     elements.UseRecordLabelOf<EcomCustomerOrderGridService>();
     elements.Add(e => e.Number).AsInfo().Span(3);
     elements.Add(e => e.DocStatusId).Label("Status").Span(3);

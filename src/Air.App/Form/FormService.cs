@@ -1,7 +1,5 @@
 using Platform.App.Form.Internals;
-using Platform.App.Host.Internals;
 using Platform.App.Internals;
-using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
 
@@ -10,16 +8,14 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 {
   private static readonly ConcurrentDictionary<Type, bool> CustomRecalculateTypes = new();
 
-  private readonly FormExecutionState<TEntity> _state = new();
-
   public PlatformDbContext DbContext => db;
-  protected PlatformAppService? PlatformApp { get; private set; } = app;
-  protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
-  protected ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
+  protected internal PlatformAppService? PlatformApp { get; private set; } = app;
+  protected internal IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
+  protected internal ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
   protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
   protected TEntity? CurrentEntity { get; private set; }
-  protected Localizer L => Localizer.Instance.For(Feature.Module);
+  protected internal Localizer L => Localizer.Instance.For(Feature.Module);
   public abstract Feature Feature { get; }
 
   protected virtual string Title =>
@@ -37,50 +33,106 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;
-  protected IDictionary<string, object?> ExecutionItems => _state.Items;
+  protected IDictionary<string, object?> ExecutionItems => State.Items;
   public string Service => ServicePathResolver.Resolve(GetType());
   public bool IsFormReadOnly => IsReadOnly;
 
-  public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => _state.LastSaveWarnings;
+  internal FormExecutionState<TEntity> State { get; } = new();
+  internal TEntity? Entity { get => CurrentEntity; set => CurrentEntity = value; }
+  internal bool IsNewRecord { get => IsNew; set => IsNew = value; }
+  internal FormRequest CurrentRequest { get => Request; set => Request = value; }
+
+  public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => State.LastSaveWarnings;
   public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
+
+  protected static FormSaveContext<TEntity> SaveContextOf(RuleContext<TEntity> context) => context.SaveContext;
+
+  protected virtual void SetParent(Parent parent) { }
+  protected virtual void SetActions(Actions actions) { }
+
+  protected virtual Task SetActionsAsync(Actions actions, CancellationToken ct = default)
+  {
+    SetActions(actions);
+    return Task.CompletedTask;
+  }
+
+  protected virtual void SetQuery(Query query) { }
+  protected virtual void SetElements(Elements elements) { }
+
+  protected virtual Task SetElementsAsync(Elements elements, CancellationToken ct = default)
+  {
+    SetElements(elements);
+    return Task.CompletedTask;
+  }
+
+  protected virtual void SetRules(Rules rules) { }
+  protected virtual void SetHooks(Hooks hooks) { }
+  protected virtual OverlayBuilder? Presentation(string handle) => null;
+  protected virtual Task RecalculateAsync(TEntity entity, CancellationToken ct) => Task.CompletedTask;
 
   protected Parent GetParent()
   {
-    if (_state.CachedParent != null)
+    if (State.CachedParent != null)
     {
-      return _state.CachedParent;
+      return State.CachedParent;
     }
 
     var parent = new Parent();
     SetParent(parent);
     ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), parent.BoundParentServiceType, "Parent.Bind/Read");
-    return _state.CachedParent = parent;
+    return State.CachedParent = parent;
   }
 
   protected Hooks GetHooks()
   {
-    if (_state.CachedHooks != null)
+    if (State.CachedHooks != null)
     {
-      return _state.CachedHooks;
+      return State.CachedHooks;
     }
 
     var hooks = new Hooks();
     SetHooks(hooks);
-    return _state.CachedHooks = hooks;
+    return State.CachedHooks = hooks;
+  }
+
+  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity =>
+    ParentScopeValidator.GetParentRecord<TParent>(
+      db,
+      ParentId,
+      Request.ParentService,
+      State.PreloadedParent,
+      State.PreloadedParentId,
+      GetParent().BoundParentServiceType);
+
+  protected TParent RequiredParent<TParent>() where TParent : class, IEntity =>
+    ParentRecord<TParent>() ?? throw new ParentNotLoadedException(typeof(TParent), GetType());
+
+  protected IQueryable<TEntity> Reachable(bool asTracking = false)
+  {
+    var q = new Query();
+    SetQuery(q);
+    var query = q.Source ?? db.Set<TEntity>();
+    query = asTracking ? query.AsTracking() : query.AsNoTracking();
+    foreach (var filter in q.Filters)
+    {
+      query = query.Where(filter);
+    }
+
+    return query;
   }
 
   public void SetRequest(FormRequest request)
   {
     if (Request.Id != request.Id)
     {
-      _state.LastElements = null;
-      _state.ClearItems();
+      State.LastElements = null;
+      State.ClearItems();
     }
 
     if (Request.ParentId != request.ParentId ||
         !string.Equals(Request.ParentService, request.ParentService, StringComparison.OrdinalIgnoreCase))
     {
-      _state.ParentRecordLoaded = false;
+      State.ParentRecordLoaded = false;
     }
 
     Request = request;
@@ -124,7 +176,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
         [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
     }
 
-    _state.CacheParentScope(
+    State.CacheParentScope(
       preloaded,
       Request.ParentId,
       Request.ParentService,
@@ -136,7 +188,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected async Task PreloadParentRecordAsync(Parent parent, CancellationToken ct)
   {
     var requireBoundParent = !IsNew && CurrentEntity != null && parent.BoundProperty != null && !parent.IsOptional;
-    if (_state.ParentRecordLoaded && _state.PreloadedParentId == Request.ParentId && (!requireBoundParent || Request.ParentId is > 0))
+    if (State.ParentRecordLoaded && State.PreloadedParentId == Request.ParentId && (!requireBoundParent || Request.ParentId is > 0))
     {
       return;
     }
@@ -163,7 +215,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       throw new KeyNotFoundException(L["FormNotFound"]);
     }
 
-    _state.CacheParentScope(
+    State.CacheParentScope(
       preloaded,
       Request.ParentId,
       Request.ParentService,
@@ -171,15 +223,6 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       parentChildren,
       resetLoadedWhenMissing: false);
   }
-
-  protected TParent? ParentRecord<TParent>() where TParent : class, IEntity =>
-    ParentScopeValidator.GetParentRecord<TParent>(
-      db,
-      ParentId,
-      Request.ParentService,
-      _state.PreloadedParent,
-      _state.PreloadedParentId,
-      GetParent().BoundParentServiceType);
 
   public bool HasCustomRecalculate =>
     CustomRecalculateTypes.GetOrAdd(GetType(), static t =>
@@ -191,45 +234,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       return m != null && m.DeclaringType != typeof(FormService<TEntity>);
     });
 
-  protected virtual Task RecalculateAsync(TEntity entity, CancellationToken ct) => Task.CompletedTask;
-
-  public async Task<bool> NeedsParentRecalculationAsync(CancellationToken ct = default)
-  {
-    if (HasCustomRecalculate)
-    {
-      return true;
-    }
-
-    var sumChildren = await GetSumChildrenAsync(ct);
-    return sumChildren.Count > 0;
-  }
-
-  private async Task<IReadOnlyList<ChildGridBuilder>> GetSumChildrenAsync(CancellationToken ct)
-  {
-    if (_state.LastElements != null)
-    {
-      return _state.LastElements.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
-    }
-
-    var probe = new Elements();
-    try
-    {
-      await SetElementsAsync(probe, ct);
-    }
-    catch
-    {
-      probe = new Elements();
-      try
-      {
-        SetElements(probe);
-      }
-      catch
-      {
-      }
-    }
-
-    return probe.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
-  }
+  public async Task<bool> NeedsParentRecalculationAsync(CancellationToken ct = default) =>
+    HasCustomRecalculate || (await GetSumChildrenAsync(ct)).Count > 0;
 
   public async Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default)
   {
@@ -268,411 +274,93 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  protected static FormSaveContext<TEntity> SaveContextOf(RuleContext<TEntity> context) => context.SaveContext;
-
-  protected virtual void SetParent(Parent parent) { }
-  protected virtual void SetActions(Actions actions) { }
-
-  protected virtual Task SetActionsAsync(Actions actions, CancellationToken ct = default)
-  {
-    SetActions(actions);
-    return Task.CompletedTask;
-  }
-
-  protected virtual void SetQuery(Query query) { }
-  protected virtual void SetElements(Elements elements) { }
-
-  protected virtual Task SetElementsAsync(Elements elements, CancellationToken ct = default)
-  {
-    SetElements(elements);
-    return Task.CompletedTask;
-  }
-
-  protected virtual void SetRules(Rules rules) { }
-  protected virtual void SetHooks(Hooks hooks) { }
-
-  private Actions ProbeActions()
-  {
-    var actions = new Actions();
-    try
-    {
-      SetActionsAsync(actions).GetAwaiter().GetResult();
-    }
-    catch (NullReferenceException ex) when (db == null)
-    {
-      actions = new Actions();
-      SetActions(actions);
-      var overridesAsync = GetType()
-        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
-        .DeclaringType != typeof(FormService<TEntity>);
-      if (overridesAsync && actions.Entries.Count == 0)
-      {
-        throw new InvalidOperationException(
-          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (CurrentEntity != null)' or 'if (db != null)' before registering actions.",
-          ex);
-      }
-    }
-
-    return actions;
-  }
-
-  IEnumerable<string> IPlatformService.GetDeclaredActions() =>
-    ProbeActions().Entries
-      .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
-      .Where(n => !string.IsNullOrWhiteSpace(n))!;
-
-  IReadOnlyList<string> IFormService.GetRoutableActionMethods(ModuleCatalog catalog)
-  {
-    var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var entry in ProbeActions().Entries)
-    {
-      routes.Add(entry.Method);
-      routes.Add(entry.Key);
-    }
-
-    AppServiceRouteMapper.AddFeatureCustomRightRoutes(routes, Feature);
-    return [.. routes];
-  }
-
-  public virtual async Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default)
-  {
-    SetRequest(request);
-    try
-    {
-      await EnsureEntityAndParentLoadedAsync(ct);
-    }
-    catch (KeyNotFoundException)
-    {
-      return null;
-    }
-
-    if (!IsNew && CurrentEntity == null)
-    {
-      return null;
-    }
-
-    var actions = new Actions();
-    await SetActionsAsync(actions, ct);
-    var entry = actions.Entries.FirstOrDefault(a => a.Matches(actionKey));
-    var isParentReadOnly = (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
-    if (entry == null || !entry.Permission.IsPermitted(Feature, User, entry.Handle, IsReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
-    {
-      return null;
-    }
-
-    var defaultProvider = entry.DefaultProvider != null
-      ? (Func<CancellationToken, Task<object?>>)(token => entry.DefaultProvider(CurrentEntity, token))
-      : null;
-    return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(defaultProvider, entry.Ask, db, PlatformApp, ct);
-  }
-
-  protected IQueryable<TEntity> Reachable(bool asTracking = false)
-  {
-    var q = new Query();
-    SetQuery(q);
-    var query = q.Source ?? db.Set<TEntity>();
-    query = asTracking ? query.AsTracking() : query.AsNoTracking();
-    foreach (var filter in q.Filters)
-    {
-      query = query.Where(filter);
-    }
-
-    return query;
-  }
-
-  void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
-  {
-    _ = GetParent();
-
-    var probe = new Elements();
-    SetElements(probe);
-
-    FormConstraintExtractor.ValidateNavigationElements(typeof(TEntity), probe.List);
-
-    if (probe.RecordLabelGridType != null)
-    {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), probe.RecordLabelGridType, "UseRecordLabelOf");
-    }
-
-    if (probe.StatusFlow != null)
-    {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), probe.StatusFlow.GetType(), "UseStatusOf");
-    }
-
-    foreach (var child in probe.Children)
-    {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), child.ServiceType, $"AddChild '{child.DeclaredKey}'");
-    }
-
-    foreach (var el in probe.List)
-    {
-      if (el.ReferenceServiceType != null)
-      {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), el.ReferenceServiceType, $"AsReference on '{el.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, GetType());
-      }
-
-      if (el.CreateFormServiceType != null)
-      {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), el.CreateFormServiceType, $"AllowCreate on '{el.Path}'");
-      }
-    }
-
-    var actions = new Actions();
-    try
-    {
-      SetActionsAsync(actions).GetAwaiter().GetResult();
-    }
-    catch when (db == null)
-    {
-      actions = new Actions();
-      SetActions(actions);
-    }
-
-    var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var entry in actions.Entries)
-    {
-      if (!seenHandles.Add(entry.Handle))
-      {
-        throw new InvalidOperationException(
-          $"Form '{GetType().FullName}' declares duplicate action handle '{entry.Handle}'.");
-      }
-
-      entry.ValidateConfiguration(GetType(), Feature);
-    }
-  }
-
-  protected virtual OverlayBuilder? Presentation(string handle) => null;
-
-  private static bool IsCompactPresentation(Elements elements) =>
-    elements.Tabs.Count == 0 &&
-    elements.Tables.Count == 0 &&
-    elements.Children.All(c => c.IsFiles) &&
-    elements.List.Count(e => !e.IsHidden && !e.IsRightsTree) <= 8;
-
-  private async Task<Elements> ProbeElementsForOverlayAsync(CancellationToken ct = default)
-  {
-    if (_state.LastElements is not null)
-    {
-      return _state.LastElements;
-    }
-
-    try
-    {
-      await EnsureEntityAndParentLoadedAsync(ct);
-    }
-    catch
-    {
-    }
-
-    var probe = new Elements();
-    try
-    {
-      await SetElementsAsync(probe, ct);
-    }
-    catch
-    {
-      probe = new Elements();
-      try
-      {
-        SetElements(probe);
-      }
-      catch
-      {
-      }
-    }
-
-    return probe;
-  }
-
-  private Elements ProbeElementsForOverlaySync()
-  {
-    if (_state.LastElements is not null)
-    {
-      return _state.LastElements;
-    }
-
-    var probe = new Elements();
-    try
-    {
-      SetElementsAsync(probe, CancellationToken.None).GetAwaiter().GetResult();
-    }
-    catch
-    {
-      probe = new Elements();
-      try
-      {
-        SetElements(probe);
-      }
-      catch
-      {
-      }
-    }
-
-    return probe;
-  }
-
   public virtual async Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) =>
-    BuildResolvedOverlay(service, await ProbeElementsForOverlayAsync(ct));
+    FormOverlayResolver.BuildResolvedOverlay(this, service, await ProbeElementsForOverlayAsync(ct));
 
   public virtual OverlayDto Overlay(string service) =>
-    BuildResolvedOverlay(service, ProbeElementsForOverlaySync());
+    FormOverlayResolver.BuildResolvedOverlay(this, service, State.LastElements ?? ProbeElementsSafeSync());
 
-  private OverlayDto BuildResolvedOverlay(string service, Elements elements)
-  {
-    var handle = $"{service}.modal";
-    var hasChildPages = elements.Children.Any(c => !c.IsFiles);
-    var builder = Presentation(handle)
-      ?? (IsCompactPresentation(elements) ? OverlayModel.Popover(handle) : OverlayModel.Drawer(handle));
-    var dto = builder.Screen(service).Build();
-    if (dto.Presentation != OverlayPresentation.Drawer)
-    {
-      if (hasChildPages)
-      {
-        dto.Presentation = OverlayPresentation.Drawer;
-        dto.Width = null;
-        dto.Height = null;
-      }
-      else if (dto.Presentation == OverlayPresentation.Popover && dto.Width is null)
-      {
-        dto.Width = PanelSize.Px(720);
-      }
-    }
+  protected virtual (string? Width, string? Height) OverlayAsk(Elements elements) =>
+    FormOverlayResolver.ResolveOverlayAsk(this, elements);
 
-    return dto;
-  }
-
-  protected virtual (string? Width, string? Height) OverlayAsk(Elements elements)
-  {
-    var explicitBuilder = Presentation($"{Service}.modal");
-    var hasChildPages = elements.Children.Any(c => !c.IsFiles);
-    var presentation = explicitBuilder?.Presentation
-      ?? (IsCompactPresentation(elements) ? OverlayPresentation.Popover : OverlayPresentation.Drawer);
-    if (presentation != OverlayPresentation.Drawer && hasChildPages)
-    {
-      presentation = OverlayPresentation.Drawer;
-    }
-
-    if (presentation is not (OverlayPresentation.Dialog or OverlayPresentation.Popover) ||
-        explicitBuilder?.WidthValue is not null ||
-        explicitBuilder?.HeightValue is not null)
-    {
-      return (null, null);
-    }
-
-    return hasChildPages ? (PanelSize.Fill, PanelSize.Fill) : (PanelSize.Px(720), null);
-  }
-
-  protected virtual bool FillsOverlay(Elements elements)
-  {
-    var explicitBuilder = Presentation($"{Service}.modal");
-    var hasChildPages = elements.Children.Any(c => !c.IsFiles);
-    var presentation = explicitBuilder?.Presentation
-      ?? (IsCompactPresentation(elements) ? OverlayPresentation.Popover : OverlayPresentation.Drawer);
-    if (presentation != OverlayPresentation.Drawer && hasChildPages)
-    {
-      presentation = OverlayPresentation.Drawer;
-    }
-
-    return presentation == OverlayPresentation.Drawer ||
-           explicitBuilder?.HeightValue == PanelSize.Fill ||
-           OverlayAsk(elements).Height == PanelSize.Fill;
-  }
+  protected virtual bool FillsOverlay(Elements elements) =>
+    FormOverlayResolver.FillsOverlay(this, elements);
 
   protected virtual string RecordCaption(TEntity? entity, long? id) =>
-    FormatRecordCaption(entity, id, resolvedLabel: null);
+    FormOverlayResolver.FormatRecordCaption(this, entity, id, resolvedLabel: null);
 
-  protected virtual async Task<string> RecordCaptionAsync(TEntity? entity, long? id, CancellationToken ct = default)
-  {
-    var customMethod = GetType().GetMethod(
-      nameof(RecordCaption),
-      BindingFlags.Instance | BindingFlags.NonPublic,
-      [typeof(TEntity), typeof(long?)]);
-    if (customMethod != null && customMethod.DeclaringType != typeof(FormService<TEntity>))
-    {
-      return RecordCaption(entity, id);
-    }
-
-    if (id is null or 0)
-    {
-      return FormatRecordCaption(entity, id, resolvedLabel: null);
-    }
-
-    string? label = null;
-    if (_state.LastElements?.RecordLabelGridType is { } gridType && entity != null)
-    {
-      try
-      {
-        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, PlatformApp) is Grid.IGridService gridInst)
-        {
-          label = await gridInst.GetRecordLabelAsync(entity, ct);
-        }
-      }
-      catch
-      {
-      }
-    }
-
-    return FormatRecordCaption(entity, id, label);
-  }
-
-  private string FormatRecordCaption(TEntity? entity, long? id, string? resolvedLabel)
-  {
-    var title = L[Title];
-    if (id is null or 0)
-    {
-      return L.TryGetString($"New {Title}", out var named) ? named : L["FormNewRecord", title];
-    }
-
-    var label = resolvedLabel;
-    if (label == null && _state.LastElements?.RecordLabelGridType is { } gridType && entity != null)
-    {
-      try
-      {
-        if (ModuleCatalog.Instance.CreateServiceInstance(gridType, db, PlatformApp) is Grid.IGridService gridInst)
-        {
-          label = gridInst.GetRecordLabel(entity);
-        }
-      }
-      catch
-      {
-      }
-    }
-
-    return string.IsNullOrWhiteSpace(label)
-      ? L["FormRecord", title, id]
-      : L["FormRecordNamed", title, label];
-  }
+  protected virtual Task<string> RecordCaptionAsync(TEntity? entity, long? id, CancellationToken ct = default) =>
+    FormOverlayResolver.ResolveRecordCaptionAsync(this, entity, id, ct);
 
   public string GetTitle() => L[Title];
-  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity ?? _state.LastSavedEntity, id);
+  public string GetRecordCaption(object? entity, long? id) => RecordCaption(entity as TEntity ?? State.LastSavedEntity, id);
   public Task<string> GetRecordCaptionAsync(object? entity, long? id, CancellationToken ct = default) =>
-    RecordCaptionAsync(entity as TEntity ?? _state.LastSavedEntity, id, ct);
+    RecordCaptionAsync(entity as TEntity ?? State.LastSavedEntity, id, ct);
+
+  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, long? id = null, CancellationToken ct = default) =>
+    BuildScreenAsync(servicePath, new FormRequest { Id = id }, ct);
+
+  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, FormRequest request, CancellationToken ct = default) =>
+    FormScreenBuilder.BuildScreenAsync(this, servicePath, request, ct);
+
+  public virtual Task<Dictionary<string, int>?> EvaluateUnavailableAsync(long? id, CancellationToken ct = default) =>
+    FormScreenBuilder.EvaluateUnavailableAsync(this, id, ct);
+
+  public virtual Task<object?> GetModelAsync(long? id, CancellationToken ct = default) =>
+    GetModelAsync(new FormRequest { Id = id }, ct);
+
+  public virtual Task<object?> GetModelAsync(FormRequest request, CancellationToken ct = default) =>
+    FormModelLoader.LoadModelAsync(this, request, ct);
+
+  public virtual Task<FormDataDto> BuildFormDataAsync(object? entity, ScreenDto? screen = null, string? outcome = null, CancellationToken ct = default) =>
+    FormModelLoader.BuildFormDataAsync(this, entity, screen, outcome, ct);
+
+  public virtual Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, CancellationToken ct = default) =>
+    FormModelLoader.PopulateReferencesAsync(this, dict, entity, ct);
+
+  public virtual Task PopulateReferencesAsync(Dictionary<string, object?> dict, object? entity, ScreenDto screen, CancellationToken ct = default) =>
+    FormModelLoader.PopulateReferencesAsync(this, dict, entity, screen, ct);
+
+  public virtual Task<object> SaveAsync(JsonElement json, CancellationToken ct = default) =>
+    SaveAsync(json, null, ct);
+
+  public virtual Task<object> SaveAsync(JsonElement json, FormRequest? request = null, CancellationToken ct = default) =>
+    FormSavePipeline.SaveAsync(this, json, request, ct);
+
+  public virtual Task<GridCellDto> SaveCellAsync(long id, string path, JsonElement value, FormRequest request, Func<CancellationToken, Task<RowDto?>> readRow, CancellationToken ct = default) =>
+    FormSavePipeline.SaveCellAsync(this, id, path, value, request, readRow, ct);
+
+  public virtual Task<FormDraftResultDto> PrepareDraftAsync(
+    long? recordId = null,
+    IReadOnlyDictionary<string, object?>? overrides = null,
+    ISet<string>? pendingReferencePaths = null,
+    long? parentId = null,
+    string? parentService = null,
+    string? triggerField = null,
+    CancellationToken ct = default) =>
+    FormModelLoader.PrepareDraftAsync(this, recordId, overrides, pendingReferencePaths, parentId, parentService, triggerField, ct);
+
+  public virtual Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) =>
+    FormActionRunner.HasActionAsync(this, actionKey, ct);
+
+  public virtual Task<object?> GetActionInputAsync(string actionKey, FormRequest request, CancellationToken ct = default) =>
+    FormActionRunner.GetActionInputAsync(this, actionKey, request, ct);
+
+  public virtual Task<FormActionDto?> ExecuteDeclaredActionAsync(string actionKey, FormRequest request, JsonElement? body, CancellationToken ct = default) =>
+    FormActionRunner.ExecuteDeclaredActionAsync(this, actionKey, request, body, ct);
+
+  public virtual Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default) =>
+    FormActionRunner.MoveStatusAsync(this, id, transitionName, body, ver, ct);
 
   public async Task RegisterMetadataAsync(CancellationToken ct = default)
   {
-    try
+    if (db != null)
     {
       await GetElementsMetadataAsync(ct);
     }
-    catch
+    else
     {
-      var probe = new Elements();
-      try
-      {
-        await SetElementsAsync(probe, ct);
-      }
-      catch
-      {
-        try
-        {
-          SetElements(probe);
-        }
-        catch
-        {
-        }
-      }
-
+      var probe = await ProbeElementsSafeAsync(ct);
       foreach (var el in probe.List)
       {
         if (el.ReferenceServiceType != null)
@@ -684,32 +372,81 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       (probe.StatusFlow as IRecordStatuses)?.RegisterMetadata();
     }
 
-    (_state.LastElements?.StatusFlow as IRecordStatuses)?.RegisterMetadata();
+    (State.LastElements?.StatusFlow as IRecordStatuses)?.RegisterMetadata();
 
-    var actions = new Actions();
-    try
-    {
-      await SetActionsAsync(actions, ct);
-    }
-    catch
-    {
-      actions = new Actions();
-      try
-      {
-        SetActions(actions);
-      }
-      catch
-      {
-      }
-    }
-
-    foreach (var entry in actions.Entries)
+    foreach (var entry in (await ProbeActionsAsync(ct)).Entries)
     {
       entry.Ask?.ValidateConfiguration(GetType());
     }
   }
 
-  private async Task EnsureEntityAndParentLoadedAsync(CancellationToken ct = default)
+  public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
+  {
+    var elements = await EnsureElementsAsync(ct, reload: true);
+    if (Feature.IsReadOnly)
+    {
+      foreach (var child in elements.Children)
+      {
+        child.ReadOnly();
+      }
+    }
+
+    return (elements.List, elements.Children);
+  }
+
+  IEnumerable<string> IPlatformService.GetDeclaredActions() =>
+    ProbeActions().Entries
+      .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
+      .Where(n => !string.IsNullOrWhiteSpace(n))!;
+
+  IReadOnlyList<string> IFormService.GetRoutableActionMethods(ModuleCatalog catalog) =>
+    FormMetadataValidator.GetRoutableActionMethods(this);
+
+  void IPlatformService.ValidateConfiguration(ModuleCatalog catalog) =>
+    FormMetadataValidator.ValidateConfiguration(this);
+
+  void IFormService.ValidateInheritedGridActions(Type gridType) =>
+    FormMetadataValidator.ValidateInheritedGridActions(this, gridType);
+
+  Task<IReadOnlyList<(GridNavActionModel Model, bool IsInMenu, bool IsAllowedInReadOnly, IReadOnlyList<RecordAvailability> Offers)>> IFormService.BuildInheritedGridActionsAsync(
+    string gridServicePath,
+    long? parentId,
+    string? parentService,
+    bool isGridReadOnly,
+    bool isParentReadOnly,
+    CancellationToken ct) =>
+    FormActionRunner.BuildInheritedGridActionsAsync(this, gridServicePath, parentId, parentService, isGridReadOnly, isParentReadOnly, ct);
+
+  Task<IReadOnlyList<(string Key, IReadOnlyList<RecordAvailability> Offers)>> IFormService.GetActionOffersAsync(
+    long? parentId,
+    string? parentService,
+    CancellationToken ct) =>
+    FormActionRunner.GetActionOffersAsync(this, parentId, parentService, ct);
+
+  Task<bool> IFormService.IsActionPermittedForGridAsync(
+    string actionKey,
+    bool isGridReadOnly,
+    bool isParentReadOnly,
+    CancellationToken ct) =>
+    FormActionRunner.IsActionPermittedForGridAsync(this, actionKey, isGridReadOnly, isParentReadOnly, ct);
+
+  internal OverlayBuilder? GetPresentation(string handle) => Presentation(handle);
+  internal (string? Width, string? Height) GetOverlayAsk(Elements elements) => OverlayAsk(elements);
+  internal bool DoesFillOverlay(Elements elements) => FillsOverlay(elements);
+  internal string GetRawTitle() => Title;
+  internal string InvokeRecordCaption(TEntity? entity, long? id) => RecordCaption(entity, id);
+  internal Parent GetParentDeclaration() => GetParent();
+  internal Hooks GetHooksDeclaration() => GetHooks();
+  internal void InvokeSetElements(Elements elements) => SetElements(elements);
+  internal Task InvokeSetElementsAsync(Elements elements, CancellationToken ct) => SetElementsAsync(elements, ct);
+  internal void InvokeSetActions(Actions actions) => SetActions(actions);
+  internal Task InvokeSetActionsAsync(Actions actions, CancellationToken ct) => SetActionsAsync(actions, ct);
+  internal void InvokeSetRules(Rules rules) => SetRules(rules);
+  internal IQueryable<TEntity> ReachableQuery(bool asTracking = false) => Reachable(asTracking);
+  internal Task EnsureParentScopeInternalAsync(Parent parent, bool lockParent, CancellationToken ct) => EnsureParentScopeAsync(parent, lockParent, ct);
+  internal Task PreloadParentRecordInternalAsync(Parent parent, CancellationToken ct) => PreloadParentRecordAsync(parent, ct);
+
+  internal async Task EnsureEntityAndParentLoadedAsync(CancellationToken ct = default)
   {
     IsNew = Request.Id is null or <= 0;
     if (IsNew && CurrentEntity?.Id is > 0)
@@ -733,11 +470,11 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  private async Task<Elements> EnsureElementsAsync(CancellationToken ct = default, bool reload = false)
+  internal async Task<Elements> EnsureElementsAsync(CancellationToken ct = default, bool reload = false)
   {
-    if (!reload && _state.LastElements != null)
+    if (!reload && State.LastElements != null)
     {
-      return _state.LastElements;
+      return State.LastElements;
     }
 
     await EnsureEntityAndParentLoadedAsync(ct);
@@ -755,11 +492,11 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       IsReadOnly,
       elements,
       ct);
-    _state.LastElements = elements;
+    State.LastElements = elements;
     return elements;
   }
 
-  private static void LockBoundParentElement(Elements elements, Parent parent, long? parentId)
+  internal static void LockBoundParentElement(Elements elements, Parent parent, long? parentId)
   {
     if (parent.BoundProperty == null || parentId is not > 0)
     {
@@ -777,21 +514,89 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
+  internal Elements ProbeElementsSafeSync()
   {
-    var elements = await EnsureElementsAsync(ct, reload: true);
-    if (Feature.IsReadOnly)
+    var probe = new Elements();
+    try
     {
-      foreach (var child in elements.Children)
+      SetElementsAsync(probe, CancellationToken.None).GetAwaiter().GetResult();
+    }
+    catch
+    {
+      if (probe.List.Count == 0 && probe.Children.Count == 0)
       {
-        child.ReadOnly();
+        try
+        {
+          SetElements(probe);
+        }
+        catch
+        {
+        }
       }
     }
 
-    return (elements.List, elements.Children);
+    return probe;
   }
 
-  private void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
+  internal Actions ProbeActions()
+  {
+    var actions = new Actions();
+    try
+    {
+      SetActionsAsync(actions).GetAwaiter().GetResult();
+    }
+    catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
+    {
+      if (actions.Entries.Count == 0)
+      {
+        try
+        {
+          SetActions(actions);
+        }
+        catch (ParentNotLoadedException)
+        {
+        }
+      }
+
+      var overridesAsync = GetType()
+        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
+        .DeclaringType != typeof(FormService<TEntity>);
+      if (db == null && overridesAsync && actions.Entries.Count == 0)
+      {
+        throw new InvalidOperationException(
+          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (CurrentEntity != null)' or 'if (db != null)' before registering actions.",
+          ex);
+      }
+    }
+
+    return actions;
+  }
+
+  internal async Task<Actions> ProbeActionsAsync(CancellationToken ct)
+  {
+    var actions = new Actions();
+    try
+    {
+      await SetActionsAsync(actions, ct);
+    }
+    catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
+    {
+      if (actions.Entries.Count == 0)
+      {
+        try
+        {
+          SetActions(actions);
+        }
+        catch (ParentNotLoadedException)
+        {
+        }
+      }
+    }
+
+    return actions;
+  }
+
+  internal void ApplyBoundParentId(TEntity entity, Parent parent, long? parentId)
   {
     if (!parentId.HasValue ||
         parent.BoundProperty == null ||
@@ -810,7 +615,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  private void RestoreBoundParentId(TEntity entity, Parent parent)
+  internal void RestoreBoundParentId(TEntity entity, Parent parent)
   {
     if (parent.BoundProperty == null ||
         !parent.MatchesService(Request.ParentService) && ResolveParentChildBuilder(requirePreset: true)?.PresetProvider != null)
@@ -833,7 +638,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  private void ApplyParentChildPreset(TEntity entity, Parent parent)
+  internal void ApplyParentChildPreset(TEntity entity, Parent parent)
   {
     if (parent.BoundProperty != null && parent.MatchesService(Request.ParentService) ||
         Request.ParentId is not > 0 ||
@@ -849,7 +654,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     }
   }
 
-  private Task<ChildGridBuilder?> ResolveParentChildBuilderAsync(bool requirePreset = false, CancellationToken ct = default) =>
+  internal Task<ChildGridBuilder?> ResolveParentChildBuilderAsync(bool requirePreset = false, CancellationToken ct = default) =>
     ParentScopeValidator.ResolveChildBuilderAsync(
       db,
       PlatformApp,
@@ -857,8 +662,8 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       GetParent().BoundParentService,
       GetParent().BoundParentServiceType,
       Request.ParentId,
-      val => _state.CachedParentChildren = val,
-      _state.CachedParentChildren,
+      val => State.CachedParentChildren = val,
+      State.CachedParentChildren,
       c => !c.IsFiles &&
            (!requirePreset || c.PresetProvider != null) &&
            ((c.ChildEntityType ?? ParentScopeValidator.GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false),
@@ -869,8 +674,62 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
       Request.ParentService,
       GetParent().BoundParentService,
       Request.ParentId,
-      _state.CachedParentChildren,
+      State.CachedParentChildren,
       c => !c.IsFiles &&
            (!requirePreset || c.PresetProvider != null) &&
            ((c.ChildEntityType ?? ParentScopeValidator.GetGridEntityType(c.ServiceType))?.IsAssignableFrom(typeof(TEntity)) ?? false));
+
+  private async Task<IReadOnlyList<ChildGridBuilder>> GetSumChildrenAsync(CancellationToken ct)
+  {
+    if (State.LastElements != null)
+    {
+      return State.LastElements.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
+    }
+
+    var probe = await ProbeElementsSafeAsync(ct);
+    return probe.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
+  }
+
+  private async Task<Elements> ProbeElementsSafeAsync(CancellationToken ct)
+  {
+    var probe = new Elements();
+    try
+    {
+      await SetElementsAsync(probe, ct);
+    }
+    catch (OperationCanceledException)
+    {
+      throw;
+    }
+    catch
+    {
+      if (probe.List.Count == 0 && probe.Children.Count == 0)
+      {
+        try
+        {
+          SetElements(probe);
+        }
+        catch
+        {
+        }
+      }
+    }
+
+    return probe;
+  }
+
+  private async Task<Elements> ProbeElementsForOverlayAsync(CancellationToken ct = default)
+  {
+    if (State.LastElements is not null)
+    {
+      return State.LastElements;
+    }
+
+    if (db != null)
+    {
+      await EnsureEntityAndParentLoadedAsync(ct);
+    }
+
+    return await ProbeElementsSafeAsync(ct);
+  }
 }

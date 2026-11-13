@@ -62,6 +62,7 @@ public interface IFormService : IPlatformService
     bool isParentReadOnly = false,
     CancellationToken ct = default) =>
     Task.FromResult(false);
+  internal void ValidateInheritedGridActions(Type gridType) { }
   IReadOnlyList<string> GetRoutableActionMethods(ModuleCatalog catalog) => [];
   new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }

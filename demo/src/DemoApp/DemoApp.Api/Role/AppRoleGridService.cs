@@ -17,5 +17,5 @@ public sealed class AppRoleGridService(AppDbContext db, AppService app)
   protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
 
   protected override void SetHooks(Hooks hooks) =>
-    AppRoleSecurityRules.AddDeleteHooks<AppAuthRole, AppAuthGrant, AppAuthAssignment>(hooks, db, app, () => User);
+    AppRoleSecurityRules.AddDeleteHooks<AppAuthRole, AppAuthGrant, AppAuthAssignment>(this, hooks);
 }

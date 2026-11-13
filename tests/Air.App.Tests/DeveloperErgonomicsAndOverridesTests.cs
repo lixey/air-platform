@@ -1,0 +1,195 @@
+using Platform.App.Internals;
+using Platform.App.Tests.Internals;
+
+namespace Platform.App.Tests;
+
+public sealed class DeveloperErgonomicsAndOverridesTests : IDisposable
+{
+  private readonly SqliteConnection _connection;
+
+  public DeveloperErgonomicsAndOverridesTests()
+  {
+    _connection = new SqliteConnection("DataSource=:memory:");
+    _connection.Open();
+    ModuleCatalog.Instance.Register(new TestAppModuleImpl());
+  }
+
+  public void Dispose() => _connection.Dispose();
+
+  private AppTestDbContext CreateDbContext()
+  {
+    var options = new DbContextOptionsBuilder<AppTestDbContext>()
+      .UseSqlite(_connection)
+      .Options;
+    var rights = new HashSet<string>(["*"], StringComparer.OrdinalIgnoreCase);
+    var db = new AppTestDbContext(options, new FixedTenant(1, 7, rights));
+    db.Database.EnsureCreated();
+    return db;
+  }
+
+  [Fact]
+  public void DualSyncAndAsyncOverride_InSameClass_ThrowsClearStartupError()
+  {
+    var ex = Assert.Throws<InvalidOperationException>(() =>
+      ServiceOverrideValidator.EnsureSingleSyncOrAsyncOverride(
+        typeof(TestDualElementsAbstractForm),
+        typeof(FormService<>),
+        ("SetElements", "SetElementsAsync"),
+        ("SetActions", "SetActionsAsync")));
+
+    Assert.Contains("SetElements", ex.Message, StringComparison.Ordinal);
+    Assert.Contains("SetElementsAsync", ex.Message, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void DualSetColumnsOverloads_InSameClass_ThrowsClearStartupError()
+  {
+    var ex = Assert.Throws<InvalidOperationException>(() =>
+      ServiceOverrideValidator.EnsureSingleColumnOverride(
+        typeof(TestDualColumnsAbstractGrid),
+        typeof(GridService<,>)));
+
+    Assert.Contains("SetColumns", ex.Message, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public async Task ConfirmAsync_EvaluatesDynamicPromptPerRecord_WithoutSetActionsAsync()
+  {
+    await using var db = CreateDbContext();
+    var app = new TestPlatformAppService(db, new FixedUser(7, "*"));
+
+    var invEmpty = new TestInvoice { Number = "INV-1", Status = 1 };
+    var invWithLines = new TestInvoice { Number = "INV-2", Status = 1 };
+    db.Invoices.AddRange(invEmpty, invWithLines);
+    await db.SaveChangesAsync();
+
+    db.InvoiceLines.Add(new TestInvoiceLine { InvoiceId = invWithLines.Id, Title = "Item", Amount = 100m });
+    await db.SaveChangesAsync();
+
+    var formEmpty = new TestConfirmAsyncFormService(db, app);
+    var screenEmpty = await formEmpty.BuildScreenAsync("test/confirm-async", invEmpty.Id);
+    var actionsEmpty = ExtractActionButtons(screenEmpty);
+    var approveEmpty = Assert.Single(actionsEmpty, a => a.Key == "approve");
+    Assert.Null(approveEmpty.Confirm);
+
+    var formWithLines = new TestConfirmAsyncFormService(db, app);
+    var screenWithLines = await formWithLines.BuildScreenAsync("test/confirm-async", invWithLines.Id);
+    var actionsWithLines = ExtractActionButtons(screenWithLines);
+    var approveWithLines = Assert.Single(actionsWithLines, a => a.Key == "approve");
+    Assert.Equal("Approve 1 lines?", approveWithLines.Confirm?.Message);
+  }
+
+  [Fact]
+  public async Task RequiredParent_ReturnsLoadedParent_AndThrowsWhenMissing()
+  {
+    await using var db = CreateDbContext();
+    var app = new TestPlatformAppService(db, new FixedUser(7, "*"));
+
+    var inv = new TestInvoice { Number = "INV-PARENT", Status = 1 };
+    db.Invoices.Add(inv);
+    await db.SaveChangesAsync();
+
+    var missingParentForm = new TestRequiredParentLineFormService(db, app);
+    ((IPlatformService)missingParentForm).ValidateConfiguration(ModuleCatalog.Instance);
+    var probeOverlay = await missingParentForm.OverlayAsync("test/required-parent-line");
+    Assert.NotNull(probeOverlay);
+    Assert.ThrowsAny<InvalidOperationException>(() => missingParentForm.ReadRequiredParent());
+
+    var boundForm = new TestRequiredParentLineFormService(db, app);
+    await boundForm.BuildScreenAsync(
+      "test/required-parent-line",
+      new FormRequest { ParentService = ServicePathResolver.Resolve(typeof(TestInvoiceFormService)), ParentId = inv.Id });
+    var loaded = boundForm.ReadRequiredParent();
+    Assert.Equal("INV-PARENT", loaded.Number);
+  }
+
+  [Fact]
+  public async Task UseActionsOf_WithConfirmAsync_RequiresGridFallbackAndUsesItInGrid()
+  {
+    await using var db = CreateDbContext();
+    var app = new TestPlatformAppService(db, new FixedUser(7, "*"));
+    var catalog = new ModuleCatalog();
+    catalog.Register(new TestAppModuleImpl());
+
+    var brokenGrid = new MockBadConfirmAsyncGridService(db, app);
+    var ex = Assert.Throws<InvalidOperationException>(() =>
+      ((IPlatformService)brokenGrid).ValidateConfiguration(catalog));
+    Assert.Contains("ConfirmAsync", ex.Message, StringComparison.Ordinal);
+
+    var validGrid = new TestConfirmAsyncGridWithFallbackService(db, app);
+    ((IPlatformService)validGrid).ValidateConfiguration(catalog);
+    var screen = await validGrid.BuildScreenAsync("test/confirm-async-grid-fallback", new GridRequest());
+    var gridModel = ExtractGridModel(screen);
+    var gridActions = (gridModel.ActionNav.Start ?? [])
+      .Concat(gridModel.ActionNav.Elements ?? [])
+      .OfType<GridNavActionModel>()
+      .ToList();
+    var approve = Assert.Single(gridActions, a => a.Key == "approve");
+    Assert.Equal("Approve selected invoices?", approve.Confirm?.Message);
+  }
+
+  private static GridModel ExtractGridModel(ScreenDto screen)
+  {
+    GridModel? found = null;
+    void Walk(PanelNodeDto? node)
+    {
+      if (node == null || found != null)
+      {
+        return;
+      }
+
+      if (node.Model is GridModel gm)
+      {
+        found = gm;
+        return;
+      }
+
+      if (node.Children != null)
+      {
+        foreach (var child in node.Children)
+        {
+          Walk(child);
+        }
+      }
+    }
+
+    Walk(screen.Layout?.Root);
+    return Assert.IsType<GridModel>(found);
+  }
+
+  private static List<FormNavActionModel> ExtractActionButtons(ScreenDto screen)
+  {
+    var result = new List<FormNavActionModel>();
+    void Walk(PanelNodeDto? node)
+    {
+      if (node == null)
+      {
+        return;
+      }
+
+      if (node.Model is NavModel nav)
+      {
+        if (nav.Start != null)
+        {
+          result.AddRange(nav.Start.OfType<FormNavActionModel>());
+        }
+
+        if (nav.Elements != null)
+        {
+          result.AddRange(nav.Elements.OfType<FormNavActionModel>());
+        }
+      }
+
+      if (node.Children != null)
+      {
+        foreach (var child in node.Children)
+        {
+          Walk(child);
+        }
+      }
+    }
+
+    Walk(screen.Layout?.Root);
+    return result;
+  }
+}

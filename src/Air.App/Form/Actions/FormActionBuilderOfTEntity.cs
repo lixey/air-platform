@@ -48,6 +48,21 @@ public class FormActionBuilder<TEntity>
   public FormActionBuilder<TEntity> Confirm(string? message)
   {
     Entry.ConfirmMessage = string.IsNullOrEmpty(message) ? null : message;
+    Entry.ConfirmProvider = null;
+    return this;
+  }
+
+  public FormActionBuilder<TEntity> ConfirmAsync(
+    Func<TEntity, CancellationToken, Task<string?>> confirmProvider,
+    string? gridConfirm = null)
+  {
+    ArgumentNullException.ThrowIfNull(confirmProvider);
+    Entry.ConfirmProvider = confirmProvider;
+    if (gridConfirm != null)
+    {
+      Entry.ConfirmMessage = string.IsNullOrEmpty(gridConfirm) ? null : gridConfirm;
+    }
+
     return this;
   }
 

@@ -16,6 +16,7 @@ internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission p
   public string? ColorHandle { get; set; }
   public string? VariantHandle { get; set; }
   public string? ConfirmMessage { get; set; }
+  public Func<TEntity, CancellationToken, Task<string?>>? ConfirmProvider { get; set; }
   public bool IsInMenu { get; set; }
   public bool IsAllowedInReadOnly { get; set; }
   public RecordAsk? Ask { get; set; }
@@ -45,6 +46,7 @@ internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission p
     Type ownerServiceType,
     Feature feature,
     string servicePath,
+    TEntity entity,
     PlatformDbContext db,
     PlatformAppService? app,
     IUserContext user,
@@ -53,8 +55,11 @@ internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission p
   {
     var rawLabel = LabelText ?? Grid.Columns.PathToLabel(Handle);
     var color = ColorHandle ?? UiColor.Blue;
-    var confirm = !string.IsNullOrEmpty(ConfirmMessage)
-      ? new OverlayConfirmModel { Message = l[ConfirmMessage], Color = ColorHandle ?? UiColor.Red }
+    var resolvedConfirm = ConfirmProvider != null
+      ? await ConfirmProvider(entity, ct)
+      : ConfirmMessage;
+    var confirm = !string.IsNullOrEmpty(resolvedConfirm)
+      ? new OverlayConfirmModel { Message = l[resolvedConfirm], Color = ColorHandle ?? UiColor.Red }
       : null;
 
     var model = new FormNavActionModel

@@ -1,20 +1,20 @@
-using Platform.App.Grid.Internals;
 using Platform.App.Screens.Internals;
 
-namespace Platform.App.Grid;
+namespace Platform.App.Grid.Internals;
 
-public abstract partial class GridService<TEntity, TRow>
-  where TEntity : class, IEntity, new()
-  where TRow : class
+internal static class GridScreenBuilder
 {
-  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
-    BuildScreenAsync(servicePath, null, ct);
-
-  public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default)
+  public static async Task<ScreenDto> BuildScreenAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    string servicePath,
+    GridRequest? request,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
-    ParentService = request?.ParentService;
-    ParentId = request?.ParentId;
-    if (!await EnsureParentScopeAsync(lockParent: false, ct))
+    grid.ParentService = request?.ParentService;
+    grid.ParentId = request?.ParentId;
+    if (!await grid.EnsureParentScopeInternalAsync(lockParent: false, ct))
     {
       return new ScreenDto
       {
@@ -29,32 +29,32 @@ public abstract partial class GridService<TEntity, TRow>
       };
     }
 
-    var columns = CreateColumns();
+    var columns = grid.CreateColumnsDeclaration();
 
     var isReferenceSelect = request?.ReferenceLabelPaths is { Count: > 0 };
     var isPickerOrSelect = isReferenceSelect || (request?.IsReferencePicker ?? false);
     if (isReferenceSelect)
     {
-      return BuildSelectScreen(servicePath, columns, request);
+      return BuildSelectScreen(grid, servicePath, columns, request);
     }
 
-    var formOverlay = await ResolveFormOverlayAsync(columns, ct);
+    var formOverlay = await grid.InvokeResolveFormOverlayAsync(columns, ct);
 
-    var nav = GetNav(servicePath);
+    var nav = grid.GetNavDeclaration(servicePath);
 
-    LocalizeAndConfigureColumns(columns.List);
+    LocalizeAndConfigureColumns(grid, columns.List);
 
-    var parentChild = ResolveParentChildBuilder();
-    var isUserReadOnly = User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
-    var isGridReadOnly = IsReadOnly || isUserReadOnly || parentChild?.IsReadOnly == true;
+    var parentChild = grid.ResolveParentChildBuilder();
+    var isUserReadOnly = grid.User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(grid.Feature, grid.User);
+    var isGridReadOnly = grid.IsGridReadOnly || isUserReadOnly || parentChild?.IsReadOnly == true;
 
     var navStart = new List<NavElementModel>();
     if (!isGridReadOnly && nav.Creates.Count > 0)
     {
       foreach (var (createFormType, createModel) in nav.Creates)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), createFormType, "Nav.AddCreate");
-        createModel.Overlay = await ResolveFormOverlayForTypeAsync(createFormType, createModel.Service!, ct);
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(grid.GetType(), createFormType, "Nav.AddCreate");
+        createModel.Overlay = await ResolveFormOverlayForTypeAsync(grid, createFormType, createModel.Service!, ct);
         formOverlay ??= createModel.Overlay;
         navStart.Add(createModel);
       }
@@ -64,7 +64,7 @@ public abstract partial class GridService<TEntity, TRow>
       navStart.Add(new GridNavAddModel
       {
         Key = "add",
-        Label = L["Add"],
+        Label = grid.L["Add"],
         Variant = ButtonVariant.Soft,
         Color = UiColor.Orange,
         Icon = UiIcon.Plus
@@ -78,8 +78,8 @@ public abstract partial class GridService<TEntity, TRow>
 
     navStart.AddRange(nav.CustomStart);
 
-    var actions = new Actions();
-    await SetActionsAsync(actions, ct);
+    var actions = new GridService<TEntity, TRow>.Actions();
+    await grid.InvokeSetActionsAsync(actions, ct);
 
     var isParentReadOnly = parentChild?.IsReadOnly == true;
     var permittedActions = new List<(GridNavActionModel Model, bool IsInMenu)>();
@@ -87,23 +87,23 @@ public abstract partial class GridService<TEntity, TRow>
     foreach (var entry in actions.Entries)
     {
       declaredKeys.Add(entry.Key);
-      if (entry.Permission.IsPermitted(Feature, User, entry.Handle, isGridReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
+      if (entry.Permission.IsPermitted(grid.Feature, grid.User, entry.Handle, isGridReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly))
       {
-        var model = await entry.BuildModelAsync(GetType(), Feature, servicePath, db, PlatformApp, User, L, ct);
+        var model = await entry.BuildModelAsync(grid.GetType(), grid.Feature, servicePath, grid.DbContext, grid.PlatformApp, grid.User, grid.L, ct);
         permittedActions.Add((model, entry.IsInMenu));
       }
     }
 
     foreach (var formType in actions.InheritedFormServiceTypes)
     {
-      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService form)
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, grid.DbContext, grid.PlatformApp) is IFormService form)
       {
-        if (PlatformApp != null)
+        if (grid.PlatformApp != null)
         {
-          form.AttachPlatformApp(PlatformApp);
+          form.AttachPlatformApp(grid.PlatformApp);
         }
 
-        var inherited = await form.BuildInheritedGridActionsAsync(servicePath, ParentId, ParentService, isGridReadOnly, isParentReadOnly, ct);
+        var inherited = await form.BuildInheritedGridActionsAsync(servicePath, grid.ParentId, grid.ParentService, isGridReadOnly, isParentReadOnly, ct);
         foreach (var item in inherited)
         {
           if (declaredKeys.Add(item.Model.Key))
@@ -120,11 +120,11 @@ public abstract partial class GridService<TEntity, TRow>
       navElements.Add(model);
     }
 
-    navElements.Add(new GridNavSearchModel { Key = "search", Label = L["Search"] });
+    navElements.Add(new GridNavSearchModel { Key = "search", Label = grid.L["Search"] });
     navElements.Add(new NavOverlayModel
     {
       Key = "filters",
-      Label = L["Filters"],
+      Label = grid.L["Filters"],
       Icon = UiIcon.Filter,
       Color = UiColor.Emerald,
       Variant = ButtonVariant.Soft,
@@ -133,11 +133,11 @@ public abstract partial class GridService<TEntity, TRow>
           PanelLayout.Row($"{servicePath}.filters")
             .Panel("filters", new GridFiltersOverlayModel())
             .Build())
-        .Width(FiltersWidth)
+        .Width(grid.GridFiltersWidth)
         .Build()
     });
 
-    var queryDeclaration = GetQueryDeclaration();
+    var queryDeclaration = grid.GetQueryDeclaration();
     if (!isPickerOrSelect)
     {
       foreach (var group in queryDeclaration.NamedFilterGroups)
@@ -151,8 +151,8 @@ public abstract partial class GridService<TEntity, TRow>
           groupItems.Add(new GridNavNamedFilterModel
           {
             Key = item.Key,
-            Label = L[item.Label],
-            Title = item.Title != null ? L[item.Title] : null,
+            Label = grid.L[item.Label],
+            Title = item.Title != null ? grid.L[item.Title] : null,
             Color = item.Color,
             IsSelected = string.Equals(item.Key, chosenKey, StringComparison.OrdinalIgnoreCase)
           });
@@ -161,7 +161,7 @@ public abstract partial class GridService<TEntity, TRow>
         navElements.Add(new GridNavNamedFilterGroupModel
         {
           Key = group.Key,
-          Label = group.Label != null ? L[group.Label] : null,
+          Label = group.Label != null ? grid.L[group.Label] : null,
           IsRemembered = group.IsRemembered,
           IsInline = group.IsInline,
           Items = groupItems
@@ -173,8 +173,8 @@ public abstract partial class GridService<TEntity, TRow>
         navElements.Add(new GridNavNamedFilterModel
         {
           Key = item.Key,
-          Label = L[item.Label],
-          Title = item.Title != null ? L[item.Title] : null,
+          Label = grid.L[item.Label],
+          Title = item.Title != null ? grid.L[item.Title] : null,
           Color = item.Color,
           IsRemembered = item.IsRemembered,
           IsSelected = request?.NamedFilters?.Any(k => string.Equals(k, item.Key, StringComparison.OrdinalIgnoreCase)) == true
@@ -185,7 +185,7 @@ public abstract partial class GridService<TEntity, TRow>
     var actionElements = new List<NavElementModel>();
     if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && (!isGridReadOnly || columns.StatusFlowAllowsReadOnly))
     {
-      var statusButton = await BuildStatusNavElementAsync(servicePath, statusFlow, ct);
+      var statusButton = await BuildStatusNavElementAsync(grid, servicePath, statusFlow, ct);
       if (statusButton != null)
       {
         actionElements.Add(statusButton);
@@ -195,9 +195,9 @@ public abstract partial class GridService<TEntity, TRow>
     ScreenBuilderHelpers.AppendMenuAndInlineActions(
       actionElements,
       permittedActions.Select(a => ((NavElementModel)a.Model, a.IsInMenu)),
-      L);
+      grid.L);
 
-    var canExport = User is { IsAuthenticated: true } && ServiceEndpointsExtensions.CanExport(Feature, User);
+    var canExport = grid.User is { IsAuthenticated: true } && ServiceEndpointsExtensions.CanExport(grid.Feature, grid.User);
     if (canExport)
     {
       actionElements.Add(new GridNavActionModel
@@ -210,12 +210,12 @@ public abstract partial class GridService<TEntity, TRow>
         Color = UiColor.Green,
         Variant = ButtonVariant.Soft,
         Icon = UiIcon.Excel,
-        Label = L["Export"]
+        Label = grid.L["Export"]
       });
     }
 
     var actionEnd = new List<NavElementModel>();
-    if (!isGridReadOnly && CanDelete())
+    if (!isGridReadOnly && grid.CanDelete())
     {
       actionEnd.Add(new GridNavActionModel
       {
@@ -223,12 +223,12 @@ public abstract partial class GridService<TEntity, TRow>
         Service = servicePath,
         Method = "delete",
         NeedsSelection = true,
-        IsSingle = !GetHooks().IsMultiDeleteAllowed,
+        IsSingle = !grid.GetHooksDeclaration().IsMultiDeleteAllowed,
         Color = UiColor.Red,
         Variant = ButtonVariant.Soft,
         Icon = UiIcon.Trash,
-        Label = L["Delete"],
-        Confirm = new OverlayConfirmModel { Message = L["DeleteConfirm"], Color = UiColor.Red }
+        Label = grid.L["Delete"],
+        Confirm = new OverlayConfirmModel { Message = grid.L["DeleteConfirm"], Color = UiColor.Red }
       });
     }
 
@@ -281,13 +281,13 @@ public abstract partial class GridService<TEntity, TRow>
       IsReadOnly = isGridReadOnly,
       Form = formOverlay,
       InitialFilter = initialFilter,
-      MutationTexts = ScreenBuilderHelpers.BuildMutationTexts(L),
+      MutationTexts = ScreenBuilderHelpers.BuildMutationTexts(grid.L),
       Nav = new NavModel
       {
         Key = $"{servicePath}.nav",
         Start = navStart,
         Elements = navElements,
-        End = ParentId is > 0 && !string.IsNullOrEmpty(ParentService)
+        End = grid.ParentId is > 0 && !string.IsNullOrEmpty(grid.ParentService)
           ? [
               new NavCloseModel
               {
@@ -295,7 +295,7 @@ public abstract partial class GridService<TEntity, TRow>
                 Icon = UiIcon.Close,
                 Color = UiColor.Slate,
                 Variant = ButtonVariant.Ghost,
-                Title = L["Close"]
+                Title = grid.L["Close"]
               }
             ]
           : [],
@@ -310,7 +310,7 @@ public abstract partial class GridService<TEntity, TRow>
                 IsDownload = true,
                 Color = UiColor.Green,
                 Icon = UiIcon.Excel,
-                Label = L["Export"]
+                Label = grid.L["Export"]
               }
             ]
           : []
@@ -332,7 +332,13 @@ public abstract partial class GridService<TEntity, TRow>
     return new ScreenDto { Layout = layout };
   }
 
-  private ScreenDto BuildSelectScreen(string servicePath, Columns columns, GridRequest? request)
+  private static ScreenDto BuildSelectScreen<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    string servicePath,
+    GridService<TEntity, TRow>.Columns columns,
+    GridRequest? request)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     var labelPaths = request?.ReferenceLabelPaths is { Count: > 0 }
       ? request.ReferenceLabelPaths
@@ -354,7 +360,7 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    LocalizeAndConfigureColumns(matching);
+    LocalizeAndConfigureColumns(grid, matching);
 
     var selectGridModel = new GridModel
     {
@@ -365,7 +371,7 @@ public abstract partial class GridService<TEntity, TRow>
       Nav = new NavModel
       {
         Key = $"{servicePath}.select.nav",
-        Elements = [new GridNavSearchModel { Key = "search", Label = L["Search"] }]
+        Elements = [new GridNavSearchModel { Key = "search", Label = grid.L["Search"] }]
       },
       ActionNav = new NavModel { Key = $"{servicePath}.select.actions" }
     };
@@ -377,31 +383,37 @@ public abstract partial class GridService<TEntity, TRow>
     return new ScreenDto { Layout = selectLayout };
   }
 
-  private void LocalizeAndConfigureColumns(IEnumerable<GridColumnDto> columns)
+  public static void LocalizeAndConfigureColumns<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    IEnumerable<GridColumnDto> columns)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
+    var gridType = grid.GetType();
+    var dbModel = grid.DbContext.Model;
     foreach (var col in columns)
     {
       if (!string.IsNullOrEmpty(col.Label))
       {
-        col.Label = ScreenBuilderHelpers.ResolveFieldLabel(L, Feature, col.Path, col.Label);
+        col.Label = ScreenBuilderHelpers.ResolveFieldLabel(grid.L, grid.Feature, col.Path, col.Label);
       }
 
       if (!string.IsNullOrEmpty(col.Title))
       {
-        col.Title = L[col.Title];
+        col.Title = grid.L[col.Title];
       }
 
-      col.Options = ScreenBuilderHelpers.LocalizeOptions(L, col.Options);
+      col.Options = ScreenBuilderHelpers.LocalizeOptions(grid.L, col.Options);
       if (!string.IsNullOrEmpty(col.ReferenceService))
       {
         var refServiceType = ModuleCatalog.Instance.FindServiceType(col.ReferenceService);
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), refServiceType, $"AsReference on '{col.Path}'");
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(gridType, refServiceType, $"AsReference on '{col.Path}'");
       }
 
       if (col.Cell is GridCellPickerModel cellPicker && !string.IsNullOrEmpty(cellPicker.ReferenceService))
       {
         var pickerServiceType = col.PickerSourceType ?? ModuleCatalog.Instance.FindServiceType(cellPicker.ReferenceService);
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), pickerServiceType, $"PickedBy on '{col.Path}'");
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(gridType, pickerServiceType, $"PickedBy on '{col.Path}'");
       }
 
       if (col.ExplicitRequired.HasValue)
@@ -420,8 +432,8 @@ public abstract partial class GridService<TEntity, TRow>
       }
       else if (!string.IsNullOrEmpty(col.Path))
       {
-        col.IsRequired = ColumnRequiredResolver.Resolve(typeof(TEntity), col.Path, db.Model)
-          ?? (typeof(TRow) != typeof(TEntity) ? ColumnRequiredResolver.Resolve(typeof(TRow), col.Path, db.Model) ?? false : false);
+        col.IsRequired = ColumnRequiredResolver.Resolve(typeof(TEntity), col.Path, dbModel)
+          ?? (typeof(TRow) != typeof(TEntity) ? ColumnRequiredResolver.Resolve(typeof(TRow), col.Path, dbModel) ?? false : false);
       }
 
       if (col.IsFilterable && col.Operators == null)
@@ -444,33 +456,20 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  protected virtual OverlayDto? ResolveFormOverlay(Columns columns) => null;
-
-  protected virtual async Task<OverlayDto?> ResolveFormOverlayAsync(Columns columns, CancellationToken ct = default)
-  {
-    if (ResolveFormOverlay(columns) is { } customOverlay)
-    {
-      return customOverlay;
-    }
-
-    var detectedFormService = ResolveFormServicePath(columns);
-    if (detectedFormService is null)
-    {
-      return null;
-    }
-
-    var formType = ResolveFormServiceType(columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
-    return await ResolveFormOverlayForTypeAsync(formType, detectedFormService, ct);
-  }
-
-  private async Task<OverlayDto> ResolveFormOverlayForTypeAsync(Type? formType, string formServicePath, CancellationToken ct = default)
+  public static async Task<OverlayDto> ResolveFormOverlayForTypeAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    Type? formType,
+    string formServicePath,
+    CancellationToken ct = default)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     if (formType != null)
     {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, nameof(ResolveFormOverlay));
+      ModuleCatalog.EnsureModuleServiceAccessAllowed(grid.GetType(), formType, "ResolveFormOverlay");
     }
 
-    if (_state.CachedFormOverlays.TryGetValue(formServicePath, out var cachedOverlay))
+    if (grid.State.CachedFormOverlays.TryGetValue(formServicePath, out var cachedOverlay))
     {
       return cachedOverlay;
     }
@@ -479,32 +478,34 @@ public abstract partial class GridService<TEntity, TRow>
     {
       try
       {
-        if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService formInstance)
+        if (ModuleCatalog.Instance.CreateServiceInstance(formType, grid.DbContext, grid.PlatformApp) is IFormService formInstance)
         {
           var resolved = await formInstance.OverlayAsync(formServicePath, ct);
-          _state.CachedFormOverlays[formServicePath] = resolved;
+          grid.State.CachedFormOverlays[formServicePath] = resolved;
           return resolved;
         }
       }
       catch
       {
-        // Fallback to default drawer overlay below
       }
     }
 
     var fallback = OverlayModel.Drawer($"{formServicePath}.modal").Screen(formServicePath).Build();
-    _state.CachedFormOverlays[formServicePath] = fallback;
+    grid.State.CachedFormOverlays[formServicePath] = fallback;
     return fallback;
   }
 
-  private async Task<GridNavStatusModel?> BuildStatusNavElementAsync(
+  private static async Task<GridNavStatusModel?> BuildStatusNavElementAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     string servicePath,
     IRecordStatuses<TEntity> statusFlow,
     CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
-    if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+    if (grid.PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
     {
-      flowSvc.AttachPlatformApp(PlatformApp);
+      flowSvc.AttachPlatformApp(grid.PlatformApp);
     }
 
     var statusPath = StatusMoveNavBuilder.ResolveStatusPath(statusFlow.StatusMember);
@@ -512,12 +513,12 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var t in statusFlow.Transitions)
     {
-      if (!StatusMoveNavBuilder.CanMove(Feature, User, t.Name))
+      if (!StatusMoveNavBuilder.CanMove(grid.Feature, grid.User, t.Name))
       {
         continue;
       }
 
-      var meta = await StatusMoveNavBuilder.BuildTransitionMetaAsync(GetType(), Feature, db, PlatformApp, User, L, statusFlow, t, ct);
+      var meta = await StatusMoveNavBuilder.BuildTransitionMetaAsync(grid.GetType(), grid.Feature, grid.DbContext, grid.PlatformApp, grid.User, grid.L, statusFlow, t, ct);
       statusMoves.Add(new GridNavStatusMoveDto
       {
         From = [.. t.From],
@@ -545,8 +546,8 @@ public abstract partial class GridService<TEntity, TRow>
     return new GridNavStatusModel
     {
       Key = "status",
-      Label = L["Status"],
-      EmptyTitle = L["StatusNoMove"],
+      Label = grid.L["Status"],
+      EmptyTitle = grid.L["StatusNoMove"],
       Path = statusPath,
       Moves = statusMoves
     };

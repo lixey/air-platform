@@ -2,16 +2,17 @@ using System.Runtime.CompilerServices;
 using Platform.App.Form.Internals;
 using Platform.App.Internals;
 
-namespace Platform.App.Grid;
+namespace Platform.App.Grid.Internals;
 
-public abstract partial class GridService<TEntity, TRow>
-  where TEntity : class, IEntity, new()
-  where TRow : class
+internal static class GridRowShaper
 {
-  protected virtual RowDto ShapeRow(
+  public static RowDto ShapeDefaultRow<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     TRow row,
     IReadOnlyList<GridColumnDto> columns,
     IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     if (row is null)
     {
@@ -82,6 +83,8 @@ public abstract partial class GridService<TEntity, TRow>
       return shaped;
     }
 
+    var localizer = grid.L;
+    var gridType = grid.GetType();
     for (var cIdx = 0; cIdx < columns.Count; cIdx++)
     {
       var column = columns[cIdx];
@@ -93,7 +96,7 @@ public abstract partial class GridService<TEntity, TRow>
 
       var value = column.ValueEvaluator != null
         ? column.ValueEvaluator(row)
-        : ReadPathValue(row, column.Path);
+        : PropertyAccessorCache.GetPathValue(row, column.Path);
       var formattedByCustomFormatter = false;
       if (column.ValueFormatter != null && (!column.IsSubqueryExpression || value != null))
       {
@@ -109,13 +112,13 @@ public abstract partial class GridService<TEntity, TRow>
         {
           var id = Convert.ToInt64(value, CultureInfo.InvariantCulture);
           var opt = options.FirstOrDefault(o => o.Id == id);
-          var name = opt != null ? L[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
+          var name = opt != null ? localizer[opt.Name] : id.ToString(CultureInfo.InvariantCulture);
           value = new Reference { Id = id, Name = name };
           allocatedRef = true;
         }
         else if (value is Reference optRef)
         {
-          value = new Reference { Id = optRef.Id, Name = L[optRef.Name], Color = optRef.Color };
+          value = new Reference { Id = optRef.Id, Name = localizer[optRef.Name], Color = optRef.Color };
           allocatedRef = true;
         }
       }
@@ -126,14 +129,14 @@ public abstract partial class GridService<TEntity, TRow>
         {
           if (labelPaths.Count == 1)
           {
-            rawName = ReadPathValue(value, labelPaths[0])?.ToString();
+            rawName = PropertyAccessorCache.GetPathValue(value, labelPaths[0])?.ToString();
           }
           else
           {
             List<string>? parts = null;
             for (var i = 0; i < labelPaths.Count; i++)
             {
-              var part = ReadPathValue(value, labelPaths[i])?.ToString();
+              var part = PropertyAccessorCache.GetPathValue(value, labelPaths[i])?.ToString();
               if (!string.IsNullOrWhiteSpace(part))
               {
                 parts ??= new List<string>(labelPaths.Count);
@@ -186,7 +189,7 @@ public abstract partial class GridService<TEntity, TRow>
         var formType = column.FormServiceResolver(row);
         if (formType is not null)
         {
-          ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), formType, $"OpenForm on '{column.Path}'");
+          ModuleCatalog.EnsureModuleServiceAccessAllowed(gridType, formType, $"OpenForm on '{column.Path}'");
           shaped.Open = new OpenTargetDto
           {
             Service = ServicePathResolver.Resolve(formType),
@@ -204,10 +207,7 @@ public abstract partial class GridService<TEntity, TRow>
     return shaped;
   }
 
-  private static object? ReadPathValue(object? target, string path) =>
-    PropertyAccessorCache.GetPathValue(target, path);
-
-  private static void PutValue(Dictionary<string, object?> target, string path, object? value)
+  public static void PutValue(Dictionary<string, object?> target, string path, object? value)
   {
     if (!path.Contains('.'))
     {
@@ -269,52 +269,64 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private async IAsyncEnumerable<RowDto> ShapeStreamAsync(
+  public static async IAsyncEnumerable<RowDto> ShapeStreamAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     IAsyncEnumerable<TRow> source,
     IReadOnlyList<GridColumnDto> columns,
     [EnumeratorCancellation] CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     await foreach (var item in source.WithCancellation(ct))
     {
-      yield return ShapeRow(item, columns);
+      yield return grid.InvokeShapeRow(item, columns);
     }
   }
 
-  private async IAsyncEnumerable<RowDto> ShapeEntityStreamAsync(
+  public static async IAsyncEnumerable<RowDto> ShapeEntityStreamAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     IAsyncEnumerable<TEntity> source,
     IReadOnlyList<GridColumnDto> columns,
     [EnumeratorCancellation] CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     await foreach (var item in source.WithCancellation(ct))
     {
-      yield return ShapeRow((item as TRow)!, columns);
+      yield return grid.InvokeShapeRow((item as TRow)!, columns);
     }
   }
 
-  private async IAsyncEnumerable<RowDto> ShapeEntityChunksAsync(
+  public static async IAsyncEnumerable<RowDto> ShapeEntityChunksAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     IAsyncEnumerable<IReadOnlyList<TEntity>> chunks,
     IReadOnlyList<GridColumnDto> columns,
     Func<IReadOnlyList<TRow>, CancellationToken, Task>? computeAction,
     Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? rowComputeAction,
     bool hasSubqueryCols,
     [EnumeratorCancellation] CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     await foreach (var chunk in chunks.WithCancellation(ct))
     {
-      foreach (var shaped in await ShapeEntityBatchAsync(chunk, columns, computeAction, rowComputeAction, hasSubqueryCols, ct))
+      foreach (var shaped in await ShapeEntityBatchAsync(grid, chunk, columns, computeAction, rowComputeAction, hasSubqueryCols, ct))
       {
         yield return shaped;
       }
     }
   }
 
-  private async Task<List<RowDto>> ShapeEntityBatchAsync(
+  private static async Task<List<RowDto>> ShapeEntityBatchAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     IReadOnlyList<TEntity> entities,
     IReadOnlyList<GridColumnDto> columns,
     Func<IReadOnlyList<TRow>, CancellationToken, Task>? computeAction,
     Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task>? rowComputeAction,
     bool hasSubqueryCols,
     CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     if (computeAction != null && entities is IReadOnlyList<TRow> typedEntities)
     {
@@ -324,7 +336,7 @@ public abstract partial class GridService<TEntity, TRow>
     var batch = new List<RowDto>(entities.Count);
     foreach (var entity in entities)
     {
-      batch.Add(ShapeRow((entity as TRow)!, columns));
+      batch.Add(grid.InvokeShapeRow((entity as TRow)!, columns));
     }
 
     if (rowComputeAction != null)
@@ -334,18 +346,19 @@ public abstract partial class GridService<TEntity, TRow>
 
     if (hasSubqueryCols)
     {
-      await PopulateComputedColumnsAsync(batch, columns, ct);
+      await GridRowEnricher.PopulateComputedColumnsAsync(grid, batch, columns, ct);
     }
 
     return batch;
   }
 
-  private static async Task InvokeRowComputeActionAsync(
+  public static async Task InvokeRowComputeActionAsync<TEntity>(
     IReadOnlyList<TEntity> entities,
     List<RowDto> shapedRows,
     IReadOnlyList<GridColumnDto> columns,
     Func<IReadOnlyList<GridComputedRow<TEntity>>, CancellationToken, Task> rowComputeAction,
     CancellationToken ct)
+    where TEntity : class, IEntity
   {
     var count = Math.Min(entities.Count, shapedRows.Count);
     if (count == 0)
@@ -378,18 +391,21 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private async IAsyncEnumerable<RowDto> ShapeComputedChunksAsync(
+  public static async IAsyncEnumerable<RowDto> ShapeComputedChunksAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     IAsyncEnumerable<IReadOnlyList<TRow>> chunks,
     Func<IReadOnlyList<TRow>, CancellationToken, Task> computeAction,
     IReadOnlyList<GridColumnDto> columns,
     [EnumeratorCancellation] CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     await foreach (var batch in chunks.WithCancellation(ct))
     {
       await computeAction(batch, ct);
       foreach (var row in batch)
       {
-        yield return ShapeRow(row, columns);
+        yield return grid.InvokeShapeRow(row, columns);
       }
     }
   }

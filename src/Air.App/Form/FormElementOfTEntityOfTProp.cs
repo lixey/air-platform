@@ -1,3 +1,4 @@
+using Platform.App.Form.Internals;
 using Platform.App.Internals;
 using Platform.Data.Internals;
 
@@ -5,8 +6,9 @@ namespace Platform.App.Form;
 
 public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan = false)
 {
-  private bool _hasSpan = hasSpan;
+  internal bool HasExplicitSpan { get; private set; } = hasSpan;
   public FormElementDto Dto => dto;
+  public IReadOnlySet<string> TreeKeys { get; internal set; } = new HashSet<string>();
 
   public FormElement<TEntity, TProp> Label(string label)
   {
@@ -26,7 +28,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
   public FormElement<TEntity, TProp> Span(int cols)
   {
-    _hasSpan = true;
+    HasExplicitSpan = true;
     dto.Span = cols;
     return this;
   }
@@ -92,69 +94,50 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     return this;
   }
 
-  public FormElement<TEntity, TProp> Range(double min, double max)
+  public FormElement<TEntity, TProp> Help(string help)
   {
-    dto.Constraints.Min = JsonSerializer.SerializeToElement(min);
-    dto.Constraints.ExclusiveMin = null;
-    dto.Constraints.Max = JsonSerializer.SerializeToElement(max);
+    dto.Help = help;
     return this;
   }
 
-  public FormElement<TEntity, TProp> Min(decimal min)
+  public FormElement<TEntity, TProp> InputOnly()
   {
-    dto.Constraints.Min = JsonSerializer.SerializeToElement(min);
-    dto.Constraints.ExclusiveMin = null;
+    dto.IsInputOnly = true;
     return this;
   }
 
-  public FormElement<TEntity, TProp> Max(decimal max)
+  public FormElement<TEntity, TProp> ServerOwned(bool serverOwned = true)
   {
-    dto.Constraints.Max = JsonSerializer.SerializeToElement(max);
+    dto.IsServerOwned = serverOwned;
+    dto.IsDisabled |= serverOwned;
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsPercent()
+  public FormElement<TEntity, TProp> SaveOnChange(bool save = true)
   {
-    dto.Model = new FormPercentModel();
+    dto.SavesOnChange = save;
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsMoney(string? currency = null)
+  public FormElement<TEntity, TProp> Unique(string? message = null)
   {
-    dto.Type = UiFieldType.Number;
-    dto.Model = new FormMoneyModel { Currency = currency };
+    dto.UniqueMessage = message ?? "FormValidationUnique";
+    dto.UniqueWithin = [];
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsTextarea()
+  public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys)
   {
-    dto.Model = new FormTextareaModel();
-    if (!_hasSpan)
-    {
-      dto.Span = 12;
-    }
-
+    dto.UniqueMessage = message ?? "FormValidationUnique";
+    dto.UniqueWithin = withKeys.Select(k => GetMemberName(k.Body)).Where(n => n != null).Select(n => n!).ToList();
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsCheckbox()
+  public FormElement<TEntity, TProp> AsInfo()
   {
-    dto.Type = UiFieldType.Checkbox;
-    dto.Model = new FormCheckboxModel();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsDate()
-  {
-    dto.Type = UiFieldType.Date;
-    dto.Model = new FormDateModel();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsDateTime()
-  {
-    dto.Type = UiFieldType.DateTime;
-    dto.Model = new FormDateTimeModel();
+    dto.IsDisabled = true;
+    dto.IsServerOwned = true;
+    dto.Model = new FormInfoModel();
     return this;
   }
 
@@ -175,183 +158,6 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     return this;
   }
 
-  public FormElement<TEntity, TProp> AsPassword()
-  {
-    dto.Type = FormFieldType.Password;
-    dto.IsSecret = true;
-    dto.Model = new FormInputModel();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsEmail()
-  {
-    dto.Type = FormFieldType.Email;
-    dto.Model = new FormInputModel();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsTimeZone()
-  {
-    dto.Type = UiFieldType.Text;
-    dto.Model = new FormTimeZoneModel
-    {
-      Zones = [.. TimeZones.Offered],
-      Inherit = Localizer.Instance["TimeZoneByBrowser"]
-    };
-    return this;
-  }
-
-  public IReadOnlySet<string> TreeKeys { get; private set; } = new HashSet<string>();
-
-  public FormElement<TEntity, TProp> AsRightsTree(ModuleCatalog? catalog = null, IReadOnlySet<string>? held = null)
-  {
-    dto.Type = UiFieldType.Text;
-    dto.ValueKind = FormValueKind.List;
-    dto.IsRightsTree = held == null;
-    if (!_hasSpan)
-    {
-      dto.Span = 12;
-    }
-
-    catalog ??= ModuleCatalog.Instance;
-    var nodes = RightsTree.Build(catalog, held);
-    dto.Model = new FormCheckboxTreeModel { Nodes = nodes };
-    TreeKeys = RightsTree.FlattenKeys(nodes);
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsInfo()
-  {
-    dto.IsDisabled = true;
-    dto.IsServerOwned = true;
-    dto.Model = new FormInfoModel();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> Help(string help)
-  {
-    dto.Help = help;
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> Grouped(bool isGrouped = true)
-  {
-    if (dto.Model is FormNumberModel num)
-    {
-      num.IsGrouped = isGrouped;
-    }
-    else if (dto.Model is FormInfoModel info)
-    {
-      info.IsGrouped = isGrouped;
-    }
-
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsUrl()
-  {
-    dto.Type = FormFieldType.Url;
-    dto.Model = new FormInputModel();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsPhone(params string[] masks)
-  {
-    dto.Type = UiFieldType.Text;
-    dto.Model = new FormPhoneModel
-    {
-      Masks = masks.Length > 0 ? [.. masks] : ["+380 (##) ###-##-##", "+1 (###) ###-####"]
-    };
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> InputOnly()
-  {
-    dto.IsInputOnly = true;
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> Unique(string? message = null)
-  {
-    dto.UniqueMessage = message ?? "FormValidationUnique";
-    dto.UniqueWithin = [];
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys)
-  {
-    dto.UniqueMessage = message ?? "FormValidationUnique";
-    dto.UniqueWithin = withKeys.Select(k => GetMemberName(k.Body)).Where(n => n != null).Select(n => n!).ToList();
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> AsCheckboxSet(IEnumerable<OptionDto>? options = null)
-  {
-    dto.Type = UiFieldType.Text;
-    dto.ValueKind = FormValueKind.List;
-    if (!_hasSpan)
-    {
-      dto.Span = 12;
-    }
-
-    dto.Model = new FormCheckboxSetModel { Options = options?.ToList() ?? [] };
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> ServerOwned(bool serverOwned = true)
-  {
-    dto.IsServerOwned = serverOwned;
-    dto.IsDisabled |= serverOwned;
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> Stepper(bool hasStepper = true)
-  {
-    if (dto.Model is FormNumberModel numModel)
-    {
-      numModel.HasStepper = hasStepper;
-    }
-
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> Step(double step)
-  {
-    if (dto.Model is FormNumberModel numModel)
-    {
-      numModel.Step = step;
-    }
-
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> SaveOnChange(bool save = true)
-  {
-    dto.SavesOnChange = save;
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> MaxLength(int maxLength)
-  {
-    dto.Constraints.MaxLength = maxLength;
-    dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> MinLength(int minLength)
-  {
-    dto.Constraints.MinLength = minLength;
-    dto.Constraints.LengthUnit ??= FormLengthUnit.Utf16;
-    return this;
-  }
-
-  public FormElement<TEntity, TProp> GreaterThan(decimal value)
-  {
-    dto.Constraints.Min = JsonSerializer.SerializeToElement(value);
-    dto.Constraints.ExclusiveMin = true;
-    return this;
-  }
-
   public FormElement<TEntity, TProp> AsReference<TGridService>() =>
     ConfigureReference<TGridService>(null);
 
@@ -368,7 +174,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
       label is { Length: > 0 }
         ? label.Select(expr => Elements.ToCamelPath(MemberPath.Of(expr)))
         : null);
-    return new FormElement<TEntity, TSource>(dto, _hasSpan);
+    return new FormElement<TEntity, TSource>(dto, HasExplicitSpan);
   }
 
   public FormElement<TEntity, TProp> AsReferences<TGridService>()
@@ -380,7 +186,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
   public FormElement<TEntity, TSource> AsReferences<TGridService, TSource>()
   {
     ConfigureReferences<TGridService>();
-    return new FormElement<TEntity, TSource>(dto, _hasSpan);
+    return new FormElement<TEntity, TSource>(dto, HasExplicitSpan);
   }
 
   public FormElement<TEntity, TJoin> AsReferences<TGridService, TJoin>(
@@ -389,61 +195,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     where TJoin : class, IEntity, new()
   {
     var refEl = AsReferences<TGridService, TJoin>();
-    var ownerProp = (ownerKey.Body is UnaryExpression u1 ? u1.Operand : ownerKey.Body) is MemberExpression m1
-      ? m1.Member as PropertyInfo
-      : null;
-    var refProp = (referenceKey.Body is UnaryExpression u2 ? u2.Operand : referenceKey.Body) is MemberExpression m2
-      ? m2.Member as PropertyInfo
-      : null;
-    var getRefId = referenceKey.Compile();
-
-    dto.JoinLoader = async (db, ownerId, ct) =>
-    {
-      var param = ownerKey.Parameters[0];
-      var ownerPred = Expression.Lambda<Func<TJoin, bool>>(
-        Expression.Equal(ownerKey.Body, Expression.Constant(ownerId)),
-        param);
-      return await db.Set<TJoin>()
-        .AsNoTracking()
-        .Where(ownerPred)
-        .OrderBy(x => x.Id)
-        .Select(referenceKey)
-        .ToListAsync(ct);
-    };
-
-    dto.JoinSyncer = async (db, ownerId, desiredIds, ct) =>
-    {
-      var distinctDesired = desiredIds.Where(id => id > 0).Distinct().ToList();
-      var param = ownerKey.Parameters[0];
-      var ownerPred = Expression.Lambda<Func<TJoin, bool>>(
-        Expression.Equal(ownerKey.Body, Expression.Constant(ownerId)),
-        param);
-      var existingRows = await db.Set<TJoin>().Where(ownerPred).ToListAsync(ct);
-      var toRemove = existingRows.Where(r => !distinctDesired.Contains(getRefId(r))).ToList();
-      if (toRemove.Count > 0)
-      {
-        db.Set<TJoin>().RemoveRange(toRemove);
-      }
-
-      var existingRefIds = existingRows.Select(getRefId).ToHashSet();
-      var added = false;
-      foreach (var refId in distinctDesired.Where(id => !existingRefIds.Contains(id)))
-      {
-        var joinEntity = new TJoin();
-        ownerProp?.SetValue(joinEntity, ownerId);
-        refProp?.SetValue(joinEntity, refId);
-        if (joinEntity is IHasTenant tenantJoin && tenantJoin.TenantId == 0 && db is PlatformDbContext pDb && pDb.TenantContext.TenantId is { } tid)
-        {
-          tenantJoin.TenantId = tid;
-        }
-
-        db.Set<TJoin>().Add(joinEntity);
-        added = true;
-      }
-
-      return toRemove.Count > 0 || added;
-    };
-
+    FormJoinReferenceSyncer.Configure(dto, ownerKey, referenceKey);
     return refEl;
   }
 
@@ -603,7 +355,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
         PropertyAccessorCache.GetProperty(typeof(TEntity), memberPath) is { } navProp &&
         typeof(IEntity).IsAssignableFrom(navProp.PropertyType))
     {
-      var explicitFkName = navProp.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.ForeignKeyAttribute>()?.Name;
+      var explicitFkName = navProp.GetCustomAttribute<ForeignKeyAttribute>()?.Name;
       if (PropertyAccessorCache.GetProperty(typeof(TEntity), explicitFkName ?? memberPath + "Id") is { } fkProp)
       {
         return fkProp.Name;

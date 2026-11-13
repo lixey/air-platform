@@ -5,10 +5,10 @@ internal sealed class TestAutoDrawerAsyncChildFormService(AppTestDbContext db, P
 {
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override Task SetElementsAsync(Elements elements, CancellationToken ct)
+  protected override async Task SetElementsAsync(Elements elements, CancellationToken ct)
   {
+    await Task.Yield();
     elements.Add(i => i.Number).Required();
     elements.AddChild<TestInvoiceLineGridService>();
-    return Task.CompletedTask;
   }
 }

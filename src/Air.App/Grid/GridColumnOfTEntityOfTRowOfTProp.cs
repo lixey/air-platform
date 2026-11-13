@@ -179,13 +179,6 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     return this;
   }
 
-  public GridColumn<TEntity, TRow, TProp> AsCheckbox()
-  {
-    dto.Type = UiFieldType.Checkbox;
-    dto.Cell = new GridCellCheckboxModel();
-    return this;
-  }
-
   public GridColumn<TEntity, TRow, TProp> AsSelect(IEnumerable<OptionDto> options)
   {
     StripDefaultIdLabel();
@@ -200,84 +193,6 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
       Title = o.Title != null ? Localizer.Instance[o.Title] : null
     }).ToList();
     ReapplyColorPathIfConfigured();
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsDate()
-  {
-    dto.Type = UiFieldType.Date;
-    dto.Cell = new GridCellDateModel();
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsDateTime()
-  {
-    dto.Type = UiFieldType.DateTime;
-    dto.Cell = new GridCellDateTimeModel();
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsNumber()
-  {
-    dto.Type = UiFieldType.Number;
-    dto.Cell = new GridCellNumberModel();
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> Decimals(int decimals)
-  {
-    switch (dto.Cell)
-    {
-      case GridCellNumberModel num:
-        num.Decimals = decimals;
-        break;
-      case GridCellMoneyModel money:
-        money.Decimals = decimals;
-        break;
-      case GridCellPercentModel pct:
-        pct.Decimals = decimals;
-        break;
-      default:
-        dto.Type = UiFieldType.Number;
-        dto.Cell = new GridCellNumberModel { Decimals = decimals };
-        break;
-    }
-
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> Grouped(bool isGrouped = true)
-  {
-    if (dto.Cell is GridCellNumberModel num)
-    {
-      num.IsGrouped = isGrouped;
-    }
-    else
-    {
-      dto.Type = UiFieldType.Number;
-      dto.Cell = new GridCellNumberModel { IsGrouped = isGrouped };
-    }
-
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsMoney(string? currency = null)
-  {
-    dto.Type = UiFieldType.Number;
-    dto.Cell = new GridCellMoneyModel { Currency = currency, Decimals = 2 };
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsPercent()
-  {
-    dto.Type = UiFieldType.Number;
-    dto.Cell = new GridCellPercentModel { Decimals = 2 };
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> Sum()
-  {
-    dto.IsSummed = true;
     return this;
   }
 
@@ -303,37 +218,6 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
       Unit = string.IsNullOrWhiteSpace(unit) ? null : unit,
       ExcludeColor = string.IsNullOrWhiteSpace(excludeColor) ? null : excludeColor.ToLowerInvariant()
     };
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> SelectionSum(string unit = "", string? excludeColor = null) =>
-    SelectionSummary(SummaryKind.Sum, unit, excludeColor);
-
-  public GridColumn<TEntity, TRow, TProp> Stepper(bool hasStepper = true)
-  {
-    dto.NumberEdit ??= new GridNumberEditDto();
-    dto.NumberEdit.HasStepper = hasStepper;
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> Step(double step)
-  {
-    dto.NumberEdit ??= new GridNumberEditDto();
-    dto.NumberEdit.Step = step;
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> Min(double min)
-  {
-    dto.NumberEdit ??= new GridNumberEditDto();
-    dto.NumberEdit.Min = min;
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> Max(double max)
-  {
-    dto.NumberEdit ??= new GridNumberEditDto();
-    dto.NumberEdit.Max = max;
     return this;
   }
 
@@ -394,27 +278,6 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
   public GridColumn<TEntity, TRow, TProp> FilterBy<TFilterVal>(Expression<Func<TEntity, TFilterVal>> filterExpression)
   {
     dto.FilterExpression = filterExpression;
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsPhone()
-  {
-    dto.Type = UiFieldType.Text;
-    dto.Cell = new GridCellPhoneModel();
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsEmail()
-  {
-    dto.Type = UiFieldType.Text;
-    dto.Cell = new GridCellEmailModel();
-    return this;
-  }
-
-  public GridColumn<TEntity, TRow, TProp> AsUrl()
-  {
-    dto.Type = UiFieldType.Text;
-    dto.Cell = new GridCellUrlModel();
     return this;
   }
 

@@ -1,12 +1,10 @@
 using Platform.App.Screens.Internals;
 
-namespace Platform.App.Grid;
+namespace Platform.App.Grid.Internals;
 
-public abstract partial class GridService<TEntity, TRow>
-  where TEntity : class, IEntity, new()
-  where TRow : class
+internal static class GridActionRunner
 {
-  internal static (List<long> Ids, List<int>? Versions, bool VersionCountMismatch) NormalizeSelection(GridRequest request)
+  public static (List<long> Ids, List<int>? Versions, bool VersionCountMismatch) NormalizeSelection(GridRequest request)
   {
     var rawIds = request.SelectedIds ?? (request.Id.HasValue ? [request.Id.Value] : []);
     var rawVersions = request.SelectedVersions;
@@ -39,15 +37,100 @@ public abstract partial class GridService<TEntity, TRow>
     return (ids, versions, versionCountMismatch);
   }
 
-  public virtual async Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default)
+  public static async Task<object?> GetActionInputAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    string actionKey,
+    GridRequest request,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
+  {
+    if (!await grid.BindParentAsync(request.ParentService, request.ParentId, ct))
+    {
+      return null;
+    }
+
+    var normalizedIds = NormalizeSelection(request).Ids;
+    if (normalizedIds.Count > 0)
+    {
+      var reachableSet = (await grid.RestrictedQueryInternal()
+        .Where(e => normalizedIds.Contains(e.Id))
+        .Select(e => e.Id)
+        .ToListAsync(ct)).ToHashSet();
+      grid.CurrentSelectedIds = normalizedIds.Where(reachableSet.Contains).ToList();
+      if (grid.CurrentSelectedIds.Count != normalizedIds.Count)
+      {
+        return null;
+      }
+    }
+    else
+    {
+      grid.CurrentSelectedIds = [];
+    }
+
+    var isParentReadOnly = grid.ResolveParentChildBuilder()?.IsReadOnly == true;
+    var actions = new GridService<TEntity, TRow>.Actions();
+    await grid.InvokeSetActionsAsync(actions, ct);
+    var entry = actions.Entries.FirstOrDefault(a => a.Matches(actionKey));
+    if (entry != null)
+    {
+      if (!entry.Permission.IsPermitted(grid.Feature, grid.User, entry.Handle, grid.IsGridReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly) ||
+          entry.NeedsSelection && grid.CurrentSelectedIds.Count == 0 ||
+          entry.IsSingle && grid.CurrentSelectedIds.Count != 1)
+      {
+        return null;
+      }
+
+      var defaultProvider = entry.DefaultProvider != null
+        ? (Func<CancellationToken, Task<object?>>)(token => entry.DefaultProvider(grid.CurrentSelectedIds, token))
+        : null;
+      return await StatusMoveNavBuilder.ResolveActionDefaultsAsync(defaultProvider, entry.Ask, grid.DbContext, grid.PlatformApp, ct);
+    }
+
+    if (isParentReadOnly)
+    {
+      return null;
+    }
+
+    foreach (var formType in actions.InheritedFormServiceTypes)
+    {
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, grid.DbContext, grid.PlatformApp) is IFormService form)
+      {
+        if (grid.PlatformApp != null)
+        {
+          form.AttachPlatformApp(grid.PlatformApp);
+        }
+
+        if (await form.HasActionAsync(actionKey, ct))
+        {
+          var formReq = new FormRequest
+          {
+            Id = grid.CurrentSelectedIds.Count == 1 ? grid.CurrentSelectedIds[0] : request.Id,
+            ParentId = grid.ParentId,
+            ParentService = grid.ParentService
+          };
+          return await form.GetActionInputAsync(actionKey, formReq, ct);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  public static async Task<bool> HasActionAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    string actionKey,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
     if (string.IsNullOrWhiteSpace(actionKey))
     {
       return false;
     }
 
-    var actions = new Actions();
-    await SetActionsAsync(actions, ct);
+    var actions = new GridService<TEntity, TRow>.Actions();
+    await grid.InvokeSetActionsAsync(actions, ct);
     if (actions.Entries.Any(e => e.Matches(actionKey)))
     {
       return true;
@@ -55,11 +138,11 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var formType in actions.InheritedFormServiceTypes)
     {
-      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService form)
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, grid.DbContext, grid.PlatformApp) is IFormService form)
       {
-        if (PlatformApp != null)
+        if (grid.PlatformApp != null)
         {
-          form.AttachPlatformApp(PlatformApp);
+          form.AttachPlatformApp(grid.PlatformApp);
         }
 
         if (await form.HasActionAsync(actionKey, ct))
@@ -72,17 +155,21 @@ public abstract partial class GridService<TEntity, TRow>
     return false;
   }
 
-  public virtual async Task<GridActionDto?> ExecuteDeclaredActionAsync(
+  public static async Task<GridActionDto?> ExecuteDeclaredActionAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
     string actionKey,
     GridRequest request,
     JsonElement? body,
-    CancellationToken ct = default)
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
-    ParentService = request.ParentService;
-    ParentId = request.ParentId;
+    grid.ParentService = request.ParentService;
+    grid.ParentId = request.ParentId;
+    var db = grid.DbContext;
 
-    var probeActions = new Actions();
-    await SetActionsAsync(probeActions, ct);
+    var probeActions = new GridService<TEntity, TRow>.Actions();
+    await grid.InvokeSetActionsAsync(probeActions, ct);
     var probeEntry = probeActions.Entries.FirstOrDefault(e => e.Matches(actionKey));
     if (probeEntry != null)
     {
@@ -95,12 +182,12 @@ public abstract partial class GridService<TEntity, TRow>
         return new GridActionDto
         {
           Outcome = MutationOutcome.Refused,
-          Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+          Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
         };
       }
 
       List<TEntity>? batchRecords = null;
-      var servicePath = ServicePathResolver.Resolve(GetType());
+      var servicePath = ServicePathResolver.Resolve(grid.GetType());
       var actionPath = $"{servicePath}/{probeEntry.Method}";
 
       var result = await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
@@ -113,40 +200,40 @@ public abstract partial class GridService<TEntity, TRow>
           var lockEntities = !probeEntry.IsWithoutTransaction && db.Database.CurrentTransaction != null;
           if (ids.Count > 0)
           {
-            await InferBoundParentIdFromIdsAsync(ids, mutationCt);
+            await grid.InferBoundParentIdInternalAsync(ids, mutationCt);
           }
 
-          if (!await EnsureParentScopeAsync(lockParent: lockEntities, mutationCt))
+          if (!await grid.EnsureParentScopeInternalAsync(lockParent: lockEntities, mutationCt))
           {
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
-          SelectedIds = ids;
-          var actions = new Actions();
-          await SetActionsAsync(actions, mutationCt);
+          grid.CurrentSelectedIds = ids;
+          var actions = new GridService<TEntity, TRow>.Actions();
+          await grid.InvokeSetActionsAsync(actions, mutationCt);
           var entry = actions.Entries.FirstOrDefault(e => e.Matches(actionKey));
           if (entry?.Handler == null)
           {
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
-          var isParentReadOnly = ResolveParentChildBuilder()?.IsReadOnly == true;
-          if (!entry.Permission.IsPermitted(Feature, User, entry.Handle, IsReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly) ||
+          var isParentReadOnly = grid.ResolveParentChildBuilder()?.IsReadOnly == true;
+          if (!entry.Permission.IsPermitted(grid.Feature, grid.User, entry.Handle, grid.IsGridReadOnly, entry.IsAllowedInReadOnly, isParentReadOnly) ||
               entry.NeedsSelection && ids.Count == 0 ||
               entry.IsSingle && ids.Count != 1)
           {
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -154,7 +241,7 @@ public abstract partial class GridService<TEntity, TRow>
           if (entry.Ask != null)
           {
             askInput = entry.Ask.Read(body);
-            var askFailures = await entry.Ask.ValidateAsync(askInput, db, PlatformApp, L, mutationCt);
+            var askFailures = await entry.Ask.ValidateAsync(askInput, db, grid.PlatformApp, grid.L, mutationCt);
             if (askFailures.Count > 0)
             {
               return new GridActionDto
@@ -168,7 +255,7 @@ public abstract partial class GridService<TEntity, TRow>
           List<TEntity> records = [];
           if (ids.Count > 0)
           {
-            var (loaded, missing) = await LoadSelectedEntitiesAsync(ids, mutationCt, asTracking: true, lockEntities: lockEntities);
+            var (loaded, missing) = await GridMutationRunner.LoadSelectedEntitiesAsync(grid, ids, mutationCt, asTracking: true, lockEntities: lockEntities);
             if (missing.Count > 0)
             {
               return new GridActionDto
@@ -181,12 +268,12 @@ public abstract partial class GridService<TEntity, TRow>
             records = loaded;
           }
 
-          if (ids.Count > 0 && HasVersionConflict(versions, versionCountMismatch, ids, records))
+          if (ids.Count > 0 && GridMutationRunner.HasVersionConflict(versions, versionCountMismatch, ids, records))
           {
             return new GridActionDto
             {
               Outcome = MutationOutcome.Conflict,
-              Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["FormRecordChanged"], Type = MessageType.Error }]
             };
           }
 
@@ -211,7 +298,7 @@ public abstract partial class GridService<TEntity, TRow>
                     return new GridActionDto
                     {
                       Outcome = MutationOutcome.Refused,
-                      Messages = FormatErrors([new MutationError("grid.availability", L[offer.Reason], RecordId: record.Id)], records, MessageType.Error)
+                      Messages = GridMutationRunner.FormatErrors(grid, [new MutationError("grid.availability", grid.L[offer.Reason], RecordId: record.Id)], records, MessageType.Error)
                     };
                   }
                 }
@@ -226,17 +313,17 @@ public abstract partial class GridService<TEntity, TRow>
             foreach (var (guard, refusal, path) in entry.Guards)
             {
               var errorsBefore = ctx.Errors.Count;
-              if (!await guard(ctx, records, askInput, L, mutationCt))
+              if (!await guard(ctx, records, askInput, grid.L, mutationCt))
               {
                 if (ctx.Errors.Count == errorsBefore)
                 {
-                  ctx.AddError("grid.guard", L[refusal], records.Count == 1 ? records[0].Id : null, path);
+                  ctx.AddError("grid.guard", grid.L[refusal], records.Count == 1 ? records[0].Id : null, path);
                 }
 
                 return new GridActionDto
                 {
                   Outcome = MutationOutcome.Refused,
-                  Messages = FormatErrors(ctx.Errors, records, MessageType.Error)
+                  Messages = GridMutationRunner.FormatErrors(grid, ctx.Errors, records, MessageType.Error)
                 };
               }
 
@@ -245,7 +332,7 @@ public abstract partial class GridService<TEntity, TRow>
                 return new GridActionDto
                 {
                   Outcome = MutationOutcome.Refused,
-                  Messages = FormatErrors(ctx.Errors, records, MessageType.Error)
+                  Messages = GridMutationRunner.FormatErrors(grid, ctx.Errors, records, MessageType.Error)
                 };
               }
             }
@@ -256,7 +343,7 @@ public abstract partial class GridService<TEntity, TRow>
               return new GridActionDto
               {
                 Outcome = MutationOutcome.Refused,
-                Messages = FormatErrors(ctx.Errors, records, MessageType.Error)
+                Messages = GridMutationRunner.FormatErrors(grid, ctx.Errors, records, MessageType.Error)
               };
             }
 
@@ -266,7 +353,7 @@ public abstract partial class GridService<TEntity, TRow>
             }
 
             var affected = !entry.IsWithoutTransaction
-              ? await RecalculateBoundParentsForEntitiesAsync(records, mutationCt)
+              ? await GridMutationRunner.RecalculateBoundParentsForEntitiesAsync(grid, records, mutationCt)
               : null;
             batchRecords = records;
 
@@ -279,7 +366,7 @@ public abstract partial class GridService<TEntity, TRow>
               OpenId = ctx.OpenId,
               Title = ctx.NoticeTitle,
               Messages = ctx.NoticeMessages,
-              Warnings = ctx.Warnings.Count > 0 ? FormatErrors(ctx.Warnings, records, MessageType.Warning) : null,
+              Warnings = ctx.Warnings.Count > 0 ? GridMutationRunner.FormatErrors(grid, ctx.Warnings, records, MessageType.Warning) : null,
               Affected = affected
             };
           }
@@ -288,17 +375,17 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Conflict,
-              Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["FormRecordChanged"], Type = MessageType.Error }]
             };
           }
         },
         ct,
-        PlatformApp?.Services,
+        grid.PlatformApp?.Services,
         transactional: !probeEntry.IsWithoutTransaction);
 
-      if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && batchRecords is { Count: > 0 })
+      if (result.Outcome == MutationOutcome.Committed && grid.PlatformApp != null && batchRecords is { Count: > 0 })
       {
-        await PlatformApp.ClearAuthCacheForEntitiesAsync(batchRecords, db, ct);
+        await grid.PlatformApp.ClearAuthCacheForEntitiesAsync(batchRecords, db, ct);
       }
 
       return result;
@@ -306,11 +393,11 @@ public abstract partial class GridService<TEntity, TRow>
 
     foreach (var formType in probeActions.InheritedFormServiceTypes)
     {
-      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, PlatformApp) is IFormService form)
+      if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, grid.PlatformApp) is IFormService form)
       {
-        if (PlatformApp != null)
+        if (grid.PlatformApp != null)
         {
-          form.AttachPlatformApp(PlatformApp);
+          form.AttachPlatformApp(grid.PlatformApp);
         }
 
         if (await form.HasActionAsync(actionKey, ct))
@@ -321,7 +408,7 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
@@ -330,31 +417,31 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Conflict,
-              Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["FormRecordChanged"], Type = MessageType.Error }]
             };
           }
 
-          await InferBoundParentIdFromIdsAsync(ids, ct);
-          if (!await EnsureParentScopeAsync(lockParent: false, ct))
+          await grid.InferBoundParentIdInternalAsync(ids, ct);
+          if (!await grid.EnsureParentScopeInternalAsync(lockParent: false, ct))
           {
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
-          var isParentReadOnly = ResolveParentChildBuilder()?.IsReadOnly == true;
-          if (!await form.IsActionPermittedForGridAsync(actionKey, IsReadOnly, isParentReadOnly, ct))
+          var isParentReadOnly = grid.ResolveParentChildBuilder()?.IsReadOnly == true;
+          if (!await form.IsActionPermittedForGridAsync(actionKey, grid.IsGridReadOnly, isParentReadOnly, ct))
           {
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+              Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
             };
           }
 
-          var targetRow = await RestrictedQuery().AsNoTracking().FirstOrDefaultAsync(e => e.Id == ids[0], ct);
+          var targetRow = await grid.RestrictedQueryInternal().AsNoTracking().FirstOrDefaultAsync(e => e.Id == ids[0], ct);
           if (targetRow == null)
           {
             return new GridActionDto
@@ -365,7 +452,7 @@ public abstract partial class GridService<TEntity, TRow>
                 new MessageDto
                 {
                   Code = "grid.delete.unavailable",
-                  Detail = L["GridDeleteUnavailable"],
+                  Detail = grid.L["GridDeleteUnavailable"],
                   RecordId = ids[0],
                   Type = MessageType.Error
                 }
@@ -381,8 +468,8 @@ public abstract partial class GridService<TEntity, TRow>
           {
             Id = ids[0],
             Ver = resolvedVer,
-            ParentId = ParentId,
-            ParentService = ParentService ?? GetParent().BoundParentService,
+            ParentId = grid.ParentId,
+            ParentService = grid.ParentService ?? grid.GetParentDeclaration().BoundParentService,
             IdempotencyKey = request.IdempotencyKey,
             RawPayload = request.RawPayload ?? body?.GetRawText()
           };
@@ -412,14 +499,20 @@ public abstract partial class GridService<TEntity, TRow>
     return null;
   }
 
-  bool IGridService.HasStatusFlow() => CreateColumns().StatusFlow is IRecordStatuses<TEntity>;
-
-  public virtual async Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default)
+  public static async Task<GridActionDto> MoveStatusAsync<TEntity, TRow>(
+    GridService<TEntity, TRow> grid,
+    GridRequest request,
+    string transitionName,
+    JsonElement? body,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TRow : class
   {
-    ParentService = request.ParentService;
-    ParentId = request.ParentId;
+    grid.ParentService = request.ParentService;
+    grid.ParentId = request.ParentId;
+    var db = grid.DbContext;
     List<TEntity>? movedRecords = null;
-    var servicePath = ServicePathResolver.Resolve(GetType());
+    var servicePath = ServicePathResolver.Resolve(grid.GetType());
     var actionPath = $"{servicePath}/move-status/{transitionName.ToLowerInvariant()}";
 
     var result = await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
@@ -430,34 +523,34 @@ public abstract partial class GridService<TEntity, TRow>
       async mutationCt =>
       {
         var (selectedIds, versions, versionCountMismatch) = NormalizeSelection(request);
-        await InferBoundParentIdFromIdsAsync(selectedIds, mutationCt);
-        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt))
+        await grid.InferBoundParentIdInternalAsync(selectedIds, mutationCt);
+        if (!await grid.EnsureParentScopeInternalAsync(lockParent: true, mutationCt))
         {
           return new GridActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
-        var cols = CreateColumns();
+        var cols = grid.CreateColumnsDeclaration();
         if (cols.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
         {
           return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };
         }
 
-        if (IsReadOnly && !cols.StatusFlowAllowsReadOnly)
+        if (grid.IsGridReadOnly && !cols.StatusFlowAllowsReadOnly)
         {
           return new GridActionDto
           {
             Outcome = MutationOutcome.Refused,
-            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }]
           };
         }
 
-        if (PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
+        if (grid.PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
         {
-          flowSvc.AttachPlatformApp(PlatformApp);
+          flowSvc.AttachPlatformApp(grid.PlatformApp);
         }
 
         var transition = statusFlow.Transitions.FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase));
@@ -466,9 +559,9 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
         }
 
-        if (!StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
+        if (!StatusMoveNavBuilder.CanMove(grid.Feature, grid.User, transition.Name))
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = grid.L["MutationRefused"], Type = MessageType.Error }] };
         }
 
         if (selectedIds.Count == 0)
@@ -479,7 +572,7 @@ public abstract partial class GridService<TEntity, TRow>
         var input = transition.Ask?.Read(body);
         if (transition.Ask != null)
         {
-          var askFailures = await transition.Ask.ValidateAsync(input, db, PlatformApp, L, mutationCt);
+          var askFailures = await transition.Ask.ValidateAsync(input, db, grid.PlatformApp, grid.L, mutationCt);
           if (askFailures.Count > 0)
           {
             return new GridActionDto
@@ -490,7 +583,7 @@ public abstract partial class GridService<TEntity, TRow>
           }
         }
 
-        var candidates = await RestrictedQuery()
+        var candidates = await grid.RestrictedQueryInternal()
           .AsNoTracking()
           .Where(e => selectedIds.Contains(e.Id))
           .OrderBy(e => e.Id)
@@ -503,7 +596,7 @@ public abstract partial class GridService<TEntity, TRow>
             .Select(id => new MessageDto
             {
               Code = "grid.delete.unavailable",
-              Detail = L["GridDeleteUnavailable"],
+              Detail = grid.L["GridDeleteUnavailable"],
               RecordId = id,
               Type = MessageType.Error
             })
@@ -518,7 +611,7 @@ public abstract partial class GridService<TEntity, TRow>
         var context = new MutationContext(db);
         await statusFlow.LockRecordsAsync(context, candidates, mutationCt);
 
-        var (entities, missing) = await LoadSelectedEntitiesAsync(selectedIds, mutationCt, asTracking: true, lockEntities: true);
+        var (entities, missing) = await GridMutationRunner.LoadSelectedEntitiesAsync(grid, selectedIds, mutationCt, asTracking: true, lockEntities: true);
         if (missing.Count > 0)
         {
           return new GridActionDto
@@ -528,12 +621,12 @@ public abstract partial class GridService<TEntity, TRow>
           };
         }
 
-        if (HasVersionConflict(versions, versionCountMismatch, selectedIds, entities))
+        if (GridMutationRunner.HasVersionConflict(versions, versionCountMismatch, selectedIds, entities))
         {
           return new GridActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = grid.L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
 
@@ -546,11 +639,11 @@ public abstract partial class GridService<TEntity, TRow>
             return new GridActionDto
             {
               Outcome = MutationOutcome.Refused,
-              Messages = FormatErrors(context.Errors, entities, MessageType.Error)
+              Messages = GridMutationRunner.FormatErrors(grid, context.Errors, entities, MessageType.Error)
             };
           }
 
-          var affected = await RecalculateBoundParentsForEntitiesAsync(entities, mutationCt);
+          var affected = await GridMutationRunner.RecalculateBoundParentsForEntitiesAsync(grid, entities, mutationCt);
           movedRecords = entities;
 
           return new GridActionDto
@@ -558,7 +651,7 @@ public abstract partial class GridService<TEntity, TRow>
             Outcome = MutationOutcome.Committed,
             Id = entities.Count == 1 ? entities[0].Id : null,
             Count = entities.Count,
-            Warnings = context.Warnings.Count > 0 ? FormatErrors(context.Warnings, entities, MessageType.Warning) : null,
+            Warnings = context.Warnings.Count > 0 ? GridMutationRunner.FormatErrors(grid, context.Warnings, entities, MessageType.Warning) : null,
             Affected = affected
           };
         }
@@ -567,16 +660,16 @@ public abstract partial class GridService<TEntity, TRow>
           return new GridActionDto
           {
             Outcome = MutationOutcome.Conflict,
-            Messages = [new MessageDto { Detail = L["FormRecordChanged"], Type = MessageType.Error }]
+            Messages = [new MessageDto { Detail = grid.L["FormRecordChanged"], Type = MessageType.Error }]
           };
         }
       },
       ct,
-      PlatformApp?.Services);
+      grid.PlatformApp?.Services);
 
-    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && movedRecords is { Count: > 0 })
+    if (result.Outcome == MutationOutcome.Committed && grid.PlatformApp != null && movedRecords is { Count: > 0 })
     {
-      await PlatformApp.ClearAuthCacheForEntitiesAsync(movedRecords, db, ct);
+      await grid.PlatformApp.ClearAuthCacheForEntitiesAsync(movedRecords, db, ct);
     }
 
     return result;

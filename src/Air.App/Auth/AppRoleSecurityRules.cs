@@ -7,6 +7,27 @@ namespace Platform.App.Auth;
 public static class AppRoleSecurityRules
 {
   public static void AddNameRules<TRole>(
+    FormService<TRole> service,
+    FormService<TRole>.Rules rules)
+    where TRole : BaseAppAuthRole, new() =>
+    AddNameRules(rules, service.DbContext);
+
+  public static void AddFormHooks<TRole, TGrant>(
+    FormService<TRole> service,
+    FormService<TRole>.Hooks hooks)
+    where TRole : BaseAppAuthRole, new()
+    where TGrant : BaseAppAuthGrant, new() =>
+    AddFormHooks<TRole, TGrant>(hooks, service.DbContext, service.PlatformApp, () => service.User, () => service.Catalog);
+
+  public static void AddDeleteHooks<TRole, TGrant, TAssignment>(
+    GridService<TRole, TRole> service,
+    GridService<TRole, TRole>.Hooks hooks)
+    where TRole : BaseAppAuthRole, new()
+    where TGrant : BaseAppAuthGrant
+    where TAssignment : BaseAppAuthAssignment =>
+    AddDeleteHooks<TRole, TGrant, TAssignment>(hooks, service.DbContext, service.PlatformApp, () => service.User);
+
+  public static void AddNameRules<TRole>(
     FormService<TRole>.Rules rules,
     PlatformDbContext db)
     where TRole : BaseAppAuthRole, new()

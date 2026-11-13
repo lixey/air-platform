@@ -22,8 +22,8 @@ public sealed class AppUserGridService(AppDbContext db, AppService app)
   protected override void SetQuery(Query query) => query.RecordLabel(e => e.Login);
 
   protected override void SetHooks(Hooks hooks) =>
-    AppUserSecurityRules.AddDeleteHooks(hooks, db, app, () => User);
+    AppUserSecurityRules.AddDeleteHooks(this, hooks);
 
   protected override void SetActions(Actions actions) =>
-    AppUserSecurityRules.AddDeactivateAction(actions, db, app, () => User);
+    AppUserSecurityRules.AddDeactivateAction(this, actions);
 }
