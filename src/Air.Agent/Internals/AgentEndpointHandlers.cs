@@ -305,17 +305,17 @@ internal static class AgentEndpointHandlers
     var (provider, selectedModel, selectedModelName) = await ResolveTurnProviderAndModelAsync(
       ctx, store, synchronizer, options, providers, body.Provider, body.Model, hasImageAttachment, ct);
 
-    ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
-    ctx.Response.Headers.CacheControl = "no-cache";
-    ctx.Response.Headers.Connection = "keep-alive";
+    await using var sse = new AgentSseWriter(
+      ctx.Response,
+      options.SseKeepaliveInterval,
+      ct,
+      ctx.RequestServices.GetService<TimeProvider>());
 
     if (provider is null)
     {
-      var errJson = JsonSerializer.Serialize(
+      await sse.WriteEventAsync(
         new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = Localizer.Instance["AgentErrorCliMissing"] },
-        JsonOptions);
-      await ctx.Response.WriteAsync($"data: {errJson}\n\n", ct);
-      await ctx.Response.Body.FlushAsync(ct);
+        ct);
       return;
     }
 
@@ -339,9 +339,7 @@ internal static class AgentEndpointHandlers
 
     await foreach (var evt in provider.StreamTurnAsync(turnReq, ct))
     {
-      var json = JsonSerializer.Serialize(evt, JsonOptions);
-      await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-      await ctx.Response.Body.FlushAsync(ct);
+      await sse.WriteEventAsync(evt, ct);
     }
   }
 

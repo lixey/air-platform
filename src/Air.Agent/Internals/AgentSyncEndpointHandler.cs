@@ -65,26 +65,11 @@ internal static class AgentSyncEndpointHandler
       .ToList();
     var userMessage = body.Message?.Trim();
 
-    ctx.Response.Headers.ContentType = "text/event-stream; charset=utf-8";
-    ctx.Response.Headers.CacheControl = "no-cache";
-    ctx.Response.Headers.Connection = "keep-alive";
-
-    var writeLock = new SemaphoreSlim(1, 1);
-
-    async Task WriteEventAsync(AgentStreamEventDto evt)
-    {
-      await writeLock.WaitAsync(ct);
-      try
-      {
-        var json = JsonSerializer.Serialize(evt, AgentEndpointHandlers.JsonOptions);
-        await ctx.Response.WriteAsync($"data: {json}\n\n", ct);
-        await ctx.Response.Body.FlushAsync(ct);
-      }
-      finally
-      {
-        writeLock.Release();
-      }
-    }
+    await using var sse = new AgentSseWriter(
+      ctx.Response,
+      options.SseKeepaliveInterval,
+      ct,
+      ctx.RequestServices.GetService<TimeProvider>());
 
     AgentSyncResult syncResult;
     try
@@ -98,23 +83,25 @@ internal static class AgentSyncEndpointHandler
           Attachments = attachments,
           Locale = culture.TwoLetterISOLanguageName,
           Services = ctx.RequestServices,
-          ReportStatusAsync = status => WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = status })
+          ReportStatusAsync = status => WriteStatusAsync(sse, status, ct)
         },
         ct);
     }
     catch (Exception ex) when (ex is not OperationCanceledException)
     {
-      await WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = ex.Message });
+      await sse.WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = ex.Message }, ct);
       return;
     }
 
     if (syncResult.RefreshServices.Count > 0)
     {
-      await WriteEventAsync(new AgentStreamEventDto
-      {
-        Type = AgentStreamEventType.Refresh,
-        RefreshServices = [.. syncResult.RefreshServices]
-      });
+      await sse.WriteEventAsync(
+        new AgentStreamEventDto
+        {
+          Type = AgentStreamEventType.Refresh,
+          RefreshServices = [.. syncResult.RefreshServices]
+        },
+        ct);
     }
 
     var hasUserContext = !string.IsNullOrWhiteSpace(userMessage) || attachments.Count > 0;
@@ -122,10 +109,10 @@ internal static class AgentSyncEndpointHandler
     {
       if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
       {
-        await WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = syncResult.SummaryMarkdown });
+        await sse.WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = syncResult.SummaryMarkdown }, ct);
       }
 
-      await WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Done, SessionId = sessionId });
+      await sse.WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Done, SessionId = sessionId }, ct);
       return;
     }
 
@@ -137,20 +124,22 @@ internal static class AgentSyncEndpointHandler
     {
       if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
       {
-        await WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = syncResult.SummaryMarkdown });
+        await sse.WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = syncResult.SummaryMarkdown }, ct);
       }
 
-      await WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = Localizer.Instance["AgentErrorCliMissing"] });
+      await sse.WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = Localizer.Instance["AgentErrorCliMissing"] }, ct);
       return;
     }
 
     if (!string.IsNullOrWhiteSpace(syncResult.SummaryMarkdown))
     {
-      await WriteEventAsync(new AgentStreamEventDto
-      {
-        Type = AgentStreamEventType.Delta,
-        Text = $"{syncResult.SummaryMarkdown.TrimEnd()}\n\n"
-      });
+      await sse.WriteEventAsync(
+        new AgentStreamEventDto
+        {
+          Type = AgentStreamEventType.Delta,
+          Text = $"{syncResult.SummaryMarkdown.TrimEnd()}\n\n"
+        },
+        ct);
     }
 
     var promptParts = new List<string>(3);
@@ -202,7 +191,10 @@ internal static class AgentSyncEndpointHandler
 
     await foreach (var evt in provider.StreamTurnAsync(turnReq, ct))
     {
-      await WriteEventAsync(evt);
+      await sse.WriteEventAsync(evt, ct);
     }
   }
+
+  private static Task WriteStatusAsync(AgentSseWriter sse, string status, CancellationToken ct) =>
+    sse.WriteEventAsync(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = status }, ct);
 }
