@@ -7,10 +7,10 @@ internal sealed class TestComputedExportGridService(AppTestDbContext db, Platfor
 
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortBy(i => i.Id);
-    query.Compute(async (IReadOnlyList<GridComputedRow<TestInvoice>> rows, CancellationToken ct) =>
+    Query.SortBy(i => i.Id);
+    Query.Compute(async (IReadOnlyList<GridComputedRow<TestInvoice>> rows, CancellationToken ct) =>
     {
       ComputeBatchCalls++;
       var tagCount = await db.Tags.AsNoTracking().CountAsync(ct);
@@ -21,9 +21,9 @@ internal sealed class TestComputedExportGridService(AppTestDbContext db, Platfor
     });
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(i => i.Number);
-    columns.Add<string>("computedSummary").Computed().Label("Summary");
+    Columns.Add(i => i.Number);
+    Columns.Add<string>("computedSummary").Computed().Label("Summary");
   }
 }

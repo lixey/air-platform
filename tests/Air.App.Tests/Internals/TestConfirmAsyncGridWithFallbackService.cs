@@ -5,9 +5,9 @@ internal sealed class TestConfirmAsyncGridWithFallbackService(AppTestDbContext d
 {
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override void SetColumns(Columns<TestInvoice> columns) =>
-    columns.Add(r => r.Number);
+  protected override void SetColumns() =>
+    Columns.Add(r => r.Number);
 
-  protected override void SetActions(Actions actions) =>
-    actions.UseActionsOf<TestConfirmAsyncWithFallbackFormService>();
+  protected override void SetActions() =>
+    Actions.UseActionsOf<TestConfirmAsyncWithFallbackFormService>();
 }

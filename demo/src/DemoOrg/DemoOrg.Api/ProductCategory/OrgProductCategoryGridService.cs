@@ -5,18 +5,18 @@ public sealed class OrgProductCategoryGridService(OrgDbContext db, OrgService? o
 {
   public override Feature Feature => Org.ProductCategory;
 
-  protected override void SetColumns(Columns<OrgProductCategory> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgProductCategoryFormService>();
-    columns.Add(r => r.Name).Color(c => c.Color.Handle);
-    columns.Add(r => r.Color).AsReference<AppColorGridService>().Color(c => c.Color.Handle);
-    columns.Add(r => r.IsActive).AsCheckbox();
-    columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Id).AsOpenForm<OrgProductCategoryFormService>();
+    Columns.Add(r => r.Name).Color(c => c.Color.Handle);
+    Columns.Add(r => r.Color).AsReference<AppColorGridService>().Color(c => c.Color.Handle);
+    Columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.SortOrder);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks) =>
-    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.CategoryId, "The product category is used by products and cannot be deleted.");
+  protected override void SetHooks() =>
+    Hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.CategoryId, "The product category is used by products and cannot be deleted.");
 }
 

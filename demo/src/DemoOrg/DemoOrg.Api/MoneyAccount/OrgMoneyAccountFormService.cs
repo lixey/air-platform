@@ -5,20 +5,20 @@ public sealed class OrgMoneyAccountFormService(OrgDbContext db, OrgService? org 
 {
   public override Feature Feature => Org.MoneyAccount;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew);
-    elements.Add(e => e.Name).Focus().Unique("The organization already has a money account of this name.", e => e.OrganizationId);
-    elements.Add(e => e.IsCash).AsCheckbox().Span(6);
-    elements.Add(e => e.Iban).Span(6);
-    elements.Add(e => e.BankName).Span(6);
-    elements.Add(e => e.IsActive).AsCheckbox().Span(6);
-    elements.Add(e => e.SortOrder).Span(6);
+    Elements.Add(e => e.OrganizationId).AsReference<OrgOrganizationGridService>().Required().Disabled(!IsNew);
+    Elements.Add(e => e.Name).Focus().Unique("The organization already has a money account of this name.", e => e.OrganizationId);
+    Elements.Add(e => e.IsCash).AsCheckbox().Span(6);
+    Elements.Add(e => e.Iban).Span(6);
+    Elements.Add(e => e.BankName).Span(6);
+    Elements.Add(e => e.IsActive).AsCheckbox().Span(6);
+    Elements.Add(e => e.SortOrder).Span(6);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.BeforeSave(async (c, cancellationToken) =>
+    Hooks.BeforeSave(async (c, cancellationToken) =>
     {
       if (c.IsNew)
       {

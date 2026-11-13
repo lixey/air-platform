@@ -10,20 +10,20 @@ public abstract class EcomDocBasisGridService<TForm>(EcomDbContext db, EcomServi
   protected override bool IsReadOnly => true;
 
   /// <summary>A row carries the document the link comes from: the shared projection of a basis.</summary>
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.Where(EcomDocLinks.Documents);
+    Query.Where(EcomDocLinks.Documents);
   }
 
-  protected override void SetParent(Parent parent) => parent.Bind<TForm>(l => l.TargetDocId);
+  protected override void SetParent() => Parent.Bind<TForm>(l => l.TargetDocId);
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.SourceDoc.Number);
-    columns.Add(r => r.SourceDoc.DocType.Name).Label("Type");
-    columns.Add(r => r.SourceDoc.Date);
-    columns.Add(r => r.SourceDoc.DocStatus.Name).Label("Status").Color(EcomDocLinks.BasisHue);
-    columns.Add(r => r.Qty).Label("Quantity");
-    columns.Add(r => r.Amount).AsMoney();
+    Columns.Add(r => r.SourceDoc.Number);
+    Columns.Add(r => r.SourceDoc.DocType.Name).Label("Type");
+    Columns.Add(r => r.SourceDoc.Date);
+    Columns.Add(r => r.SourceDoc.DocStatus.Name).Label("Status").Color(EcomDocLinks.BasisHue);
+    Columns.Add(r => r.Qty).Label("Quantity");
+    Columns.Add(r => r.Amount).AsMoney();
   }
 }

@@ -5,12 +5,12 @@ internal sealed class TestCategoryUsedTagGridService(AppTestDbContext db, Platfo
 {
   public override Feature Feature => TestAppModule.CategoryTags;
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(x => x.Id);
-    columns.Add(x => x.Name);
+    Columns.Add(x => x.Id);
+    Columns.Add(x => x.Name);
   }
 
-  protected override void SetHooks(Hooks hooks) =>
-    hooks.PreventDeleteWhenUsedBy<TestTag>(t => t.CategoryId);
+  protected override void SetHooks() =>
+    Hooks.PreventDeleteWhenUsedBy<TestTag>(t => t.CategoryId);
 }

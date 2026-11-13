@@ -14,15 +14,15 @@
 ### 1.1. Оголошення колонок (`SetColumns`)
 
 ```csharp
-protected override void SetColumns(Columns columns)
+protected override void SetColumns()
 {
-  columns.UseStatusOf(flow);
+  Columns.UseStatusOf(flow);
 
-  columns.Add(d => d.Number).Width(120);
-  columns.Add(d => d.Date).Width(115);
-  columns.Add(d => d.Customer).AsReference<OrgCustomerGridService>().Width(220);
-  columns.Add(d => d.Amount).AsMoney().Sum().SelectionSum().Width(130);
-  columns.Add(d => d.Note).Hidden();
+  Columns.Add(d => d.Number).Width(120);
+  Columns.Add(d => d.Date).Width(115);
+  Columns.Add(d => d.Customer).AsReference<OrgCustomerGridService>().Width(220);
+  Columns.Add(d => d.Amount).AsMoney().Sum().SelectionSum().Width(130);
+  Columns.Add(d => d.Note).Hidden();
 }
 ```
 
@@ -38,12 +38,12 @@ protected override void SetColumns(Columns columns)
 
 - **Іменовані вкладки та фільтри (`SetQuery`):**
   ```csharp
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.Where(d => d.DocTypeId == EcomDocTypeData.CustomerOrderId);
-    query.SortByDescending(d => d.Date).ThenByDescending(d => d.Id);
+    Query.Where(d => d.DocTypeId == EcomDocTypeData.CustomerOrderId);
+    Query.SortByDescending(d => d.Date).ThenByDescending(d => d.Id);
 
-    query.NamedFilter("Stage", "Stage")
+    Query.NamedFilter("Stage", "Stage")
       .Inline()
       .ShowCounts()
       .Item("Open", "Open", d => d.DocStatusId != CompletedId && d.DocStatusId != CanceledId)
@@ -53,7 +53,7 @@ protected override void SetColumns(Columns columns)
       .Color(UiColor.Green)
       .All("All");
 
-    query.NamedFilter("Unpaid", "Unpaid", d => d.PaidAmount < d.Amount)
+    Query.NamedFilter("Unpaid", "Unpaid", d => d.PaidAmount < d.Amount)
       .Color(UiColor.Amber)
       .ShowCount();
   }
@@ -61,23 +61,24 @@ protected override void SetColumns(Columns columns)
   - Усі ідентифікатори груп і елементів `NamedFilter` обов'язково задаються в `PascalCase` (`"Stage"`, `"Open"`, `"Unpaid"`).
   - `.Inline()` відображає групу як компактну смугу вкладок безпосередньо в панелі навігації грида (без випадаючого списку).
   - `.ShowCounts()` (на групі) та `.ShowCount()` (на окремому фільтрі чи елементі) автоматично повертають живі лічильники в `GridPageDto.NamedFilterCounts` (з нульовими витратами, якщо лічильники не увімкнені або запит іде з reference-пікера) і миттєво оновлюють бейджі після мутацій.
+- **Гнучке керування панеллю навігації (`SetNav` / `SetNavAsync`):** `Nav.AddCreate<TForm>()`, `Nav.AddPicker<TSource>(...)`, а також `Nav.WithoutCreate()`, `Nav.WithoutSearch()`, `Nav.WithoutFilters()`, `Nav.WithoutExport()`, `Nav.WithoutDelete()` та `Nav.Customize(nav => ...)`.
 - **Декларативні дії таблиці та форми (`SetActions`):**
   ```csharp
-  protected override void SetActions(Actions actions) =>
-    actions.Add("CreateSalesInvoice")
+  protected override void SetActions() =>
+    Actions.Add("CreateSalesInvoice")
       .Allow(Ecom.SalesInvoice.Edit)
       .Label("Create sales invoice")
       .Icon(UiIcon.Plus)
       .InMenu()
       .Do((ctx, ct) => ...);
   ```
-  `SetActions` дозволяє декларативно оголошувати групові та одиничні (`.Single()`) операції, діалоги підтвердження (`.Confirm(...)`), типізовані форми параметрів (`.Ask<TInput>(...)`) та права доступу (`.AllowEdit()`, `.Allow(Right)`, `.AllowReadOnly()`) без створення кастомних HTTP-ендпоінтів.
+  `SetActions()` дозволяє декларативно оголошувати групові та одиничні (`.Single()`) операції, діалоги підтвердження (`.Confirm(...)`, `.ConfirmAsync(...)`), типізовані форми параметрів (`.Ask<TInput>(...)`) та права доступу (`.AllowEdit()`, `.Allow(Right)`, `.AllowReadOnly()`) без створення кастомних HTTP-ендпоінтів.
 - **Декларативний захист видалення за FK (`SetHooks`):**
   ```csharp
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AllowMultiDelete();
-    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.BrandId, "Cannot delete brand: it is used by products.");
+    Hooks.AllowMultiDelete();
+    Hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.BrandId, "Cannot delete brand: it is used by products.");
   }
   ```
   Підтримуються як обов'язкові (`long`), так і необов'язкові (`long?`) зовнішні ключі: платформа перевіряє всі виділені ID одним пакетним `Distinct`-запитом і повертає локалізовану відмову для зайнятих записів.
@@ -85,8 +86,8 @@ protected override void SetColumns(Columns columns)
 ### 1.3. Дочірні таблиці та інваріант батьківського скоупу (`SetParent`)
 
 ```csharp
-protected override void SetParent(Parent parent) =>
-  parent.Bind<EcomCustomerOrderFormService>(line => line.DocId);
+protected override void SetParent() =>
+  Parent.Bind<EcomCustomerOrderFormService>(line => line.DocId);
 ```
 
 У всіх точках входу (`GetDataAsync`, `ExportAsync`, `SaveCellAsync`, `DeleteAsync`, кастомних діях, `MoveStatusAsync`, `FileGridService`) платформа **першим кроком** викликає `EnsureParentScopeAsync`. Якщо батьківський запис недоступний поточному користувачеві, будь-яке читання або мутація дочірніх рядків блокується.
@@ -100,18 +101,18 @@ protected override void SetParent(Parent parent) =>
 ### 2.1. Елементи форми, `PatchOnSelect` та декларативне `SumTo` (`SetElements`)
 
 ```csharp
-protected override void SetElements(Elements elements)
+protected override void SetElements()
 {
-  elements.Add(d => d.Customer)
+  Elements.Add(d => d.Customer)
     .AsReference<OrgCustomerGridService>()
     .PatchOnSelect(d => d.DeliveryTypeId, c => c.DeliveryTypeId)
     .PatchOnSelect(d => d.PaymentMethodId, c => c.PaymentMethodId)
     .Required()
     .Span(6);
 
-  elements.Add(d => d.Amount).AsMoney().ServerOwned().Span(3);
+  Elements.Add(d => d.Amount).AsMoney().ServerOwned().Span(3);
 
-  elements.AddChild<EcomCustomerOrderLineGridService, EcomDocLine>()
+  Elements.AddChild<EcomCustomerOrderLineGridService, EcomDocLine>()
     .Label("Lines")
     .SumTo(d => d.Qty, l => l.Qty)
     .SumTo(d => d.Amount, l => l.Amount)
@@ -128,14 +129,14 @@ protected override void SetElements(Elements elements)
 Поруч із помилками, що блокують збереження (`FormRefusedException`), платформа підтримує **неблокуючі попередження (`MessageType.Warning`)**, які дозволяють зберегти запис і автоматично показують жовтий тост користувачеві (як при збереженні з форми, так і при підтвердженні `<ui_proposal>` у чаті ШІ):
 
 ```csharp
-protected override void SetRules(Rules rules) =>
-  rules.For(e => e.DiscountPercent)
+protected override void SetRules() =>
+  Rules.For(e => e.DiscountPercent)
     .Must(d => d <= 25m)
     .WithMessage(L["Discount exceeds 25% — verify manager approval."])
     .AsWarning();
 
-protected override void SetHooks(Hooks hooks) =>
-  hooks.BeforeSave(c =>
+protected override void SetHooks() =>
+  Hooks.BeforeSave(c =>
   {
     if (c.Entity.DeliveryDate is { } dd && dd < c.Entity.Date)
     {
@@ -144,7 +145,7 @@ protected override void SetHooks(Hooks hooks) =>
   });
 ```
 
-Всередині `rules.For(...).Custom((val, ctx) => ...)` також доступний метод `ctx.Warn(...)`.
+Всередині `Rules.For(...).Custom((val, ctx) => ...)` також доступний метод `ctx.Warn(...)`.
 
 ---
 
@@ -153,14 +154,14 @@ protected override void SetHooks(Hooks hooks) =>
 `StatusFlowService` декларативно описує життєвий цикл документа або рядка, права на переходи та діалоги підтвердження/опитування:
 
 ```csharp
-protected override void SetFlow(Flow flow)
+protected override void SetFlow()
 {
-  flow.State(doc => doc.DocStatusId);
-  flow.Status(New, "New", UiColor.Sky);
-  flow.Status(Confirmed, "Confirmed", UiColor.Blue);
-  flow.FinalStatus(Completed, "Completed", UiColor.Green);
-  flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
-  flow.Initial(New);
+  Flow.State(doc => doc.DocStatusId);
+  Flow.Status(New, "New", UiColor.Sky);
+  Flow.Status(Confirmed, "Confirmed", UiColor.Blue);
+  Flow.FinalStatus(Completed, "Completed", UiColor.Green);
+  Flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
+  Flow.Initial(New);
 }
 
 public Transition Confirm => FromOpen().To(Confirmed).When(HasLines, NoLines).Do(PostAsync);

@@ -6,13 +6,13 @@ public sealed class OrgSupplierGridService(OrgDbContext db, OrgService? org = nu
   public override Feature Feature => Org.Counterparty;
   protected override bool IsReadOnly => true;
 
-  protected override void SetColumns(Columns<OrgCounterparty> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id);
-    columns.Add(r => r.Name);
+    Columns.Add(r => r.Id);
+    Columns.Add(r => r.Name);
   }
 
-  protected override void SetQuery(Query query) =>
-    query.Where(counterparty => counterparty.IsSupplier && counterparty.IsActive).RecordLabel(c => c.Name);
+  protected override void SetQuery() =>
+    Query.Where(counterparty => counterparty.IsSupplier && counterparty.IsActive).RecordLabel(c => c.Name);
 }
 

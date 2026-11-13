@@ -5,13 +5,13 @@ internal sealed class TestOrderFlowService(AppTestDbContext db, List<string>? ev
 {
   public override Feature Feature => TestAppModule.OrderDocs;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    flow.State(x => x.Status);
-    flow.Status(1, "Open", UiColor.Blue);
-    flow.Status(2, "Completed", UiColor.Green);
-    flow.FinalStatus(3, "Canceled", UiColor.Red);
-    flow.Initial(1);
+    Flow.State(x => x.Status);
+    Flow.Status(1, "Open", UiColor.Blue);
+    Flow.Status(2, "Completed", UiColor.Green);
+    Flow.FinalStatus(3, "Canceled", UiColor.Red);
+    Flow.Initial(1);
   }
 
   public ChildRule Lines => Children(FlowOf<TestOrderLineFlowService>(), l => l.InvoiceId)

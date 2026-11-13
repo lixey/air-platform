@@ -6,6 +6,7 @@ namespace Platform.App.Files;
 public abstract partial class FileGridService<TFile>
   where TFile : BaseAppFile, new()
 {
+  [Endpoint]
   [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> Upload(
     GridUploadRequest request,
@@ -373,7 +374,7 @@ public abstract partial class FileGridService<TFile>
         var parent = GetParent();
         await InferBoundParentIdFromIdsAsync(ids, mutationCt);
 
-        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
+        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || !CanDelete())
         {
           return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
         }
@@ -471,6 +472,7 @@ public abstract partial class FileGridService<TFile>
     return result;
   }
 
+  [Endpoint]
   [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> SetCover(GridRequest request, CancellationToken cancellationToken = default)
   {
@@ -534,6 +536,7 @@ public abstract partial class FileGridService<TFile>
       PlatformApp?.Services);
   }
 
+  [Endpoint]
   [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> Move(FileMoveRequest request, CancellationToken cancellationToken = default)
   {
@@ -606,6 +609,7 @@ public abstract partial class FileGridService<TFile>
       PlatformApp?.Services);
   }
 
+  [Endpoint]
   [RequireAction(Right.Edit)]
   public virtual async Task<GridActionDto> SetInfo(FileInfoRequest request, CancellationToken cancellationToken = default)
   {

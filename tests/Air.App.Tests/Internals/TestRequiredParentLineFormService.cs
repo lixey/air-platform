@@ -5,13 +5,13 @@ internal sealed class TestRequiredParentLineFormService(AppTestDbContext db, Pla
 {
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override void SetParent(Parent parent) =>
-    parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
+  protected override void SetParent() =>
+    Parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
     var parent = RequiredParent<TestInvoice>();
-    elements.Add(l => l.Amount).AsMoney().Disabled(parent.Status == 2);
+    Elements.Add(l => l.Amount).AsMoney().Disabled(parent.Status == 2);
   }
 
   public TestInvoice ReadRequiredParent() => RequiredParent<TestInvoice>();

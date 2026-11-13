@@ -5,20 +5,20 @@ public sealed class EcomStockBalanceGridService(EcomDbContext db, EcomService? e
 {
   public override Feature Feature => Ecom.StockBalance;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortBy(r => r.Product.Article);
+    Query.SortBy(r => r.Product.Article);
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(balance => balance.Organization.Color.Handle);
-    columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
-    columns.Add(r => r.Product).AsReference<OrgProductGridService>();
-    columns.Add(r => r.Product.Article);
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Reserved).Sum();
-    columns.Add(r => r.Expected).Sum();
-    columns.Add("free", r => r.Qty - r.Reserved).Sum();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(balance => balance.Organization.Color.Handle);
+    Columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
+    Columns.Add(r => r.Product).AsReference<OrgProductGridService>();
+    Columns.Add(r => r.Product.Article);
+    Columns.Add(r => r.Qty).Label("Quantity").Sum();
+    Columns.Add(r => r.Reserved).Sum();
+    Columns.Add(r => r.Expected).Sum();
+    Columns.Add("free", r => r.Qty - r.Reserved).Sum();
   }
 }

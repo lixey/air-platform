@@ -4,9 +4,9 @@ internal sealed class LeafOneItemFormService(TestLeafOneDbContext db, PlatformAp
   : FormService<TestLeafOneItem>(db, app)
 {
   public override Feature Feature => AgentTestModule.LeafOneItems;
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(x => x.Code).Required();
-    elements.Add(x => x.CategoryId).AsReference<CategoryGridService>();
+    Elements.Add(x => x.Code).Required();
+    Elements.Add(x => x.CategoryId).AsReference<CategoryGridService>();
   }
 }

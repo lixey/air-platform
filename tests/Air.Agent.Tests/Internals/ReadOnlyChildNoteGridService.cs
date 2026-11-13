@@ -4,11 +4,11 @@ internal sealed class ReadOnlyChildNoteGridService(AgentTestDbContext db, Platfo
   : GridService<AgentTestAuditNote>(db, app)
 {
   public override Feature Feature => AgentTestModule.ReadOnlyChildNotes;
-  protected override void SetParent(Parent parent) => parent.Bind<InspectionFormService>(n => n.InspectionId);
-  protected override void SetNav(Nav nav) => nav.AddCreate<ReadOnlyChildNoteFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetParent() => Parent.Bind<InspectionFormService>(n => n.InspectionId);
+  protected override void SetNav() => Nav.AddCreate<ReadOnlyChildNoteFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<ReadOnlyChildNoteFormService>();
-    columns.Add(n => n.Summary);
+    Columns.UseForm<ReadOnlyChildNoteFormService>();
+    Columns.Add(n => n.Summary);
   }
 }

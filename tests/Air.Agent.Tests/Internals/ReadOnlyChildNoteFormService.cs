@@ -4,6 +4,6 @@ internal sealed class ReadOnlyChildNoteFormService(AgentTestDbContext db, Platfo
   : FormService<AgentTestAuditNote>(db, app)
 {
   public override Feature Feature => AgentTestModule.ReadOnlyChildNotes;
-  protected override void SetParent(Parent parent) => parent.Bind<InspectionFormService>(n => n.InspectionId);
-  protected override void SetElements(Elements elements) => elements.Add(n => n.Summary).Required();
+  protected override void SetParent() => Parent.Bind<InspectionFormService>(n => n.InspectionId);
+  protected override void SetElements() => Elements.Add(n => n.Summary).Required();
 }

@@ -5,11 +5,11 @@ internal sealed class TestConfirmAsyncFormService(AppTestDbContext db, PlatformA
 {
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override void SetElements(Elements elements) =>
-    elements.Add(e => e.Number);
+  protected override void SetElements() =>
+    Elements.Add(e => e.Number);
 
-  protected override void SetActions(Actions actions) =>
-    actions.Add("Approve")
+  protected override void SetActions() =>
+    Actions.Add("Approve")
       .AllowAction()
       .Label("Approve")
       .ConfirmAsync(async (inv, ct) =>

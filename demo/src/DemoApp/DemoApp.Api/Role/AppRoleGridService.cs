@@ -5,17 +5,17 @@ public sealed class AppRoleGridService(AppDbContext db, AppService app)
 {
   public override Feature Feature => App.Role;
 
-  protected override void SetColumns(Columns<AppAuthRole> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppRoleFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Tenant).AsReference<AppTenantGridService>();
-    columns.Add(r => r.Description);
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<AppRoleFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Tenant).AsReference<AppTenantGridService>();
+    Columns.Add(r => r.Description);
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks) =>
-    AppRoleSecurityRules.AddDeleteHooks<AppAuthRole, AppAuthGrant, AppAuthAssignment>(this, hooks);
+  protected override void SetHooks() =>
+    AppRoleSecurityRules.AddDeleteHooks<AppAuthRole, AppAuthGrant, AppAuthAssignment>(this);
 }

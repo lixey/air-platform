@@ -24,7 +24,21 @@ public static class PlatformApiExtensions
 
     foreach (var st in serviceTypes)
     {
-      builder.Services.TryAddScoped(st);
+      if (typeof(IPlatformService).IsAssignableFrom(st))
+      {
+        var captured = st;
+        builder.Services.TryAddScoped(captured, sp =>
+        {
+          var svc = ActivatorUtilities.CreateInstance(sp, captured);
+          (svc as IPlatformService)?.BindContext(sp.GetService<PlatformAppService>());
+          return svc;
+        });
+      }
+      else
+      {
+        builder.Services.TryAddScoped(st);
+      }
+
       if (typeof(PlatformAppService).IsAssignableFrom(st) && st != typeof(PlatformAppService))
       {
         builder.Services.TryAddScoped(typeof(PlatformAppService), sp => sp.GetRequiredService(st));
@@ -160,8 +174,14 @@ public static class PlatformApiExtensions
         catalog.Register(m);
       }
 
+      foreach (var setup in sp.GetServices<ModuleCatalogSetup>())
+      {
+        setup.Configure(catalog);
+      }
+
       return catalog.Freeze();
     });
+    builder.Services.TryAddSingleton(sp => EndpointRegistry.Build(sp.GetRequiredService<ModuleCatalog>()));
 
     return builder;
   }

@@ -5,14 +5,14 @@ public sealed class EcomStockTransferLineGridService(EcomDbContext db, EcomServi
 {
   public override Feature Feature => Ecom.StockTransfer;
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomStockTransferLineFormService>();
-    columns.Add(r => r.SortOrder);
-    columns.Add(r => r.Product).AsReference<OrgProductGridService>();
-    columns.Add(r => r.Product.Article);
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Price).AsMoney();
-    columns.Add(r => r.Amount).AsMoney().Sum();
+    Columns.Add(r => r.Id).AsOpenForm<EcomStockTransferLineFormService>();
+    Columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Product).AsReference<OrgProductGridService>();
+    Columns.Add(r => r.Product.Article);
+    Columns.Add(r => r.Qty).Label("Quantity").Sum();
+    Columns.Add(r => r.Price).AsMoney();
+    Columns.Add(r => r.Amount).AsMoney().Sum();
   }
 }

@@ -22,7 +22,9 @@ public interface IGridService : IPlatformService
   string? GetRecordLabel(object? entity) => null;
   Task<string?> GetRecordLabelAsync(object? entity, CancellationToken ct = default) => Task.FromResult(GetRecordLabel(entity));
   IReadOnlyList<GridCreateDescriptor> GetCreateForms() => [];
+  Task<IReadOnlyList<GridCreateDescriptor>> GetCreateFormsAsync(CancellationToken ct = default) => Task.FromResult(GetCreateForms());
   IReadOnlyList<GridCreateDescriptor> GetAgentForms() => GetCreateForms();
+  Task<IReadOnlyList<GridCreateDescriptor>> GetDeclaredFormsAsync(CancellationToken ct = default) => Task.FromResult(GetAgentForms());
   bool CanDelete() => false;
   bool AllowsMultiDelete => false;
   void RegisterMetadata() { }
@@ -36,6 +38,5 @@ public interface IGridService : IPlatformService
   bool CanView(GridRequest request, IUserContext? user) => ServiceEndpointsExtensions.CanView(Feature, user);
   bool CanLookup(GridRequest request, IUserContext? user) => CanView(request, user);
   IReadOnlyList<string> GetRoutableActionMethods(ModuleCatalog catalog) => [];
-  new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }
 }

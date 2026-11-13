@@ -279,7 +279,7 @@ internal static class GridRowShaper
   {
     await foreach (var item in source.WithCancellation(ct))
     {
-      yield return grid.InvokeShapeRow(item, columns);
+      yield return grid.ShapeRowInternal(item, columns);
     }
   }
 
@@ -293,7 +293,7 @@ internal static class GridRowShaper
   {
     await foreach (var item in source.WithCancellation(ct))
     {
-      yield return grid.InvokeShapeRow((item as TRow)!, columns);
+      yield return grid.ShapeRowInternal((item as TRow)!, columns);
     }
   }
 
@@ -336,7 +336,7 @@ internal static class GridRowShaper
     var batch = new List<RowDto>(entities.Count);
     foreach (var entity in entities)
     {
-      batch.Add(grid.InvokeShapeRow((entity as TRow)!, columns));
+      batch.Add(grid.ShapeRowInternal((entity as TRow)!, columns));
     }
 
     if (rowComputeAction != null)
@@ -405,7 +405,7 @@ internal static class GridRowShaper
       await computeAction(batch, ct);
       foreach (var row in batch)
       {
-        yield return grid.InvokeShapeRow(row, columns);
+        yield return grid.ShapeRowInternal(row, columns);
       }
     }
   }

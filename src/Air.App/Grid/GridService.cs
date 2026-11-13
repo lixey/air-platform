@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Platform.App.Grid.Internals;
 using Platform.App.Internals;
 
@@ -19,6 +18,14 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected internal Localizer L => Localizer.Instance.For(Feature.Module);
   public abstract Feature Feature { get; }
 
+  protected internal Columns<TEntity, TRow> Columns { get; private set; } = new();
+  protected internal GridQuery<TEntity, TRow> Query { get; private set; } = new();
+  protected internal GridNav Nav { get; private set; } = new();
+  protected internal GridActions<TEntity> Actions { get; private set; } = new();
+  protected internal GridHooks<TEntity> Hooks { get; private set; } = new();
+  protected internal GridParent<TEntity> Parent { get; private set; } = new();
+  protected internal GridRestrictions<TEntity> Restrictions { get; private set; } = new();
+
   protected virtual bool IsReadOnly =>
     Feature.IsReadOnly ||
     ResolveParentChildBuilder()?.IsReadOnly == true ||
@@ -34,10 +41,6 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public bool AllowsMultiDelete => GetHooks().IsMultiDeleteAllowed;
 
   internal GridExecutionState<TEntity, TRow> State { get; } = new();
-  internal bool IsGridReadOnly => IsReadOnly;
-  internal string GridFiltersWidth => FiltersWidth;
-  internal IReadOnlyList<long> CurrentSelectedIds { get => SelectedIds; set => SelectedIds = value; }
-  internal TimeProvider TimeClock => Time;
   internal bool IsSqlServerProvider => db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 
   internal bool HasCustomShapeRow =>
@@ -50,41 +53,57 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return m != null && m.DeclaringType != typeof(GridService<TEntity, TRow>);
     });
 
-  public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
+  protected virtual void SetRestrictions() { }
+  protected virtual void SetParent() { }
+  protected virtual void SetQuery() { }
+  protected virtual void SetHooks() { }
+  protected virtual void SetColumns() { }
 
-  protected virtual void SetUserRestrictions(UserRestrictions restrictions) { }
-  protected virtual void SetParent(Parent parent) { }
-  protected virtual void SetQuery(Query query) { }
-  protected virtual void SetNav(Nav nav) { }
-  protected virtual void SetActions(Actions actions) { }
-
-  protected virtual Task SetActionsAsync(Actions actions, CancellationToken ct = default)
+  protected virtual Task SetColumnsAsync(CancellationToken cancellationToken = default)
   {
-    SetActions(actions);
+    SetColumns();
     return Task.CompletedTask;
   }
 
-  protected virtual void SetHooks(Hooks hooks) { }
-  protected virtual void SetColumns(Columns columns) { }
-  protected virtual void SetColumns(Columns<TRow> columns) { }
-  protected virtual IQueryable<TEntity> BaseQuery(PlatformDbContext context) => context.Set<TEntity>();
-  protected virtual OverlayDto? ResolveFormOverlay(Columns columns) => null;
+  protected virtual void SetNav() { }
 
-  protected virtual async Task<OverlayDto?> ResolveFormOverlayAsync(Columns columns, CancellationToken ct = default)
+  protected virtual Task SetNavAsync(CancellationToken cancellationToken = default)
   {
-    if (ResolveFormOverlay(columns) is { } customOverlay)
+    SetNav();
+    return Task.CompletedTask;
+  }
+
+  protected virtual void SetActions() { }
+
+  protected virtual Task SetActionsAsync(CancellationToken cancellationToken = default)
+  {
+    SetActions();
+    return Task.CompletedTask;
+  }
+
+  protected virtual IQueryable<TEntity> BaseQuery(PlatformDbContext context) => context.Set<TEntity>();
+  protected virtual OverlayDto? ResolveFormOverlay() => null;
+
+  protected virtual async Task<OverlayDto?> ResolveFormOverlayAsync(CancellationToken ct = default)
+  {
+    if (Columns.Count == 0 && Columns.FormServiceType == null)
+    {
+      await CreateColumnsAsync(ct);
+    }
+
+    if (ResolveFormOverlay() is { } customOverlay)
     {
       return customOverlay;
     }
 
-    var detectedFormService = ResolveFormServicePath(columns);
+    var detectedFormService = ResolveFormServicePath(Columns);
     if (detectedFormService is null)
     {
       return null;
     }
 
-    var formType = ResolveFormServiceType(columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
-    return await GridScreenBuilder.ResolveFormOverlayForTypeAsync(this, formType, detectedFormService, ct);
+    var formType = ResolveFormServiceType(Columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
+    return await ResolveFormOverlayForTypeAsync(formType, detectedFormService, ct);
   }
 
   protected virtual RowDto ShapeRow(
@@ -93,29 +112,37 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null) =>
     GridRowShaper.ShapeDefaultRow(this, row, columns, rowFlags);
 
-  protected Parent GetParent()
+  internal IQueryable<TEntity> BaseQueryInternal() => BaseQuery(db);
+
+  internal RowDto ShapeRowInternal(
+    TRow row,
+    IReadOnlyList<GridColumnDto> columns,
+    IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null) =>
+    ShapeRow(row, columns, rowFlags);
+
+  protected GridParent<TEntity> GetParent()
   {
     if (State.CachedParent != null)
     {
-      return State.CachedParent;
+      return Parent = State.CachedParent;
     }
 
-    var parent = new Parent();
-    SetParent(parent);
-    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), parent.BoundParentServiceType, "Parent.Bind/Read");
-    return State.CachedParent = parent;
+    Parent = new GridParent<TEntity>();
+    SetParent();
+    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), Parent.BoundParentServiceType, "Parent.Bind/Read");
+    return State.CachedParent = Parent;
   }
 
-  protected Hooks GetHooks()
+  protected GridHooks<TEntity> GetHooks()
   {
     if (State.CachedHooks != null)
     {
-      return State.CachedHooks;
+      return Hooks = State.CachedHooks;
     }
 
-    var hooks = new Hooks(Feature.Module);
-    SetHooks(hooks);
-    return State.CachedHooks = hooks;
+    Hooks = new GridHooks<TEntity>(Feature.Module);
+    SetHooks();
+    return State.CachedHooks = Hooks;
   }
 
   protected TParent? ParentRecord<TParent>() where TParent : class, IEntity =>
@@ -143,10 +170,10 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   protected IQueryable<TEntity> RestrictedQuery()
   {
-    var query = GridQueryExecutor.BuildBaseEntityQuery(this, null, out _, out var queryDeclaration, preserveParent: true);
+    var query = BuildBaseEntityQuery(null, out _, out var queryDeclaration, preserveParent: true);
     if (queryDeclaration.LabelSelector != null)
     {
-      foreach (var labelNav in Elements.ExtractNavigationPaths(queryDeclaration.LabelSelector))
+      foreach (var labelNav in Form.Elements.ExtractNavigationPaths(queryDeclaration.LabelSelector))
       {
         query = query.Include(labelNav);
       }
@@ -155,12 +182,11 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return query;
   }
 
-  /// <summary>Applies BaseQuery, SetUserRestrictions, and SetQuery filters without requiring a single ParentId scope.</summary>
+  /// <summary>Applies BaseQuery, SetRestrictions, and SetQuery filters without requiring a single ParentId scope.</summary>
   protected IQueryable<TEntity> UnscopedRestrictedQuery()
   {
     var query = BaseQuery(db);
-    var restrictions = new UserRestrictions();
-    SetUserRestrictions(restrictions);
+    var restrictions = BuildRestrictions();
     foreach (var restriction in restrictions.Filters)
     {
       query = query.Where(restriction);
@@ -173,12 +199,6 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
     return query;
   }
-
-  protected Task<IReadOnlyList<long>> InferBoundParentIdFromIdsAsync(
-    IReadOnlyList<long> ids,
-    CancellationToken ct,
-    bool includeQueryFilters = false) =>
-    GridMutationRunner.InferBoundParentIdFromIdsAsync(this, ids, ct, includeQueryFilters);
 
   public async Task<bool> BindParentAsync(string? parentService, long? parentId, CancellationToken ct = default)
   {
@@ -352,7 +372,19 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       return [];
     }
 
-    return ResolveDeclaredCreateForms();
+    var nav = GetNavSync(ServicePathResolver.Resolve(GetType()));
+    return nav.ShowCreate ? ResolveDeclaredCreateForms(nav) : [];
+  }
+
+  public virtual async Task<IReadOnlyList<GridCreateDescriptor>> GetCreateFormsAsync(CancellationToken ct = default)
+  {
+    if (Feature.IsReadOnly || IsReadOnly && (State.PreloadedParentId.HasValue || GetParent().BoundProperty == null))
+    {
+      return [];
+    }
+
+    var nav = await GetNavAsync(ServicePathResolver.Resolve(GetType()), ct);
+    return nav.ShowCreate ? await ResolveDeclaredCreateFormsAsync(nav, ct) : [];
   }
 
   public virtual IReadOnlyList<GridCreateDescriptor> GetAgentForms()
@@ -366,241 +398,15 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     return forms.Count > 0 ? forms : ResolveDeclaredCreateForms();
   }
 
-  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
-    BuildScreenAsync(servicePath, null, ct);
-
-  public virtual Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) =>
-    GridScreenBuilder.BuildScreenAsync(this, servicePath, request, ct);
-
-  public virtual Task<GridPageDto<RowDto>> GetDataAsync(ListRequest request, CancellationToken ct = default) =>
-    GridQueryExecutor.GetDataAsync(this, request, ct);
-
-  public virtual Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default) =>
-    GridQueryExecutor.GetCountAsync(this, request, ct);
-
-  public virtual Task<RowDto?> ReadRowAsync(long id, CancellationToken ct = default) =>
-    GridMutationRunner.ReadRowAsync(this, id, ct);
-
-  public virtual Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default) =>
-    GridMutationRunner.SaveCellAsync(this, request, services, ct);
-
-  public virtual Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) =>
-    DeleteAsync(request, cancellationToken);
-
-  public virtual Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default) =>
-    GridMutationRunner.DeleteAsync(this, request, ct);
-
-  public virtual Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default) =>
-    GridMutationRunner.ExportAsync(this, request, ct);
-
-  public virtual Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) =>
-    GridActionRunner.HasActionAsync(this, actionKey, ct);
-
-  public virtual Task<object?> GetActionInputAsync(string actionKey, GridRequest request, CancellationToken ct = default) =>
-    GridActionRunner.GetActionInputAsync(this, actionKey, request, ct);
-
-  public virtual Task<GridActionDto?> ExecuteDeclaredActionAsync(string actionKey, GridRequest request, JsonElement? body, CancellationToken ct = default) =>
-    GridActionRunner.ExecuteDeclaredActionAsync(this, actionKey, request, body, ct);
-
-  public virtual Task<GridActionDto> MoveStatusAsync(GridRequest request, string transitionName, JsonElement? body, CancellationToken ct = default) =>
-    GridActionRunner.MoveStatusAsync(this, request, transitionName, body, ct);
-
-  protected Task<GridActionDto> AttachPickedAsync<TPicked>(
-    GridPickRequest request,
-    Func<GridBatchContext<TEntity>, TPicked, TEntity, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default,
-    [CallerMemberName] string? actionName = null)
-    where TPicked : class, IEntity =>
-    GridPickExecutor.ExecutePickedAsync(this, request, isAttach: true, handler, cancellationToken, actionName);
-
-  protected Task<GridActionDto> AttachPickedAsync<TPicked>(
-    GridPickRequest request,
-    Action<TPicked, TEntity> handler,
-    CancellationToken cancellationToken = default,
-    [CallerMemberName] string? actionName = null)
-    where TPicked : class, IEntity =>
-    GridPickExecutor.ExecutePickedAsync<TEntity, TRow, TPicked>(
-      this,
-      request,
-      isAttach: true,
-      (_, picked, target, _) =>
-      {
-        handler(picked, target);
-        return Task.CompletedTask;
-      },
-      cancellationToken,
-      actionName);
-
-  protected Task<GridActionDto> ReplacePickedAsync<TPicked>(
-    GridPickRequest request,
-    Func<GridBatchContext<TEntity>, TPicked, TEntity, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default,
-    [CallerMemberName] string? actionName = null)
-    where TPicked : class, IEntity =>
-    GridPickExecutor.ExecutePickedAsync(this, request, isAttach: false, handler, cancellationToken, actionName);
-
-  protected Task<GridActionDto> ReplacePickedAsync<TPicked>(
-    GridPickRequest request,
-    Action<TPicked, TEntity> handler,
-    CancellationToken cancellationToken = default,
-    [CallerMemberName] string? actionName = null)
-    where TPicked : class, IEntity =>
-    GridPickExecutor.ExecutePickedAsync<TEntity, TRow, TPicked>(
-      this,
-      request,
-      isAttach: false,
-      (_, picked, target, _) =>
-      {
-        handler(picked, target);
-        return Task.CompletedTask;
-      },
-      cancellationToken,
-      actionName);
-
-  protected Task<GridActionDto> AttachPickedAsync(
-    GridPickRequest request,
-    Action<TEntity, long> bindPicked,
-    Func<TEntity> factory,
-    Func<GridBatchContext<TEntity>, CancellationToken, Task> afterAttach,
-    CancellationToken cancellationToken = default,
-    [CallerMemberName] string? actionName = null) =>
-    GridPickExecutor.ExecutePickedCoreAsync(
-      this,
-      request,
-      actionName,
-      (parent, _) =>
-      {
-        var target = GridPickExecutor.InitializeAttachedEntity(this, factory(), parent);
-        bindPicked(target, request.PickedId);
-        db.Set<TEntity>().Add(target);
-        return Task.FromResult<(TEntity?, GridActionDto?, IReadOnlyList<long>)>((target, null, [request.PickedId]));
-      },
-      (ctx, _, ct) => afterAttach(ctx, ct),
-      cancellationToken);
-
-  protected Task<GridActionDto> ReplacePickedAsync(
-    GridPickRequest request,
-    Func<GridBatchContext<TEntity>, CancellationToken, Task> handler,
-    CancellationToken cancellationToken = default,
-    [CallerMemberName] string? actionName = null) =>
-    GridPickExecutor.ExecutePickedCoreAsync(
-      this,
-      request,
-      actionName,
-      async (_, ct) =>
-      {
-        var (target, refusal) = await GridPickExecutor.LoadPickedReplaceTargetAsync(this, request, ct);
-        return (target, refusal, [request.PickedId]);
-      },
-      (ctx, _, ct) => handler(ctx, ct),
-      cancellationToken);
-
-  public void RegisterMetadata() => GridMetadataValidator.RegisterMetadata(this);
-  public Task RegisterMetadataAsync(CancellationToken ct = default) => GridMetadataValidator.RegisterMetadataAsync(this, ct);
-
-  IEnumerable<string> IPlatformService.GetDeclaredActions() =>
-    ProbeActions().Entries
-      .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
-      .Where(n => !string.IsNullOrWhiteSpace(n))!;
-
-  IReadOnlyList<string> IGridService.GetRoutableActionMethods(ModuleCatalog catalog) =>
-    GridMetadataValidator.GetRoutableActionMethods(this, catalog);
-
-  PropertyInfo? IGridService.GetBoundParentProperty() => GetParent().BoundProperty;
-  bool IGridService.HasStatusFlow() => ProbeColumnsSafe().StatusFlow is IRecordStatuses<TEntity>;
-  void IPlatformService.ValidateConfiguration(ModuleCatalog catalog) => GridMetadataValidator.ValidateConfiguration(this, catalog);
-
-  internal Parent GetParentDeclaration() => GetParent();
-  internal Hooks GetHooksDeclaration() => GetHooks();
-  internal Columns CreateColumnsDeclaration() => CreateColumns();
-  internal Columns ProbeColumnsSafe()
+  public virtual async Task<IReadOnlyList<GridCreateDescriptor>> GetDeclaredFormsAsync(CancellationToken ct = default)
   {
-    try
+    if (Feature.IsReadOnly)
     {
-      return CreateColumns();
-    }
-    catch (ParentNotLoadedException)
-    {
-      return new Columns();
-    }
-  }
-
-  internal Nav ProbeNavSafe()
-  {
-    try
-    {
-      return GetNav();
-    }
-    catch (ParentNotLoadedException)
-    {
-      return new Nav(L);
-    }
-  }
-  internal Nav GetNavDeclaration(string? servicePath = null) => GetNav(servicePath);
-  internal IQueryable<TEntity> InvokeBaseQuery(PlatformDbContext context) => BaseQuery(context);
-  internal void InvokeSetUserRestrictions(UserRestrictions restrictions) => SetUserRestrictions(restrictions);
-  internal void InvokeSetActions(Actions actions) => SetActions(actions);
-  internal Task InvokeSetActionsAsync(Actions actions, CancellationToken ct) => SetActionsAsync(actions, ct);
-  internal Task<bool> EnsureParentScopeInternalAsync(bool lockParent, CancellationToken ct) => EnsureParentScopeAsync(lockParent, ct);
-  internal IQueryable<TEntity> RestrictedQueryInternal() => RestrictedQuery();
-  internal Task<IReadOnlyList<long>> InferBoundParentIdInternalAsync(IReadOnlyList<long> ids, CancellationToken ct, bool includeQueryFilters = false) =>
-    InferBoundParentIdFromIdsAsync(ids, ct, includeQueryFilters);
-  internal Task<OverlayDto?> InvokeResolveFormOverlayAsync(Columns columns, CancellationToken ct) => ResolveFormOverlayAsync(columns, ct);
-  internal RowDto InvokeShapeRow(TRow row, IReadOnlyList<GridColumnDto> columns, IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null) =>
-    ShapeRow(row, columns, rowFlags);
-
-  internal static QueryMap<TEntity> BuildQueryMap(
-    Type serviceType,
-    Query queryDeclaration,
-    IReadOnlyList<GridColumnDto> columns,
-    bool useCollationComparison = false) =>
-    GridQueryMapBuilder<TEntity, TRow>.Build(serviceType, queryDeclaration, columns, useCollationComparison);
-
-  internal Query GetQueryDeclaration()
-  {
-    if (State.CachedQuery is { } cached && cached.ParentService == ParentService && cached.ParentId == ParentId)
-    {
-      return cached.Value;
+      return [];
     }
 
-    var q = new Query();
-    SetQuery(q);
-    State.CachedQuery = (ParentService, ParentId, q);
-    return q;
-  }
-
-  internal Actions ProbeActions()
-  {
-    var actions = new Actions();
-    try
-    {
-      SetActionsAsync(actions).GetAwaiter().GetResult();
-    }
-    catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
-    {
-      if (actions.Entries.Count == 0 && actions.InheritedFormServiceTypes.Count == 0)
-      {
-        try
-        {
-          SetActions(actions);
-        }
-        catch (ParentNotLoadedException)
-        {
-        }
-      }
-
-      var overridesAsync = GetType()
-        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
-        .DeclaringType != typeof(GridService<TEntity, TRow>);
-      if (db == null && overridesAsync && actions.Entries.Count == 0 && actions.InheritedFormServiceTypes.Count == 0)
-      {
-        throw new InvalidOperationException(
-          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (db != null)' before registering actions.",
-          ex);
-      }
-    }
-
-    return actions;
+    var forms = await GetCreateFormsAsync(ct);
+    return forms.Count > 0 ? forms : await ResolveDeclaredCreateFormsAsync(existingNav: null, ct);
   }
 
   internal Form.ChildGridBuilder? ResolveParentChildBuilder()
@@ -612,123 +418,6 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       ParentId,
       State.CachedParentChildren,
       c => c.ServiceType == GetType() || string.Equals(c.ServicePath, myService, StringComparison.OrdinalIgnoreCase));
-  }
-
-  internal Type? ResolveFormServiceType(Columns columns)
-  {
-    if (columns.FormServiceType != null)
-    {
-      return columns.FormServiceType;
-    }
-
-    if (FormServicePath != null)
-    {
-      return ModuleCatalog.Instance.FindServiceType(FormServicePath);
-    }
-
-    return ParentScopeValidator.ResolveConventionFormType(GetType());
-  }
-
-  internal string? ResolveFormServicePath(Columns columns)
-  {
-    if (FormServicePath != null)
-    {
-      return FormServicePath;
-    }
-
-    var formType = ResolveFormServiceType(columns);
-    return formType != null ? ServicePathResolver.Resolve(formType) : null;
-  }
-
-  private Nav GetNav(string? servicePath = null)
-  {
-    var effectivePath = servicePath ?? ServicePathResolver.Resolve(GetType());
-    if (State.CachedNav is { } cached &&
-        cached.ParentService == ParentService &&
-        cached.ParentId == ParentId &&
-        string.Equals(cached.ServicePath, effectivePath, StringComparison.Ordinal))
-    {
-      return cached.Value;
-    }
-
-    var nav = new Nav(L);
-    SetNav(nav);
-    foreach (var (createFormType, _) in nav.Creates)
-    {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), createFormType, "Nav.AddCreate");
-    }
-
-    foreach (var (pickerSourceType, _, pickerModel) in nav.PickerEntries)
-    {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), pickerSourceType, $"Nav.AddPicker '{pickerModel.Key}'");
-      ReferenceLookupAllowlist.RegisterReferrer(pickerSourceType, GetType());
-    }
-
-    State.CachedNav = (ParentService, ParentId, effectivePath, nav);
-    return nav;
-  }
-
-  private Columns CreateColumns()
-  {
-    var cols = new Columns();
-    SetColumns(cols);
-    SetColumns((Columns<TRow>)cols);
-    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.FormServiceType, "AsOpenForm / UseForm");
-    ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.CoverFileGridType, "AsCover");
-    if (cols.StatusFlow != null)
-    {
-      ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), cols.StatusFlow.GetType(), "UseStatusOf");
-    }
-
-    string? resolvedParentFormPath = null;
-    foreach (var col in cols.List)
-    {
-      if (col.PickerSourceType != null)
-      {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.PickerSourceType, $"PickedBy on '{col.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(col.PickerSourceType, GetType());
-      }
-
-      if (col.ReferenceServiceType != null)
-      {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.ReferenceServiceType, $"AsReference on '{col.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(col.ReferenceServiceType, GetType());
-      }
-
-      if (col.Cell is GridCellCoverModel { Service.Length: > 0, ParentService.Length: 0 } cover)
-      {
-        resolvedParentFormPath ??= ResolveFormServicePath(cols) ?? string.Empty;
-        cover.ParentService = resolvedParentFormPath;
-      }
-    }
-
-    return cols;
-  }
-
-  private IReadOnlyList<GridCreateDescriptor> ResolveDeclaredCreateForms()
-  {
-    var servicePath = ServicePathResolver.Resolve(GetType());
-    var nav = GetNav(servicePath);
-    if (nav.Creates.Count > 0)
-    {
-      return nav.Creates
-        .Select(c => new GridCreateDescriptor(
-          c.FormType,
-          c.Model.Service ?? ServicePathResolver.Resolve(c.FormType),
-          c.Model.Label ?? c.Model.Title ?? L["Add"],
-          c.Model.Color))
-        .ToList();
-    }
-
-    var columns = CreateColumns();
-    var formType = ResolveFormServiceType(columns);
-    var formPath = ResolveFormServicePath(columns);
-    if (formType != null && !string.IsNullOrEmpty(formPath))
-    {
-      return [new GridCreateDescriptor(formType, formPath, L[Feature.Label], UiColor.Orange)];
-    }
-
-    return [];
   }
 
   private bool IsNavigationPathUnloaded(object root, string navPath)

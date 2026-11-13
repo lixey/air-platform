@@ -4,14 +4,14 @@ internal sealed class InspectionGridService(AgentTestDbContext db, PlatformAppSe
   : GridService<AgentTestInspection>(db, app)
 {
   public override Feature Feature => AgentTestModule.Inspections;
-  protected override void SetQuery(Query query) => query.Where(i => i.Code != "OTHER-DOCTYPE");
-  protected override void SetNav(Nav nav) => nav.AddCreate<InspectionFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetQuery() => Query.Where(i => i.Code != "OTHER-DOCTYPE");
+  protected override void SetNav() => Nav.AddCreate<InspectionFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<InspectionFormService>();
-    columns.UseStatusOf(new InspectionFlowService(db));
-    columns.Add(i => i.Code);
-    columns.Add(i => i.Status);
-    columns.Add(i => i.Notes);
+    Columns.UseForm<InspectionFormService>();
+    Columns.UseStatusOf(new InspectionFlowService(db));
+    Columns.Add(i => i.Code);
+    Columns.Add(i => i.Status);
+    Columns.Add(i => i.Notes);
   }
 }

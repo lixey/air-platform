@@ -5,19 +5,19 @@ public sealed class AppAgentProviderFormService(AppDbContext db, AppService? app
 {
   public override Feature Feature => App.AgentProvider;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus().Span(6);
-    var handleEl = elements.Add(e => e.Handle).Label("Provider Handle").Span(3);
+    Elements.Add(e => e.Name).Focus().Span(6);
+    var handleEl = Elements.Add(e => e.Handle).Label("Provider Handle").Span(3);
     if (!IsNew)
     {
       handleEl.Disabled();
     }
 
-    elements.Add(e => e.SortOrder).Label("Sort Order").Span(3);
-    elements.Add(e => e.IsActive).AsCheckbox().Span(3);
+    Elements.Add(e => e.SortOrder).Label("Sort Order").Span(3);
+    Elements.Add(e => e.IsActive).AsCheckbox().Span(3);
 
-    elements.AddChild<AppAgentModelGridService, AppAgentModel>(
+    Elements.AddChild<AppAgentModelGridService, AppAgentModel>(
         p => r => r.ProviderHandle == p.Handle,
         (r, p) =>
         {
@@ -28,9 +28,9 @@ public sealed class AppAgentProviderFormService(AppDbContext db, AppService? app
       .Label("AI models");
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterLoad((c, _) =>
+    Hooks.AfterLoad((c, _) =>
     {
       if (c.IsNew)
       {
@@ -41,7 +41,7 @@ public sealed class AppAgentProviderFormService(AppDbContext db, AppService? app
       return Task.CompletedTask;
     });
 
-    hooks.BeforeSave(async (c, ct) =>
+    Hooks.BeforeSave(async (c, ct) =>
     {
       CodeRows.EnsurePascalCaseHandle(c.Entity.Handle, nameof(AppAgentProvider));
       if (!c.Entity.IsActive)
@@ -55,7 +55,7 @@ public sealed class AppAgentProviderFormService(AppDbContext db, AppService? app
       }
     });
 
-    hooks.AfterSave(async (c, ct) =>
+    Hooks.AfterSave(async (c, ct) =>
     {
       var models = await db.AppAgentModel
         .Where(m => m.ProviderHandle == c.Entity.Handle)

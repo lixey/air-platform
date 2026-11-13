@@ -10,7 +10,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
 
-  public void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
+  void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
 
   private readonly List<OptionDto> _statuses = [];
   private readonly HashSet<long> _finalStatusIds = [];
@@ -405,7 +405,9 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     return key;
   }
 
-  protected virtual void SetFlow(Flow flow) { }
+  protected Flow<TEntity> Flow { get; private set; } = new();
+
+  protected virtual void SetFlow() { }
 
   private Transition RegisterTransition(Transition t)
   {
@@ -655,7 +657,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
 
         if (PlatformApp != null && follower is IPlatformService ps)
         {
-          ps.AttachPlatformApp(PlatformApp);
+          ps.BindContext(PlatformApp);
         }
 
         var parentEntityType = followerBase?.GetGenericArguments().FirstOrDefault();
@@ -725,8 +727,9 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     _isDeclaring = true;
     try
     {
-      var flow = new Flow();
-      SetFlow(flow);
+      Flow = new Flow<TEntity>();
+      SetFlow();
+      var flow = Flow;
 
       _statuses.AddRange(flow.DeclaredStatuses);
       foreach (var finalId in flow.FinalStatusIds)

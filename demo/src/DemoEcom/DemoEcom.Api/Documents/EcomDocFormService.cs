@@ -25,17 +25,17 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
   protected override bool IsReadOnly => base.IsReadOnly || Status is { IsFinal: true };
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.From(db.EcomDoc.Include(doc => doc.DocStatus));
-    query.Where(doc => doc.DocTypeId == Type);
+    Query.From(db.EcomDoc.Include(doc => doc.DocStatus));
+    Query.Where(doc => doc.DocTypeId == Type);
   }
 
-  protected override async Task SetElementsAsync(Elements elements, CancellationToken cancellationToken)
+  protected override async Task SetElementsAsync(CancellationToken cancellationToken)
   {
     if (Flow != null)
     {
-      elements.UseStatusOf(Flow);
+      Elements.UseStatusOf(Flow);
     }
 
     var statuses = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
@@ -43,14 +43,14 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
     Status = IsNew
       ? statuses.FirstOrDefault()
       : (Doc?.DocStatus ?? statuses.FirstOrDefault(s => s.Id == Doc?.DocStatusId));
-    await base.SetElementsAsync(elements, cancellationToken);
+    await base.SetElementsAsync(cancellationToken);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterLoad((c, cancellationToken) =>
+    Hooks.AfterLoad((c, cancellationToken) =>
       c.IsNew ? EcomDocDefaults.NewAsync(c.Entity, Type, Time.Today, cancellationToken) : Task.CompletedTask);
-    hooks.BeforeSave(async (c, cancellationToken) =>
+    Hooks.BeforeSave(async (c, cancellationToken) =>
     {
       if (c.Entity.DocTypeId == 0)
       {

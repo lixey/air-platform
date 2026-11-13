@@ -5,12 +5,12 @@ internal sealed class TestOrderLineFlowService(AppTestDbContext db)
 {
   public override Feature Feature => TestAppModule.OrderDocs;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    flow.State(x => x.TierCode);
-    flow.Status(1, "Pending", UiColor.Blue);
-    flow.FinalStatus(2, "Fulfilled", UiColor.Green);
-    flow.Initial(1);
+    Flow.State(x => x.TierCode);
+    Flow.Status(1, "Pending", UiColor.Blue);
+    Flow.FinalStatus(2, "Fulfilled", UiColor.Green);
+    Flow.Initial(1);
   }
 
   public Transition Fulfill => FromOpen().To(2);

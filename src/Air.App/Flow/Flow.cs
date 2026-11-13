@@ -11,6 +11,28 @@ public class Flow<TEntity>
   internal List<Type> FollowerTypes { get; } = [];
   internal Dictionary<Type, PropertyInfo> FollowerForeignKeys { get; } = [];
 
+  public List<OptionDto> Items => DeclaredStatuses;
+
+  public OptionDto? Find(long id) => DeclaredStatuses.FirstOrDefault(s => s.Id == id);
+
+  public bool Remove(long id)
+  {
+    FinalStatusIds.Remove(id);
+    if (InitialStatusId == id)
+    {
+      InitialStatusId = null;
+    }
+
+    return DeclaredStatuses.RemoveAll(s => s.Id == id) > 0;
+  }
+
+  public void Clear()
+  {
+    DeclaredStatuses.Clear();
+    FinalStatusIds.Clear();
+    InitialStatusId = null;
+  }
+
   public void State(Expression<Func<TEntity, long>> member)
   {
     StateMember = member;

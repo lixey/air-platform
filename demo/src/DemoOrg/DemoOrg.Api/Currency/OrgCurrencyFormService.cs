@@ -5,11 +5,11 @@ public sealed class OrgCurrencyFormService(OrgDbContext db, OrgService? org = nu
 {
   public override Feature Feature => Org.Currency;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Handle);
-    elements.Add(e => e.Code);
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.Symbol);
+    Elements.Add(e => e.Handle);
+    Elements.Add(e => e.Code);
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.Symbol);
   }
 }

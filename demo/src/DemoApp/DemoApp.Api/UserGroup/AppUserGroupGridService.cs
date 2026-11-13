@@ -5,11 +5,11 @@ public sealed class AppUserGroupGridService(AppDbContext db, AppService? app = n
 {
   public override Feature Feature => App.UserGroup;
 
-  protected override void SetColumns(Columns<AppUserGroup> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppUserGroupFormService>();
-    columns.Add(r => r.Name).Color(g => g.Color.Handle);
-    columns.Add(r => r.Color).AsReference<AppColorGridService>().Color(g => g.Color.Handle);
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<AppUserGroupFormService>();
+    Columns.Add(r => r.Name).Color(g => g.Color.Handle);
+    Columns.Add(r => r.Color).AsReference<AppColorGridService>().Color(g => g.Color.Handle);
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 }

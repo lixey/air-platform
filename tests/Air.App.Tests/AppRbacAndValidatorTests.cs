@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Http;
-using Platform.App.Host.Internals;
 using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
@@ -107,7 +106,7 @@ public sealed class AppRbacAndValidatorTests : IDisposable
   }
 
   [Fact]
-  public async Task AppServiceEndpointDispatcher_AttachesPlatformAppToReportAndScreenServices()
+  public async Task DispatchEndpointAsync_BindsPlatformAppToReportAndScreenServices()
   {
     await using var db = CreateDbContext();
     var user = new FixedUser(42, "*");
@@ -123,14 +122,12 @@ public sealed class AppRbacAndValidatorTests : IDisposable
       .AddSingleton(screen)
       .BuildServiceProvider();
 
-    var dispatcher = new AppServiceEndpointDispatcher();
-
     var reportCtx = new DefaultHttpContext { RequestServices = services };
-    var reportRes = await dispatcher.DispatchAsync(
+    reportCtx.Request.Path = "/api/test/summary-report/get-data";
+    var reportRes = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(TestSummaryReportService),
-      "test/summary-report",
+      report,
       "get-data",
-      null,
       TestAppModule.SummaryReport,
       reportCtx.Request,
       services,
@@ -142,11 +139,11 @@ public sealed class AppRbacAndValidatorTests : IDisposable
     Assert.Equal(42L, report.LastSeenUserId);
 
     var screenCtx = new DefaultHttpContext { RequestServices = services };
-    var screenRes = await dispatcher.DispatchAsync(
+    screenCtx.Request.Path = "/api/test/overview-screen/get-data";
+    var screenRes = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(TestOverviewScreenService),
-      "test/overview-screen",
+      screen,
       "get-data",
-      null,
       TestAppModule.OverviewScreen,
       screenCtx.Request,
       services,

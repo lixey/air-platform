@@ -255,7 +255,7 @@ public abstract partial class ChangeGridService
   private static string ResolveFieldLabel(Feature? feat, Localizer modL, Type? entityType, string propName)
   {
     var camel = char.ToLowerInvariant(propName[0]) + propName[1..];
-    var spaced = Columns.PathToLabel(camel, entityType);
+    var spaced = Grid.Columns.PathToLabel(camel, entityType);
     if (spaced.EndsWith(" Id", StringComparison.Ordinal) && spaced.Length > 3)
     {
       spaced = spaced[..^3];
@@ -684,11 +684,7 @@ public abstract partial class ChangeGridService
           (sp?.GetService(formType) as IFormService
            ?? ModuleCatalog.Instance.CreateServiceInstance(formType, sibDb, PlatformApp, sp) as IFormService) is { } form)
       {
-        if (PlatformApp != null)
-        {
-          form.AttachPlatformApp(PlatformApp);
-        }
-
+        form.BindContext(PlatformApp);
         if (await form.LoadParentRecordAsync(sibRowId, ct) != null)
         {
           return (true, feat);

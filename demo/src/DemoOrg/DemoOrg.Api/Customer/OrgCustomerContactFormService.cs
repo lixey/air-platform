@@ -7,22 +7,22 @@ public sealed class OrgCustomerContactFormService(OrgDbContext db, OrgService? o
 
   protected override string Title => "Contact";
 
-  protected override void SetParent(Parent parent) => parent.Bind<OrgCustomerFormService>(c => c.CustomerId);
+  protected override void SetParent() => Parent.Bind<OrgCustomerFormService>(c => c.CustomerId);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus().Span(6);
-    elements.Add(e => e.Position).Span(6);
-    elements.Add(e => e.Phone).AsPhone("+380 (##) ###-##-##").Span(6);
-    elements.Add(e => e.Email).AsEmail().Span(6);
+    Elements.Add(e => e.Name).Focus().Span(6);
+    Elements.Add(e => e.Position).Span(6);
+    Elements.Add(e => e.Phone).AsPhone("+380 (##) ###-##-##").Span(6);
+    Elements.Add(e => e.Email).AsEmail().Span(6);
 
-    elements.Add(e => e.IsPrimary).AsCheckbox();
-    elements.Add(e => e.Note).AsTextarea();
+    Elements.Add(e => e.IsPrimary).AsCheckbox();
+    Elements.Add(e => e.Note).AsTextarea();
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterSave(async (c, cancellationToken) =>
+    Hooks.AfterSave(async (c, cancellationToken) =>
     {
       if (!c.Entity.IsPrimary)
       {

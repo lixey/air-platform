@@ -8,7 +8,7 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
   protected abstract long Type { get; }
   protected EcomDocTexts Texts => field ??= EcomDocTexts.Of(L);
 
-  protected override void SetFlow(Flow flow) => flow.State(doc => doc.DocStatusId);
+  protected override void SetFlow() => Flow.State(doc => doc.DocStatusId);
 
   protected async Task PostAsync(Move move, CancellationToken cancellationToken)
   {

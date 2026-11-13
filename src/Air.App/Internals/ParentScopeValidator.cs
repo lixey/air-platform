@@ -62,8 +62,19 @@ internal static class ParentScopeValidator
 
   public static bool DeclaresParentScope(Type? serviceType)
   {
-    var setParentMethod = serviceType?.GetMethod("SetParent", BindingFlags.Instance | BindingFlags.NonPublic);
-    return setParentMethod is { DeclaringType.IsGenericType: false };
+    var setParentMethod = serviceType?.GetMethod("SetParent", BindingFlags.Instance | BindingFlags.NonPublic, Type.EmptyTypes);
+    if (setParentMethod?.DeclaringType is not { } declaring)
+    {
+      return false;
+    }
+
+    if (!declaring.IsGenericType)
+    {
+      return true;
+    }
+
+    var def = declaring.GetGenericTypeDefinition();
+    return def != typeof(Form.FormService<>) && def != typeof(Grid.GridService<,>);
   }
 
   public static Type? GetFormEntityType(Type? type)
@@ -237,11 +248,6 @@ internal static class ParentScopeValidator
           typeof(Form.IFormService).IsAssignableFrom(parentServiceType) &&
           ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, db, app) is Form.IFormService metadataForm)
       {
-        if (app != null)
-        {
-          metadataForm.AttachPlatformApp(app);
-        }
-
         metadataForm.SetRequest(new Form.Contracts.FormRequest());
         var (_, children) = await metadataForm.GetElementsMetadataAsync(ct);
         return (true, null, children);
@@ -266,11 +272,6 @@ internal static class ParentScopeValidator
         if (ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) is not Form.IFormService candidateForm)
         {
           continue;
-        }
-
-        if (app != null)
-        {
-          candidateForm.AttachPlatformApp(app);
         }
 
         if (!string.IsNullOrEmpty(candidateForm.Feature.Module) &&
@@ -321,11 +322,6 @@ internal static class ParentScopeValidator
         if (ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) is not Grid.IGridService candidateGrid)
         {
           continue;
-        }
-
-        if (app != null)
-        {
-          candidateGrid.AttachPlatformApp(app);
         }
 
         if (!string.IsNullOrEmpty(candidateGrid.Feature.Module) &&
@@ -486,11 +482,6 @@ internal static class ParentScopeValidator
         return null;
       }
 
-      if (app != null)
-      {
-        singleForm.AttachPlatformApp(app);
-      }
-
       foreach (var id in distinctIds)
       {
         formsById.Add((id, singleForm));
@@ -507,11 +498,6 @@ internal static class ParentScopeValidator
           if (!resolvedByType.TryGetValue(explicitParentType, out var explicitForm) &&
               ModuleCatalog.Instance.CreateServiceInstance(explicitParentType, db, app) is Form.IFormService createdExplicit)
           {
-            if (app != null)
-            {
-              createdExplicit.AttachPlatformApp(app);
-            }
-
             resolvedByType[explicitParentType] = explicitForm = createdExplicit;
           }
 
@@ -620,11 +606,6 @@ internal static class ParentScopeValidator
 
       if (ModuleCatalog.Instance.CreateServiceInstance(parentFormType, db, app) is Form.IFormService direct)
       {
-        if (app != null)
-        {
-          direct.AttachPlatformApp(app);
-        }
-
         instanceCache?.TryAdd(parentFormType, direct);
         return direct;
       }
@@ -654,11 +635,6 @@ internal static class ParentScopeValidator
         candidateForm = ModuleCatalog.Instance.CreateServiceInstance(candidateType, db, app) as Form.IFormService;
         if (candidateForm != null)
         {
-          if (app != null)
-          {
-            candidateForm.AttachPlatformApp(app);
-          }
-
           instanceCache?.TryAdd(candidateType, candidateForm);
         }
       }

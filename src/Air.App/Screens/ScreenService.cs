@@ -4,6 +4,28 @@ public abstract class ScreenService(PlatformAppService? app = null) : PlatformSe
 {
   public abstract Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
 
+  [Endpoint(Auth = EndpointAuth.View)]
+  public virtual async Task<ScreenDto> GetData(HttpRequest httpRequest, CancellationToken ct = default)
+  {
+    var serviceName = ExtractRouteServicePath(httpRequest) ?? ServicePathResolver.Resolve(GetType());
+    var screen = await BuildScreenAsync(serviceName, ct);
+    EnforceAndFilterScreen(GetType(), screen, User, Catalog);
+    return screen;
+  }
+
+  internal static string? ExtractRouteServicePath(HttpRequest? httpRequest)
+  {
+    var rawPath = httpRequest?.Path.Value;
+    if (string.IsNullOrEmpty(rawPath) || !rawPath.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+    {
+      return null;
+    }
+
+    var servicePath = rawPath["/api/".Length..].Trim('/');
+    var lastSlash = servicePath.LastIndexOf('/');
+    return lastSlash > 0 ? servicePath[..lastSlash] : null;
+  }
+
   void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
   {
     ScreenDto? screen;

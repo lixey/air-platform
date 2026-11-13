@@ -5,23 +5,23 @@ public sealed class EcomStockReceiptLineFormService(EcomDbContext db, EcomServic
 {
   public override Feature Feature => Ecom.StockReceipt;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Product)
+    Elements.Add(e => e.Product)
       .AsReference<OrgProductGridService>()
       .PatchOnSelect(e => e.Price, p => p.PurchasePrice)
       .Required()
       .Span(12);
-    elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(4);
-    elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's purchase price").Span(4);
-    elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(4);
-    elements.Add(e => e.Note).AsTextarea().Span(12);
+    Elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(4);
+    Elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's purchase price").Span(4);
+    Elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(4);
+    Elements.Add(e => e.Note).AsTextarea().Span(12);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    base.SetHooks(hooks);
-    hooks.BeforeSave((c, cancellationToken) =>
+    base.SetHooks();
+    Hooks.BeforeSave((c, cancellationToken) =>
     {
       var doc = ParentRecord<EcomDoc>();
       if (doc != null)

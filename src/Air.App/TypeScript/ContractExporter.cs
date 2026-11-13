@@ -206,7 +206,6 @@ public static class ContractExporter
     sb.AppendLine("  'get-count': { request: GridRequest | null; answer: GridCountDto };");
     sb.AppendLine("  'get-data': { request: GridRequest | null; answer: ScreenDto };");
     sb.AppendLine("  'get-one': { request: GridRequest; answer: RowDto | null };");
-    sb.AppendLine("  'move-status': { request: GridRequest; answer: GridActionDto };");
     sb.AppendLine("  'save-cell': { request: GridCellRequest; answer: GridCellDto };");
     sb.AppendLine("}");
     sb.AppendLine();
@@ -221,7 +220,6 @@ public static class ContractExporter
     sb.AppendLine("  'get-info': { request: GridRequest; answer: FileInfoDto };");
     sb.AppendLine("  'get-one': { request: GridRequest; answer: RowDto | null };");
     sb.AppendLine("  move: { request: FileMoveRequest; answer: GridActionDto };");
-    sb.AppendLine("  'move-status': { request: GridRequest; answer: GridActionDto };");
     sb.AppendLine("  'save-cell': { request: GridCellRequest; answer: GridCellDto };");
     sb.AppendLine("  'set-cover': { request: GridRequest; answer: GridActionDto };");
     sb.AppendLine("  'set-info': { request: FileInfoRequest; answer: GridActionDto };");
@@ -239,7 +237,6 @@ public static class ContractExporter
     sb.AppendLine("export interface FormServiceEndpoints {");
     sb.AppendLine("  'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };");
     sb.AppendLine("  'get-data': { request: FormRequest | null; answer: ScreenDto };");
-    sb.AppendLine("  'move-status': { request: FormRequest; answer: FormActionDto };");
     sb.AppendLine("  save: { request: FormRequest; answer: FormDataDto };");
     sb.AppendLine("}");
     sb.AppendLine();

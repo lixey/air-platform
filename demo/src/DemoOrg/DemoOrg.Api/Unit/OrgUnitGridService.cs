@@ -5,12 +5,12 @@ public sealed class OrgUnitGridService(OrgDbContext db, OrgService? org = null)
 {
   public override Feature Feature => Org.Unit;
 
-  protected override void SetColumns(Columns<OrgUnit> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgUnitFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Handle);
+    Columns.Add(r => r.Id).AsOpenForm<OrgUnitFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Handle);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }

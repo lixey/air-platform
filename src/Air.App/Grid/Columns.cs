@@ -6,13 +6,25 @@ namespace Platform.App.Grid;
 
 public class Columns
 {
-  private readonly List<GridColumnDto> _columns = [];
-  public IReadOnlyList<GridColumnDto> List => _columns;
+  public List<GridColumnDto> Items { get; } = [];
+  public IReadOnlyList<GridColumnDto> List => Items;
+  public int Count => Items.Count;
+  public GridColumnDto this[int index] => Items[index];
+
+  public GridColumnDto? Find(string path) =>
+    Items.FirstOrDefault(c => string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase));
+
+  public bool Remove(string path) =>
+    Items.RemoveAll(c => string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase)) > 0;
+
+  public int RemoveAll(Predicate<GridColumnDto> match) => Items.RemoveAll(match);
+
+  public void Clear() => Items.Clear();
 
   public void RetainOnly(IEnumerable<string> paths)
   {
     var set = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
-    _columns.RemoveAll(c => c.Path == null || !set.Contains(c.Path));
+    Items.RemoveAll(c => c.Path == null || !set.Contains(c.Path));
   }
 
   public Type? FormServiceType { get; set; }
@@ -20,24 +32,15 @@ public class Columns
   internal object? StatusFlow { get; private set; }
   internal bool StatusFlowAllowsReadOnly { get; private set; }
 
-  public sealed class StatusFlowBuilder(Columns owner)
-  {
-    public StatusFlowBuilder AllowReadOnly(bool allow = true)
-    {
-      owner.StatusFlowAllowsReadOnly = allow;
-      return this;
-    }
-  }
-
   public void UseForm<TFormService>() where TFormService : class
   {
     FormServiceType = typeof(TFormService);
   }
 
-  public StatusFlowBuilder UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
+  public StatusFlowOptions UseStatusOf<TEntity>(IRecordStatuses<TEntity> statuses) where TEntity : class
   {
     StatusFlow = statuses;
-    return new StatusFlowBuilder(this);
+    return new StatusFlowOptions(allow => StatusFlowAllowsReadOnly = allow);
   }
 
   public GridColumn<TRow, TRow, TProp> Add<TRow, TProp>(Expression<Func<TRow, TProp?>> expression)
@@ -55,7 +58,7 @@ public class Columns
       Header = isRefType ? new GridHeaderReferenceModel() : null,
       MemberType = typeof(TProp)
     };
-    _columns.Add(col);
+    Items.Add(col);
     return new GridColumn<TRow, TRow, TProp>(col, this);
   }
 
@@ -93,7 +96,7 @@ public class Columns
       ValueEvaluator = evaluator,
       IsSubqueryExpression = isSubquery
     };
-    _columns.Add(col);
+    Items.Add(col);
     return new GridColumn<TRow, TRow, TProp>(col, this);
   }
 
@@ -131,7 +134,7 @@ public class Columns
       Cell = GridColumnDefaults.ResolveDefaultCell(typeof(TProp)),
       MemberType = typeof(TProp)
     };
-    _columns.Add(col);
+    Items.Add(col);
     return new GridColumn<object, object, TProp>(col, this);
   }
 

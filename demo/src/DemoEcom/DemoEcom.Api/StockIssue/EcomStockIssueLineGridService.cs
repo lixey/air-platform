@@ -5,14 +5,14 @@ public sealed class EcomStockIssueLineGridService(EcomDbContext db, EcomService?
 {
   public override Feature Feature => Ecom.StockIssue;
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomStockIssueLineFormService>();
-    columns.Add(r => r.SortOrder);
-    columns.Add(r => r.Product).AsReference<OrgProductGridService>();
-    columns.Add(r => r.Product.Article);
-    columns.Add(r => r.Qty).Label("Quantity").Sum();
-    columns.Add(r => r.Price).AsMoney();
-    columns.Add(r => r.Amount).AsMoney().Sum();
+    Columns.Add(r => r.Id).AsOpenForm<EcomStockIssueLineFormService>();
+    Columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Product).AsReference<OrgProductGridService>();
+    Columns.Add(r => r.Product.Article);
+    Columns.Add(r => r.Qty).Label("Quantity").Sum();
+    Columns.Add(r => r.Price).AsMoney();
+    Columns.Add(r => r.Amount).AsMoney().Sum();
   }
 }

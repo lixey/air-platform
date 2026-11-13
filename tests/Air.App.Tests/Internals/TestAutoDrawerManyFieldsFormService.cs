@@ -5,16 +5,16 @@ internal sealed class TestAutoDrawerManyFieldsFormService(AppTestDbContext db, P
 {
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(i => i.Id).Disabled();
-    elements.Add(i => i.Number).Required();
-    elements.Add(i => i.Status);
-    elements.Add(i => i.IsHidden);
-    elements.Add(i => i.PrintedCount);
-    elements.Add(i => i.InternalMemo);
-    elements.Add(i => i.ApiSecret);
-    elements.Add(i => i.CachedLineTotal);
-    elements.Add(i => i.AuditedTotal);
+    Elements.Add(i => i.Id).Disabled();
+    Elements.Add(i => i.Number).Required();
+    Elements.Add(i => i.Status);
+    Elements.Add(i => i.IsHidden);
+    Elements.Add(i => i.PrintedCount);
+    Elements.Add(i => i.InternalMemo);
+    Elements.Add(i => i.ApiSecret);
+    Elements.Add(i => i.CachedLineTotal);
+    Elements.Add(i => i.AuditedTotal);
   }
 }

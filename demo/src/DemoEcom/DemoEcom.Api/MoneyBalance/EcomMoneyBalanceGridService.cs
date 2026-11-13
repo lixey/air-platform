@@ -5,16 +5,16 @@ public sealed class EcomMoneyBalanceGridService(EcomDbContext db, EcomService? e
 {
   public override Feature Feature => Ecom.MoneyBalance;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortBy(r => r.Organization).ThenBy(r => r.MoneyAccount);
+    Query.SortBy(r => r.Organization).ThenBy(r => r.MoneyAccount);
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(balance => balance.Organization.Color.Handle);
-    columns.Add(r => r.MoneyAccount).AsReference<OrgMoneyAccountGridService>();
-    columns.Add(r => r.MoneyAccount.IsCash).AsCheckbox();
-    columns.Add(r => r.Amount).AsMoney().Sum();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(balance => balance.Organization.Color.Handle);
+    Columns.Add(r => r.MoneyAccount).AsReference<OrgMoneyAccountGridService>();
+    Columns.Add(r => r.MoneyAccount.IsCash).AsCheckbox();
+    Columns.Add(r => r.Amount).AsMoney().Sum();
   }
 }

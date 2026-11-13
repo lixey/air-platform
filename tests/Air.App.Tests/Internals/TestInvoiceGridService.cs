@@ -3,14 +3,14 @@ namespace Platform.App.Tests.Internals;
 internal sealed class TestInvoiceGridService(AppTestDbContext db, PlatformAppService? app = null) : GridService<TestInvoice>(db, app)
 {
   public override Feature Feature => TestAppModule.Invoices;
-  protected override void SetQuery(Query query) => query.Where(i => !i.IsHidden);
-  protected override void SetNav(Nav nav) => nav.AddCreate<TestInvoiceFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetQuery() => Query.Where(i => !i.IsHidden);
+  protected override void SetNav() => Nav.AddCreate<TestInvoiceFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<TestInvoiceFormService>();
-    columns.UseStatusOf(new TestInvoiceStatusFlow(db));
-    columns.Add(i => i.Number).Editable();
-    columns.Add(i => i.Status);
-    columns.Add(i => i.PrintedCount).Sortable(false).Filterable(false);
+    Columns.UseForm<TestInvoiceFormService>();
+    Columns.UseStatusOf(new TestInvoiceStatusFlow(db));
+    Columns.Add(i => i.Number).Editable();
+    Columns.Add(i => i.Status);
+    Columns.Add(i => i.PrintedCount).Sortable(false).Filterable(false);
   }
 }

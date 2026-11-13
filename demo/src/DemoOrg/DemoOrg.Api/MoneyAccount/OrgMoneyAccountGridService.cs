@@ -5,18 +5,18 @@ public sealed class OrgMoneyAccountGridService(OrgDbContext db, OrgService? org 
 {
   public override Feature Feature => Org.MoneyAccount;
 
-  protected override void SetColumns(Columns<OrgMoneyAccount> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgMoneyAccountFormService>();
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(a => a.Organization.Color.Handle);
-    columns.Add(r => r.Name);
-    columns.Add(r => r.IsCash).AsCheckbox();
-    columns.Add(r => r.Iban);
-    columns.Add(r => r.BankName);
-    columns.Add(r => r.IsActive).AsCheckbox();
-    columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Id).AsOpenForm<OrgMoneyAccountFormService>();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(a => a.Organization.Color.Handle);
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.IsCash).AsCheckbox();
+    Columns.Add(r => r.Iban);
+    Columns.Add(r => r.BankName);
+    Columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.SortOrder);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }
 

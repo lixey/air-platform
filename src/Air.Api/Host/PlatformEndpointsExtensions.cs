@@ -88,6 +88,20 @@ public static class PlatformEndpointsExtensions
         });
         return true;
 
+      case IMutationRefusedException refusedEx:
+        {
+          var dto = new MutationResultDto
+          {
+            Outcome = refusedEx.Outcome,
+            Title = refusedEx.Title,
+            Messages = [.. refusedEx.Messages]
+          };
+          result = refusedEx.Outcome == MutationOutcome.Conflict
+            ? Results.Conflict(dto)
+            : Results.UnprocessableEntity(dto);
+          return true;
+        }
+
       case KeyNotFoundException notFoundEx:
         {
           var msg = string.IsNullOrWhiteSpace(notFoundEx.Message) ? Localizer.Instance["FormNotFound"] : notFoundEx.Message;
@@ -115,6 +129,15 @@ public static class PlatformEndpointsExtensions
           Outcome = MutationOutcome.Conflict,
           Title = Localizer.Instance["MutationConflict"],
           Messages = [new MessageDto { Detail = Localizer.Instance["FormRecordChanged"], Code = "conflict.concurrency", Type = MessageType.Error }]
+        });
+        return true;
+
+      case DbUpdateException:
+        result = Results.UnprocessableEntity(new MutationResultDto
+        {
+          Outcome = MutationOutcome.Refused,
+          Title = Localizer.Instance["MutationRefused"],
+          Messages = [new MessageDto { Detail = Localizer.Instance["MutationConstraint"], Code = "refused.constraint", Type = MessageType.Error }]
         });
         return true;
 

@@ -5,9 +5,9 @@ public sealed class AppColorFormService(AppDbContext db, AppService? app = null)
 {
   public override Feature Feature => App.Color;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.Handle);
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.Handle);
   }
 }

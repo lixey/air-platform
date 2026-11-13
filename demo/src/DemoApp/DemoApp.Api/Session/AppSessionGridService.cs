@@ -5,16 +5,16 @@ public sealed class AppSessionGridService(AppDbContext db, AppService? app = nul
 {
   public override Feature Feature => App.Session;
 
-  protected override void SetParent(Parent parent) => parent.Bind<AppUserFormService>(e => e.UserId);
+  protected override void SetParent() => Parent.Bind<AppUserFormService>(e => e.UserId);
 
-  protected override void SetColumns(Columns<AppAuthSession> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id);
-    columns.Add(r => r.Client);
-    columns.Add(r => r.Address);
-    columns.Add(r => r.LastUsedAt);
-    columns.Add(r => r.ExpiresAt);
-    columns.Add(r => r.RevokedAt);
-    columns.Add(r => r.RevokedReason);
+    Columns.Add(r => r.Id);
+    Columns.Add(r => r.Client);
+    Columns.Add(r => r.Address);
+    Columns.Add(r => r.LastUsedAt);
+    Columns.Add(r => r.ExpiresAt);
+    Columns.Add(r => r.RevokedAt);
+    Columns.Add(r => r.RevokedReason);
   }
 }

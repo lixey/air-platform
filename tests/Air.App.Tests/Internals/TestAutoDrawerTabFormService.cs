@@ -5,10 +5,10 @@ internal sealed class TestAutoDrawerTabFormService(AppTestDbContext db, Platform
 {
   public override Feature Feature => TestAppModule.Tags;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(t => t.Name).Required();
-    elements.AddTab("Details");
-    elements.Add(t => t.DefaultPrice);
+    Elements.Add(t => t.Name).Required();
+    Elements.AddTab("Details");
+    Elements.Add(t => t.DefaultPrice);
   }
 }

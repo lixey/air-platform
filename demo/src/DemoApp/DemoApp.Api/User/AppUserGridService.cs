@@ -7,23 +7,23 @@ public sealed class AppUserGridService(AppDbContext db, AppService app)
 
   protected override string FiltersWidth => PanelSize.Px(960);
 
-  protected override void SetColumns(Columns<AppUser> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppUserFormService>();
-    columns.Add(r => r.Login);
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Email);
-    columns.Add(r => r.Tenant).AsReference<AppTenantGridService>();
-    columns.Add(r => r.UserGroup).AsReference<AppUserGroupGridService>().Color(u => u.UserGroup!.Color.Handle);
-    columns.Add(r => r.Language).AsReference<AppLanguageGridService>();
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<AppUserFormService>();
+    Columns.Add(r => r.Login);
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Email);
+    Columns.Add(r => r.Tenant).AsReference<AppTenantGridService>();
+    Columns.Add(r => r.UserGroup).AsReference<AppUserGroupGridService>().Color(u => u.UserGroup!.Color.Handle);
+    Columns.Add(r => r.Language).AsReference<AppLanguageGridService>();
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Login);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Login);
 
-  protected override void SetHooks(Hooks hooks) =>
-    AppUserSecurityRules.AddDeleteHooks(this, hooks);
+  protected override void SetHooks() =>
+    AppUserSecurityRules.AddDeleteHooks(this);
 
-  protected override void SetActions(Actions actions) =>
-    AppUserSecurityRules.AddDeactivateAction(this, actions);
+  protected override void SetActions() =>
+    AppUserSecurityRules.AddDeactivateAction(this);
 }

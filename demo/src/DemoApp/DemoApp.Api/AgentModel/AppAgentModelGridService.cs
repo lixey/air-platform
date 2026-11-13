@@ -8,40 +8,40 @@ public sealed class AppAgentModelGridService(
 {
   public override Feature Feature => App.AgentModel;
 
-  protected override void SetColumns(Columns<AppAgentModel> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppAgentModelFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.ModelId).Label("Model ID");
-    columns.Add(r => r.ProviderHandle)
+    Columns.Add(r => r.Id).AsOpenForm<AppAgentModelFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.ModelId).Label("Model ID");
+    Columns.Add(r => r.ProviderHandle)
       .Label("Provider")
       .Color(r => r.ProviderHandle == "Agy" ? UiColor.Blue : r.ProviderHandle == "Claude" ? UiColor.Amber : r.ProviderHandle == "Codex" ? UiColor.Emerald : UiColor.Violet);
-    columns.Add(r => r.ProviderName).Label("Provider name");
-    columns.Add(r => r.SortOrder).Label("Sort Order").Width(90);
-    columns.Add(r => r.IsDefault).Label("Default").AsCheckbox();
-    columns.Add(r => r.IsForPhotos).Label("For photos").AsCheckbox();
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.ProviderName).Label("Provider name");
+    Columns.Add(r => r.SortOrder).Label("Sort Order").Width(90);
+    Columns.Add(r => r.IsDefault).Label("Default").AsCheckbox();
+    Columns.Add(r => r.IsForPhotos).Label("For photos").AsCheckbox();
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
     if (!ParentId.HasValue)
     {
-      query.Where(r => db.AppAgentProvider.Any(p => p.Handle == r.ProviderHandle && p.IsActive));
+      Query.Where(r => db.AppAgentProvider.Any(p => p.Handle == r.ProviderHandle && p.IsActive));
     }
 
-    query.SortBy(r => r.SortOrder).ThenBy(r => r.ProviderHandle).ThenBy(r => r.Name);
-    query.RecordLabel(e => e.Name);
-    query.SearchBy(r => r.Id, r => r.Name, r => r.ModelId, r => r.ProviderHandle, r => r.ProviderName);
-    query.NamedFilter("State", L["Status"])
+    Query.SortBy(r => r.SortOrder).ThenBy(r => r.ProviderHandle).ThenBy(r => r.Name);
+    Query.RecordLabel(e => e.Name);
+    Query.SearchBy(r => r.Id, r => r.Name, r => r.ModelId, r => r.ProviderHandle, r => r.ProviderName);
+    Query.NamedFilter("State", L["Status"])
       .All(L["All"]).Default()
       .Item("Active", L["Active"], r => r.IsActive).Color(UiColor.Emerald)
       .Item("Archived", L["Disabled"], r => !r.IsActive).Color(UiColor.Slate);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.Add("RefreshModels")
+    Actions.Add("RefreshModels")
       .AllowEdit()
       .Label("Refresh models")
       .Icon(UiIcon.Refresh)
@@ -61,7 +61,7 @@ public sealed class AppAgentModelGridService(
         }
       });
 
-    actions.Add("SetAsDefault")
+    Actions.Add("SetAsDefault")
       .AllowEdit()
       .Label("Set as default")
       .Icon(UiIcon.Checkmark)
@@ -75,7 +75,7 @@ public sealed class AppAgentModelGridService(
         }
       });
 
-    actions.Add("SetForPhotos")
+    Actions.Add("SetForPhotos")
       .AllowEdit()
       .Label("Set for photos")
       .Icon(UiIcon.Photo)
@@ -89,7 +89,7 @@ public sealed class AppAgentModelGridService(
         }
       });
 
-    actions.Add("ToggleActive")
+    Actions.Add("ToggleActive")
       .AllowEdit()
       .Label("Toggle active")
       .Icon(UiIcon.Edit)

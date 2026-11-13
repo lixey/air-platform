@@ -5,23 +5,23 @@ public sealed class AppRoleFormService(AppDbContext db, AppService app)
 {
   public override Feature Feature => App.Role;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.TenantId).AsReference<AppTenantGridService>();
-    elements.Add(e => e.SortOrder);
-    elements.Add(e => e.IsActive).AsCheckbox();
-    elements.Add(e => e.Description).AsTextarea();
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.TenantId).AsReference<AppTenantGridService>();
+    Elements.Add(e => e.SortOrder);
+    Elements.Add(e => e.IsActive).AsCheckbox();
+    Elements.Add(e => e.Description).AsTextarea();
 
-    elements.AddTab("Rights");
-    elements.Add(e => e.Permissions).InputOnly().AsRightsTree();
+    Elements.AddTab("Rights");
+    Elements.Add(e => e.Permissions).InputOnly().AsRightsTree();
 
-    elements.AddChild<AppRoleUserGridService>().Key("users").Label("Users");
+    Elements.AddChild<AppRoleUserGridService>().Key("users").Label("Users");
   }
 
-  protected override void SetRules(Rules rules) =>
-    AppRoleSecurityRules.AddNameRules(this, rules);
+  protected override void SetRules() =>
+    AppRoleSecurityRules.AddNameRules(this);
 
-  protected override void SetHooks(Hooks hooks) =>
-    AppRoleSecurityRules.AddFormHooks<AppAuthRole, AppAuthGrant>(this, hooks);
+  protected override void SetHooks() =>
+    AppRoleSecurityRules.AddFormHooks<AppAuthRole, AppAuthGrant>(this);
 }

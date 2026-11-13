@@ -5,13 +5,13 @@ internal sealed class TestAskWarmupFlowService(AppTestDbContext db)
 {
   public override Feature Feature => TestAppModule.AskWarmup;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    flow.State(l => l.TierCode);
-    flow.Status(1, "Draft", UiColor.Slate);
-    flow.Status(2, "Ready", UiColor.Green);
-    flow.Initial(1);
-    flow.FollowedBy<TestInvoiceStatusFlow>(l => l.InvoiceId);
+    Flow.State(l => l.TierCode);
+    Flow.Status(1, "Draft", UiColor.Slate);
+    Flow.Status(2, "Ready", UiColor.Green);
+    Flow.Initial(1);
+    Flow.FollowedBy<TestInvoiceStatusFlow>(l => l.InvoiceId);
   }
 
   public Transition Promote => From(1)

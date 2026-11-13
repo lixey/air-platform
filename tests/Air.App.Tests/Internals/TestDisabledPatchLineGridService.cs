@@ -5,11 +5,11 @@ internal sealed class TestDisabledPatchLineGridService(AppTestDbContext db, Plat
 {
   public override Feature Feature => TestAppModule.PatchedLines;
 
-  protected override void SetParent(Parent parent) => parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
+  protected override void SetParent() => Parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.Compute((IReadOnlyList<GridComputedRow<TestInvoiceLine>> rows, CancellationToken _) =>
+    Query.Compute((IReadOnlyList<GridComputedRow<TestInvoiceLine>> rows, CancellationToken _) =>
     {
       foreach (var r in rows)
       {
@@ -20,13 +20,13 @@ internal sealed class TestDisabledPatchLineGridService(AppTestDbContext db, Plat
     });
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<TestDisabledPatchLineFormService>();
-    columns.Add(l => l.Tag).Editable();
-    columns.Add(l => l.Amount);
-    columns.Add(l => l.Title);
-    columns.Add(l => l.Priority);
-    columns.Add<string>("computedBadge").Disabled();
+    Columns.UseForm<TestDisabledPatchLineFormService>();
+    Columns.Add(l => l.Tag).Editable();
+    Columns.Add(l => l.Amount);
+    Columns.Add(l => l.Title);
+    Columns.Add(l => l.Priority);
+    Columns.Add<string>("computedBadge").Disabled();
   }
 }

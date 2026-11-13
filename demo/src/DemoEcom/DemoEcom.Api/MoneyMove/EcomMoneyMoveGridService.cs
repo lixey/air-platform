@@ -5,18 +5,18 @@ public sealed class EcomMoneyMoveGridService(EcomDbContext db, EcomService? ecom
 {
   public override Feature Feature => Ecom.MoneyMove;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortByDescending(r => r.Date).ThenByDescending(r => r.Id);
+    Query.SortByDescending(r => r.Date).ThenByDescending(r => r.Id);
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Date);
-    columns.Add(r => r.Doc.Number);
-    columns.Add(r => r.Doc.DocType.Name).Label("Type");
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(move => move.Organization.Color.Handle);
-    columns.Add(r => r.MoneyAccount).AsReference<OrgMoneyAccountGridService>();
-    columns.Add(r => r.Amount).AsMoney();
+    Columns.Add(r => r.Date);
+    Columns.Add(r => r.Doc.Number);
+    Columns.Add(r => r.Doc.DocType.Name).Label("Type");
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(move => move.Organization.Color.Handle);
+    Columns.Add(r => r.MoneyAccount).AsReference<OrgMoneyAccountGridService>();
+    Columns.Add(r => r.Amount).AsMoney();
   }
 }

@@ -5,5 +5,5 @@ internal sealed class MockBadFlowGridService(AppTestDbContext db, PlatformAppSer
 {
   public override Feature Feature => MockBadFlowModule.Orders;
 
-  protected override void SetColumns(Columns columns) => columns.Add(x => x.Number);
+  protected override void SetColumns() => Columns.Add(x => x.Number);
 }

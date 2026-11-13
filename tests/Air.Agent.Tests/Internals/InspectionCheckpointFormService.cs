@@ -4,10 +4,10 @@ internal sealed class InspectionCheckpointFormService(AgentTestDbContext db, Pla
   : FormService<AgentTestCheckpoint>(db, app)
 {
   public override Feature Feature => AgentTestModule.Inspections;
-  protected override void SetParent(Parent parent) => parent.Bind<InspectionFormService>(c => c.InspectionId);
-  protected override void SetElements(Elements elements)
+  protected override void SetParent() => Parent.Bind<InspectionFormService>(c => c.InspectionId);
+  protected override void SetElements()
   {
-    elements.Add(c => c.Code).Required();
-    elements.Add(c => c.DueDate).Required();
+    Elements.Add(c => c.Code).Required();
+    Elements.Add(c => c.DueDate).Required();
   }
 }

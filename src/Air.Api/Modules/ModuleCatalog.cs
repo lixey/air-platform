@@ -386,6 +386,26 @@ public sealed class ModuleCatalog
       : _servicesByPath.GetValueOrDefault(key);
   }
 
+  public void RegisterPlatformService<TService>(string routePath) where TService : class, IPlatformService =>
+    RegisterPlatformService(routePath, typeof(TService));
+
+  public void RegisterPlatformService(string routePath, Type serviceType)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(routePath);
+    ArgumentNullException.ThrowIfNull(serviceType);
+    lock (_sync)
+    {
+      if (IsFrozen)
+      {
+        throw new InvalidOperationException(
+          $"ModuleCatalog is frozen and cannot register platform service '{serviceType.Name}' after host startup.");
+      }
+
+      var key = routePath.Trim('/');
+      _servicesByPath[key] = serviceType;
+    }
+  }
+
   public object? CreateServiceInstance(Type serviceType, params object?[] availableServices) =>
     CreateServiceInstanceCore(serviceType, availableServices, []);
 
@@ -427,8 +447,6 @@ public sealed class ModuleCatalog
 
       var serviceProvider = availableServices.OfType<IServiceProvider>().FirstOrDefault()
         ?? availableServices.OfType<PlatformAppService>().FirstOrDefault()?.Services;
-      var appService = availableServices.OfType<PlatformAppService>().FirstOrDefault()
-        ?? serviceProvider?.GetService(typeof(PlatformAppService)) as PlatformAppService;
 
       var parameters = ctor.GetParameters();
       var args = new object?[parameters.Length];
@@ -480,9 +498,14 @@ public sealed class ModuleCatalog
       }
 
       var instance = ctor.Invoke(args);
-      if (appService is not null && instance is IPlatformService platformService)
+      if (instance is IPlatformService platformService)
       {
-        platformService.AttachPlatformApp(appService);
+        var resolvedApp = availableServices.OfType<PlatformAppService>().FirstOrDefault()
+          ?? serviceProvider?.GetService<PlatformAppService>();
+        if (resolvedApp is not null)
+        {
+          platformService.BindContext(resolvedApp);
+        }
       }
 
       return instance;

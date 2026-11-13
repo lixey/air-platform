@@ -12,23 +12,23 @@ public sealed class EcomDocStatusGridService(EcomDbContext db, EcomService? ecom
   /// <summary>
   /// A status's id is its type's times a hundred plus its place: the ids run in the order of the types and of the passage.
   /// </summary>
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortBy(r => r.Id);
-    query.RecordLabel(e => e.Name);
+    Query.SortBy(r => r.Id);
+    Query.RecordLabel(e => e.Name);
   }
 
-  protected override void SetColumns(Columns<EcomDocStatus> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomDocStatusFormService>();
-    columns.Add(r => r.DocType).Label("Type").AsReference<EcomDocTypeGridService>();
-    columns.Add(r => r.Name).Color(status => status.Color.Handle);
-    columns.Add(r => r.Handle);
-    columns.Add(r => r.Color).AsReference<AppColorGridService>().Color(status => status.Color.Handle);
-    columns.Add(r => r.IsEditable).Label("Editable").AsCheckbox();
-    columns.Add(r => r.IsPosted).Label("Posted").AsCheckbox();
-    columns.Add(r => r.IsFinal).Label("Final").AsCheckbox();
-    columns.Add(r => r.IsCanceled).Label("Canceled").AsCheckbox();
-    columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Id).AsOpenForm<EcomDocStatusFormService>();
+    Columns.Add(r => r.DocType).Label("Type").AsReference<EcomDocTypeGridService>();
+    Columns.Add(r => r.Name).Color(status => status.Color.Handle);
+    Columns.Add(r => r.Handle);
+    Columns.Add(r => r.Color).AsReference<AppColorGridService>().Color(status => status.Color.Handle);
+    Columns.Add(r => r.IsEditable).Label("Editable").AsCheckbox();
+    Columns.Add(r => r.IsPosted).Label("Posted").AsCheckbox();
+    Columns.Add(r => r.IsFinal).Label("Final").AsCheckbox();
+    Columns.Add(r => r.IsCanceled).Label("Canceled").AsCheckbox();
+    Columns.Add(r => r.SortOrder);
   }
 }

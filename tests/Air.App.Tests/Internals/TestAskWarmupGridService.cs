@@ -7,17 +7,17 @@ internal sealed class TestAskWarmupGridService(AppTestDbContext db, PlatformAppS
 
   public override Feature Feature => TestAppModule.AskWarmup;
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<TestAskWarmupFormService>();
-    columns.UseStatusOf(new TestAskWarmupFlowService(db));
-    columns.Add(l => l.Title);
-    columns.Add(l => l.TierCode);
+    Columns.UseForm<TestAskWarmupFormService>();
+    Columns.UseStatusOf(new TestAskWarmupFlowService(db));
+    Columns.Add(l => l.Title);
+    Columns.Add(l => l.TierCode);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.Add("AssignRichGridTag")
+    Actions.Add("AssignRichGridTag")
       .AllowEdit()
       .Ask<TestRichFilterAskInput>(els => els.Add(x => x.SecondaryTagId)
           .AsReference<TestTagGridService, TestTag>()

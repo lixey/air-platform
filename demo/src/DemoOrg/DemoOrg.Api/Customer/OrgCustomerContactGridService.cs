@@ -5,18 +5,18 @@ public sealed class OrgCustomerContactGridService(OrgDbContext db, OrgService? o
 {
   public override Feature Feature => Org.Customer;
 
-  protected override void SetParent(Parent parent) => parent.Bind<OrgCustomerFormService>(c => c.CustomerId, optional: true);
+  protected override void SetParent() => Parent.Bind<OrgCustomerFormService>(c => c.CustomerId, optional: true);
 
-  protected override void SetColumns(Columns<OrgCustomerContact> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgCustomerContactFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Position);
-    columns.Add(r => r.Phone).AsPhone();
-    columns.Add(r => r.Email).AsEmail();
-    columns.Add(r => r.IsPrimary).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<OrgCustomerContactFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Position);
+    Columns.Add(r => r.Phone).AsPhone();
+    Columns.Add(r => r.Email).AsEmail();
+    Columns.Add(r => r.IsPrimary).AsCheckbox();
 
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }

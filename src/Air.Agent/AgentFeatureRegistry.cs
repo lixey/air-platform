@@ -216,7 +216,7 @@ public static class AgentFeatureRegistry
             }
           }
 
-          var creates = ownerGrid.GetAgentForms();
+          var creates = await ownerGrid.GetDeclaredFormsAsync(ct);
           if (creates.Count == 1)
           {
             var singleMatch = ResolveFormDescriptor(descriptors, creates[0].ServicePath, rootServices, scope.Db, scope.App);

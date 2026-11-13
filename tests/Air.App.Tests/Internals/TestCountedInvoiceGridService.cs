@@ -5,17 +5,17 @@ internal sealed class TestCountedInvoiceGridService(AppTestDbContext db, Platfor
 {
   public override Feature Feature => TestAppModule.CountedInvoices;
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(x => x.Id);
-    columns.Add(x => x.Number);
-    columns.Add(x => x.AuditedTotal);
+    Columns.Add(x => x.Id);
+    Columns.Add(x => x.Number);
+    Columns.Add(x => x.AuditedTotal);
   }
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.Where(x => !x.IsHidden);
-    query.NamedFilter("stage", "Stage")
+    Query.Where(x => !x.IsHidden);
+    Query.NamedFilter("stage", "Stage")
       .Inline()
       .ShowCounts()
       .Item("open", "Open", x => x.Status == 1)
@@ -24,13 +24,13 @@ internal sealed class TestCountedInvoiceGridService(AppTestDbContext db, Platfor
       .Item("archived", "Archived", x => x.Status == 3)
       .ShowCount(false)
       .All("All");
-    query.NamedFilter("highValue", "High value", x => x.AuditedTotal >= 100m)
+    Query.NamedFilter("highValue", "High value", x => x.AuditedTotal >= 100m)
       .ShowCount();
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AllowMultiDelete();
-    hooks.PreventDeleteWhenUsedBy<TestInvoiceTag>(j => j.InvoiceId, "Invoice is referenced by tags.");
+    Hooks.AllowMultiDelete();
+    Hooks.PreventDeleteWhenUsedBy<TestInvoiceTag>(j => j.InvoiceId, "Invoice is referenced by tags.");
   }
 }

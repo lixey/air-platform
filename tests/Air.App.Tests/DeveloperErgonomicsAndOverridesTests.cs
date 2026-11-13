@@ -1,3 +1,4 @@
+using Platform.Api.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Tests.Internals;
 
@@ -42,14 +43,86 @@ public sealed class DeveloperErgonomicsAndOverridesTests : IDisposable
   }
 
   [Fact]
-  public void DualSetColumnsOverloads_InSameClass_ThrowsClearStartupError()
+  public void DualSetColumnsSyncAndAsync_InSameClass_ThrowsClearStartupError()
   {
     var ex = Assert.Throws<InvalidOperationException>(() =>
-      ServiceOverrideValidator.EnsureSingleColumnOverride(
+      ServiceOverrideValidator.EnsureSingleSyncOrAsyncOverride(
         typeof(TestDualColumnsAbstractGrid),
-        typeof(GridService<,>)));
+        typeof(GridService<,>),
+        ("SetColumns", "SetColumnsAsync"),
+        ("SetNav", "SetNavAsync"),
+        ("SetActions", "SetActionsAsync")));
 
     Assert.Contains("SetColumns", ex.Message, StringComparison.Ordinal);
+    Assert.Contains("SetColumnsAsync", ex.Message, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public async Task OpenMetadataLists_AndAsyncNavCustomization_WorkOnGridAndForm()
+  {
+    await using var db = CreateDbContext();
+    var app = new TestPlatformAppService(db, new FixedUser(7, "*"));
+    db.Invoices.Add(new TestInvoice { Number = "INV-OPEN-1", Status = 1, PrintedCount = 2 });
+    await db.SaveChangesAsync();
+
+    var grid = new TestOpenMetadataGridService(db, app);
+    var gridScreen = await grid.BuildScreenAsync("test/open-metadata-grid", new GridRequest());
+    var gridModel = ExtractGridModel(gridScreen);
+
+    Assert.Equal(["id", "number", "printedCount"], gridModel.Columns.Select(c => c.Path));
+    Assert.Equal("Invoice #", gridModel.Columns[1].Label);
+    Assert.Equal("Printed (1)", gridModel.Columns[2].Label);
+    Assert.DoesNotContain(gridModel.Nav.End ?? [], e => e.Key == "export");
+    Assert.Contains(gridModel.Nav.End ?? [], e => e is NavLabelModel { Key: "summary", Label: "Ready" });
+
+    var form = new TestOpenMetadataFormService(db, app);
+    var formScreen = await form.BuildScreenAsync("test/open-metadata-form", 1L);
+    var formModel = ExtractFormModel(formScreen);
+    Assert.Equal(["number", "printedCount"], formModel.Elements.Select(f => f.Path));
+    Assert.Equal("Number First", formModel.Elements[0].Label);
+
+    var formNavs = ExtractNavModels(formScreen);
+    Assert.DoesNotContain(formNavs.SelectMany(n => n.Start ?? []), e => e is FormNavSaveCloseModel);
+    Assert.Contains(formNavs.SelectMany(n => n.End ?? []), e => e is NavLabelModel { Key: "count", Label: "Total: 1" });
+  }
+
+  [Fact]
+  public void EndpointRegistry_SkipsStartupProbeForNonDynamicServices_AndHonorsExplicitGuardOverrides()
+  {
+    var catalog = new ModuleCatalog();
+    catalog.Register(new TestAppModuleImpl());
+    catalog.RegisterPlatformService<TestStrictCtorPlatformService>("strict-rpc");
+    TestStrictCtorPlatformService.ResetProbes();
+
+    var registry = EndpointRegistry.Build(catalog);
+    Assert.True(registry.ByRoute.ContainsKey("/strict-rpc/ping"));
+    Assert.Equal(0, TestStrictCtorPlatformService.NullDbProbes);
+
+    var fileDelete = EndpointRegistry
+      .DescribeServiceType(typeof(TestAppFileGridService))
+      .First(e => e.Method.Name == nameof(FileGridService<>.Delete));
+    Assert.Equal(EndpointAuth.Default, fileDelete.Auth);
+
+    var elements = new Elements();
+    elements.AddTab("Details");
+    elements.AddReportTable(new ReportTableDto { Key = "t1", Columns = [], Rows = [] });
+    elements.AddChild<TestInvoiceLineGridService>();
+    elements.Clear();
+    Assert.Empty(elements.Items);
+    Assert.Empty(elements.TabItems);
+    Assert.Empty(elements.ChildItems);
+    Assert.Empty(elements.TableItems);
+
+    var flow = new Flow<TestInvoice>();
+    flow.Status(1, "Draft", UiColor.Slate);
+    flow.FinalStatus(2, "Done", UiColor.Emerald);
+    flow.Initial(1);
+    Assert.NotNull(flow.Find(1));
+    Assert.True(flow.Remove(1));
+    Assert.Null(flow.InitialStatusId);
+    Assert.Single(flow.Items);
+    flow.Clear();
+    Assert.Empty(flow.Items);
   }
 
   [Fact]
@@ -155,6 +228,63 @@ public sealed class DeveloperErgonomicsAndOverridesTests : IDisposable
 
     Walk(screen.Layout?.Root);
     return Assert.IsType<GridModel>(found);
+  }
+
+  private static FormModel ExtractFormModel(ScreenDto screen)
+  {
+    FormModel? found = null;
+    void Walk(PanelNodeDto? node)
+    {
+      if (node == null || found != null)
+      {
+        return;
+      }
+
+      if (node.Model is FormModel fm)
+      {
+        found = fm;
+        return;
+      }
+
+      if (node.Children != null)
+      {
+        foreach (var child in node.Children)
+        {
+          Walk(child);
+        }
+      }
+    }
+
+    Walk(screen.Layout?.Root);
+    return Assert.IsType<FormModel>(found);
+  }
+
+  private static List<NavModel> ExtractNavModels(ScreenDto screen)
+  {
+    var result = new List<NavModel>();
+    void Walk(PanelNodeDto? node)
+    {
+      if (node == null)
+      {
+        return;
+      }
+
+      if (node.Model is NavModel nm)
+      {
+        result.Add(nm);
+      }
+
+      if (node.Children != null)
+      {
+        foreach (var child in node.Children)
+        {
+          Walk(child);
+        }
+      }
+    }
+
+    Walk(screen.Layout?.Root);
+    return result;
   }
 
   private static List<FormNavActionModel> ExtractActionButtons(ScreenDto screen)

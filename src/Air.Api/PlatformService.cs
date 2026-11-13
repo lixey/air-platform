@@ -1,7 +1,7 @@
 namespace Platform.Api;
 
 /// <summary>
-/// Base class for custom domain, workflow, or integration services bound to a <see cref="Modules.Feature"/> and automatically exposed at <c>/api/{module}/{service}/{method}</c>.
+/// Base class for domain, workflow, or platform services bound to a <see cref="Modules.Feature"/> and exposed via <see cref="EndpointAttribute"/>.
 /// </summary>
 public abstract class PlatformService(PlatformAppService? app = null) : IPlatformService
 {
@@ -14,6 +14,5 @@ public abstract class PlatformService(PlatformAppService? app = null) : IPlatfor
   protected ILocalizer L => Localizer.Instance.For(Feature?.Module);
 
   public abstract Feature Feature { get; }
-
-  public virtual void AttachPlatformApp(PlatformAppService service) => PlatformApp ??= service;
+  void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
 }

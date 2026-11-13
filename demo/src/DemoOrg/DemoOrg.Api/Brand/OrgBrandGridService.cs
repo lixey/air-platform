@@ -5,18 +5,18 @@ public sealed class OrgBrandGridService(OrgDbContext db, OrgService? org = null)
 {
   public override Feature Feature => Org.Brand;
 
-  protected override void SetColumns(Columns<OrgBrand> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgBrandFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Country);
-    columns.Add(r => r.Website).AsUrl();
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<OrgBrandFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Country);
+    Columns.Add(r => r.Website).AsUrl();
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks) =>
-    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.BrandId, "The brand is used by products and cannot be deleted.");
+  protected override void SetHooks() =>
+    Hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.BrandId, "The brand is used by products and cannot be deleted.");
 }
 

@@ -5,14 +5,14 @@ public sealed class OrgCurrencyGridService(OrgDbContext db, OrgService? org = nu
 {
   public override Feature Feature => Org.Currency;
 
-  protected override void SetColumns(Columns<OrgCurrency> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgCurrencyFormService>();
-    columns.Add(r => r.Handle);
-    columns.Add(r => r.Code);
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Symbol);
+    Columns.Add(r => r.Id).AsOpenForm<OrgCurrencyFormService>();
+    Columns.Add(r => r.Handle);
+    Columns.Add(r => r.Code);
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Symbol);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }

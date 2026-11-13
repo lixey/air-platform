@@ -127,15 +127,15 @@ public sealed class MutationAndServiceSecurityTests : IDisposable
   }
 
   [Fact]
-  public void IsCallableServiceAction_BlocksArbitraryPlatformMethods_AndAllowsAttributedActions()
+  public void IsEndpointMethod_BlocksArbitraryPlatformMethods_AndAllowsAttributedActions()
   {
     var internalHelperMethod = typeof(FakeAppService).GetMethod(nameof(FakeAppService.UnattributedHelper))!;
     var attributedMethod = typeof(FakeAppService).GetMethod(nameof(FakeAppService.ExplicitServiceAction))!;
     var requireActionMethod = typeof(FakeAppService).GetMethod(nameof(FakeAppService.GuardedAction))!;
 
-    Assert.False(ServiceEndpointsExtensions.IsCallableServiceAction(internalHelperMethod));
-    Assert.True(ServiceEndpointsExtensions.IsCallableServiceAction(attributedMethod));
-    Assert.True(ServiceEndpointsExtensions.IsCallableServiceAction(requireActionMethod));
+    Assert.False(ServiceEndpointsExtensions.IsEndpointMethod(internalHelperMethod));
+    Assert.True(ServiceEndpointsExtensions.IsEndpointMethod(attributedMethod));
+    Assert.True(ServiceEndpointsExtensions.IsEndpointMethod(requireActionMethod));
   }
 
   [Fact]

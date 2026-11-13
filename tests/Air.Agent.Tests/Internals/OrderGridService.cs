@@ -4,11 +4,11 @@ internal sealed class OrderGridService(AgentTestDbContext db, PlatformAppService
   : GridService<AgentTestOrder>(db, app)
 {
   public override Feature Feature => AgentTestModule.Orders;
-  protected override void SetNav(Nav nav) => nav.AddCreate<OrderFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetNav() => Nav.AddCreate<OrderFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<OrderFormService>();
-    columns.Add(o => o.Number);
-    columns.Add(o => o.Amount).Sum();
+    Columns.UseForm<OrderFormService>();
+    Columns.Add(o => o.Number);
+    Columns.Add(o => o.Amount).Sum();
   }
 }

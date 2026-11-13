@@ -5,16 +5,16 @@ public sealed class OrgWarehouseGridService(OrgDbContext db, OrgService? org = n
 {
   public override Feature Feature => Org.Warehouse;
 
-  protected override void SetColumns(Columns<OrgWarehouse> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgWarehouseFormService>();
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(w => w.Organization.Color.Handle);
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Address);
-    columns.Add(r => r.IsActive).AsCheckbox();
-    columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Id).AsOpenForm<OrgWarehouseFormService>();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(w => w.Organization.Color.Handle);
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Address);
+    Columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.SortOrder);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }
 

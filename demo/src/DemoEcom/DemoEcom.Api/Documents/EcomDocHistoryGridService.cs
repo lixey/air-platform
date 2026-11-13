@@ -6,9 +6,9 @@ public abstract class EcomDocHistoryGridService<TDocForm>(EcomDbContext db, Ecom
 {
   protected override bool IsReadOnly => true;
 
-  protected override void SetQuery(Query query) => query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
+  protected override void SetQuery() => Query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
 
-  protected override void SetColumns(Columns<EcomDocMove> columns)
+  protected override void SetColumns()
   {
     var statuses = flow?.Statuses ?? (db is null
       ? []
@@ -20,13 +20,13 @@ public abstract class EcomDocHistoryGridService<TDocForm>(EcomDbContext db, Ecom
         .Select(s => new OptionDto { Id = s.Id, Name = L[s.Name], Color = s.Color?.Handle.ToLowerInvariant() })
         .ToList());
 
-    columns.Add(r => r.At).Label("Time");
-    columns.Add(r => r.FromId).Label("From status").AsSelect(statuses);
-    columns.Add(r => r.ToId).Label("To status").AsSelect(statuses);
-    columns.Add(r => r.User).AsReference<AppUserGridService>();
-    columns.Add(r => r.Note).Label("Note");
+    Columns.Add(r => r.At).Label("Time");
+    Columns.Add(r => r.FromId).Label("From status").AsSelect(statuses);
+    Columns.Add(r => r.ToId).Label("To status").AsSelect(statuses);
+    Columns.Add(r => r.User).AsReference<AppUserGridService>();
+    Columns.Add(r => r.Note).Label("Note");
   }
 
-  protected override void SetParent(Parent parent) => parent.Bind<TDocForm>(m => m.DocId);
+  protected override void SetParent() => Parent.Bind<TDocForm>(m => m.DocId);
 }
 

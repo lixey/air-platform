@@ -7,18 +7,18 @@ internal sealed class OrderLineGridService(AgentTestDbContext db, PlatformAppSer
 
   public override Feature Feature => AgentTestModule.Orders;
 
-  protected override void SetParent(Parent parent) => parent.Bind<OrderFormService>(l => l.OrderId);
-  protected override void SetNav(Nav nav) => nav.AddCreate<OrderLineFormService>();
+  protected override void SetParent() => Parent.Bind<OrderFormService>(l => l.OrderId);
+  protected override void SetNav() => Nav.AddCreate<OrderLineFormService>();
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<OrderLineFormService>();
-    columns.Add(l => l.ItemName);
-    columns.Add(l => l.Qty);
-    columns.Add(l => l.Price);
-    columns.Add(l => l.DiscountPercent);
-    columns.Add(l => l.Amount).Sum();
+    Columns.UseForm<OrderLineFormService>();
+    Columns.Add(l => l.ItemName);
+    Columns.Add(l => l.Qty);
+    Columns.Add(l => l.Price);
+    Columns.Add(l => l.DiscountPercent);
+    Columns.Add(l => l.Amount).Sum();
   }
 
-  protected override void SetHooks(Hooks hooks) => hooks.AllowMultiDelete();
+  protected override void SetHooks() => Hooks.AllowMultiDelete();
 }

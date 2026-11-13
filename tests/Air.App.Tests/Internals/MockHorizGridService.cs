@@ -5,6 +5,6 @@ internal sealed class MockHorizGridService(MockParallelDbContext db, PlatformApp
 {
   public override Feature Feature => MockHorizModule.Items;
 
-  protected override void SetColumns(Columns columns) =>
-    columns.Add(x => x.Id).AsOpenForm<TestInvoiceFormService>();
+  protected override void SetColumns() =>
+    Columns.Add(x => x.Id).AsOpenForm<TestInvoiceFormService>();
 }

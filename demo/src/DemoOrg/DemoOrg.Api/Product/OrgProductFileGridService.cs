@@ -5,5 +5,5 @@ public sealed class OrgProductFileGridService(OrgDbContext db, AppService? app =
 {
   public override Feature Feature => Org.Product;
 
-  protected override void SetParent(Parent parent) => parent.Bind<OrgProductFormService>(e => e.ProductId);
+  protected override void SetParent() => Parent.Bind<OrgProductFormService>(e => e.ProductId);
 }

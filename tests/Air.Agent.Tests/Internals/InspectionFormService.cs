@@ -4,16 +4,16 @@ internal sealed class InspectionFormService(AgentTestDbContext db, PlatformAppSe
   : FormService<AgentTestInspection>(db, app)
 {
   public override Feature Feature => AgentTestModule.Inspections;
-  protected override void SetQuery(Query query) => query.Where(i => i.Code != "OTHER-DOCTYPE");
-  protected override void SetElements(Elements elements)
+  protected override void SetQuery() => Query.Where(i => i.Code != "OTHER-DOCTYPE");
+  protected override void SetElements()
   {
-    elements.UseStatusOf(new InspectionFlowService(db));
-    elements.Add(i => i.Code).Required();
-    elements.Add(i => i.Status);
-    elements.Add(i => i.Notes);
-    elements.AddChild<InspectionCheckpointGridService>().Key("checkpoints");
-    elements.AddChild<InspectionMeasurementGridService>().Key("measurements");
-    elements.AddChild<ReadOnlyChildNoteGridService>().Key("auditNotes");
-    elements.AddChild<HiddenChildLogGridService>().Key("secretLogs");
+    Elements.UseStatusOf(new InspectionFlowService(db));
+    Elements.Add(i => i.Code).Required();
+    Elements.Add(i => i.Status);
+    Elements.Add(i => i.Notes);
+    Elements.AddChild<InspectionCheckpointGridService>().Key("checkpoints");
+    Elements.AddChild<InspectionMeasurementGridService>().Key("measurements");
+    Elements.AddChild<ReadOnlyChildNoteGridService>().Key("auditNotes");
+    Elements.AddChild<HiddenChildLogGridService>().Key("secretLogs");
   }
 }

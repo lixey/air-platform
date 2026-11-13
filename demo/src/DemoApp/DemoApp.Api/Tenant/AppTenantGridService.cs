@@ -5,14 +5,14 @@ public sealed class AppTenantGridService(AppDbContext db, AppService? app = null
 {
   public override Feature Feature => App.Tenant;
 
-  protected override void SetColumns(Columns<AppTenant> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppTenantFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Handle);
-    columns.Add(r => r.Parent).AsReference<AppTenantGridService>();
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<AppTenantFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Handle);
+    Columns.Add(r => r.Parent).AsReference<AppTenantGridService>();
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }

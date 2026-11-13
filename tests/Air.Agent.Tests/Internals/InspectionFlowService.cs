@@ -5,13 +5,13 @@ internal sealed class InspectionFlowService(AgentTestDbContext db)
 {
   public override Feature Feature => AgentTestModule.Inspections;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    flow.State(x => x.Status);
-    flow.Status(1, "Draft", UiColor.Slate);
-    flow.Status(2, "Approved", UiColor.Green);
-    flow.FinalStatus(3, "Rejected", UiColor.Red);
-    flow.Initial(1);
+    Flow.State(x => x.Status);
+    Flow.Status(1, "Draft", UiColor.Slate);
+    Flow.Status(2, "Approved", UiColor.Green);
+    Flow.FinalStatus(3, "Rejected", UiColor.Red);
+    Flow.Initial(1);
   }
 
   public Transition Approve => From(1)

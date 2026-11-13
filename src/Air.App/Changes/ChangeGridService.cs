@@ -13,7 +13,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   protected override bool IsReadOnly => true;
 
-  protected override void SetParent(Parent parent) => parent.AllowDynamicParent();
+  protected override void SetParent() => Parent.AllowDynamicParent();
 
   public override bool CanView(GridRequest request, IUserContext? user)
   {
@@ -113,11 +113,6 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     if (typeof(IGridService).IsAssignableFrom(parentServiceType) &&
         ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, targetDb, PlatformApp, services) is IGridService parentGrid)
     {
-      if (PlatformApp != null)
-      {
-        parentGrid.AttachPlatformApp(PlatformApp);
-      }
-
       if (!parentGrid.CanView(new GridRequest(), User))
       {
         return false;
@@ -136,7 +131,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     return false;
   }
 
-  protected override OverlayDto? ResolveFormOverlay(Columns columns)
+  protected override OverlayDto? ResolveFormOverlay()
   {
     var servicePath = ServicePathResolver.Resolve(GetType());
     return OverlayModel.Dialog($"{servicePath}.diff")
@@ -145,10 +140,10 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       .Build();
   }
 
-  protected override void SetColumns(Columns<AppPlatformChange> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).Cell(new GridCellOpenFormModel()).Width(90);
-    columns.Add(r => r.At).AsDateTime();
+    Columns.Add(r => r.Id).Cell(new GridCellOpenFormModel()).Width(90);
+    Columns.Add(r => r.At).AsDateTime();
 
     var userGridType = ResolveUserGridServiceType(Catalog);
     if (userGridType != null)
@@ -158,26 +153,26 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       ReferenceLookupAllowlist.RegisterFilterField(userGridType, "id");
     }
 
-    var userCol = columns.Add(r => r.UserId).Label("User");
+    var userCol = Columns.Add(r => r.UserId).Label("User");
     userCol.Dto.Type = UiFieldType.Text;
     userCol.Dto.Cell = new GridCellReferenceModel();
     userCol.Dto.Header = new GridHeaderReferenceModel();
     userCol.Dto.ReferenceService = userGridType != null ? ServicePathResolver.Resolve(userGridType) : null;
     userCol.Dto.FilterPath = "userId";
 
-    columns.Add(r => r.Operation);
+    Columns.Add(r => r.Operation);
     if (string.IsNullOrEmpty(ParentService))
     {
-      columns.Add(r => r.Table);
-      columns.Add(r => r.RowId);
+      Columns.Add(r => r.Table);
+      Columns.Add(r => r.RowId);
     }
 
-    columns.Add(r => r.Before);
-    columns.Add(r => r.After);
-    columns.Add(r => r.CorrelationId);
+    Columns.Add(r => r.Before);
+    Columns.Add(r => r.After);
+    Columns.Add(r => r.CorrelationId);
   }
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
     var hasGlobalView = base.CanView(new GridRequest(), User);
     if (!string.IsNullOrEmpty(ParentService) || ParentId.HasValue)
@@ -189,27 +184,27 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
         : string.Empty;
       if (!isValidated || string.IsNullOrEmpty(tableName) || ParentId is not > 0)
       {
-        query.Where(_ => false);
+        Query.Where(_ => false);
       }
       else
       {
         var rowId = ParentId.Value;
-        query.Where(r => r.Table == tableName && r.RowId == rowId);
+        Query.Where(r => r.Table == tableName && r.RowId == rowId);
       }
     }
     else if (!hasGlobalView)
     {
-      query.Where(_ => false);
+      Query.Where(_ => false);
     }
 
-    query.NamedFilter("operation")
+    Query.NamedFilter("operation")
       .All("All").Default()
       .Item("added", "Added", r => r.Operation == ChangeOperations.Added).Color(UiColor.Green)
       .Item("modified", "Modified", r => r.Operation == ChangeOperations.Modified).Color(UiColor.Amber)
       .Item("deleted", "Deleted", r => r.Operation == ChangeOperations.Deleted).Color(UiColor.Red);
 
-    query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
-    query.SearchBy(
+    Query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
+    Query.SearchBy(
       r => r.Id,
       r => r.RowId,
       r => r.Table,
@@ -218,7 +213,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       r => r.After,
       r => r.CorrelationId
     );
-    query.Compute(FillChangesAsync);
+    Query.Compute(FillChangesAsync);
   }
 
   private async Task FillChangesAsync(IReadOnlyList<GridComputedRow<AppPlatformChange>> rows, CancellationToken ct)

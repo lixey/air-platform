@@ -5,13 +5,13 @@ internal sealed class TestOrderDetailFormService(AppTestDbContext db, PlatformAp
 {
   public override Feature Feature => TestAppModule.OrderDocs;
 
-  protected override void SetParent(Parent parent) => parent.Bind<TestOrderMasterFormService>(l => l.InvoiceId);
+  protected override void SetParent() => Parent.Bind<TestOrderMasterFormService>(l => l.InvoiceId);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.UseStatusOf(new TestOrderLineFlowService(db));
-    elements.Add(l => l.Title).Required();
-    elements.Add(l => l.Amount);
-    elements.Add(l => l.TierCode);
+    Elements.UseStatusOf(new TestOrderLineFlowService(db));
+    Elements.Add(l => l.Title).Required();
+    Elements.Add(l => l.Amount);
+    Elements.Add(l => l.TierCode);
   }
 }

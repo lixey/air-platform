@@ -10,20 +10,20 @@ public abstract class EcomDocFollowerGridService<TForm>(EcomDbContext db, EcomSe
   protected override bool IsReadOnly => true;
 
   /// <summary>A row carries the document the link targets: the shared projection of a follower.</summary>
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.Where(EcomDocLinks.Documents);
+    Query.Where(EcomDocLinks.Documents);
   }
 
-  protected override void SetParent(Parent parent) => parent.Bind<TForm>(l => l.SourceDocId);
+  protected override void SetParent() => Parent.Bind<TForm>(l => l.SourceDocId);
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.TargetDoc.Number);
-    columns.Add(r => r.TargetDoc.DocType.Name).Label("Type");
-    columns.Add(r => r.TargetDoc.Date);
-    columns.Add(r => r.TargetDoc.DocStatus.Name).Label("Status").Color(EcomDocLinks.FollowerHue);
-    columns.Add(r => r.Qty).Label("Quantity");
-    columns.Add(r => r.Amount).AsMoney();
+    Columns.Add(r => r.TargetDoc.Number);
+    Columns.Add(r => r.TargetDoc.DocType.Name).Label("Type");
+    Columns.Add(r => r.TargetDoc.Date);
+    Columns.Add(r => r.TargetDoc.DocStatus.Name).Label("Status").Color(EcomDocLinks.FollowerHue);
+    Columns.Add(r => r.Qty).Label("Quantity");
+    Columns.Add(r => r.Amount).AsMoney();
   }
 }

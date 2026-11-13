@@ -92,7 +92,7 @@ public sealed class ModuleRbacAndValidatorTests
   }
 
   [Fact]
-  public async Task DispatchCustomServiceMethodAsync_BindsPositionalRecordOnEmptyBody_AndReadsPascalCaseId()
+  public async Task DispatchEndpointAsync_BindsPositionalRecordOnEmptyBody_AndReadsPascalCaseId()
   {
     var feat = new Feature("Fake", "App", typeof(FakeAppService));
     feat.Freeze();
@@ -108,7 +108,7 @@ public sealed class ModuleRbacAndValidatorTests
     var emptyCtx = new DefaultHttpContext { RequestServices = services };
     emptyCtx.Request.QueryString = new QueryString("?id=77");
 
-    var resEmpty = await ServiceEndpointsExtensions.DispatchCustomServiceMethodAsync(
+    var resEmpty = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(FakeAppService),
       service,
       "echo-positional",
@@ -129,7 +129,7 @@ public sealed class ModuleRbacAndValidatorTests
     bodyCtx.Request.Body = new MemoryStream(jsonBytes);
     bodyCtx.Response.Body = new MemoryStream();
 
-    var resBody = await ServiceEndpointsExtensions.DispatchCustomServiceMethodAsync(
+    var resBody = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(FakeAppService),
       service,
       "echo-positional",

@@ -44,16 +44,8 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
     CancellationToken ct = default)
   {
     var elements = CreateElements();
-    await FormReferenceResolver.LocalizeAndResolveSelectElementsAsync<TInput>(
-      ownerServiceType,
-      feature,
-      db,
-      app,
-      user,
-      localizer,
-      isReadOnly: false,
-      elements,
-      ct);
+    var scope = new ElementResolveScope(ownerServiceType, feature, db, app, user, localizer, IsReadOnly: false);
+    await ElementResolver.ResolveAsync<TInput>(scope, elements, ct);
     return elements.List;
   }
 

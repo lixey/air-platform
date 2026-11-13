@@ -5,20 +5,20 @@ internal sealed class TestDocLineFormService(AppTestDbContext db, PlatformAppSer
 {
   public override Feature Feature => TestAppModule.DocLines;
 
-  protected override void SetParent(Parent parent) =>
-    parent.Bind<TestDocFormServiceBase>(l => l.InvoiceId);
+  protected override void SetParent() =>
+    Parent.Bind<TestDocFormServiceBase>(l => l.InvoiceId);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(l => l.InvoiceId);
-    elements.Add(l => l.Title).Required();
-    elements.Add(l => l.Amount);
-    elements.Add(l => l.TierCode);
+    Elements.Add(l => l.InvoiceId);
+    Elements.Add(l => l.Title).Required();
+    Elements.Add(l => l.Amount);
+    Elements.Add(l => l.TierCode);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.Add("MoveToDoc")
+    Actions.Add("MoveToDoc")
       .AllowEdit()
       .Ask<TestAssignTagInput>(els => els.Add(x => x.TagId).Required())
       .Do((_, line, input, _) =>

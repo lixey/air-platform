@@ -48,13 +48,15 @@ public sealed class RoutingAndSecuritySealTests
         e => (e.RoutePattern.RawText ?? string.Empty).StartsWith("/api", StringComparison.OrdinalIgnoreCase) &&
              (e.RoutePattern.RawText ?? string.Empty).Contains("{*", StringComparison.Ordinal));
 
-      // 2. Explicit auto-mapped routes for Grid, Form, declared actions, and status transitions
+      // 2. Explicit auto-mapped routes for Metadata, Grid, Form, declared actions, and flat status transitions
+      Assert.Contains("/api/metadata/get-data", patterns);
       Assert.Contains("/api/app/user/get-data", patterns);
       Assert.Contains("/api/app/user/deactivate", patterns);
       Assert.Contains("/api/app/user-form/save", patterns);
       Assert.Contains("/api/ecom/customer-order/get-data", patterns);
-      Assert.Contains("/api/ecom/customer-order/move-status/{subMethod}", patterns);
+      Assert.Contains("/api/ecom/customer-order/move-status-confirm", patterns);
       Assert.Contains("/api/ecom/customer-order-form/save", patterns);
+      Assert.Contains("/api/ecom/customer-order-form/move-status-confirm", patterns);
 
       // 3. Exact AllowAnonymous surface
       string[] expectedAnonymous =

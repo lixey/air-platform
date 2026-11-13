@@ -7,28 +7,25 @@ namespace Platform.App.Auth;
 public static class AppRoleSecurityRules
 {
   public static void AddNameRules<TRole>(
-    FormService<TRole> service,
-    FormService<TRole>.Rules rules)
+    FormService<TRole> service)
     where TRole : BaseAppAuthRole, new() =>
-    AddNameRules(rules, service.DbContext);
+    AddNameRules(service.Rules, service.DbContext);
 
   public static void AddFormHooks<TRole, TGrant>(
-    FormService<TRole> service,
-    FormService<TRole>.Hooks hooks)
+    FormService<TRole> service)
     where TRole : BaseAppAuthRole, new()
     where TGrant : BaseAppAuthGrant, new() =>
-    AddFormHooks<TRole, TGrant>(hooks, service.DbContext, service.PlatformApp, () => service.User, () => service.Catalog);
+    AddFormHooks<TRole, TGrant>(service.Hooks, service.DbContext, service.PlatformApp, () => service.User, () => service.Catalog);
 
   public static void AddDeleteHooks<TRole, TGrant, TAssignment>(
-    GridService<TRole, TRole> service,
-    GridService<TRole, TRole>.Hooks hooks)
+    GridService<TRole, TRole> service)
     where TRole : BaseAppAuthRole, new()
     where TGrant : BaseAppAuthGrant
     where TAssignment : BaseAppAuthAssignment =>
-    AddDeleteHooks<TRole, TGrant, TAssignment>(hooks, service.DbContext, service.PlatformApp, () => service.User);
+    AddDeleteHooks<TRole, TGrant, TAssignment>(service.Hooks, service.DbContext, service.PlatformApp, () => service.User);
 
   public static void AddNameRules<TRole>(
-    FormService<TRole>.Rules rules,
+    FormRules<TRole> rules,
     PlatformDbContext db)
     where TRole : BaseAppAuthRole, new()
   {
@@ -53,7 +50,7 @@ public static class AppRoleSecurityRules
   }
 
   public static void AddFormHooks<TRole, TGrant>(
-    FormService<TRole>.Hooks hooks,
+    FormHooks<TRole> hooks,
     PlatformDbContext db,
     PlatformAppService? app,
     Func<IUserContext?> userProvider,
@@ -150,7 +147,7 @@ public static class AppRoleSecurityRules
   }
 
   public static void AddDeleteHooks<TRole, TGrant, TAssignment>(
-    GridService<TRole, TRole>.Hooks hooks,
+    GridHooks<TRole> hooks,
     PlatformDbContext db,
     PlatformAppService? app,
     Func<IUserContext?> userProvider)

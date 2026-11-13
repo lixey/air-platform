@@ -8,6 +8,6 @@ internal sealed class TestExplicitDialogFormService(AppTestDbContext db, Platfor
   protected override OverlayBuilder? Presentation(string handle) =>
     OverlayModel.Dialog(handle).Width(480);
 
-  protected override void SetElements(Elements elements) =>
-    elements.Add(t => t.Name).Required();
+  protected override void SetElements() =>
+    Elements.Add(t => t.Name).Required();
 }

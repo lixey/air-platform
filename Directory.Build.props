@@ -69,6 +69,7 @@
       <Using Include="Platform.App.Grid.Contracts" />
       <Using Include="Platform.App.Grid.Selection" />
       <Using Include="Platform.App.Host" />
+      <Using Include="Platform.App.Metadata" />
       <Using Include="Platform.App.Metadata.Contracts" />
       <Using Include="Platform.App.Nav.Contracts" />
       <Using Include="Platform.App.Overlay" />

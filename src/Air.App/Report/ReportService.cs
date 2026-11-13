@@ -8,6 +8,22 @@ public abstract class ReportService(PlatformAppService? app = null) : PlatformSe
 
   public abstract Task<ReportDataDto> GetReportAsync(ReportRequest request, CancellationToken ct = default);
 
+  [Endpoint(Auth = EndpointAuth.View)]
+  public virtual async Task<ScreenDto> GetData(
+    ReportRequest request,
+    HttpRequest httpRequest,
+    CancellationToken ct = default)
+  {
+    var req = request ?? new ReportRequest();
+    if (req.IsDataOnly)
+    {
+      return new ScreenDto { Data = await GetReportAsync(req, ct) };
+    }
+
+    var serviceName = ScreenService.ExtractRouteServicePath(httpRequest) ?? ServicePathResolver.Resolve(GetType());
+    return await BuildScreenAsync(serviceName, req, ct);
+  }
+
   public Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
     BuildScreenAsync(servicePath, null, ct);
 

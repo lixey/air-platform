@@ -13,26 +13,26 @@ public sealed class EcomSupplierInvoiceGridService(
 
   public override Feature Feature => Ecom.SupplierInvoice;
 
-  protected override void SetColumns(Columns<EcomDoc> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomSupplierInvoiceFormService>();
-    columns.Add(r => r.Number);
-    columns.Add(r => r.Date);
-    AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
-    columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
-    columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
-    columns.Add(r => r.ExternalNumber);
-    columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity");
-    columns.Add(r => r.Amount).AsMoney();
-    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
+    Columns.Add(r => r.Id).AsOpenForm<EcomSupplierInvoiceFormService>();
+    Columns.Add(r => r.Number);
+    Columns.Add(r => r.Date);
+    AddStatusColumn();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
+    Columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
+    Columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
+    Columns.Add(r => r.ExternalNumber);
+    Columns.Add(r => r.Manager).AsReference<AppUserGridService>();
+    Columns.Add(r => r.Qty).Label("Quantity");
+    Columns.Add(r => r.Amount).AsMoney();
+    Columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
     _ = EcomDocTexts.Of(L);
-    actions.Add("CreateSupplierReturn")
+    Actions.Add("CreateSupplierReturn")
       .Allow(Ecom.SupplierReturn.Edit)
       .Label("Create supplier return")
       .Icon(UiIcon.Plus)
@@ -46,7 +46,7 @@ public sealed class EcomSupplierInvoiceGridService(
         EcomDocTexts.Of(L),
         ct));
 
-    actions.Add("CreateOutgoingPayment")
+    Actions.Add("CreateOutgoingPayment")
       .Allow(Ecom.OutgoingPayment.Edit)
       .Label("Create outgoing payment")
       .Icon(UiIcon.Plus)

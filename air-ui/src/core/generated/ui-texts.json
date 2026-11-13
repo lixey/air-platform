@@ -218,6 +218,7 @@
   "TypeAtLeast": "Type at least {0} characters",
   "AgentShowSteps": "Show steps ({0})",
   "FileName": "Name",
+  "RecordIdRequired": "Record ID is required.",
   "SaveAndClose": "Save \u0026 Close",
   "PeriodFrom": "From",
   "AgentNewChat": "New chat",

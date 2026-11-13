@@ -5,11 +5,11 @@ public sealed class AppUserGroupFormService(AppDbContext db, AppService? app = n
 {
   public override Feature Feature => App.UserGroup;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus().Unique("This name is already in use.");
-    elements.Add(e => e.ColorId).AsReference<AppColorGridService>();
-    elements.Add(e => e.Description).AsTextarea();
-    elements.Add(e => e.IsActive).AsCheckbox();
+    Elements.Add(e => e.Name).Focus().Unique("This name is already in use.");
+    Elements.Add(e => e.ColorId).AsReference<AppColorGridService>();
+    Elements.Add(e => e.Description).AsTextarea();
+    Elements.Add(e => e.IsActive).AsCheckbox();
   }
 }

@@ -5,18 +5,18 @@ public sealed class OrgDeliveryTypeGridService(OrgDbContext db, OrgService? org 
 {
   public override Feature Feature => Org.DeliveryType;
 
-  protected override void SetColumns(Columns<OrgDeliveryType> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgDeliveryTypeFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.IsPickup).AsCheckbox();
-    columns.Add(r => r.IsActive).AsCheckbox();
-    columns.Add(r => r.SortOrder);
+    Columns.Add(r => r.Id).AsOpenForm<OrgDeliveryTypeFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.IsPickup).AsCheckbox();
+    Columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.SortOrder);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks) =>
-    hooks.PreventDeleteWhenUsedBy<OrgCustomer>(c => c.DeliveryTypeId, "The delivery type is used by customers and cannot be deleted.");
+  protected override void SetHooks() =>
+    Hooks.PreventDeleteWhenUsedBy<OrgCustomer>(c => c.DeliveryTypeId, "The delivery type is used by customers and cannot be deleted.");
 }
 

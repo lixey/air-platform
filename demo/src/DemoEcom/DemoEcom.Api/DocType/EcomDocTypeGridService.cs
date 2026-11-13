@@ -6,17 +6,17 @@ public sealed class EcomDocTypeGridService(EcomDbContext db, EcomService? ecom =
 {
   public override Feature Feature => Ecom.DocType;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortBy(r => r.SortOrder);
-    query.RecordLabel(e => e.Name);
+    Query.SortBy(r => r.SortOrder);
+    Query.RecordLabel(e => e.Name);
   }
 
-  protected override void SetColumns(Columns<EcomDocType> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomDocTypeFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Handle);
-    columns.Add(r => r.Prefix);
+    Columns.Add(r => r.Id).AsOpenForm<EcomDocTypeFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Handle);
+    Columns.Add(r => r.Prefix);
   }
 }

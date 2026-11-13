@@ -253,7 +253,6 @@ export interface GridServiceEndpoints {
   'get-count': { request: GridRequest | null; answer: GridCountDto };
   'get-data': { request: GridRequest | null; answer: ScreenDto };
   'get-one': { request: GridRequest; answer: RowDto | null };
-  'move-status': { request: GridRequest; answer: GridActionDto };
   'save-cell': { request: GridCellRequest; answer: GridCellDto };
 }
 
@@ -268,7 +267,6 @@ export interface FileGridServiceEndpoints {
   'get-info': { request: GridRequest; answer: FileInfoDto };
   'get-one': { request: GridRequest; answer: RowDto | null };
   move: { request: FileMoveRequest; answer: GridActionDto };
-  'move-status': { request: GridRequest; answer: GridActionDto };
   'save-cell': { request: GridCellRequest; answer: GridCellDto };
   'set-cover': { request: GridRequest; answer: GridActionDto };
   'set-info': { request: FileInfoRequest; answer: GridActionDto };
@@ -286,7 +284,6 @@ export interface ReportServiceEndpoints {
 export interface FormServiceEndpoints {
   'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };
   'get-data': { request: FormRequest | null; answer: ScreenDto };
-  'move-status': { request: FormRequest; answer: FormActionDto };
   save: { request: FormRequest; answer: FormDataDto };
 }
 

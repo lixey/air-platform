@@ -25,7 +25,7 @@ public sealed class SourceLayoutAndConventionsTests
       @"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b",
       RegexOptions.Multiline);
     var allowAnonRegex = new Regex(@"\[\s*AllowAnonymous\b");
-    var newParentHooksRegex = new Regex(@"new\s+(?:Parent|Hooks)\s*\(\s*\)");
+    var newParentHooksRegex = new Regex(@"new\s+(?:FormParent|FormHooks|GridParent|GridHooks)\b");
     var rawClockRegex = new Regex(@"\bDateTime(?:Offset)?\.(?:UtcNow|Now|Today)\b");
     var globalInternalsRegex = new Regex(@"^global\s+using\s+.*\.Internals\b", RegexOptions.Multiline);
 

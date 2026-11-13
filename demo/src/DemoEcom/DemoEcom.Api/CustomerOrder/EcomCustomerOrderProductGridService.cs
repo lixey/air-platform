@@ -6,26 +6,26 @@ public sealed class EcomCustomerOrderProductGridService(EcomDbContext db, EcomSe
   public override Feature Feature => Ecom.CustomerOrder;
   protected override bool IsReadOnly => true;
 
-  protected override void SetParent(Parent parent) => parent.Read<EcomCustomerOrderFormService>();
+  protected override void SetParent() => Parent.Read<EcomCustomerOrderFormService>();
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
     var order = ParentId;
-    columns.Add(r => r.Article);
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Brand).AsReference<OrgBrandGridService>();
-    columns.Add(r => r.Price).AsMoney("UAH");
-    columns.Add("inOrder", r => db.EcomDocLine.Any(line => line.DocId == order && line.ProductId == r.Id));
-    columns.Add<decimal>("free").Computed();
+    Columns.Add(r => r.Article);
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Brand).AsReference<OrgBrandGridService>();
+    Columns.Add(r => r.Price).AsMoney("UAH");
+    Columns.Add("inOrder", r => db.EcomDocLine.Any(line => line.DocId == order && line.ProductId == r.Id));
+    Columns.Add<decimal>("free").Computed();
   }
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.Where(product => product.IsActive);
-    query.SortBy(r => r.Article);
-    query.PickBy(r => r.Article, ArticleKey);
-    query.FlagRows("unpriced", product => product.Price == 0);
-    query.Compute(FillFreeAsync);
+    Query.Where(product => product.IsActive);
+    Query.SortBy(r => r.Article);
+    Query.PickBy(r => r.Article, ArticleKey);
+    Query.FlagRows("unpriced", product => product.Price == 0);
+    Query.Compute(FillFreeAsync);
   }
 
   private async Task FillFreeAsync(IReadOnlyList<GridComputedRow<OrgProduct>> rows, CancellationToken cancellationToken)

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using Platform.App.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Tests.Internals;
 
@@ -243,19 +242,19 @@ public sealed class FormAndGridSecurityTests : IDisposable
     db.Invoices.AddRange(visibleInv, hiddenInv);
     await db.SaveChangesAsync();
 
-    // 1. View-only user hitting save-cell via AppServiceEndpointDispatcher gets 403 Forbidden
+    // 1. View-only user hitting save-cell via endpoint pipeline gets 403 Forbidden
     var viewOnlyApp = CreateAppWithParentServices(db, new FixedUser(10, "Test.Invoices.View"));
-    var dispatcher = new AppServiceEndpointDispatcher();
+    var viewOnlyGrid = new TestInvoiceGridService(db, viewOnlyApp);
     var ctx = new DefaultHttpContext { RequestServices = viewOnlyApp.Services };
+    ctx.Request.Path = "/api/test/invoices/save-cell";
     var payload = JsonSerializer.Serialize(new GridCellRequest { Id = visibleInv.Id, Path = "number", Value = JsonSerializer.SerializeToElement("HACK") });
     ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
     ctx.Request.ContentType = "application/json";
 
-    var result = await dispatcher.DispatchAsync(
+    var result = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(TestInvoiceGridService),
-      "test/invoices",
+      viewOnlyGrid,
       "save-cell",
-      null,
       TestAppModule.Invoices,
       ctx.Request,
       viewOnlyApp.Services,

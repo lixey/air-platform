@@ -64,6 +64,5 @@ public interface IFormService : IPlatformService
     Task.FromResult(false);
   internal void ValidateInheritedGridActions(Type gridType) { }
   IReadOnlyList<string> GetRoutableActionMethods(ModuleCatalog catalog) => [];
-  new void AttachPlatformApp(PlatformAppService app);
   new Feature Feature { get; }
 }

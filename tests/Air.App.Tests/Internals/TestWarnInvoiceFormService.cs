@@ -5,20 +5,20 @@ internal sealed class TestWarnInvoiceFormService(AppTestDbContext db, PlatformAp
 {
   public override Feature Feature => TestAppModule.WarnInvoices;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(x => x.Number).Required();
-    elements.Add(x => x.AuditedTotal);
+    Elements.Add(x => x.Number).Required();
+    Elements.Add(x => x.AuditedTotal);
   }
 
-  protected override void SetRules(Rules rules)
+  protected override void SetRules()
   {
-    rules.For(x => x.AuditedTotal)
+    Rules.For(x => x.AuditedTotal)
       .Must(total => total <= 1000m)
       .WithMessage("Total exceeds 1000 — check manager approval.")
       .AsWarning();
 
-    rules.For(x => x.Number)
+    Rules.For(x => x.Number)
       .Custom((num, ctx) =>
       {
         if (num.StartsWith("DRAFT-", StringComparison.OrdinalIgnoreCase))
@@ -28,10 +28,10 @@ internal sealed class TestWarnInvoiceFormService(AppTestDbContext db, PlatformAp
       });
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.Compute(c => c.Items["computedNumber"] = c.Entity.Number);
-    hooks.BeforeSave(c =>
+    Hooks.Compute(c => c.Items["computedNumber"] = c.Entity.Number);
+    Hooks.BeforeSave(c =>
     {
       if (c.Entity.AuditedTotal == 0m)
       {
@@ -39,7 +39,7 @@ internal sealed class TestWarnInvoiceFormService(AppTestDbContext db, PlatformAp
         c.Items["zeroFlagged"] = true;
       }
     });
-    hooks.AfterSave(c =>
+    Hooks.AfterSave(c =>
     {
       if (c.Items.TryGetValue("zeroFlagged", out var flag) && flag is true &&
           c.Items.TryGetValue("computedNumber", out var num) && num is string computedNum)

@@ -3,16 +3,16 @@ namespace Platform.App.Tests.Internals;
 internal sealed class TestInvoiceLineFormService(AppTestDbContext db, PlatformAppService app) : FormService<TestInvoiceLine>(db, app)
 {
   public override Feature Feature => TestAppModule.Invoices;
-  protected override void SetParent(Parent parent) => parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
-  protected override void SetElements(Elements elements)
+  protected override void SetParent() => Parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
+  protected override void SetElements()
   {
-    elements.Add(l => l.Title).Required();
-    elements.Add(l => l.Amount);
+    Elements.Add(l => l.Title).Required();
+    Elements.Add(l => l.Amount);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.BeforeSave((ctx, _) =>
+    Hooks.BeforeSave((ctx, _) =>
     {
       var parentInvoice = ParentRecord<TestInvoice>()
         ?? throw new InvalidOperationException("Parent invoice was not preloaded.");

@@ -4,11 +4,11 @@ internal sealed class MockBadFlowOrderFlowService(AppTestDbContext db) : StatusF
 {
   public override Feature Feature => MockBadFlowModule.Orders;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    flow.State(x => x.Status);
-    flow.Status(1, "Draft", UiColor.Slate);
-    flow.Initial(1);
+    Flow.State(x => x.Status);
+    Flow.Status(1, "Draft", UiColor.Slate);
+    Flow.Initial(1);
   }
 
   public Transition BrokenJump => From(1).To(999);

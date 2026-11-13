@@ -5,12 +5,12 @@ public sealed class OrgProductCategoryFormService(OrgDbContext db, OrgService? o
 {
   public override Feature Feature => Org.ProductCategory;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus().Unique("This name is already in use.");
-    elements.Add(e => e.ColorId).AsReference<AppColorGridService>().Span(4);
-    elements.Add(e => e.IsActive).AsCheckbox().Span(4);
-    elements.Add(e => e.SortOrder).Span(4);
+    Elements.Add(e => e.Name).Focus().Unique("This name is already in use.");
+    Elements.Add(e => e.ColorId).AsReference<AppColorGridService>().Span(4);
+    Elements.Add(e => e.IsActive).AsCheckbox().Span(4);
+    Elements.Add(e => e.SortOrder).Span(4);
   }
 }
 

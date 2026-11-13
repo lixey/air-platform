@@ -403,8 +403,8 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     var service = new FakeAppService();
 
     // 1. Async suffix normalization: CalculateSummaryAsync resolves via both 'calculate-summary' and 'calculate-summary-async'
-    Assert.NotNull(ServiceRequestBinder.ResolveCallableActionMethod(typeof(FakeAppService), "calculate-summary"));
-    Assert.NotNull(ServiceRequestBinder.ResolveCallableActionMethod(typeof(FakeAppService), "calculate-summary-async"));
+    Assert.NotNull(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculate-summary"));
+    Assert.NotNull(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculate-summary-async"));
 
     var validJson = """{"count":5,"total":10,"amount":25.5,"createdOn":"2026-05-10T00:00:00Z"}""";
     var (okStatus, okBody) = await InvokeCustomActionAsync(service, feat, services, "calculate-summary", validJson);
@@ -614,7 +614,7 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     ctx.Request.Body = new MemoryStream(bytes);
     ctx.Response.Body = new MemoryStream();
 
-    var result = await ServiceEndpointsExtensions.DispatchCustomServiceMethodAsync(
+    var result = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(FakeAppService),
       service,
       method,

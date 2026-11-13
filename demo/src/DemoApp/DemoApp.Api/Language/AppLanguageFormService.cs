@@ -5,12 +5,12 @@ public sealed class AppLanguageFormService(AppDbContext db, AppService? app = nu
 {
   public override Feature Feature => App.Language;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.Handle);
-    elements.Add(e => e.Code);
-    elements.Add(e => e.Description);
-    elements.Add(e => e.IsActive).AsCheckbox();
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.Handle);
+    Elements.Add(e => e.Code);
+    Elements.Add(e => e.Description);
+    Elements.Add(e => e.IsActive).AsCheckbox();
   }
 }

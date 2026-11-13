@@ -6,9 +6,9 @@ internal sealed class FormExecutionState<TEntity>
   private Dictionary<string, object?>? _items;
 
   public IDictionary<string, object?> Items => _items ??= new Dictionary<string, object?>(StringComparer.Ordinal);
-  public FormService<TEntity>.Elements? LastElements { get; set; }
-  public FormService<TEntity>.Parent? CachedParent { get; set; }
-  public FormService<TEntity>.Hooks? CachedHooks { get; set; }
+  public FormElements<TEntity>? LastElements { get; set; }
+  public FormParent<TEntity>? CachedParent { get; set; }
+  public FormHooks<TEntity>? CachedHooks { get; set; }
   public TEntity? LastSavedEntity { get; set; }
   public List<MessageDto>? LastSaveWarnings { get; set; }
   public List<AffectedDto>? LastAffectedParents { get; set; }

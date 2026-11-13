@@ -3,11 +3,11 @@ namespace Platform.App.Tests.Internals;
 internal sealed class TestInvoiceLineGridService(AppTestDbContext db, PlatformAppService app) : GridService<TestInvoiceLine>(db, app)
 {
   public override Feature Feature => TestAppModule.Invoices;
-  protected override void SetParent(Parent parent) => parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetParent() => Parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
+  protected override void SetHooks()
   {
-    hooks.AllowMultiDelete();
-    hooks.AfterDelete(async (ctx, ct) =>
+    Hooks.AllowMultiDelete();
+    Hooks.AfterDelete(async (ctx, ct) =>
     {
       foreach (var invId in ctx.Records.Select(r => r.InvoiceId).Distinct())
       {
@@ -17,17 +17,17 @@ internal sealed class TestInvoiceLineGridService(AppTestDbContext db, PlatformAp
     });
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetNav()
   {
-    nav.AddCreate<TestInvoiceLineFormService>();
-    nav.AddPicker<TestTagGridService>(AttachTag);
+    Nav.AddCreate<TestInvoiceLineFormService>();
+    Nav.AddPicker<TestTagGridService>(AttachTag);
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<TestInvoiceLineFormService>();
-    columns.Add(l => l.Title);
-    columns.Add(l => l.Amount).Sum();
+    Columns.UseForm<TestInvoiceLineFormService>();
+    Columns.Add(l => l.Title);
+    Columns.Add(l => l.Amount).Sum();
   }
 
   [RequireAction(Right.Edit)]

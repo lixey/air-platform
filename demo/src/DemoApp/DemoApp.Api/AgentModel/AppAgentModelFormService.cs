@@ -5,21 +5,21 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
 {
   public override Feature Feature => App.AgentModel;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus().Span(6);
-    elements.Add(e => e.ModelId).Label("Model ID").Span(6);
-    elements.Add(e => e.ProviderHandle).Label("Provider").Span(6);
-    elements.Add(e => e.ProviderName).Label("Provider name").Span(6);
-    elements.Add(e => e.SortOrder).Label("Sort Order").Span(3);
-    elements.Add(e => e.IsDefault).Label("Default").AsCheckbox().Span(3);
-    elements.Add(e => e.IsForPhotos).Label("For photos").AsCheckbox().Span(3);
-    elements.Add(e => e.IsActive).AsCheckbox().Span(3);
+    Elements.Add(e => e.Name).Focus().Span(6);
+    Elements.Add(e => e.ModelId).Label("Model ID").Span(6);
+    Elements.Add(e => e.ProviderHandle).Label("Provider").Span(6);
+    Elements.Add(e => e.ProviderName).Label("Provider name").Span(6);
+    Elements.Add(e => e.SortOrder).Label("Sort Order").Span(3);
+    Elements.Add(e => e.IsDefault).Label("Default").AsCheckbox().Span(3);
+    Elements.Add(e => e.IsForPhotos).Label("For photos").AsCheckbox().Span(3);
+    Elements.Add(e => e.IsActive).AsCheckbox().Span(3);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterLoad(async (c, ct) =>
+    Hooks.AfterLoad(async (c, ct) =>
     {
       if (c.IsNew)
       {
@@ -46,7 +46,7 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
       }
     });
 
-    hooks.BeforeSave(async (c, ct) =>
+    Hooks.BeforeSave(async (c, ct) =>
     {
       CodeRows.EnsurePascalCaseHandle(c.Entity.ProviderHandle, nameof(AppAgentModel));
       if (c.Entity.IsDefault || c.Entity.IsForPhotos)
@@ -65,7 +65,7 @@ public sealed class AppAgentModelFormService(AppDbContext db, AppService? app = 
       }
     });
 
-    hooks.AfterSave(async (c, ct) =>
+    Hooks.AfterSave(async (c, ct) =>
     {
       if (c.Entity.IsDefault)
       {

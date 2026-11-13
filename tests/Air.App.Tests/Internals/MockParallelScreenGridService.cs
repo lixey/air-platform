@@ -5,5 +5,5 @@ internal sealed class MockParallelScreenGridService(MockParallelDbContext db, Pl
 {
   public override Feature Feature => MockParallelScreenModule.Items;
 
-  protected override void SetColumns(Columns columns) => columns.Add(x => x.Id);
+  protected override void SetColumns() => Columns.Add(x => x.Id);
 }

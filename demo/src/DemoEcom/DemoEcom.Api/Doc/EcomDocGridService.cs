@@ -5,22 +5,22 @@ public sealed class EcomDocGridService(EcomDbContext db, EcomService? ecom = nul
 {
   public override Feature Feature => Ecom.Doc;
 
-  protected override void SetColumns(Columns<EcomDoc> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id);
-    columns.Add(r => r.Number).OpenForm(r => EcomDocForms.Of(r.DocType.Id)).Width(180);
-    columns.Add(r => r.Date);
-    columns.Add(r => r.DocType).Label("Type").AsReference<EcomDocTypeGridService>();
-    columns.Add(r => r.DocStatus).Label("Status").AsReference<EcomDocStatusGridService>().Color(doc => doc.DocStatus.Color.Handle);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
-    columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
-    columns.Add(r => r.Counterparty).AsReference<OrgCounterpartyGridService>();
-    columns.Add(r => r.Amount).AsMoney().Sum();
+    Columns.Add(r => r.Id);
+    Columns.Add(r => r.Number).OpenForm(r => EcomDocForms.Of(r.DocType.Id)).Width(180);
+    Columns.Add(r => r.Date);
+    Columns.Add(r => r.DocType).Label("Type").AsReference<EcomDocTypeGridService>();
+    Columns.Add(r => r.DocStatus).Label("Status").AsReference<EcomDocStatusGridService>().Color(doc => doc.DocStatus.Color.Handle);
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
+    Columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
+    Columns.Add(r => r.Counterparty).AsReference<OrgCounterpartyGridService>();
+    Columns.Add(r => r.Amount).AsMoney().Sum();
   }
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortByDescending(r => r.Date);
-    query.RecordLabel(e => e.Number);
+    Query.SortByDescending(r => r.Date);
+    Query.RecordLabel(e => e.Number);
   }
 }

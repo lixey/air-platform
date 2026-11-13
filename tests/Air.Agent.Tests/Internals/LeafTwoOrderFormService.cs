@@ -4,16 +4,16 @@ internal sealed class LeafTwoOrderFormService(TestLeafTwoDbContext db, PlatformA
   : FormService<TestLeafTwoOrder>(db, app)
 {
   public override Feature Feature => AgentTestModule.LeafTwoOrders;
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(x => x.ReferenceNumber).Required();
-    elements.Add(x => x.Quantity);
-    elements.Add(x => x.CategoryId).AsReference<CategoryGridService>();
+    Elements.Add(x => x.ReferenceNumber).Required();
+    Elements.Add(x => x.Quantity);
+    Elements.Add(x => x.CategoryId).AsReference<CategoryGridService>();
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.BeforeSave((ctx, _) =>
+    Hooks.BeforeSave((ctx, _) =>
     {
       if (ctx.Entity.Quantity < 0)
       {

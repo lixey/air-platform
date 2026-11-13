@@ -15,15 +15,15 @@ public sealed class EcomSalesInvoiceFlowService(EcomDbContext db) : EcomDocFlowS
 
   public override Feature Feature => Ecom.SalesInvoice;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    base.SetFlow(flow);
-    flow.Status(Draft, "Draft", UiColor.Slate);
-    flow.Status(ReadyToShip, "Ready to ship", UiColor.Blue);
-    flow.Status(InTransit, "In transit", UiColor.Amber);
-    flow.FinalStatus(Delivered, "Delivered", UiColor.Green);
-    flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
-    flow.Initial(Draft);
+    base.SetFlow();
+    Flow.Status(Draft, "Draft", UiColor.Slate);
+    Flow.Status(ReadyToShip, "Ready to ship", UiColor.Blue);
+    Flow.Status(InTransit, "In transit", UiColor.Amber);
+    Flow.FinalStatus(Delivered, "Delivered", UiColor.Green);
+    Flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
+    Flow.Initial(Draft);
   }
 
   public Transition Reopen => FromOpen().To(Draft).Do(PostAsync);

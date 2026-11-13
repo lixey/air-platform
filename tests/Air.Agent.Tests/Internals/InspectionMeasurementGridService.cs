@@ -4,14 +4,14 @@ internal sealed class InspectionMeasurementGridService(AgentTestDbContext db, Pl
   : GridService<AgentTestMeasurement>(db, app)
 {
   public override Feature Feature => AgentTestModule.Inspections;
-  protected override void SetParent(Parent parent) => parent.Bind<InspectionFormService>(m => m.InspectionId);
-  protected override void SetNav(Nav nav) => nav.AddCreate<InspectionMeasurementFormService>();
-  protected override void SetHooks(Hooks hooks) => hooks.AllowMultiDelete();
-  protected override void SetColumns(Columns columns)
+  protected override void SetParent() => Parent.Bind<InspectionFormService>(m => m.InspectionId);
+  protected override void SetNav() => Nav.AddCreate<InspectionMeasurementFormService>();
+  protected override void SetHooks() => Hooks.AllowMultiDelete();
+  protected override void SetColumns()
   {
-    columns.UseForm<InspectionMeasurementFormService>();
-    columns.Add(m => m.Reading);
-    columns.Add(m => m.Weight);
-    columns.Add(m => m.SortOrder);
+    Columns.UseForm<InspectionMeasurementFormService>();
+    Columns.Add(m => m.Reading);
+    Columns.Add(m => m.Weight);
+    Columns.Add(m => m.SortOrder);
   }
 }

@@ -8,23 +8,23 @@ internal sealed class TestOrderMasterGridService(
 {
   public override Feature Feature => TestAppModule.OrderDocs;
 
-  protected override void SetQuery(Query query) => query.Where(i => !i.IsHidden);
+  protected override void SetQuery() => Query.Where(i => !i.IsHidden);
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<TestOrderMasterFormService>();
-    columns.UseStatusOf(new TestOrderFlowService(db, events));
-    columns.Add(i => i.Number).Editable();
-    columns.Add(i => i.Status);
-    columns.Add(i => i.AuditedTotal);
-    columns.Add(i => i.PrintedCount);
+    Columns.UseForm<TestOrderMasterFormService>();
+    Columns.UseStatusOf(new TestOrderFlowService(db, events));
+    Columns.Add(i => i.Number).Editable();
+    Columns.Add(i => i.Status);
+    Columns.Add(i => i.AuditedTotal);
+    Columns.Add(i => i.PrintedCount);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.UseActionsOf<TestOrderMasterFormService>();
+    Actions.UseActionsOf<TestOrderMasterFormService>();
 
-    actions.Add("BulkReset")
+    Actions.Add("BulkReset")
       .AllowEdit()
       .Do((ctx, _) =>
       {
@@ -36,7 +36,7 @@ internal sealed class TestOrderMasterGridService(
         return Task.CompletedTask;
       });
 
-    actions.Add("GlobalPing")
+    Actions.Add("GlobalPing")
       .AllowView()
       .WithoutSelection()
       .WithoutTransaction()

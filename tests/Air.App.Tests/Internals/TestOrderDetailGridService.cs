@@ -5,16 +5,16 @@ internal sealed class TestOrderDetailGridService(AppTestDbContext db, PlatformAp
 {
   public override Feature Feature => TestAppModule.OrderDocs;
 
-  protected override void SetParent(Parent parent) => parent.Bind<TestOrderMasterFormService>(l => l.InvoiceId);
+  protected override void SetParent() => Parent.Bind<TestOrderMasterFormService>(l => l.InvoiceId);
 
-  protected override void SetHooks(Hooks hooks) => hooks.AllowMultiDelete();
+  protected override void SetHooks() => Hooks.AllowMultiDelete();
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<TestOrderDetailFormService>();
-    columns.UseStatusOf(new TestOrderLineFlowService(db));
-    columns.Add(l => l.Title);
-    columns.Add(l => l.Amount).Editable();
-    columns.Add(l => l.TierCode);
+    Columns.UseForm<TestOrderDetailFormService>();
+    Columns.UseStatusOf(new TestOrderLineFlowService(db));
+    Columns.Add(l => l.Title);
+    Columns.Add(l => l.Amount).Editable();
+    Columns.Add(l => l.TierCode);
   }
 }

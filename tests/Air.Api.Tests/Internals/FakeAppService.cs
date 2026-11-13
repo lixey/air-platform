@@ -8,7 +8,7 @@ internal sealed class FakeAppService() : PlatformService()
 
   public Task<string> UnattributedHelper() => Task.FromResult("secret");
 
-  [ServiceAction]
+  [Endpoint]
   public Task<string> ExplicitServiceAction() => Task.FromResult("ok");
 
   [RequireAction("Run")]
@@ -17,23 +17,23 @@ internal sealed class FakeAppService() : PlatformService()
   [RequireAction("GhostRight")]
   public Task<string> UndeclaredAction() => Task.FromResult("nope");
 
-  [ServiceAction]
+  [Endpoint]
   public Task<IResult> EchoPositional(long id, PositionalCommandPayload payload) =>
     Task.FromResult(Microsoft.AspNetCore.Http.Results.Ok(new { text = $"{id}:{payload.Title}:{payload.Priority}" }));
 
-  [ServiceAction]
+  [Endpoint]
   public Task<string> CalculateSummaryAsync(StrictNumberPayload payload) =>
     Task.FromResult(FormattableString.Invariant($"sum:{payload.Count}:{payload.Amount}"));
 
-  [ServiceAction]
+  [Endpoint]
   public Task<string> ThrowQueryErrorAsync() =>
     throw new QueryRequestException(QueryError.UnknownField, "'secretField' is not a field of this list.", "secretField");
 
-  [ServiceAction]
+  [Endpoint]
   public Task<string> ThrowIdempotencyConflictAsync() =>
     throw new IdempotencyConflictException("Idempotency-Key has already been used for a different request.");
 
-  [ServiceAction]
+  [Endpoint]
   public Task<string> ThrowConcurrencyConflictAsync() =>
     throw new DbUpdateConcurrencyException("Row version mismatch.");
 }

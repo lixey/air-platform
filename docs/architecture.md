@@ -95,7 +95,7 @@
 Під час запуску хоста **`PlatformValidator.Validate`** перевіряє весь `ModuleCatalog` ще до прийому першого HTTP-запиту:
 
 - відсутність дублікатів маршрутів сервісів і ключів фіч, валідність `PascalCase` у всіх `Handle` (включно з іменованими фільтрами гридів та діями `SetActions`);
-- наявність явних декларацій прав (`SetActions`, `[ServiceAction]` із `[RequireAction]` або `[RequireRight]`) на всіх публічних екшенах і пікерах;
+- наявність явних декларацій прав (`SetActions()`, `[Endpoint]` із `[RequireAction]` або `[RequireRight]`) на всіх публічних екшенах і пікерах;
 - цілісність переходів і статусів у `StatusFlowService`;
 - суворе дотримання вертикальної ізоляції модулів (`ModuleCatalog.EnsureModuleServiceAccessAllowed`) для всіх посилань між сервісами гридів, форм, потоків та мультипанельних екранів (`ScreenService`).
 

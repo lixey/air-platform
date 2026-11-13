@@ -8,21 +8,21 @@ internal sealed class OrderLineFormService(AgentTestDbContext db, PlatformAppSer
 
   public override Feature Feature => AgentTestModule.Orders;
 
-  protected override void SetParent(Parent parent) => parent.Bind<OrderFormService>(l => l.OrderId);
+  protected override void SetParent() => Parent.Bind<OrderFormService>(l => l.OrderId);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(l => l.ItemName).Required();
-    elements.Add(l => l.Qty);
-    elements.Add(l => l.Price);
-    elements.Add(l => l.DiscountPercent);
-    elements.Add(l => l.Amount).ServerOwned();
-    elements.Add(l => l.Note).AsTextarea();
+    Elements.Add(l => l.ItemName).Required();
+    Elements.Add(l => l.Qty);
+    Elements.Add(l => l.Price);
+    Elements.Add(l => l.DiscountPercent);
+    Elements.Add(l => l.Amount).ServerOwned();
+    Elements.Add(l => l.Note).AsTextarea();
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterLoad((c, _) =>
+    Hooks.AfterLoad((c, _) =>
     {
       if (c.IsNew && ParentRecord<AgentTestOrder>() is { } order && c.Entity.DiscountPercent == 0m)
       {
@@ -31,9 +31,9 @@ internal sealed class OrderLineFormService(AgentTestDbContext db, PlatformAppSer
 
       return Task.CompletedTask;
     });
-    hooks.Compute(c =>
+    Hooks.Compute(c =>
       c.Entity.Amount = Math.Round(c.Entity.Qty * c.Entity.Price * (1m - (c.Entity.DiscountPercent / 100m)), 2));
-    hooks.BeforeSave((c, _) =>
+    Hooks.BeforeSave((c, _) =>
     {
       c.Entity.Amount = Math.Round(c.Entity.Qty * c.Entity.Price * (1m - (c.Entity.DiscountPercent / 100m)), 2);
       return Task.CompletedTask;

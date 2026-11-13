@@ -901,7 +901,7 @@
                       "action": {
                         "kind": "GridNavAction",
                         "service": "ecom/customer-order-grid",
-                        "method": "move-status/reopen",
+                        "method": "move-status-reopen",
                         "needsSelection": true,
                         "isDownload": false,
                         "label": "New",
@@ -918,7 +918,7 @@
                       "action": {
                         "kind": "GridNavAction",
                         "service": "ecom/customer-order-grid",
-                        "method": "move-status/start",
+                        "method": "move-status-start",
                         "needsSelection": true,
                         "isDownload": false,
                         "label": "In progress",
@@ -935,7 +935,7 @@
                       "action": {
                         "kind": "GridNavAction",
                         "service": "ecom/customer-order-grid",
-                        "method": "move-status/confirm",
+                        "method": "move-status-confirm",
                         "needsSelection": true,
                         "isDownload": false,
                         "unavailableReasons": [
@@ -955,7 +955,7 @@
                       "action": {
                         "kind": "GridNavAction",
                         "service": "ecom/customer-order-grid",
-                        "method": "move-status/pause",
+                        "method": "move-status-pause",
                         "needsSelection": true,
                         "isDownload": false,
                         "unavailableReasons": [
@@ -976,7 +976,7 @@
                       "action": {
                         "kind": "GridNavAction",
                         "service": "ecom/customer-order-grid",
-                        "method": "move-status/complete",
+                        "method": "move-status-complete",
                         "needsSelection": true,
                         "isDownload": false,
                         "unavailableReasons": [
@@ -997,7 +997,7 @@
                       "action": {
                         "kind": "GridNavAction",
                         "service": "ecom/customer-order-grid",
-                        "method": "move-status/cancel",
+                        "method": "move-status-cancel",
                         "needsSelection": true,
                         "isDownload": false,
                         "ask": {

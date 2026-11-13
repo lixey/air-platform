@@ -13,16 +13,16 @@ public sealed class EcomCustomerOrderFlowService(EcomDbContext db) : EcomDocFlow
 
   public override Feature Feature => Ecom.CustomerOrder;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    base.SetFlow(flow);
-    flow.Status(New, "New", UiColor.Sky);
-    flow.Status(InProgress, "In progress", UiColor.Amber);
-    flow.Status(Confirmed, "Confirmed", UiColor.Blue);
-    flow.Status(Paused, "Paused", UiColor.Amber);
-    flow.FinalStatus(Completed, "Completed", UiColor.Green);
-    flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
-    flow.Initial(New);
+    base.SetFlow();
+    Flow.Status(New, "New", UiColor.Sky);
+    Flow.Status(InProgress, "In progress", UiColor.Amber);
+    Flow.Status(Confirmed, "Confirmed", UiColor.Blue);
+    Flow.Status(Paused, "Paused", UiColor.Amber);
+    Flow.FinalStatus(Completed, "Completed", UiColor.Green);
+    Flow.FinalStatus(Canceled, "Canceled", UiColor.Red);
+    Flow.Initial(New);
   }
 
   private Expression<Func<EcomDoc, bool>> HasLines => order => Db.EcomDocLine.Any(line => line.DocId == order.Id);

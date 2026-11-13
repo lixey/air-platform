@@ -5,10 +5,10 @@ public sealed class AppColorGridService(AppDbContext db, AppService? app = null)
 {
   public override Feature Feature => App.Color;
 
-  protected override void SetColumns(Columns<AppColor> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppColorFormService>();
-    columns.Add(r => r.Name).Color(c => c.Handle);
-    columns.Add(r => r.Handle);
+    Columns.Add(r => r.Id).AsOpenForm<AppColorFormService>();
+    Columns.Add(r => r.Name).Color(c => c.Handle);
+    Columns.Add(r => r.Handle);
   }
 }

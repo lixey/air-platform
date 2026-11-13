@@ -11,7 +11,7 @@ internal static class GridQueryMapBuilder<TEntity, TRow>
 
   public static QueryMap<TEntity> Build(
     Type serviceType,
-    GridService<TEntity, TRow>.Query queryDeclaration,
+    GridQuery<TEntity, TRow> queryDeclaration,
     IReadOnlyList<GridColumnDto> columns,
     bool useCollationComparison = false)
   {
@@ -90,7 +90,7 @@ internal static class GridQueryMapBuilder<TEntity, TRow>
 
   private static QueryMap<TEntity> BuildCore(
     Type serviceType,
-    GridService<TEntity, TRow>.Query queryDeclaration,
+    GridQuery<TEntity, TRow> queryDeclaration,
     IReadOnlyList<GridColumnDto> columns,
     bool useCollationComparison)
   {

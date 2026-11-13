@@ -5,15 +5,15 @@ internal sealed class TestOrderMasterFormService(AppTestDbContext db, PlatformAp
 {
   public override Feature Feature => TestAppModule.OrderDocs;
 
-  protected override void SetQuery(Query query) => query.From(db.Invoices).Where(i => !i.IsHidden);
+  protected override void SetQuery() => Query.From(db.Invoices).Where(i => !i.IsHidden);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.UseStatusOf(new TestOrderFlowService(db));
-    elements.Add(i => i.Number).Required();
-    elements.Add(i => i.Status);
-    elements.Add(i => i.AuditedTotal).Disabled();
-    elements.AddChild<TestOrderDetailGridService>();
+    Elements.UseStatusOf(new TestOrderFlowService(db));
+    Elements.Add(i => i.Number).Required();
+    Elements.Add(i => i.Status);
+    Elements.Add(i => i.AuditedTotal).Disabled();
+    Elements.AddChild<TestOrderDetailGridService>();
   }
 
   protected override async Task RecalculateAsync(TestInvoice entity, CancellationToken ct)
@@ -23,9 +23,9 @@ internal sealed class TestOrderMasterFormService(AppTestDbContext db, PlatformAp
       .SumAsync(l => l.Amount, ct);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.Add("StampNote")
+    Actions.Add("StampNote")
       .Allow(TestAppModule.ApproveInvoice)
       .When(i => i.Status == 1, "Only open orders can be stamped")
       .Ask<TestAssignTagInput>(els =>

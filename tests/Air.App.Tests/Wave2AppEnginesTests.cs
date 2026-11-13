@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using Platform.App.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Tests.Internals;
 
@@ -368,12 +367,12 @@ public sealed class Wave2AppEnginesTests : IDisposable
         .BuildServiceProvider();
       app = new TestPlatformAppService(db, user, services);
 
-      var dispatcher = new AppServiceEndpointDispatcher();
       var tagFormPath = ServicePathResolver.Resolve(typeof(TestTagEnvelopeFormService));
 
       async Task<(int Status, string Body)> PostAsync(Type svcType, string svcPath, string method, Feature feat, string jsonBody, string? idemKey = null)
       {
         var ctx = new DefaultHttpContext { RequestServices = services };
+        ctx.Request.Path = $"/api/{svcPath}/{method}";
         ctx.Request.ContentType = "application/json";
         if (idemKey != null)
         {
@@ -382,7 +381,8 @@ public sealed class Wave2AppEnginesTests : IDisposable
 
         ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(jsonBody));
         ctx.Response.Body = new MemoryStream();
-        var res = await dispatcher.DispatchAsync(svcType, svcPath, method, null, feat, ctx.Request, services, CancellationToken.None);
+        var instance = services.GetRequiredService(svcType);
+        var res = await ServiceEndpointsExtensions.DispatchEndpointAsync(svcType, instance, method, feat, ctx.Request, services, CancellationToken.None);
         await res.ExecuteAsync(ctx);
         ctx.Response.Body.Position = 0;
         using var reader = new StreamReader(ctx.Response.Body);
@@ -509,7 +509,8 @@ public sealed class Wave2AppEnginesTests : IDisposable
       Assert.DoesNotContain("'mapPin'", tsContracts, StringComparison.Ordinal);
       Assert.DoesNotContain("'gear'", tsContracts, StringComparison.Ordinal);
       Assert.DoesNotContain("'reload'", tsContracts, StringComparison.Ordinal);
-      Assert.Contains("'move-status'", tsContracts, StringComparison.Ordinal);
+      Assert.Contains("'metadata/get-data'", tsContracts, StringComparison.Ordinal);
+      Assert.Contains("'get-action-input'", tsContracts, StringComparison.Ordinal);
       Assert.Contains("color?: UiColor | null;", tsContracts, StringComparison.Ordinal);
     }
     finally

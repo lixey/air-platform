@@ -5,9 +5,9 @@ internal sealed class MockBadConfirmAsyncGridService(AppTestDbContext db, Platfo
 {
   public override Feature Feature => MockBadConfirmAsyncModule.Items;
 
-  protected override void SetColumns(Columns<TestInvoice> columns) =>
-    columns.Add(r => r.Number);
+  protected override void SetColumns() =>
+    Columns.Add(r => r.Number);
 
-  protected override void SetActions(Actions actions) =>
-    actions.UseActionsOf<TestConfirmAsyncFormService>();
+  protected override void SetActions() =>
+    Actions.UseActionsOf<TestConfirmAsyncFormService>();
 }

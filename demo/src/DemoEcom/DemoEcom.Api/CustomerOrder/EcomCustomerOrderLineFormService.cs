@@ -5,31 +5,31 @@ public sealed class EcomCustomerOrderLineFormService(EcomDbContext db, EcomServi
 {
   public override Feature Feature => Ecom.CustomerOrder;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Product)
+    Elements.Add(e => e.Product)
       .AsReference<OrgProductGridService>()
       .PatchOnSelect(e => e.Price, p => p.Price)
       .Required()
       .Span(12);
-    elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Step(1).Stepper().Span(3);
-    elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's price").Span(3);
-    elements.Add(e => e.DiscountPercent).Label("Discount").AsPercent().Range(0, 100)
+    Elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Step(1).Stepper().Span(3);
+    Elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's price").Span(3);
+    Elements.Add(e => e.DiscountPercent).Label("Discount").AsPercent().Range(0, 100)
       .Placeholder("The customer's discount").Span(3);
-    elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(3);
-    elements.Add(e => e.Note).AsTextarea().Span(12);
+    Elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(3);
+    Elements.Add(e => e.Note).AsTextarea().Span(12);
   }
 
-  protected override void SetRules(Rules rules) =>
-    rules.For(e => e.DiscountPercent)
+  protected override void SetRules() =>
+    Rules.For(e => e.DiscountPercent)
       .Must(d => d <= 25m)
       .WithMessage(L["Discount exceeds 25% — verify manager approval."])
       .AsWarning();
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    base.SetHooks(hooks);
-    hooks.BeforeSave((c, ct) =>
+    base.SetHooks();
+    Hooks.BeforeSave((c, ct) =>
     {
       var doc = ParentRecord<EcomDoc>();
       if (doc != null)

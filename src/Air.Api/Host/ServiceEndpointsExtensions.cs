@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Platform.Api.Host.Internals;
 
 namespace Platform.Api.Host;
@@ -12,27 +13,21 @@ public static class ServiceEndpointsExtensions
       return;
     }
 
+    var registry = services.GetService<EndpointRegistry>();
+    if (registry is not null && registry.RouteDbContextMap.TryGetValue(rawPath.TrimEnd('/'), out var mappedCtx))
+    {
+      services.GetService<DbScope>()?.Bind(mappedCtx);
+      return;
+    }
+
     var servicePath = rawPath["/api/".Length..].Trim('/');
-    if (string.IsNullOrEmpty(servicePath) ||
-        servicePath.StartsWith("auth/", StringComparison.OrdinalIgnoreCase) ||
-        servicePath.StartsWith("platform-", StringComparison.OrdinalIgnoreCase) ||
-        servicePath.StartsWith("metadata", StringComparison.OrdinalIgnoreCase))
+    var lastSlash = servicePath.LastIndexOf('/');
+    if (lastSlash <= 0)
     {
       return;
     }
 
-    var parts = servicePath.Split('/');
-    if (parts.Length < 2)
-    {
-      return;
-    }
-
-    var serviceName = parts.Length >= 3 &&
-                      (string.Equals(parts[^2], "move-status", StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(parts[^2], "get-action-input", StringComparison.OrdinalIgnoreCase))
-      ? string.Join('/', parts[..^2])
-      : string.Join('/', parts[..^1]);
-
+    var serviceName = servicePath[..lastSlash];
     var serviceType = catalog.FindServiceType(serviceName)
       ?? catalog.FindFeature(serviceName)?.ServiceType;
 
@@ -45,218 +40,83 @@ public static class ServiceEndpointsExtensions
   public static void MapServiceEndpoints(this RouteGroupBuilder api)
   {
     var rootServices = ((IEndpointRouteBuilder)api).ServiceProvider;
-    var catalog = rootServices.GetRequiredService<ModuleCatalog>();
-    var dispatchers = rootServices.GetServices<IServiceEndpointDispatcher>().ToArray();
+    var registry = rootServices.GetService<EndpointRegistry>()
+      ?? EndpointRegistry.Build(rootServices.GetRequiredService<ModuleCatalog>());
 
-    foreach (var (serviceName, serviceType) in catalog.ServiceRoutes)
+    foreach (var descriptor in registry.All)
     {
-      var exactFeat = catalog.FindFeature(serviceName);
-      var feat = catalog.FindFeature(serviceType) ?? exactFeat;
-      var dispatcher = dispatchers.FirstOrDefault(d => d.CanDispatch(serviceType));
-      if (dispatcher is not null)
+      var captured = descriptor;
+      var builder = api.MapPost(captured.RoutePattern, async (
+        HttpRequest httpRequest,
+        IServiceProvider services,
+        CancellationToken ct) =>
+        await PlatformEndpointsExtensions.WithRequestCultureAsync(
+          httpRequest,
+          _ => EndpointExecutor.ExecuteAsync(captured, httpRequest, services, ct)));
+
+      if (captured.IsAnonymous)
       {
-        dispatcher.MapServiceEndpoints(api, catalog, serviceType, serviceName, feat);
-        continue;
-      }
-
-      MapCustomServiceActionRoutes(api, serviceType, serviceName, feat);
-    }
-  }
-
-  private static void MapCustomServiceActionRoutes(
-    RouteGroupBuilder api,
-    Type serviceType,
-    string serviceName,
-    Feature? feat)
-  {
-    var mappedRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var actionMethod in ServiceRequestBinder.GetCallableActionMethods(serviceType))
-    {
-      var isAnonymous = ServiceRequestBinder.IsAnonymousCallableMethod(actionMethod);
-      foreach (var routeAction in ServiceRequestBinder.GetRouteActionNames(actionMethod))
-      {
-        var pattern = $"/{serviceName}/{routeAction}";
-        if (!mappedRoutes.Add(pattern))
-        {
-          continue;
-        }
-
-        var capturedAction = routeAction;
-        var builder = api.MapPost(pattern, async (
-          HttpRequest httpRequest,
-          IServiceProvider services,
-          CancellationToken ct) =>
-          await PlatformEndpointsExtensions.WithRequestCultureAsync(httpRequest, async _ =>
-          {
-            Localizer.Instance.EnsureManagersLoaded();
-            services.GetService<DbScope>()?.Bind(ModuleCatalog.GetServiceDbContextType(serviceType));
-            var customService = services.GetService(serviceType);
-            if (customService is null)
-            {
-              return Results.NotFound();
-            }
-
-            var resolvedFeat = feat ?? (customService as IPlatformService)?.Feature;
-            return await DispatchCustomServiceMethodAsync(
-              serviceType,
-              customService,
-              capturedAction,
-              resolvedFeat,
-              httpRequest,
-              services,
-              ct);
-          }));
-
-        if (isAnonymous)
-        {
-          builder.AllowAnonymous();
-        }
+        builder.AllowAnonymous();
       }
     }
   }
 
-  public static async Task<IResult> DispatchCustomServiceMethodAsync(
+  public static async Task<IResult> DispatchEndpointAsync(
     Type serviceType,
     object serviceInstance,
     string method,
     Feature? feat,
     HttpRequest httpRequest,
     IServiceProvider services,
-    CancellationToken ct,
-    Func<Type, HttpRequest, JsonElement?, object?>? customParameterBinder = null)
+    CancellationToken ct)
   {
-    if (serviceInstance is IPlatformService ps && services.GetService<PlatformAppService>() is { } appInstance)
+    (serviceInstance as IPlatformService)?.BindContext(services.GetService<PlatformAppService>());
+    if (EndpointRegistry.FindReflectedEndpoint(serviceType, method) is { } reflected)
     {
-      ps.AttachPlatformApp(appInstance);
+      return await EndpointExecutor.ExecuteReflectedAsync(
+        reflected.Method,
+        reflected.Parameters,
+        reflected.CompiledInvoker,
+        reflected.Auth,
+        reflected.IsAnonymous,
+        reflected.UsesRawHttp,
+        reflected.UsesFormFiles,
+        serviceInstance,
+        feat ?? (serviceInstance as IPlatformService)?.Feature,
+        httpRequest,
+        services,
+        ct);
     }
 
-    var actionMethod = ServiceRequestBinder.ResolveCallableActionMethod(serviceType, method);
-    if (actionMethod == null)
+    if (serviceInstance is IPlatformService platformService)
     {
-      return Results.NotFound();
-    }
-
-    var isAnonymousOrWebhook =
-      actionMethod.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null ||
-      actionMethod.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null;
-
-    var userContext = services.GetService<IUserContext>();
-    if (!isAnonymousOrWebhook && userContext is null or { IsAuthenticated: false })
-    {
-      return Results.Unauthorized();
-    }
-
-    if (!IsCustomActionPermitted(actionMethod, feat, userContext))
-    {
-      return Results.UnprocessableEntity(new MutationResultDto
+      var userContext = services.GetService<IUserContext>();
+      if (userContext is null or { IsAuthenticated: false })
       {
-        Outcome = MutationOutcome.Refused,
-        Title = Localizer.Instance["MutationRefused"],
-        Messages = [new MessageDto { Detail = Localizer.Instance["MutationRefused"], Type = MessageType.Error }]
-      });
-    }
+        return Results.Unauthorized();
+      }
 
-    var parameters = actionMethod.GetParameters();
-    var usesRawHttpRequest = parameters.Any(p => p.ParameterType == typeof(HttpRequest) || p.ParameterType == typeof(HttpContext));
-
-    JsonElement? rawBody = null;
-    if (!usesRawHttpRequest)
-    {
-      var (parsedBody, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+      var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
       if (isMalformed)
       {
-        return Results.BadRequest(new { detail = "Malformed JSON request body." });
+        return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
       }
 
-      rawBody = parsedBody;
-    }
-
-    long? parsedId = null;
-    if (httpRequest.Query.TryGetValue("id", out var qIdStr) && long.TryParse(qIdStr, out var qId))
-    {
-      parsedId = qId;
-    }
-    else if (rawBody is { ValueKind: JsonValueKind.Object } rb && TryReadBodyId(rb, out var bodyId))
-    {
-      parsedId = bodyId;
-    }
-
-    var args = new object?[parameters.Length];
-    try
-    {
-      for (var i = 0; i < parameters.Length; i++)
+      try
       {
-        var pType = parameters[i].ParameterType;
-        if (pType == typeof(CancellationToken))
+        var dyn = await platformService.ExecuteDynamicEndpointAsync(method, httpRequest, body, services, ct);
+        if (dyn is not null)
         {
-          args[i] = ct;
-        }
-        else if (pType == typeof(HttpRequest))
-        {
-          args[i] = httpRequest;
-        }
-        else if (pType == typeof(HttpContext))
-        {
-          args[i] = httpRequest.HttpContext;
-        }
-        else if (pType == typeof(IServiceProvider))
-        {
-          args[i] = services;
-        }
-        else if (customParameterBinder?.Invoke(pType, httpRequest, rawBody) is { } boundCustom)
-        {
-          args[i] = boundCustom;
-        }
-        else if (pType == typeof(long) && parsedId.HasValue)
-        {
-          args[i] = parsedId.Value;
-        }
-        else if (services.GetService(pType) is { } resolvedService)
-        {
-          args[i] = resolvedService;
-        }
-        else if (pType.IsClass && pType != typeof(string))
-        {
-          args[i] = DeserializeOrCreateRequest(pType, rawBody);
+          return dyn;
         }
       }
-
-      return await InvokeServiceMethodAsync(actionMethod, serviceInstance, args);
-    }
-    catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
-    {
-      return mapped;
-    }
-  }
-
-  private static bool TryReadBodyId(JsonElement body, out long id)
-  {
-    foreach (var prop in body.EnumerateObject())
-    {
-      if (string.Equals(prop.Name, "id", StringComparison.OrdinalIgnoreCase) &&
-          prop.Value.ValueKind == JsonValueKind.Number &&
-          prop.Value.TryGetInt64(out id))
+      catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
       {
-        return true;
+        return mapped;
       }
     }
 
-    id = 0;
-    return false;
-  }
-
-  private static object? DeserializeOrCreateRequest(Type requestType, JsonElement? rawBody)
-  {
-    var json = rawBody.HasValue ? rawBody.Value.GetRawText() : "{}";
-    var deserialized = JsonSerializer.Deserialize(json, requestType, PlatformJsonOptions.DefaultOptions);
-    if (deserialized is not null)
-    {
-      return deserialized;
-    }
-
-    return requestType.GetConstructor(Type.EmptyTypes) is not null
-      ? Activator.CreateInstance(requestType)
-      : null;
+    return Results.NotFound();
   }
 
   public static bool HasJsonBody(HttpRequest httpRequest) =>
@@ -309,7 +169,7 @@ public static class ServiceEndpointsExtensions
 
   public static bool IsCustomActionPermitted(MethodInfo actionMethod, Feature? feat, IUserContext? userContext)
   {
-    if (actionMethod.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null ||
+    if (actionMethod.GetCustomAttribute<AllowAnonymousAttribute>(inherit: true) != null ||
         actionMethod.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null)
     {
       return true;
@@ -379,52 +239,13 @@ public static class ServiceEndpointsExtensions
       : CanEdit(feat, userContext);
   }
 
-  public static async Task<IResult> InvokeServiceMethodAsync(MethodInfo method, object target, object?[] args)
-  {
-    object? resultTask;
-    try
-    {
-      resultTask = method.Invoke(target, args);
-    }
-    catch (TargetInvocationException ex) when (ex.InnerException is not null)
-    {
-      System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-      return Results.Empty;
-    }
-
-    if (resultTask is Task<IResult> taskResult)
-    {
-      return await taskResult;
-    }
-
-    if (resultTask is Task task)
-    {
-      await task.ConfigureAwait(false);
-      var taskType = task.GetType();
-      var result = taskType.IsGenericType ? taskType.GetProperty("Result")?.GetValue(task) : null;
-      if (result is IResult r)
-      {
-        return r;
-      }
-
-      return PlatformEndpointsExtensions.ToMutationResult(result ?? new MutationResultDto { Outcome = MutationOutcome.Committed });
-    }
-
-    if (resultTask is IResult immediateResult)
-    {
-      return immediateResult;
-    }
-
-    return PlatformEndpointsExtensions.ToMutationResult(resultTask ?? new MutationResultDto { Outcome = MutationOutcome.Committed });
-  }
-
-  public static bool IsCallableServiceAction(MethodInfo m) =>
+  public static bool IsEndpointMethod(MethodInfo m) =>
     !m.IsSpecialName &&
     !m.IsGenericMethodDefinition &&
     m.DeclaringType != null &&
-    (m.GetCustomAttribute<ServiceActionAttribute>(inherit: true) != null ||
+    (m.GetCustomAttribute<EndpointAttribute>(inherit: true) != null ||
      m.GetCustomAttribute<RequireActionAttribute>(inherit: true) != null ||
      m.GetCustomAttribute<RequireRightAttribute>(inherit: true) != null ||
      m.GetCustomAttribute<WebhookEndpointAttribute>(inherit: true) != null ||
-     m.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>(inherit: true) != null);
+     m.GetCustomAttribute<AllowAnonymousAttribute>(inherit: true) != null);
 }

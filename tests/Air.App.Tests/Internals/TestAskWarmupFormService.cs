@@ -5,15 +5,15 @@ internal sealed class TestAskWarmupFormService(AppTestDbContext db, PlatformAppS
 {
   public override Feature Feature => TestAppModule.AskWarmup;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(l => l.Title).Required();
-    elements.Add(l => l.Amount);
+    Elements.Add(l => l.Title).Required();
+    Elements.Add(l => l.Amount);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.Add("AssignRichFormTag")
+    Actions.Add("AssignRichFormTag")
       .AllowEdit()
       .Ask<TestRichFilterAskInput>(els => els.Add(x => x.TagId)
           .AsReference<TestTagGridService, TestTag>()

@@ -4,5 +4,5 @@ internal sealed class ReadOnlyAgentCategoryFormService(AgentTestDbContext db, Pl
   : FormService<AgentTestCategory>(db, app)
 {
   public override Feature Feature => AgentTestModule.ReadOnlyCategories;
-  protected override void SetElements(Elements elements) => elements.Add(c => c.Name).Required();
+  protected override void SetElements() => Elements.Add(c => c.Name).Required();
 }

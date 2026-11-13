@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using Platform.App.Host.Internals;
 using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
@@ -197,7 +196,6 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
       .AddTransient<TestOrderDetailGridService>()
       .BuildServiceProvider();
 
-    var dispatcher = new AppServiceEndpointDispatcher();
     var saveBody = JsonSerializer.Serialize(new
     {
       parentService = masterFormPath,
@@ -206,15 +204,16 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
     });
 
     var saveHttp = new DefaultHttpContext { RequestServices = services };
+    saveHttp.Request.Path = $"/api/{detailFormPath}/save";
     saveHttp.Request.ContentType = "application/json";
     saveHttp.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(saveBody));
     saveHttp.Response.Body = new MemoryStream();
 
-    var saveResult = await dispatcher.DispatchAsync(
+    var detailFormInstance = services.GetRequiredService<TestOrderDetailFormService>();
+    var saveResult = await ServiceEndpointsExtensions.DispatchEndpointAsync(
       typeof(TestOrderDetailFormService),
-      detailFormPath,
+      detailFormInstance,
       "save",
-      null,
       TestAppModule.OrderDocs,
       saveHttp.Request,
       services,
@@ -284,7 +283,6 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
       .BuildServiceProvider();
 
     var idemKey = $"idem-key-wave4-{Guid.NewGuid():N}";
-    var dispatcher = new AppServiceEndpointDispatcher();
     var gridPath = ServicePathResolver.Resolve(typeof(TestOrderMasterGridService));
     var body1 = JsonSerializer.Serialize(new
     {
@@ -297,15 +295,16 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
     async Task<(int Status, string Body)> PostActionAsync(string jsonBody, string key)
     {
       var ctx = new DefaultHttpContext { RequestServices = services };
+      ctx.Request.Path = $"/api/{gridPath}/stamp-note";
       ctx.Request.ContentType = "application/json";
       ctx.Request.Headers["Idempotency-Key"] = key;
       ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(jsonBody));
       ctx.Response.Body = new MemoryStream();
-      var res = await dispatcher.DispatchAsync(
+      var gridInstance = services.GetRequiredService<TestOrderMasterGridService>();
+      var res = await ServiceEndpointsExtensions.DispatchEndpointAsync(
         typeof(TestOrderMasterGridService),
-        gridPath,
+        gridInstance,
         "stamp-note",
-        null,
         TestAppModule.OrderDocs,
         ctx.Request,
         services,

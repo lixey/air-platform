@@ -5,24 +5,24 @@ public sealed class OrgCounterpartyGridService(OrgDbContext db, OrgService? org 
 {
   public override Feature Feature => Org.Counterparty;
 
-  protected override void SetColumns(Columns<OrgCounterparty> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgCounterpartyFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.TaxId);
-    columns.Add(r => r.IsSupplier).AsCheckbox();
-    columns.Add(r => r.IsBuyer).AsCheckbox();
-    columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
-    columns.Add(r => r.PaymentDelayDays);
-    columns.Add(r => r.DeliveryDays);
-    columns.Add(r => r.Phone).AsPhone();
-    columns.Add(r => r.Email).AsEmail();
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.Id).AsOpenForm<OrgCounterpartyFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.TaxId);
+    Columns.Add(r => r.IsSupplier).AsCheckbox();
+    Columns.Add(r => r.IsBuyer).AsCheckbox();
+    Columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
+    Columns.Add(r => r.PaymentDelayDays);
+    Columns.Add(r => r.DeliveryDays);
+    Columns.Add(r => r.Phone).AsPhone();
+    Columns.Add(r => r.Email).AsEmail();
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 
-  protected override void SetHooks(Hooks hooks) =>
-    hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.SupplierId, "The counterparty supplies products and cannot be deleted.");
+  protected override void SetHooks() =>
+    Hooks.PreventDeleteWhenUsedBy<OrgProduct>(p => p.SupplierId, "The counterparty supplies products and cannot be deleted.");
 }
 

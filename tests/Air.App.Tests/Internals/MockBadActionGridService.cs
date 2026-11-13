@@ -5,12 +5,12 @@ internal sealed class MockBadActionGridService(AppTestDbContext db, PlatformAppS
 {
   public override Feature Feature => MockBadActionModule.Items;
 
-  protected override void SetColumns(Columns columns) => columns.Add(x => x.Name);
+  protected override void SetColumns() => Columns.Add(x => x.Name);
 
-  protected override void SetNav(Nav nav)
+  protected override void SetNav()
   {
-    base.SetNav(nav);
-    nav.AddPicker<TestTagGridService>(UnattributedRun);
+    base.SetNav();
+    Nav.AddPicker<TestTagGridService>(UnattributedRun);
   }
 
   public Task<GridActionDto> UnattributedRun(GridPickRequest request, CancellationToken ct = default) =>

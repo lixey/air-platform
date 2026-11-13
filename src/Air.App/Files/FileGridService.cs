@@ -22,26 +22,26 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   protected IFileStores Stores => PlatformApp?.Services.GetService<IFileStores>() ?? new DefaultFileStores(new LocalFileStorage());
 
-  protected override void SetQuery(Query query) => query.SortBy(r => r.SortOrder).ThenByDescending(r => r.Id);
+  protected override void SetQuery() => Query.SortBy(r => r.SortOrder).ThenByDescending(r => r.Id);
 
-  protected override void SetHooks(Hooks hooks) => hooks.AllowMultiDelete();
+  protected override void SetHooks() => Hooks.AllowMultiDelete();
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Name).Cell(new GridCellFileModel());
+    Columns.Add(r => r.Name).Cell(new GridCellFileModel());
     if (HasCovers)
     {
-      columns.Add(r => ((IHasCoverFile)(object)r).IsCover).Label(L["Cover"]);
+      Columns.Add(r => ((IHasCoverFile)(object)r).IsCover).Label(L["Cover"]);
     }
 
-    columns.Add(r => r.ContentType).Label(L["Type"]);
-    columns.Add(r => r.Size).Label(L["Size"]);
-    columns.Add(r => r.CreatedAt).Label(L["Created"]);
+    Columns.Add(r => r.ContentType).Label(L["Type"]);
+    Columns.Add(r => r.Size).Label(L["Size"]);
+    Columns.Add(r => r.CreatedAt).Label(L["Created"]);
   }
 
-  protected override void SetNav(Nav nav)
+  protected override void SetNav()
   {
-    base.SetNav(nav);
+    base.SetNav();
 
     if (!IsReadOnly)
     {
@@ -56,7 +56,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
         Color = UiColor.Orange,
         Variant = ButtonVariant.Soft
       };
-      nav.AddStart(upload);
+      Nav.AddStart(upload);
     }
   }
 
@@ -121,6 +121,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
   private static Expression<Func<TFile, bool>> BuildParentFilter(PropertyInfo boundProp, object parentVal) =>
     ParentScopeValidator.BuildParentKeyFilter<TFile>(boundProp, parentVal);
 
+  [Endpoint]
   [RequireAction(Right.View)]
   public virtual async Task<FileInfoDto> GetInfo(GridRequest request, CancellationToken cancellationToken = default)
   {
@@ -160,6 +161,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     };
   }
 
+  [Endpoint]
   [RequireAction("FileMetadata", fallbackToView: true)]
   public virtual async Task<FileMetadataDto?> FileMetadata(GridRequest request, CancellationToken cancellationToken = default)
   {
@@ -194,6 +196,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     }
   }
 
+  [Endpoint]
   [RequireAction(Right.View)]
   public virtual async Task<IResult> DownloadAll(GridRequest request, CancellationToken cancellationToken = default)
   {

@@ -5,9 +5,7 @@ namespace Platform.App.Grid.Internals;
 
 internal static class GridRowEnricher
 {
-  private static readonly ConcurrentDictionary<
-    (Type EntityType, Type PropType),
-    Delegate> ComputedColumnEvaluators = new();
+  private static readonly ConcurrentDictionary<(Type EntityType, Type PropType), Delegate> ComputedColumnEvaluators = new();
 
   private static Func<IQueryable<TEntity>, IReadOnlyList<long>, LambdaExpression, Func<object?, object?>?, CancellationToken, Task<Dictionary<long, object?>>> GetComputedColumnEvaluator<TEntity>(Type propType)
     where TEntity : class, IEntity =>
@@ -24,7 +22,7 @@ internal static class GridRowEnricher
   public static async Task PopulateRowAvailabilityAsync<TEntity, TRow>(
     GridService<TEntity, TRow> grid,
     List<RowDto> shapedRows,
-    GridService<TEntity, TRow>.Columns columns,
+    Columns<TEntity, TRow> columns,
     CancellationToken ct)
     where TEntity : class, IEntity, new()
     where TRow : class
@@ -34,8 +32,7 @@ internal static class GridRowEnricher
       return;
     }
 
-    var actions = new GridService<TEntity, TRow>.Actions();
-    await grid.InvokeSetActionsAsync(actions, ct);
+    var actions = await grid.BuildActionsInternalAsync(ct);
     var actionOfferGroups = new List<(string Key, IReadOnlyList<RecordAvailability> Offers)>();
     var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var entry in actions.Entries)
@@ -52,11 +49,6 @@ internal static class GridRowEnricher
     {
       if (ModuleCatalog.Instance.CreateServiceInstance(formType, db, grid.PlatformApp) is IFormService form)
       {
-        if (grid.PlatformApp != null)
-        {
-          form.AttachPlatformApp(grid.PlatformApp);
-        }
-
         foreach (var (key, inheritedOffers) in await form.GetActionOffersAsync(grid.ParentId, grid.ParentService, ct))
         {
           if (seenKeys.Add(key) && inheritedOffers.Count > 0)
@@ -68,10 +60,7 @@ internal static class GridRowEnricher
     }
 
     var statusFlow = columns.StatusFlow as IRecordStatuses<TEntity>;
-    if (grid.PlatformApp != null && statusFlow is Flow.StatusFlowService<TEntity> flowSvc)
-    {
-      flowSvc.AttachPlatformApp(grid.PlatformApp);
-    }
+    (statusFlow as IPlatformService)?.BindContext(grid.PlatformApp);
 
     var transitionsWithOffers = statusFlow?.Transitions.Where(t => t.Offers.Count > 0).ToList() ?? [];
     if (transitionsWithOffers.Count == 0 && actionOfferGroups.Count == 0)
@@ -161,7 +150,7 @@ internal static class GridRowEnricher
       return;
     }
 
-    var baseQuery = grid.InvokeBaseQuery(grid.DbContext).AsNoTracking();
+    var baseQuery = grid.BaseQueryInternal().AsNoTracking();
     foreach (var col in subqueryCols)
     {
       var evaluator = GetComputedColumnEvaluator<TEntity>(col.ValueExpression!.ReturnType);
@@ -270,7 +259,7 @@ internal static class GridRowEnricher
       return;
     }
 
-    var entityQuery = IncludeColumnNavigations<TEntity, TRow>(grid.InvokeBaseQuery(grid.DbContext).AsNoTracking(), colorCols)
+    var entityQuery = IncludeColumnNavigations<TEntity, TRow>(grid.BaseQueryInternal().AsNoTracking(), colorCols)
       .Where(e => rowIds.Contains(e.Id));
     var entitiesById = await entityQuery.ToDictionaryAsync(e => e.Id, ct);
 
@@ -309,7 +298,7 @@ internal static class GridRowEnricher
   public static bool CanUseDefaultProjection<TEntity, TRow>(
     GridService<TEntity, TRow> grid,
     IQueryable<TEntity> query,
-    GridService<TEntity, TRow>.Query queryDeclaration)
+    GridQuery<TEntity, TRow> queryDeclaration)
     where TEntity : class, IEntity, new()
     where TRow : class =>
     typeof(TRow) == typeof(TEntity) &&
@@ -386,7 +375,7 @@ internal static class GridRowEnricher
 
       if (col.ValueExpression != null && !col.IsSubqueryExpression)
       {
-        foreach (var navPath in Elements.ExtractNavigationPaths(col.ValueExpression))
+        foreach (var navPath in Form.Elements.ExtractNavigationPaths(col.ValueExpression))
         {
           try
           {
@@ -445,7 +434,7 @@ internal static class GridRowEnricher
         if (formType != null && typeof(IFormService).IsAssignableFrom(formType))
         {
           forms ??= new Dictionary<string, OverlayDto>(StringComparer.Ordinal);
-          forms[formHandle] = await GridScreenBuilder.ResolveFormOverlayForTypeAsync(grid, formType, formHandle, ct);
+          forms[formHandle] = await grid.ResolveFormOverlayForTypeAsync(formType, formHandle, ct);
         }
       }
     }

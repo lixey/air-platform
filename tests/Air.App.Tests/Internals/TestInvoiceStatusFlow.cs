@@ -4,12 +4,12 @@ internal sealed class TestInvoiceStatusFlow(AppTestDbContext db) : StatusFlowSer
 {
   public override Feature Feature => TestAppModule.Invoices;
 
-  protected override void SetFlow(Flow flow)
+  protected override void SetFlow()
   {
-    flow.State(x => x.Status);
-    flow.Status(1, "New", UiColor.Blue);
-    flow.Status(2, "Approved", UiColor.Green);
-    flow.Initial(1);
+    Flow.State(x => x.Status);
+    Flow.Status(1, "New", UiColor.Blue);
+    Flow.Status(2, "Approved", UiColor.Green);
+    Flow.Initial(1);
   }
 
   public Transition Approve => From(1).To(2).Allow(TestAppModule.ApproveInvoice);

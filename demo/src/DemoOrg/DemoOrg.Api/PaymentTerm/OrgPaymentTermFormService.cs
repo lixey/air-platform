@@ -5,9 +5,9 @@ public sealed class OrgPaymentTermFormService(OrgDbContext db, OrgService? org =
 {
   public override Feature Feature => Org.PaymentTerm;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.Handle);
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.Handle);
   }
 }

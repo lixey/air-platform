@@ -58,7 +58,6 @@ internal static class AgentFlowHelper
       return null;
     }
 
-    flowObj.AttachPlatformApp(app);
     return flowObj.AllTransitions
       .FirstOrDefault(t => string.Equals(t.Name, transitionName, StringComparison.OrdinalIgnoreCase))
       ?.RequiredRight;
@@ -215,7 +214,7 @@ internal static class AgentFlowHelper
     CancellationToken ct)
     where TEntity : class, IEntity, new()
   {
-    flow.AttachPlatformApp(app);
+    ((IPlatformService)flow).BindContext(app);
     var localizer = Localizer.Instance.For(feature.Module);
     var statuses = flow.Statuses
       .Select(s => new OptionDto { Id = s.Id, Name = flow.NameOf(s.Id), Color = s.Color })
@@ -275,7 +274,7 @@ internal static class AgentFlowHelper
     CancellationToken ct)
     where TEntity : class, IEntity, new()
   {
-    flow.AttachPlatformApp(app);
+    ((IPlatformService)flow).BindContext(app);
     var localizer = Localizer.Instance.For(feature.Module);
     var entity = reachableEntity as TEntity
       ?? await db.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == recordId, ct)

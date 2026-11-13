@@ -12,11 +12,11 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
 
   public override Feature Feature => Ecom.PurchaseOrder;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    base.SetQuery(query);
+    base.SetQuery();
     var me = User?.UserId;
-    query.NamedFilter("Status", L["Status"])
+    Query.NamedFilter("Status", L["Status"])
       .ShowCounts()
       .Item(
         "Open",
@@ -29,29 +29,29 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
         doc => doc.DocStatusId == EcomDocStatusData.PurchaseOrderCompletedId || doc.DocStatusId == EcomDocStatusData.PurchaseOrderCanceledId
       ).Color(UiColor.Emerald)
       .All(L["All"]);
-    query.NamedFilter("Mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
+    Query.NamedFilter("Mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
   }
 
-  protected override void SetColumns(Columns<EcomDoc> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomPurchaseOrderFormService>();
-    columns.Add(r => r.Number);
-    columns.Add(r => r.Date);
-    AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
-    columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
-    columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
-    columns.Add(r => r.DueDate);
-    columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity");
-    columns.Add(r => r.Amount).AsMoney();
-    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
+    Columns.Add(r => r.Id).AsOpenForm<EcomPurchaseOrderFormService>();
+    Columns.Add(r => r.Number);
+    Columns.Add(r => r.Date);
+    AddStatusColumn();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
+    Columns.Add(r => r.Counterparty).Label("Supplier").AsReference<OrgSupplierGridService>();
+    Columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
+    Columns.Add(r => r.DueDate);
+    Columns.Add(r => r.Manager).AsReference<AppUserGridService>();
+    Columns.Add(r => r.Qty).Label("Quantity");
+    Columns.Add(r => r.Amount).AsMoney();
+    Columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
     _ = EcomDocTexts.Of(L);
-    actions.Add("CreateSupplierInvoice")
+    Actions.Add("CreateSupplierInvoice")
       .Allow(Ecom.SupplierInvoice.Edit)
       .Label("Create supplier invoice")
       .Icon(UiIcon.Plus)
@@ -65,7 +65,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
         EcomDocTexts.Of(L),
         ct));
 
-    actions.Add("CreateOutgoingPayment")
+    Actions.Add("CreateOutgoingPayment")
       .Allow(Ecom.OutgoingPayment.Edit)
       .Label("Create outgoing payment")
       .Icon(UiIcon.Plus)
@@ -80,10 +80,10 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
         ct));
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    base.SetHooks(hooks);
-    hooks.BeforeDelete(async (c, cancellationToken) =>
+    base.SetHooks();
+    Hooks.BeforeDelete(async (c, cancellationToken) =>
     {
       long[] orders = [.. c.Records.Select(doc => doc.Id)];
       var gone = await db.EcomDocLine.Where(line => orders.Contains(line.DocId)).Select(line => line.Id).ToListAsync(cancellationToken);

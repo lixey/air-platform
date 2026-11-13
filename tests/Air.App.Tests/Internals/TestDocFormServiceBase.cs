@@ -5,13 +5,13 @@ internal abstract class TestDocFormServiceBase(AppTestDbContext db, PlatformAppS
 {
   protected abstract long DocStatusKind { get; }
 
-  protected override void SetQuery(Query query) =>
-    query.From(db.Invoices).Where(d => !d.IsHidden && d.Status == DocStatusKind);
+  protected override void SetQuery() =>
+    Query.From(db.Invoices).Where(d => !d.IsHidden && d.Status == DocStatusKind);
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(d => d.Number).Required();
-    elements.AddChild<TestDocLineGridService, TestInvoiceLine>()
+    Elements.Add(d => d.Number).Required();
+    Elements.AddChild<TestDocLineGridService, TestInvoiceLine>()
       .SumTo(d => d.AuditedTotal, l => l.Amount)
       .SumTo(d => d.PrintedCount, l => l.TierCode);
   }

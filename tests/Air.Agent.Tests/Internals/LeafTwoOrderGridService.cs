@@ -4,11 +4,11 @@ internal sealed class LeafTwoOrderGridService(TestLeafTwoDbContext db, PlatformA
   : GridService<TestLeafTwoOrder>(db, app)
 {
   public override Feature Feature => AgentTestModule.LeafTwoOrders;
-  protected override void SetNav(Nav nav) => nav.AddCreate<LeafTwoOrderFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetNav() => Nav.AddCreate<LeafTwoOrderFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<LeafTwoOrderFormService>();
-    columns.Add(x => x.ReferenceNumber);
-    columns.Add(x => x.Quantity);
+    Columns.UseForm<LeafTwoOrderFormService>();
+    Columns.Add(x => x.ReferenceNumber);
+    Columns.Add(x => x.Quantity);
   }
 }

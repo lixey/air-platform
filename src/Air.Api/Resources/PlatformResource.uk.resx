@@ -1375,6 +1375,9 @@
   <data name="InvalidJsonRequest" xml:space="preserve">
     <value>Некоректний формат JSON-запиту.</value>
   </data>
+  <data name="RecordIdRequired" xml:space="preserve">
+    <value>Ідентифікатор запису є обов'язковим.</value>
+  </data>
   <data name="UserOutOfPermissionScope" xml:space="preserve">
     <value>Ви не можете змінювати користувача з правами, яких ви не маєте.</value>
   </data>

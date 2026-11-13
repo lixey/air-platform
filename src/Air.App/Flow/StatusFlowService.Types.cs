@@ -6,8 +6,6 @@ namespace Platform.App.Flow;
 public abstract partial class StatusFlowService<TEntity>
   where TEntity : class, IEntity, new()
 {
-  public sealed class Flow : Flow<TEntity>;
-
   public sealed class Move : Move<TEntity>;
 
   public sealed class Follow

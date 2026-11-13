@@ -5,11 +5,11 @@ internal sealed class TestTagEnvelopeFormService(AppTestDbContext db, PlatformAp
 {
   public override Feature Feature => TestAppModule.Tags;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(t => t.Name).Required();
-    elements.Add(t => t.Entity);
-    elements.Add(t => t.Value);
-    elements.Add(t => t.DefaultPrice);
+    Elements.Add(t => t.Name).Required();
+    Elements.Add(t => t.Entity);
+    Elements.Add(t => t.Value);
+    Elements.Add(t => t.DefaultPrice);
   }
 }

@@ -8,32 +8,32 @@ public sealed class EcomSupplierReturnLineFormService(EcomDbContext db, EcomServ
 
   public override Feature Feature => Ecom.SupplierReturn;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Product)
+    Elements.Add(e => e.Product)
       .AsReference<OrgProductGridService>()
       .PatchOnSelect(e => e.Price, p => p.PurchasePrice)
       .Required()
       .Span(12);
-    elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(4);
-    elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's purchase price").Span(4);
-    elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(4);
-    elements.Add(e => e.Note).AsTextarea().Span(12);
+    Elements.Add(e => e.Qty).Label("Quantity").Min(0.001m).Span(4);
+    Elements.Add(e => e.Price).AsMoney().Min(0m).Placeholder("The product's purchase price").Span(4);
+    Elements.Add(e => e.Amount).AsMoney().ServerOwned().Span(4);
+    Elements.Add(e => e.Note).AsTextarea().Span(12);
   }
 
-  protected override void SetRules(Rules rules)
+  protected override void SetRules()
   {
     var texts = EcomDocTexts.Of(L);
-    rules.For(e => e.ProductId)
+    Rules.For(e => e.ProductId)
       .MustAsync((_, product, cancellationToken) =>
         EcomDocRules.ProductOfAsync(db, ParentRecord<EcomDoc>()?.CounterpartyId, product, cancellationToken))
       .WithMessage(texts.ForeignProduct);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    base.SetHooks(hooks);
-    hooks.BeforeSave(async (c, cancellationToken) =>
+    base.SetHooks();
+    Hooks.BeforeSave(async (c, cancellationToken) =>
     {
       if (await EcomDocEntering.LineAsync(db, c.Entity, cancellationToken) is { } code)
       {

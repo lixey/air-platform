@@ -1375,6 +1375,9 @@
   <data name="InvalidJsonRequest" xml:space="preserve">
     <value>Invalid JSON request payload.</value>
   </data>
+  <data name="RecordIdRequired" xml:space="preserve">
+    <value>Record ID is required.</value>
+  </data>
   <data name="UserOutOfPermissionScope" xml:space="preserve">
     <value>You cannot modify a user with permissions you do not hold.</value>
   </data>

@@ -4,10 +4,10 @@ internal sealed class ReadOnlyAgentCategoryGridService(AgentTestDbContext db, Pl
   : GridService<AgentTestCategory>(db, app)
 {
   public override Feature Feature => AgentTestModule.ReadOnlyCategories;
-  protected override void SetNav(Nav nav) => nav.AddCreate<ReadOnlyAgentCategoryFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetNav() => Nav.AddCreate<ReadOnlyAgentCategoryFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<ReadOnlyAgentCategoryFormService>();
-    columns.Add(c => c.Name);
+    Columns.UseForm<ReadOnlyAgentCategoryFormService>();
+    Columns.Add(c => c.Name);
   }
 }

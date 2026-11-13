@@ -5,22 +5,22 @@ public sealed class EcomStockMoveGridService(EcomDbContext db, EcomService? ecom
 {
   public override Feature Feature => Ecom.StockMove;
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    query.SortByDescending(r => r.Date).ThenByDescending(r => r.Id);
+    Query.SortByDescending(r => r.Date).ThenByDescending(r => r.Id);
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Date);
-    columns.Add(r => r.Doc.Number);
-    columns.Add(r => r.Doc.DocType.Name).Label("Type");
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(move => move.Organization.Color.Handle);
-    columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
-    columns.Add(r => r.Product).AsReference<OrgProductGridService>();
-    columns.Add(r => r.Product.Article);
-    columns.Add(r => r.Qty).Label("Quantity");
-    columns.Add(r => r.Reserved);
-    columns.Add(r => r.Expected);
+    Columns.Add(r => r.Date);
+    Columns.Add(r => r.Doc.Number);
+    Columns.Add(r => r.Doc.DocType.Name).Label("Type");
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(move => move.Organization.Color.Handle);
+    Columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
+    Columns.Add(r => r.Product).AsReference<OrgProductGridService>();
+    Columns.Add(r => r.Product.Article);
+    Columns.Add(r => r.Qty).Label("Quantity");
+    Columns.Add(r => r.Reserved);
+    Columns.Add(r => r.Expected);
   }
 }

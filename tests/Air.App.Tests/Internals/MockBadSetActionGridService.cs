@@ -5,10 +5,10 @@ internal sealed class MockBadSetActionGridService(AppTestDbContext db, PlatformA
 {
   public override Feature Feature => MockBadSetActionModule.ReadOnlyItems;
 
-  protected override void SetColumns(Columns columns) => columns.Add(x => x.Name);
+  protected override void SetColumns() => Columns.Add(x => x.Name);
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
-    actions.Add("MutateOnReadOnly").AllowEdit();
+    Actions.Add("MutateOnReadOnly").AllowEdit();
   }
 }

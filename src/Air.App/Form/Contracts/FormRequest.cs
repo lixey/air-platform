@@ -25,6 +25,10 @@ public class FormRequest : IScopedServiceRequest
   [JsonIgnore]
   public string? RawPayload { get; set; }
 
+  bool IScopedServiceRequest.HandlesOwnJsonDeserialization => GetType() == typeof(FormRequest);
+
+  void IScopedServiceRequest.BindJsonBody(JsonElement root) => Normalize(root, this);
+
   private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
 
   internal static (FormRequest Request, JsonElement EntityJson) Normalize(

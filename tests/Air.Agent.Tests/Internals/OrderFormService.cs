@@ -13,27 +13,27 @@ internal sealed class OrderFormService(AgentTestDbContext db, PlatformAppService
 
   public override Feature Feature => AgentTestModule.Orders;
 
-  protected override void SetQuery(Query query) =>
-    query.From(db.Orders.Include(o => o.OrderStatus));
+  protected override void SetQuery() =>
+    Query.From(db.Orders.Include(o => o.OrderStatus));
 
-  protected override async Task SetElementsAsync(Elements elements, CancellationToken ct)
+  protected override async Task SetElementsAsync(CancellationToken ct)
   {
     var statuses = await db.OrderStatuses.AsNoTracking().OrderBy(s => s.Id).ToListAsync(ct);
     Status = IsNew
       ? statuses.FirstOrDefault()
       : CurrentEntity?.OrderStatus ?? statuses.FirstOrDefault(s => s.Id == CurrentEntity?.OrderStatusId);
 
-    elements.Disable(Status is not { IsEditable: true });
-    elements.Add(o => o.Number).AsInfo();
-    elements.Add(o => o.DefaultDiscountPercent);
-    elements.Add(o => o.Note);
-    elements.AddChild<OrderLineGridService, AgentTestOrderLine>()
+    Elements.Disable(Status is not { IsEditable: true });
+    Elements.Add(o => o.Number).AsInfo();
+    Elements.Add(o => o.DefaultDiscountPercent);
+    Elements.Add(o => o.Note);
+    Elements.AddChild<OrderLineGridService, AgentTestOrderLine>()
       .Key("lines")
       .SumTo(o => o.Amount, l => l.Amount);
   }
 
-  protected override void SetHooks(Hooks hooks) =>
-    hooks.BeforeSave(async (c, ct) =>
+  protected override void SetHooks() =>
+    Hooks.BeforeSave(async (c, ct) =>
     {
       if (c.IsNew)
       {

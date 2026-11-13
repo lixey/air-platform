@@ -8,12 +8,12 @@ public abstract class EcomDocLineFormService<TDocForm>(EcomDbContext db, EcomSer
 
   protected override string Title => "Line";
 
-  protected override void SetParent(Parent parent) => parent.Bind<TDocForm>(l => l.DocId);
+  protected override void SetParent() => Parent.Bind<TDocForm>(l => l.DocId);
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterLoad((c, ct) => EcomDocLines.LoadAsync(db, ParentRecord<EcomDoc>(), c.Entity, c.IsNew, ct));
-    hooks.Compute(c =>
+    Hooks.AfterLoad((c, ct) => EcomDocLines.LoadAsync(db, ParentRecord<EcomDoc>(), c.Entity, c.IsNew, ct));
+    Hooks.Compute(c =>
       c.Entity.Amount = EcomDocTotals.LineAmount(
         c.Entity.Qty,
         c.Entity.Price,

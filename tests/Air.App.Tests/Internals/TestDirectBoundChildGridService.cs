@@ -4,6 +4,6 @@ internal sealed class TestDirectBoundChildGridService(AppTestDbContext db, Platf
   : GridService<TestInvoiceLine>(db, app)
 {
   public override Feature Feature => TestAppModule.DirectLines;
-  protected override void SetParent(Parent parent) => parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
-  protected override void SetColumns(Columns columns) => columns.Add(l => l.Title);
+  protected override void SetParent() => Parent.Bind<TestInvoiceFormService>(l => l.InvoiceId);
+  protected override void SetColumns() => Columns.Add(l => l.Title);
 }

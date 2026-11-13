@@ -30,11 +30,11 @@
 4. **Строго типізовані дерева виразів (`Expression<Func<TEntity, TProp>>`)**:
    - Усі колонки таблиць, поля форм, правила валідації, реактивні патчі (`PatchOnSelect`), підсумки дочірніх рядків (`SumTo`), фільтри довідників (`FilterBy`) та захист видалення (`PreventDeleteWhenUsedBy`) описуються **виключно через типізовані лямбда-вирази**, а не рядкові назви властивостей:
      ```csharp
-     elements.Add(e => e.Product)
+     Elements.Add(e => e.Product)
        .AsReference<ProductGridService>(p => p.Name, p => p.Code)
        .PatchOnSelect(p => p.SalePrice, e => e.Price);
 
-     hooks.PreventDeleteWhenUsedBy<EcomDocLine>(l => l.ProductId);
+     Hooks.PreventDeleteWhenUsedBy<EcomDocLine>(l => l.ProductId);
      ```
    - Це дає 100% перевірку під час компіляції, миттєву навігацію в IDE та безпечну побудову SQL-запитів через EF Core без Dynamic LINQ.
 5. **Зіставлення зі зразком (`Pattern Matching`) та `switch`-вирази**:
@@ -68,18 +68,20 @@
 Кожен сервіс фічі мешкає у власному файлі (`1 тип = 1 файл`) і дотримується незмінного порядку секцій зверху вниз:
 
 1. `public override Feature Feature => ...;` — явна прив'язка до фічі та прав RBAC.
-2. Опис структури екрана (`SetColumns` / `SetElements` / `SetStates` / `BuildLayout`) — без побічних ефектів у БД.
-   - За замовчуванням перевизначайте **синхронні** методи `SetElements(Elements)` та `SetActions(Actions)`.
-   - **Асинхронні** перевантаження `SetElementsAsync(Elements, CancellationToken)` та `SetActionsAsync(Actions, CancellationToken)` використовуйте лише тоді, коли опис полів або дій справді виконує `await`-запит до БД (наприклад, завантаження переліку ролей). Для динамічних підтверджень дії всередині синхронного `SetActions` використовуйте `.ConfirmAsync((entity, ct) => ...)`. Одночасне перевизначення синхронного й асинхронного варіанта в одному класі заборонене й блокується при старті.
-   - Для посилань на довідники передавайте навігаційну властивість з **одним** типовим параметром (`elements.Add(e => e.Brand).AsReference<OrgBrandGridService>()`), щоб платформа сама виводила тип сутності та зовнішній ключ `BrandId`.
-   - У дочірніх формах і таблицях використовуйте `var doc = RequiredParent<EcomDoc>();` замість `ParentRecord<EcomDoc>()!`, а для типових правил безпеки `AppUserSecurityRules` / `AppRoleSecurityRules` передавайте `this` без лямбда-замикань (`AppRoleSecurityRules.AddFormHooks<AppAuthRole, AppAuthGrant>(this, hooks)`).
-3. Запит та іменовані фільтри (`Query`, `SetNamedFilters`).
-4. Декларативні правила та життєвий цикл запису (`SetRules`, `SetHooks`, `BeforeSave`, `AfterSave`).
-5. Дії користувача (`SetActions`).
+2. Опис структури екрана (`SetColumns()` / `SetElements()` / `SetFlow()` / `BuildLayout()`) через властивості екземпляра сервісу (`Columns`, `Elements`, `Query`, `Nav`, `Actions`, `Hooks`, `Rules`, `Parent`, `Restrictions`, `Flow`) — без повторення типів у параметрах методу:
+   - За замовчуванням перевизначайте **синхронні методи без параметрів**: `SetColumns()`, `SetElements()`, `SetQuery()`, `SetNav()`, `SetActions()`, `SetHooks()`, `SetRules()`, `SetParent()`, `SetRestrictions()`, `SetFlow()`.
+   - **Асинхронні** перевантаження `SetColumnsAsync(CancellationToken)`, `SetElementsAsync(CancellationToken)`, `SetNavAsync(CancellationToken)` та `SetActionsAsync(CancellationToken)` використовуйте лише тоді, коли опис метаданих або дій справді виконує `await`-запит до БД (наприклад, завантаження переліку ролей). Для динамічних підтверджень дії всередині синхронного `SetActions()` використовуйте `.ConfirmAsync((entity, ct) => ...)`. Одночасне перевизначення синхронного й асинхронного варіанта в одному класі заборонене й блокується при старті (`ServiceOverrideValidator`).
+   - Метадані відкриті для розширення в спадкоємцях (`base.SetColumns()`, `Columns.Items`, `Columns.Remove(...)`, `Elements.Items`, `Elements.Remove(...)`, `Flow.Items`, а також `Nav.WithoutCreate()`, `Nav.WithoutExport()`, `Nav.WithoutSaveAndClose()`, `Nav.Customize(...)`).
+   - Для публікації власних HTTP-методів сервісу використовуйте єдиний атрибут `[Endpoint]` — усі ендпоінти сервісів працюють як `POST /api/{service}/{kebab-method}` і компілюються один раз на старті (`EndpointRegistry`).
+   - Для посилань на довідники передавайте навігаційну властивість з **одним** типовим параметром (`Elements.Add(e => e.Brand).AsReference<OrgBrandGridService>()`), щоб платформа сама виводила тип сутності та зовнішній ключ `BrandId`.
+   - У дочірніх формах і таблицях використовуйте `var doc = RequiredParent<EcomDoc>();` замість `ParentRecord<EcomDoc>()!`, а для типових правил безпеки `AppUserSecurityRules` / `AppRoleSecurityRules` передавайте `this` без лямбда-замикань (`AppRoleSecurityRules.AddFormHooks<AppAuthRole, AppAuthGrant>(this)`).
+3. Запит та іменовані фільтри (`SetQuery()`).
+4. Декларативні правила та життєвий цикл запису (`SetRules()`, `SetHooks()`, `BeforeSave`, `AfterSave`).
+5. Дії користувача (`SetActions()`).
 
 Не перевизначайте `Presentation` вручну, якщо автоматичне правило платформи (`<= 8` видимих скалярних полів → `Popover`, інакше → `Drawer`) вже дає потрібний результат.
 
-Сервіси форм і списків (`FormService`, `GridService` — як базові класи модуля, так і кінцеві сервіси фіч) є **безстановими (stateless)**: не оголошуйте на них змінних екземплярних полів (`private bool _repriced;`). Якщо потрібно передати розраховане значення між `Compute`, `BeforeSave` та `AfterSave` під час одного збереження, використовуйте словник контексту мутації `c.Items["key"]` (`FormSaveContext<TEntity>.Items`).
+Прикладні сервіси форм і списків (`*FormService`, `*GridService`) не оголошують мутабельних бізнес-полів стану (`private bool _repriced;`) — якщо потрібно передати розраховане значення між `Compute`, `BeforeSave` та `AfterSave` під час одного збереження, використовуйте словник контексту мутації `c.Items["key"]` (`FormSaveContext<TEntity>.Items`). Великі базові рушії ядра (`FormService`, `GridService`) організовані як зв'язні `partial`-файли життєвого циклу навколо стану `this` замість передачі десятка аргументів у статичні хелпери.
 
 ---
 

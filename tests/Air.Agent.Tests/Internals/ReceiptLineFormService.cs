@@ -3,16 +3,16 @@ namespace Platform.Agent.Tests.Internals;
 internal sealed class ReceiptLineFormService(AgentTestDbContext db, PlatformAppService app) : FormService<AgentTestReceiptLine>(db, app)
 {
   public override Feature Feature => AgentTestModule.Receipts;
-  protected override void SetParent(Parent parent) => parent.Bind<ReceiptFormService>(l => l.ReceiptId);
-  protected override void SetElements(Elements elements)
+  protected override void SetParent() => Parent.Bind<ReceiptFormService>(l => l.ReceiptId);
+  protected override void SetElements()
   {
-    elements.Add(l => l.Name).Required();
-    elements.Add(l => l.Amount);
+    Elements.Add(l => l.Name).Required();
+    Elements.Add(l => l.Amount);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.BeforeSave((ctx, _) =>
+    Hooks.BeforeSave((ctx, _) =>
     {
       if (ctx.Entity.Amount < 0)
       {

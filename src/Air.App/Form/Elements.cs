@@ -6,16 +6,36 @@ namespace Platform.App.Form;
 
 public class Elements
 {
-  private readonly List<FormElementDto> _elements = [];
-  private readonly List<FormTabDto> _tabs = [];
   private string? _currentTab;
 
-  private readonly List<ChildGridBuilder> _children = [];
-  private readonly List<ReportTableDto> _tables = [];
-  public IReadOnlyList<FormElementDto> List => _elements;
-  public IReadOnlyList<FormTabDto> Tabs => _tabs;
-  public IReadOnlyList<ChildGridBuilder> Children => _children;
-  public IReadOnlyList<ReportTableDto> Tables => _tables;
+  public List<FormElementDto> Items { get; } = [];
+  public List<FormTabDto> TabItems { get; } = [];
+  public List<ChildGridBuilder> ChildItems { get; } = [];
+  public List<ReportTableDto> TableItems { get; } = [];
+
+  public IReadOnlyList<FormElementDto> List => Items;
+  public IReadOnlyList<FormTabDto> Tabs => TabItems;
+  public IReadOnlyList<ChildGridBuilder> Children => ChildItems;
+  public IReadOnlyList<ReportTableDto> Tables => TableItems;
+  public int Count => Items.Count;
+  public FormElementDto this[int index] => Items[index];
+
+  public FormElementDto? Find(string path) =>
+    Items.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase));
+
+  public bool Remove(string path) =>
+    Items.RemoveAll(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)) > 0;
+
+  public int RemoveAll(Predicate<FormElementDto> match) => Items.RemoveAll(match);
+
+  public void Clear()
+  {
+    Items.Clear();
+    TabItems.Clear();
+    ChildItems.Clear();
+    TableItems.Clear();
+    _currentTab = null;
+  }
 
   public void AddReportTable(ReportTableDto table)
   {
@@ -40,14 +60,14 @@ public class Elements
       };
     }
 
-    _tables.Add(table);
+    TableItems.Add(table);
   }
 
   public void AddTab(string label, string? key = null, string? title = null)
   {
     var tabKey = key ?? label.ToLowerInvariant().Replace(' ', '-');
     _currentTab = tabKey;
-    _tabs.Add(new FormTabDto { Key = tabKey, Label = label, Title = title });
+    TabItems.Add(new FormTabDto { Key = tabKey, Label = label, Title = title });
   }
 
   public void AddTab(string label, string? key, string uiSource, string dbSource) =>
@@ -55,17 +75,17 @@ public class Elements
 
   public void AddSeparator(string? label = null)
   {
-    if (_elements.Count > 0)
+    if (Items.Count > 0)
     {
-      _elements[^1].HasSeparatorAfter = true;
-      _elements[^1].SeparatorLabel = label;
+      Items[^1].HasSeparatorAfter = true;
+      Items[^1].SeparatorLabel = label;
     }
   }
 
   public ChildGridBuilder AddChild<TChildGridService>()
   {
-    var child = new ChildGridBuilder(Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService), _currentTab);
-    _children.Add(child);
+    var child = new ChildGridBuilder(ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService), _currentTab);
+    ChildItems.Add(child);
     return child;
   }
 
@@ -73,8 +93,8 @@ public class Elements
     where TParent : class, IEntity
     where TChild : class, IEntity
   {
-    var child = new ChildGridBuilder<TParent, TChild>(Platform.Api.Modules.ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService), _currentTab);
-    _children.Add(child);
+    var child = new ChildGridBuilder<TParent, TChild>(ServicePathResolver.Resolve(typeof(TChildGridService)), typeof(TChildGridService), _currentTab);
+    ChildItems.Add(child);
     return child;
   }
 
@@ -94,19 +114,10 @@ public class Elements
   internal object? StatusFlow { get; private set; }
   internal bool StatusFlowAllowsReadOnly { get; private set; }
 
-  public sealed class StatusFlowBuilder(Elements owner)
-  {
-    public StatusFlowBuilder AllowReadOnly(bool allow = true)
-    {
-      owner.StatusFlowAllowsReadOnly = allow;
-      return this;
-    }
-  }
-
-  public StatusFlowBuilder UseStatusOf<TEntity>(Screens.IRecordStatuses<TEntity> statuses) where TEntity : class
+  public StatusFlowOptions UseStatusOf<TEntity>(IRecordStatuses<TEntity> statuses) where TEntity : class
   {
     StatusFlow = statuses;
-    return new StatusFlowBuilder(this);
+    return new StatusFlowOptions(allow => StatusFlowAllowsReadOnly = allow);
   }
 
   private static readonly ConcurrentDictionary<(Type EntityType, string ExpressionKey), Delegate> CompiledInfoSelectors = new();
@@ -144,7 +155,7 @@ public class Elements
       el.NavigationPropertyName = memberPath;
       el.ReferencePath = path;
       var navProp = PropertyAccessorCache.GetProperty(typeof(TEntity), memberPath);
-      var explicitFkName = navProp?.GetCustomAttribute<System.ComponentModel.DataAnnotations.Schema.ForeignKeyAttribute>()?.Name;
+      var explicitFkName = navProp?.GetCustomAttribute<ForeignKeyAttribute>()?.Name;
       var fkProp = PropertyAccessorCache.GetProperty(typeof(TEntity), explicitFkName ?? memberPath + "Id") ?? throw new InvalidOperationException(
           $"Navigation property '{typeof(TEntity).Name}.{memberPath}' requires a matching foreign key property '{memberPath}Id' (or [ForeignKey]) to be used in Elements.Add.");
       el.Path = ToCamelPath(fkProp.Name);
@@ -154,7 +165,7 @@ public class Elements
       el.ResolvedPropertyType = fkProp.PropertyType;
     }
 
-    _elements.Add(el);
+    Items.Add(el);
     return new FormElement<TEntity, TProp>(el);
   }
 
@@ -203,7 +214,7 @@ public class Elements
         return null;
       }
     };
-    _elements.Add(el);
+    Items.Add(el);
     return new FormElement<TEntity, TProp>(el);
   }
 
@@ -223,7 +234,7 @@ public class Elements
   {
     var candidate = basePath;
     var suffix = 2;
-    while (_elements.Any(e => string.Equals(e.Path, candidate, StringComparison.OrdinalIgnoreCase)))
+    while (Items.Any(e => string.Equals(e.Path, candidate, StringComparison.OrdinalIgnoreCase)))
     {
       candidate = $"{basePath}_{suffix++}";
     }
@@ -336,7 +347,7 @@ public class Elements
       IsServerOwned = isDotPath,
       ResolvedPropertyType = typeof(TProp)
     };
-    _elements.Add(el);
+    Items.Add(el);
     return new FormElement<object, TProp>(el);
   }
 

@@ -5,21 +5,21 @@ internal sealed class TestDocLineGridService(AppTestDbContext db, PlatformAppSer
 {
   public override Feature Feature => TestAppModule.DocLines;
 
-  protected override void SetParent(Parent parent) =>
-    parent.Bind<TestDocFormServiceBase>(l => l.InvoiceId);
+  protected override void SetParent() =>
+    Parent.Bind<TestDocFormServiceBase>(l => l.InvoiceId);
 
-  protected override void SetNav(Nav nav)
+  protected override void SetNav()
   {
-    nav.AddCreate<TestDocLineFormService>();
-    nav.AddPicker<TestTagGridService>(PickTag);
+    Nav.AddCreate<TestDocLineFormService>();
+    Nav.AddPicker<TestTagGridService>(PickTag);
   }
 
-  protected override void SetColumns(Columns columns)
+  protected override void SetColumns()
   {
-    columns.UseForm<TestDocLineFormService>();
-    columns.Add(l => l.Title).Editable();
-    columns.Add(l => l.Amount).Editable();
-    columns.Add(l => l.TierCode).Editable();
+    Columns.UseForm<TestDocLineFormService>();
+    Columns.Add(l => l.Title).Editable();
+    Columns.Add(l => l.Amount).Editable();
+    Columns.Add(l => l.TierCode).Editable();
   }
 
   [RequireAction(Right.Edit)]

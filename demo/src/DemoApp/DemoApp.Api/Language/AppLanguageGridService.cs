@@ -5,11 +5,11 @@ public sealed class AppLanguageGridService(AppDbContext db, AppService? app = nu
 {
   public override Feature Feature => App.Language;
 
-  protected override void SetColumns(Columns<AppLanguage> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<AppLanguageFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Handle);
-    columns.Add(r => r.Code);
+    Columns.Add(r => r.Id).AsOpenForm<AppLanguageFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Handle);
+    Columns.Add(r => r.Code);
   }
 }

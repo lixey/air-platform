@@ -6,10 +6,10 @@ public sealed class EcomDocTypeFormService(EcomDbContext db, EcomService? ecom =
 {
   public override Feature Feature => Ecom.DocType;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.Handle).Span(8);
-    elements.Add(e => e.Prefix).Span(4);
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.Handle).Span(8);
+    Elements.Add(e => e.Prefix).Span(4);
   }
 }

@@ -6,15 +6,15 @@ public sealed class AppRoleUserGridService(AppDbContext db, AppService? app = nu
   public override Feature Feature => App.Role;
   protected override bool IsReadOnly => true;
 
-  protected override void SetParent(Parent parent) => parent.Bind<AppRoleFormService>(e => e.AuthRoleId);
+  protected override void SetParent() => Parent.Bind<AppRoleFormService>(e => e.AuthRoleId);
 
-  protected override void SetColumns(Columns<AppAuthAssignment> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.User.Login);
-    columns.Add(r => r.User.Name);
-    columns.Add(r => r.IsActive).AsCheckbox();
+    Columns.Add(r => r.User.Login);
+    Columns.Add(r => r.User.Name);
+    Columns.Add(r => r.IsActive).AsCheckbox();
   }
 
-  protected override void SetQuery(Query query) =>
-    query.Where(assignment => db.AppUser.Any(user => user.Id == assignment.UserId));
+  protected override void SetQuery() =>
+    Query.Where(assignment => db.AppUser.Any(user => user.Id == assignment.UserId));
 }

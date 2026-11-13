@@ -51,27 +51,28 @@ public static class AppUserSecurityRules
     GetOfferedRolesAsync<TRole, TGrant>(service.DbContext, service.PlatformApp, service.L, ct);
 
   public static void AddFormHooks<TUser, TRole, TGrant, TAssignment>(
-    FormService<TUser> service,
-    FormService<TUser>.Hooks hooks)
+    FormService<TUser> service)
     where TUser : BaseAppUser, new()
     where TRole : BaseAppAuthRole
     where TGrant : BaseAppAuthGrant
     where TAssignment : BaseAppAuthAssignment, new() =>
-    AddFormHooks<TUser, TRole, TGrant, TAssignment>(hooks, service.DbContext, service.PlatformApp, () => service.User);
+    AddFormHooks<TUser, TRole, TGrant, TAssignment>(service.Hooks, service.DbContext, service.PlatformApp, () => service.User);
 
   public static void AddDeleteHooks<TUser>(
-    GridService<TUser, TUser> service,
-    GridService<TUser, TUser>.Hooks hooks)
+    GridService<TUser, TUser> service)
     where TUser : BaseAppUser, new() =>
-    AddDeleteHooks(hooks, service.DbContext, service.PlatformApp, () => service.User);
+    AddDeleteHooks(service.Hooks, service.DbContext, service.PlatformApp, () => service.User);
 
   public static void AddDeactivateAction<TUser>(
-    GridService<TUser, TUser> service,
-    GridActions<TUser> actions)
+    GridService<TUser, TUser> service)
     where TUser : BaseAppUser, new() =>
-    AddDeactivateAction(actions, service.DbContext, service.PlatformApp, () => service.User);
+    AddDeactivateAction(service.Actions, service.DbContext, service.PlatformApp, () => service.User);
 
-  public static void AddPasswordRules<TUser>(FormService<TUser>.Rules rules)
+  public static void AddPasswordRules<TUser>(FormService<TUser> service)
+    where TUser : BaseAppUser, new() =>
+    AddPasswordRules(service.Rules);
+
+  public static void AddPasswordRules<TUser>(FormRules<TUser> rules)
     where TUser : BaseAppUser, new()
   {
     var l = Localizer.Instance;
@@ -99,7 +100,7 @@ public static class AppUserSecurityRules
   }
 
   public static void AddFormHooks<TUser, TRole, TGrant, TAssignment>(
-    FormService<TUser>.Hooks hooks,
+    FormHooks<TUser> hooks,
     PlatformDbContext db,
     PlatformAppService? app,
     Func<IUserContext?> userProvider)
@@ -207,7 +208,7 @@ public static class AppUserSecurityRules
   }
 
   public static void AddDeleteHooks<TUser>(
-    GridService<TUser, TUser>.Hooks hooks,
+    GridHooks<TUser> hooks,
     PlatformDbContext db,
     PlatformAppService? app,
     Func<IUserContext?> userProvider)

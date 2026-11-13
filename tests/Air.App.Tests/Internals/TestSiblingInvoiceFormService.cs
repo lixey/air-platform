@@ -5,6 +5,6 @@ internal sealed class TestSiblingInvoiceFormService(AppTestDbContext db, Platfor
 {
   public override Feature Feature => TestAppModule.SiblingInvoices;
 
-  protected override void SetElements(Elements elements) =>
-    elements.Add(i => i.Number).Required();
+  protected override void SetElements() =>
+    Elements.Add(i => i.Number).Required();
 }

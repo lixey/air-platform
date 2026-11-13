@@ -5,12 +5,12 @@ public sealed class OrgPaymentTermGridService(OrgDbContext db, OrgService? org =
 {
   public override Feature Feature => Org.PaymentTerm;
 
-  protected override void SetColumns(Columns<OrgPaymentTerm> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<OrgPaymentTermFormService>();
-    columns.Add(r => r.Name);
-    columns.Add(r => r.Handle);
+    Columns.Add(r => r.Id).AsOpenForm<OrgPaymentTermFormService>();
+    Columns.Add(r => r.Name);
+    Columns.Add(r => r.Handle);
   }
 
-  protected override void SetQuery(Query query) => query.RecordLabel(e => e.Name);
+  protected override void SetQuery() => Query.RecordLabel(e => e.Name);
 }

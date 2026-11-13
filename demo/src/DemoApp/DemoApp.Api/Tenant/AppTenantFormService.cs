@@ -5,13 +5,13 @@ public sealed class AppTenantFormService(AppDbContext db, AppService? app = null
 {
   public override Feature Feature => App.Tenant;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Name).Focus();
-    elements.Add(e => e.Handle);
-    elements.Add(e => e.ParentId).AsReference<AppTenantGridService>();
-    elements.Add(e => e.TimeZone).AsTimeZone();
-    elements.Add(e => e.IsActive).AsCheckbox();
+    Elements.Add(e => e.Name).Focus();
+    Elements.Add(e => e.Handle);
+    Elements.Add(e => e.ParentId).AsReference<AppTenantGridService>();
+    Elements.Add(e => e.TimeZone).AsTimeZone();
+    Elements.Add(e => e.IsActive).AsCheckbox();
   }
 }
 

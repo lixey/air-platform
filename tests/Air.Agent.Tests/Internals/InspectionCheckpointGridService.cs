@@ -4,12 +4,12 @@ internal sealed class InspectionCheckpointGridService(AgentTestDbContext db, Pla
   : GridService<AgentTestCheckpoint>(db, app)
 {
   public override Feature Feature => AgentTestModule.Inspections;
-  protected override void SetParent(Parent parent) => parent.Bind<InspectionFormService>(c => c.InspectionId);
-  protected override void SetNav(Nav nav) => nav.AddCreate<InspectionCheckpointFormService>();
-  protected override void SetColumns(Columns columns)
+  protected override void SetParent() => Parent.Bind<InspectionFormService>(c => c.InspectionId);
+  protected override void SetNav() => Nav.AddCreate<InspectionCheckpointFormService>();
+  protected override void SetColumns()
   {
-    columns.UseForm<InspectionCheckpointFormService>();
-    columns.Add(c => c.Code);
-    columns.Add(c => c.DueDate);
+    Columns.UseForm<InspectionCheckpointFormService>();
+    Columns.Add(c => c.Code);
+    Columns.Add(c => c.DueDate);
   }
 }

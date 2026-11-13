@@ -7,26 +7,26 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
 
   public override Feature Feature => Ecom.CustomerOrder;
 
-  protected override void SetColumns(Columns<EcomDoc> columns)
+  protected override void SetColumns()
   {
-    columns.Add(r => r.Id).AsOpenForm<EcomCustomerOrderFormService>();
-    columns.Add(r => r.Number);
-    columns.Add(r => r.Date);
-    AddStatusColumn(columns);
-    columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
-    columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
-    columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
-    columns.Add(r => r.Manager).AsReference<AppUserGridService>();
-    columns.Add(r => r.Qty).Label("Quantity");
-    columns.Add(r => r.Amount).AsMoney();
-    columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
+    Columns.Add(r => r.Id).AsOpenForm<EcomCustomerOrderFormService>();
+    Columns.Add(r => r.Number);
+    Columns.Add(r => r.Date);
+    AddStatusColumn();
+    Columns.Add(r => r.Organization).AsReference<OrgOrganizationGridService>().Color(doc => doc.Organization.Color.Handle);
+    Columns.Add(r => r.Customer).AsReference<OrgCustomerGridService>();
+    Columns.Add(r => r.Warehouse).AsReference<OrgWarehouseGridService>();
+    Columns.Add(r => r.Manager).AsReference<AppUserGridService>();
+    Columns.Add(r => r.Qty).Label("Quantity");
+    Columns.Add(r => r.Amount).AsMoney();
+    Columns.Add(r => r.PaidAmount).Label("Paid").AsMoney();
   }
 
-  protected override void SetQuery(Query query)
+  protected override void SetQuery()
   {
-    base.SetQuery(query);
+    base.SetQuery();
     var me = User?.UserId;
-    query.NamedFilter("Status", L["Status"])
+    Query.NamedFilter("Status", L["Status"])
       .Inline()
       .ShowCounts()
       .Item(
@@ -49,14 +49,14 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
         doc => doc.DocStatusId == EcomDocStatusData.CustomerOrderCanceledId
       ).Color(UiColor.Rose)
       .All(L["All"]);
-    query.NamedFilter("Mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
-    query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
+    Query.NamedFilter("Mine", L["Mine"], doc => doc.ManagerId == me).ShowCount().Remember();
+    Query.SearchBy(r => r.Id, r => r.Number, r => r.Customer);
   }
 
-  protected override void SetActions(Actions actions)
+  protected override void SetActions()
   {
     _ = EcomDocTexts.Of(L);
-    actions.Add("CreateSalesInvoice")
+    Actions.Add("CreateSalesInvoice")
       .Allow(Ecom.SalesInvoice.Edit)
       .Label("Create sales invoice")
       .Icon(UiIcon.Plus)
@@ -70,7 +70,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
         EcomDocTexts.Of(L),
         ct));
 
-    actions.Add("CreateIncomingPayment")
+    Actions.Add("CreateIncomingPayment")
       .Allow(Ecom.IncomingPayment.Edit)
       .Label("Create incoming payment")
       .Icon(UiIcon.Plus)

@@ -5,20 +5,20 @@ public sealed class AppAgentMemoryFormService(AppDbContext db, AppService? app =
 {
   public override Feature Feature => App.AgentMemory;
 
-  protected override void SetElements(Elements elements)
+  protected override void SetElements()
   {
-    elements.Add(e => e.Title).Focus().Span(6);
-    elements.Add(e => e.Kind).Span(3);
-    elements.Add(e => e.Module).Span(3);
-    elements.Add(e => e.Priority).Span(4);
-    elements.Add(e => e.IsPinned).Label("Pinned").AsCheckbox().Span(4);
-    elements.Add(e => e.IsActive).AsCheckbox().Span(4);
-    elements.Add(e => e.Content).AsTextarea().Span(12);
+    Elements.Add(e => e.Title).Focus().Span(6);
+    Elements.Add(e => e.Kind).Span(3);
+    Elements.Add(e => e.Module).Span(3);
+    Elements.Add(e => e.Priority).Span(4);
+    Elements.Add(e => e.IsPinned).Label("Pinned").AsCheckbox().Span(4);
+    Elements.Add(e => e.IsActive).AsCheckbox().Span(4);
+    Elements.Add(e => e.Content).AsTextarea().Span(12);
   }
 
-  protected override void SetHooks(Hooks hooks)
+  protected override void SetHooks()
   {
-    hooks.AfterLoad((c, _) =>
+    Hooks.AfterLoad((c, _) =>
     {
       if (c.IsNew)
       {
@@ -30,7 +30,7 @@ public sealed class AppAgentMemoryFormService(AppDbContext db, AppService? app =
       return Task.CompletedTask;
     });
 
-    hooks.BeforeSave((c, _) =>
+    Hooks.BeforeSave((c, _) =>
     {
       CodeRows.EnsurePascalCaseHandle(c.Entity.Kind, nameof(AppAgentMemory));
       c.Entity.UpdatedAt = Time.UtcNow;
