@@ -17,7 +17,6 @@ public static class AgentProposalBuilder
     var store = services.GetRequiredService<AgentStore>();
     var options = services.GetService<AgentOptions>() ?? new AgentOptions();
     var bridge = services.GetService<McpExecutionBridge>();
-    var L = Localizer.Instance;
     var owner = AgentStore.ResolveOwner(services);
 
     var argSessionId = TryGetString(args, "sessionId");
@@ -27,6 +26,17 @@ public static class AgentProposalBuilder
         argSessionId
         ?? bridge?.GetContext(argSessionId, owner.TenantId, owner.UserId)?.SessionId
         ?? "default");
+
+    var ctx = new ProposalBuildContext(
+      sessionId,
+      turnId,
+      owner,
+      store,
+      options,
+      services,
+      defaultScope.Db,
+      defaultScope.App,
+      Localizer.Instance);
 
     var hasNestedValues = args.TryGetProperty("values", out var vProp) && vProp.ValueKind == JsonValueKind.Object;
     var valuesSource = hasNestedValues ? vProp : args;
@@ -45,22 +55,11 @@ public static class AgentProposalBuilder
       }
 
       return await AgentProposalFlowBuilder.StageMoveStatusProposalAsync(
+        ctx,
         args,
-        valuesSource,
         requestedTransition.Trim(),
         recordId.Value,
         requestedService,
-        sessionId,
-        stepKey,
-        turnId,
-        owner,
-        store,
-        options,
-        (rk, refSvc) => AgentDuplicateDetector.FindReferencedProposal(store, sessionId, owner, turnId, rk, refSvc),
-        services,
-        defaultScope.Db,
-        defaultScope.App,
-        L,
         ct);
     }
 
@@ -71,7 +70,7 @@ public static class AgentProposalBuilder
     }
 
     var isEdit = recordId is > 0;
-    var targetDesc = ResolveInitialDescriptor(descriptors, requestedService, services, defaultScope.Db, defaultScope.App);
+    var targetDesc = ResolveInitialDescriptor(descriptors, requestedService, ctx);
     if (isEdit)
     {
       targetDesc = await AgentFeatureRegistry.ResolveEditFormDescriptorAsync(
@@ -86,6 +85,7 @@ public static class AgentProposalBuilder
     }
 
     await using var formScope = AgentModuleScope.OpenForService(services, targetDesc.FormServiceType, defaultScope.Db, defaultScope.App);
+    var formCtx = ctx.WithScope(formScope.Db, formScope.App);
     if (ModuleCatalog.Instance.CreateServiceInstance(targetDesc.FormServiceType, formScope.Db, formScope.App) is not IFormService formInst ||
         !formInst.Feature.AllowsAgentWrite ||
         !AgentFeatureRegistry.CanEditFeature(formInst.Feature, formScope.App))
@@ -95,14 +95,11 @@ public static class AgentProposalBuilder
 
     formInst.SetRequest(new FormRequest { Id = isEdit ? recordId : null });
     var initialDraft = await formInst.PrepareDraftAsync(isEdit ? recordId : null, ct: ct);
-    var originalFormValues = initialDraft.OriginalValues;
-    var formValues = initialDraft.Values;
-    var recordVer = initialDraft.Ver;
 
     var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
     if (formInst.IsFormReadOnly)
     {
-      throw new InvalidOperationException(L["FormReadOnly"]);
+      throw new InvalidOperationException(formCtx.Localizer["FormReadOnly"]);
     }
 
     var editableElements = elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
@@ -114,7 +111,7 @@ public static class AgentProposalBuilder
       .Cast<string>()
       .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var childRefSvc in AgentProposalChildBuilder.CollectChildReferenceServices(editableChildren, isEdit, recordId, targetDesc.ServicePath, services, formScope.Db, formScope.App))
+    foreach (var childRefSvc in AgentProposalChildBuilder.CollectChildReferenceServices(formCtx, editableChildren, isEdit, recordId, targetDesc.ServicePath))
     {
       refServices.Add(childRefSvc);
     }
@@ -122,63 +119,69 @@ public static class AgentProposalBuilder
     var (dictionaries, _) = await AgentContextQueryService.LoadSmartDictionariesAsync(
       refServices, options.MaxFullDictionarySize, [], services, formScope.Db, formScope.App, ct);
 
-    await AgentProposalFieldBinder.EnsureExistingReferenceValuesLoadedAsync(editableElements, formValues, dictionaries, formScope.Db, formScope.App, ct);
+    var draft = new ProposalDraftState
+    {
+      Args = args,
+      ValuesSource = valuesSource,
+      HasNestedValues = hasNestedValues,
+      IsEdit = isEdit,
+      RecordId = recordId,
+      Target = targetDesc,
+      MultiSelectMode = TryGetString(args, "multiSelectMode") ?? TryGetString(valuesSource, "multiSelectMode"),
+      FormValues = initialDraft.Values,
+      Dictionaries = dictionaries
+    };
 
-    var multiSelectMode = TryGetString(args, "multiSelectMode") ?? TryGetString(valuesSource, "multiSelectMode");
-    var newReferences = new List<PendingNewReference>();
-    var explicitlyProvided = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var linkedSelectPatches = new List<(FormElementDto Element, AgentProposalDto TargetProposal)>();
+    await AgentProposalFieldBinder.EnsureExistingReferenceValuesLoadedAsync(formCtx, draft, editableElements, ct);
+    await AgentProposalFieldBinder.ParseParentFieldsAsync(formCtx, draft, editableElements, descriptors, ct);
 
-    await AgentProposalFieldBinder.ParseParentFieldsAsync(
-      args, valuesSource, hasNestedValues, isEdit, multiSelectMode, editableElements, descriptors,
-      formValues, explicitlyProvided, newReferences, linkedSelectPatches, dictionaries,
-      (rk, refSvc) => AgentDuplicateDetector.FindReferencedProposal(store, sessionId, owner, turnId, rk, refSvc),
-      services, formScope.Db, formScope.App, L, ct);
+    var pendingRefPaths = draft.NewReferences.Where(nr => nr.LineIndex == null).Select(nr => nr.FieldPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    await AgentProposalFieldBinder.ApplyLinkedSelectPatchesAsync(formCtx, draft, editableElements, pendingRefPaths, ct);
 
-    var pendingRefPaths = newReferences.Where(nr => nr.LineIndex == null).Select(nr => nr.FieldPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-    await AgentProposalFieldBinder.ApplyLinkedSelectPatchesAsync(
-      linkedSelectPatches, editableElements, formValues, explicitlyProvided, pendingRefPaths, dictionaries, formScope.Db, formScope.App, ct);
-
-    var draftOverrides = explicitlyProvided
+    var draftOverrides = draft.ExplicitlyProvided
       .Where(k => !pendingRefPaths.Contains(k))
-      .ToDictionary(k => k, k => formValues.GetValueOrDefault(k), StringComparer.OrdinalIgnoreCase);
+      .ToDictionary(k => k, k => draft.FormValues.GetValueOrDefault(k), StringComparer.OrdinalIgnoreCase);
     var preparedDraft = await formInst.PrepareDraftAsync(isEdit ? recordId : null, draftOverrides, pendingRefPaths, ct: ct);
 
     foreach (var (k, v) in preparedDraft.Values)
     {
-      if (!explicitlyProvided.Contains(k) && !pendingRefPaths.Contains(k) && v != null)
+      if (!draft.ExplicitlyProvided.Contains(k) && !pendingRefPaths.Contains(k) && v != null)
       {
-        formValues[k] = v;
+        draft.FormValues[k] = v;
         var patchedEl = editableElements.FirstOrDefault(e => string.Equals(e.Path, k, StringComparison.OrdinalIgnoreCase));
         if (patchedEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } patchedRefSvc } &&
             TryConvertToLong(v, out var patchedId) && patchedId > 0)
         {
-          await AgentContextQueryService.EnsureReferenceIdLoadedAsync(patchedRefSvc, patchedId, dictionaries, formScope.Db, formScope.App, ct);
+          await AgentContextQueryService.EnsureReferenceIdLoadedAsync(patchedRefSvc, patchedId, draft.Dictionaries, formScope.Db, formScope.App, ct);
         }
       }
     }
 
     var (childDisplayGroups, stagedChildGroups) = await AgentProposalChildBuilder.BuildChildGroupsAsync(
-      args, valuesSource, children, editableChildren, formInst.Feature, isEdit, recordId, targetDesc,
-      formValues, explicitlyProvided, newReferences, dictionaries,
-      (rk, refSvc) => AgentDuplicateDetector.FindReferencedProposal(store, sessionId, owner, turnId, rk, refSvc),
-      services, formScope.Db, formScope.App, L, ct);
+      formCtx, draft, children, editableChildren, ct);
 
-    var orderedNewRefs = await StagePrerequisiteReferencesAsync(
-      newReferences, editableElements, formValues, explicitlyProvided, isEdit, store, sessionId, owner, turnId, services, formScope.Db, formScope.App, ct);
-
-    var dependsOnIds = CollectDependsOnIds(args, hasNestedValues ? vProp : default, orderedNewRefs, store, sessionId, owner, turnId, L);
-    var attachmentIds = CollectAttachmentIds(args, valuesSource, children, fallbackAttachmentIds);
+    var orderedNewRefs = await StagePrerequisiteReferencesAsync(formCtx, draft, editableElements, ct);
+    var dependsOnIds = CollectDependsOnIds(formCtx, draft, orderedNewRefs);
+    var attachmentIds = CollectAttachmentIds(draft, children, fallbackAttachmentIds);
 
     var displayFields = AgentProposalDisplayBuilder.BuildDisplayFields(
-      editableElements, originalFormValues, formValues, orderedNewRefs, explicitlyProvided, dictionaries, isEdit, L);
+      editableElements,
+      initialDraft.OriginalValues,
+      draft.FormValues,
+      orderedNewRefs,
+      draft.ExplicitlyProvided,
+      draft.Dictionaries,
+      isEdit,
+      formCtx.Localizer);
 
-    var baseTitle = AgentProposalDisplayBuilder.BuildProposalTitle(targetDesc, formValues, orderedNewRefs, editableElements);
+    var baseTitle = AgentProposalDisplayBuilder.BuildProposalTitle(targetDesc, draft.FormValues, orderedNewRefs, editableElements);
     var title = isEdit ? $"#{recordId!.Value} · {baseTitle}" : baseTitle;
-    var subtitle = AgentProposalDisplayBuilder.BuildProposalSubtitle(formValues, orderedNewRefs, editableElements, dictionaries);
+    var subtitle = AgentProposalDisplayBuilder.BuildProposalSubtitle(draft.FormValues, orderedNewRefs, editableElements, draft.Dictionaries);
     var operation = isEdit ? AgentProposalOperation.Update : AgentProposalOperation.Create;
 
-    if (AgentDuplicateDetector.FindExistingDuplicateProposal(store, sessionId, owner, turnId, stepKey, recordId, operation, targetDesc.ServicePath, title, subtitle, attachmentIds, childDisplayGroups, displayFields, WebJson) is { } existingDup)
+    if (AgentDuplicateDetector.FindExistingDuplicateProposal(
+          store, sessionId, owner, turnId, stepKey, recordId, operation, targetDesc.ServicePath,
+          title, subtitle, attachmentIds, childDisplayGroups, displayFields, WebJson) is { } existingDup)
     {
       return existingDup;
     }
@@ -186,9 +189,18 @@ public static class AgentProposalBuilder
     var (dupWarning, dupRecordId, dupFormService) = isEdit
       ? (null, (long?)null, null)
       : await AgentDuplicateDetector.DetectFileDuplicateAsync(
-        formInst, targetDesc, descriptors,
+        formInst,
+        targetDesc,
+        descriptors,
         children.FirstOrDefault(c => c.IsFiles && c.ServiceType != null)?.ServiceType,
-        attachmentIds, store, owner, services, formScope.Db, formScope.App, L, ct);
+        attachmentIds,
+        store,
+        owner,
+        services,
+        formScope.Db,
+        formScope.App,
+        formCtx.Localizer,
+        ct);
 
     var payloadElement = JsonSerializer.SerializeToElement(
       new StagedProposalPayload
@@ -196,10 +208,10 @@ public static class AgentProposalBuilder
         Operation = operation,
         Service = targetDesc.ServicePath,
         RecordId = recordId,
-        Ver = recordVer,
+        Ver = initialDraft.Ver,
         StepKey = stepKey,
-        Values = formValues,
-        ExplicitFields = [.. explicitlyProvided],
+        Values = draft.FormValues,
+        ExplicitFields = [.. draft.ExplicitlyProvided],
         DependsOnProposalIds = dependsOnIds,
         NewReferences = orderedNewRefs,
         Children = stagedChildGroups
@@ -217,7 +229,7 @@ public static class AgentProposalBuilder
       DependsOn = dependsOnIds.Count > 0 ? dependsOnIds : null,
       Title = title,
       Subtitle = subtitle,
-      Badge = isEdit ? L["AgentEditBadge"] : targetDesc.Label,
+      Badge = isEdit ? formCtx.Localizer["AgentEditBadge"] : targetDesc.Label,
       BadgeColor = isEdit ? UiColor.Amber : (targetDesc.Color ?? UiColor.Blue),
       Fields = displayFields,
       Children = childDisplayGroups,
@@ -236,21 +248,12 @@ public static class AgentProposalBuilder
   }
 
   private static async Task<List<PendingNewReference>> StagePrerequisiteReferencesAsync(
-    List<PendingNewReference> newReferences,
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     IReadOnlyList<FormElementDto> editableElements,
-    Dictionary<string, object?> formValues,
-    HashSet<string> explicitlyProvided,
-    bool isEdit,
-    AgentStore store,
-    string sessionId,
-    AgentOwnerScope owner,
-    string? turnId,
-    IServiceProvider services,
-    PlatformDbContext db,
-    PlatformAppService app,
     CancellationToken ct)
   {
-    var ordered = newReferences
+    var ordered = draft.NewReferences
       .OrderBy(nr => nr.LineIndex.HasValue ? 1 : 0)
       .ThenBy(nr => nr.LineIndex ?? editableElements.FirstOrDefault(e => string.Equals(e.Path, nr.FieldPath, StringComparison.OrdinalIgnoreCase))?.SelectPatches?.Count ?? 0)
       .ToList();
@@ -268,12 +271,12 @@ public static class AgentProposalBuilder
         foreach (var patch in patches)
         {
           var sourceIdKey = $"{patch.SourceColumn}Id";
-          if (formValues.TryGetValue(patch.TargetField, out var targetVal) && TryConvertToLong(targetVal, out var targetId) && targetId > 0)
+          if (draft.FormValues.TryGetValue(patch.TargetField, out var targetVal) && TryConvertToLong(targetVal, out var targetId) && targetId > 0)
           {
             pendingRef.ExtraValues.TryAdd(sourceIdKey, targetId);
             pendingRef.ExtraValues.TryAdd(patch.SourceColumn, targetId);
           }
-          else if (newReferences.FirstOrDefault(nr => nr.LineIndex == null && string.Equals(nr.FieldPath, patch.TargetField, StringComparison.OrdinalIgnoreCase)) is { } tpr)
+          else if (draft.NewReferences.FirstOrDefault(nr => nr.LineIndex == null && string.Equals(nr.FieldPath, patch.TargetField, StringComparison.OrdinalIgnoreCase)) is { } tpr)
           {
             pendingRef.ExtraValues.TryAdd(sourceIdKey, tpr.Name);
             pendingRef.ExtraValues.TryAdd(patch.SourceColumn, tpr.Name);
@@ -285,17 +288,17 @@ public static class AgentProposalBuilder
       {
         foreach (var rule in draftRules)
         {
-          if ((!isEdit || explicitlyProvided.Contains(rule.DraftField)) &&
-              formValues.TryGetValue(rule.DraftField, out var draftVal) && draftVal != null)
+          if ((!draft.IsEdit || draft.ExplicitlyProvided.Contains(rule.DraftField)) &&
+              draft.FormValues.TryGetValue(rule.DraftField, out var draftVal) && draftVal != null)
           {
             pendingRef.ExtraValues.TryAdd(rule.SourceField, draftVal);
           }
         }
       }
 
-      var existingPrereq = store.GetSessionProposals(sessionId, owner).FirstOrDefault(p =>
+      var existingPrereq = ctx.Store.GetSessionProposals(ctx.SessionId, ctx.Owner).FirstOrDefault(p =>
         p.Status == "pending" &&
-        (turnId == null || string.Equals(p.TurnId, turnId, StringComparison.OrdinalIgnoreCase)) &&
+        (ctx.TurnId == null || string.Equals(p.TurnId, ctx.TurnId, StringComparison.OrdinalIgnoreCase)) &&
         string.Equals(p.Service, pendingRef.FormService, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(AgentStepGraphHelper.GetProposalShortLabel(p), pendingRef.Name, StringComparison.OrdinalIgnoreCase));
 
@@ -311,7 +314,7 @@ public static class AgentProposalBuilder
       var refFormType = ModuleCatalog.Instance.FindServiceType(pendingRef.FormService);
       if (refFormType != null)
       {
-        await using var refScope = AgentModuleScope.OpenForService(services, refFormType, db, app);
+        await using var refScope = AgentModuleScope.OpenForService(ctx.Services, refFormType, ctx.Db, ctx.App);
         if (ModuleCatalog.Instance.CreateServiceInstance(refFormType, refScope.Db, refScope.App) is IFormService refFormInst)
         {
           var (refEls, _) = await refFormInst.GetElementsMetadataAsync(ct);
@@ -320,10 +323,10 @@ public static class AgentProposalBuilder
       }
 
       var prereqValues = new Dictionary<string, object?>(pendingRef.ExtraValues, StringComparer.OrdinalIgnoreCase) { [primaryTextKey] = pendingRef.Name };
-      var prereqArgs = JsonSerializer.SerializeToElement(new { sessionId, service = pendingRef.FormService, values = prereqValues }, WebJson);
+      var prereqArgs = JsonSerializer.SerializeToElement(new { sessionId = ctx.SessionId, service = pendingRef.FormService, values = prereqValues }, WebJson);
       try
       {
-        var stagedPrereq = await StageProposalAsync(prereqArgs, services, ct, turnId: turnId);
+        var stagedPrereq = await StageProposalAsync(prereqArgs, ctx.Services, ct, turnId: ctx.TurnId);
         pendingRef.ProposalId = stagedPrereq.Id;
         pendingRef.StepNumber = stagedPrereq.StepNumber;
       }
@@ -334,14 +337,9 @@ public static class AgentProposalBuilder
   }
 
   private static List<string> CollectDependsOnIds(
-    JsonElement args,
-    JsonElement vProp,
-    IReadOnlyList<PendingNewReference> orderedNewRefs,
-    AgentStore store,
-    string sessionId,
-    AgentOwnerScope owner,
-    string? turnId,
-    Localizer L)
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
+    IReadOnlyList<PendingNewReference> orderedNewRefs)
   {
     var dependsOnIds = orderedNewRefs
       .Select(nr => nr.ProposalId)
@@ -350,16 +348,14 @@ public static class AgentProposalBuilder
       .Distinct(StringComparer.OrdinalIgnoreCase)
       .ToList();
 
-    if ((TryGetPropertyIgnoreCase(args, "dependsOn", out var depProp) ||
-         vProp.ValueKind == JsonValueKind.Object && TryGetPropertyIgnoreCase(vProp, "dependsOn", out depProp)) &&
-        depProp.ValueKind == JsonValueKind.Array)
+    if (draft.TryReadEnvelopeProperty("dependsOn", out var depProp) && depProp.ValueKind == JsonValueKind.Array)
     {
       foreach (var item in depProp.EnumerateArray())
       {
         if (item.ValueKind == JsonValueKind.String && AgentStepGraphHelper.NormalizeStepKey(item.GetString()) is { } depStepKey)
         {
-          var depTarget = AgentDuplicateDetector.FindReferencedProposal(store, sessionId, owner, turnId, depStepKey, null)
-            ?? throw new InvalidOperationException(L["MutationRefused"]);
+          var depTarget = ctx.FindReferencedProposal(depStepKey)
+            ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
           if (!dependsOnIds.Contains(depTarget.Id, StringComparer.OrdinalIgnoreCase))
           {
             dependsOnIds.Add(depTarget.Id);
@@ -372,8 +368,7 @@ public static class AgentProposalBuilder
   }
 
   private static List<string> CollectAttachmentIds(
-    JsonElement args,
-    JsonElement valuesSource,
+    ProposalDraftState draft,
     IReadOnlyList<ChildGridBuilder> children,
     IReadOnlyList<string>? fallbackAttachmentIds)
   {
@@ -383,9 +378,7 @@ public static class AgentProposalBuilder
       return attachmentIds;
     }
 
-    if ((TryGetPropertyIgnoreCase(args, "attachmentIds", out var attProp) ||
-         TryGetPropertyIgnoreCase(valuesSource, "attachmentIds", out attProp)) &&
-        attProp.ValueKind == JsonValueKind.Array)
+    if (draft.TryReadEnvelopeProperty("attachmentIds", out var attProp) && attProp.ValueKind == JsonValueKind.Array)
     {
       foreach (var item in attProp.EnumerateArray())
       {
@@ -407,13 +400,11 @@ public static class AgentProposalBuilder
   private static GridCreateDescriptor ResolveInitialDescriptor(
     IReadOnlyList<GridCreateDescriptor> descriptors,
     string? requestedService,
-    IServiceProvider services,
-    PlatformDbContext db,
-    PlatformAppService app)
+    ProposalBuildContext ctx)
   {
     if (!string.IsNullOrWhiteSpace(requestedService))
     {
-      return AgentFeatureRegistry.ResolveFormDescriptor(descriptors, requestedService, services, db, app)
+      return AgentFeatureRegistry.ResolveFormDescriptor(descriptors, requestedService, ctx.Services, ctx.Db, ctx.App)
         ?? throw new InvalidOperationException($"Form service '{requestedService}' is not available or not enabled for AI mutations.");
     }
 

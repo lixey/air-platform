@@ -6,31 +6,23 @@ namespace Platform.Agent.Internals;
 internal static class AgentProposalFlowBuilder
 {
   public static async Task<AgentProposalDto> StageMoveStatusProposalAsync(
+    ProposalBuildContext ctx,
     JsonElement args,
-    JsonElement valuesSource,
     string requestedTransition,
     long recordId,
     string? requestedService,
-    string sessionId,
-    string? stepKey,
-    string? turnId,
-    AgentOwnerScope owner,
-    AgentStore store,
-    AgentOptions options,
-    Func<string, string?, AgentProposalDto?> findReferencedProposal,
-    IServiceProvider rootServices,
-    PlatformDbContext fallbackDb,
-    PlatformAppService fallbackApp,
-    Localizer L,
     CancellationToken ct)
   {
+    var valuesSource = args.TryGetProperty("values", out var vProp) && vProp.ValueKind == JsonValueKind.Object ? vProp : args;
+    var stepKey = AgentStepGraphHelper.TryExtractStepKey(args);
+
     var (feature, formType, gridType) = ResolveMoveTargetFeature(requestedService);
     if (feature == null || !feature.AllowsAgentWrite || formType == null && gridType == null)
     {
       throw new InvalidOperationException($"Status flow on '{requestedService}' is not available or not enabled for AI mutations.");
     }
 
-    var (_, transitions) = await AgentFlowHelper.DiscoverFeatureFlowAsync(feature, rootServices, fallbackDb, fallbackApp, ct);
+    var (_, transitions) = await AgentFlowHelper.DiscoverFeatureFlowAsync(feature, ctx.Services, ctx.Db, ctx.App, ct);
     if (transitions.Count == 0)
     {
       throw new InvalidOperationException($"No permitted status transitions are available on '{requestedService}'.");
@@ -40,7 +32,7 @@ internal static class AgentProposalFlowBuilder
       ?? transitions.FirstOrDefault(t => string.Equals(t.Label, requestedTransition, StringComparison.OrdinalIgnoreCase))
       ?? throw new InvalidOperationException($"Transition '{requestedTransition}' is not available or permitted.");
 
-    await using var scope = AgentModuleScope.OpenForService(rootServices, formType ?? gridType ?? matched.FlowServiceType, fallbackDb, fallbackApp);
+    await using var scope = AgentModuleScope.OpenForService(ctx.Services, formType ?? gridType ?? matched.FlowServiceType, ctx.Db, ctx.App);
 
     var (reachableEntity, rowObj) = await AgentFlowHelper.EnsureRecordReachableAsync(
       feature,
@@ -80,7 +72,7 @@ internal static class AgentProposalFlowBuilder
 
     var (dictionaries, _) = await AgentContextQueryService.LoadSmartDictionariesAsync(
       refServices,
-      options.MaxFullDictionarySize,
+      ctx.Options.MaxFullDictionarySize,
       [],
       scope.Db,
       scope.App,
@@ -100,8 +92,8 @@ internal static class AgentProposalFlowBuilder
       {
         if (AgentStepGraphHelper.TryExtractRefKey(rawProp, out var refKey))
         {
-          var refTarget = findReferencedProposal(refKey, select.ReferenceService)
-            ?? throw new InvalidOperationException(L["MutationRefused"]);
+          var refTarget = ctx.FindReferencedProposal(refKey, select.ReferenceService)
+            ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
           askValues[el.Path] = refTarget.RecordId is > 0 ? refTarget.RecordId.Value : null;
           newReferences.Add(new PendingNewReference
           {
@@ -144,7 +136,7 @@ internal static class AgentProposalFlowBuilder
       if (askFailures.Count > 0)
       {
         var firstErr = askFailures[0];
-        throw new InvalidOperationException(firstErr.Detail ?? firstErr.Title ?? L["MutationRefused"]);
+        throw new InvalidOperationException(firstErr.Detail ?? firstErr.Title ?? ctx.Localizer["MutationRefused"]);
       }
     }
 
@@ -162,7 +154,7 @@ internal static class AgentProposalFlowBuilder
       {
         Label = statusLabel,
         Value = $"{currentStatusName} → {matched.ToStatusName}",
-        Badge = L["AgentChangedBadge"],
+        Badge = ctx.Localizer["AgentChangedBadge"],
         Color = matched.ToStatusColor ?? UiColor.Blue
       }
     };
@@ -175,7 +167,7 @@ internal static class AgentProposalFlowBuilder
       explicitAskFields,
       dictionaries,
       isEdit: false,
-      L);
+      ctx.Localizer);
     fields.AddRange(askDisplayFields);
 
     var formServicePath = formType != null ? ServicePathResolver.Resolve(formType) : null;
@@ -213,7 +205,7 @@ internal static class AgentProposalFlowBuilder
     var proposal = new AgentProposalDto
     {
       Id = Guid.NewGuid().ToString("N")[..12],
-      SessionId = sessionId,
+      SessionId = ctx.SessionId,
       Operation = AgentProposalOperation.MoveStatus,
       Service = primaryServicePath,
       Transition = matched.Name,
@@ -228,10 +220,10 @@ internal static class AgentProposalFlowBuilder
       Payload = payload,
       FormService = formServicePath,
       Overlay = overlay,
-      TurnId = turnId
+      TurnId = ctx.TurnId
     };
 
-    store.StageProposal(proposal, owner);
+    ctx.Store.StageProposal(proposal, ctx.Owner);
     return proposal;
   }
 

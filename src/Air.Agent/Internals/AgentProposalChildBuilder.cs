@@ -5,18 +5,16 @@ namespace Platform.Agent.Internals;
 internal static class AgentProposalChildBuilder
 {
   public static HashSet<string> CollectChildReferenceServices(
+    ProposalBuildContext ctx,
     IReadOnlyList<AgentEditableChildDescriptor> editableChildren,
     bool isEdit,
     long? recordId,
-    string parentServicePath,
-    IServiceProvider rootServices,
-    PlatformDbContext fallbackDb,
-    PlatformAppService fallbackApp)
+    string parentServicePath)
   {
     var refServices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var childDesc in editableChildren)
     {
-      using var scope = AgentModuleScope.OpenForService(rootServices, childDesc.ChildFormType, fallbackDb, fallbackApp);
+      using var scope = AgentModuleScope.OpenForService(ctx.Services, childDesc.ChildFormType, ctx.Db, ctx.App);
       if (ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildFormType, scope.Db, scope.App) is not IFormService childForm)
       {
         continue;
@@ -37,71 +35,59 @@ internal static class AgentProposalChildBuilder
   }
 
   public static async Task<(List<AgentProposalChildGroupDto> DisplayGroups, List<StagedChildGroupPayload> StagedGroups)> BuildChildGroupsAsync(
-    JsonElement args,
-    JsonElement valuesSource,
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     IReadOnlyList<ChildGridBuilder> allChildren,
     IReadOnlyList<AgentEditableChildDescriptor> editableChildren,
-    Feature parentFeature,
-    bool isEdit,
-    long? recordId,
-    GridCreateDescriptor targetDesc,
-    Dictionary<string, object?> parentFormValues,
-    HashSet<string> explicitlyProvidedParentFields,
-    List<PendingNewReference> newReferences,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
-    Func<string, string?, AgentProposalDto?> findReferencedProposal,
-    IServiceProvider rootServices,
-    PlatformDbContext fallbackDb,
-    PlatformAppService fallbackApp,
-    Localizer L,
     CancellationToken ct)
   {
-    var requestedInputs = ExtractRequestedChildInputs(args, valuesSource, allChildren, editableChildren);
+    var requestedInputs = ExtractRequestedChildInputs(draft.Args, draft.ValuesSource, allChildren, editableChildren);
     var displayGroups = new List<AgentProposalChildGroupDto>();
     var stagedGroups = new List<StagedChildGroupPayload>();
-    _ = parentFeature;
 
     foreach (var (childDesc, mode, rowsProp) in requestedInputs)
     {
-      await using var scope = AgentModuleScope.OpenForService(rootServices, childDesc.ChildFormType, fallbackDb, fallbackApp);
+      await using var scope = AgentModuleScope.OpenForService(ctx.Services, childDesc.ChildFormType, ctx.Db, ctx.App);
+      var childCtx = ctx.WithScope(scope.Db, scope.App);
       var childForm = ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildFormType, scope.Db, scope.App) as IFormService
-        ?? throw new InvalidOperationException(L["MutationRefused"]);
+        ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
 
       var allHaveIds = rowsProp.GetArrayLength() > 0 &&
                        rowsProp.EnumerateArray().All(el => el.ValueKind == JsonValueKind.Object && TryGetRecordId(el) is > 0);
-      childForm.SetRequest(new FormRequest { ParentId = isEdit ? recordId : null, ParentService = targetDesc.ServicePath });
+      childForm.SetRequest(new FormRequest { ParentId = draft.IsEdit ? draft.RecordId : null, ParentService = draft.Target.ServicePath });
       var (rawElements, _) = await childForm.GetElementsMetadataAsync(ct);
-      if (isEdit && !allHaveIds && childForm.IsFormReadOnly)
+      if (draft.IsEdit && !allHaveIds && childForm.IsFormReadOnly)
       {
-        throw new InvalidOperationException(L["FormReadOnly"]);
+        throw new InvalidOperationException(ctx.Localizer["FormReadOnly"]);
       }
 
       var childEditableElements = rawElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
 
-      if (isEdit &&
+      if (draft.IsEdit &&
           ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildGridType, scope.Db, scope.App) is IGridService childGrid &&
           string.Equals(mode, AgentProposalChildMode.Replace, StringComparison.OrdinalIgnoreCase))
       {
-        if (!await childGrid.BindParentAsync(targetDesc.ServicePath, recordId, ct))
+        if (!await childGrid.BindParentAsync(draft.Target.ServicePath, draft.RecordId, ct))
         {
-          throw new InvalidOperationException(L["MutationRefused"]);
+          throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
         }
 
         if (!childGrid.CanDelete() && !allHaveIds)
         {
-          var countDto = await childGrid.GetCountAsync(new GridRequest { ParentService = targetDesc.ServicePath, ParentId = recordId }, ct);
+          var countDto = await childGrid.GetCountAsync(new GridRequest { ParentService = draft.Target.ServicePath, ParentId = draft.RecordId }, ct);
           if (countDto.Total > 0)
           {
-            throw new InvalidOperationException(L["MutationRefused"]);
+            throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
           }
         }
       }
 
       var childDefaults = (await childForm.PrepareDraftAsync(
         recordId: null,
-        parentId: isEdit ? recordId : null,
-        parentService: isEdit ? targetDesc.ServicePath : null,
+        parentId: draft.IsEdit ? draft.RecordId : null,
+        parentService: draft.IsEdit ? draft.Target.ServicePath : null,
         ct: ct)).Values;
+      var rowParseScope = new ChildRowParseScope(childCtx, draft, childForm, childDefaults, childEditableElements);
       var displayRows = new List<AgentProposalChildRowDto>();
       var rawRows = new List<Dictionary<string, object?>>();
       var seenColumnKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -113,23 +99,7 @@ internal static class AgentProposalChildBuilder
           continue;
         }
 
-        var rowResult = await AgentProposalChildRowParser.ParseSingleChildRowAsync(
-          item,
-          isEdit,
-          recordId,
-          targetDesc.ServicePath,
-          childForm,
-          childDefaults,
-          childEditableElements,
-          parentFormValues,
-          newReferences,
-          dictionaries,
-          findReferencedProposal,
-          scope.Db,
-          scope.App,
-          L,
-          ct);
-
+        var rowResult = await AgentProposalChildRowParser.ParseSingleChildRowAsync(rowParseScope, item, ct);
         if (rowResult == null)
         {
           continue;
@@ -148,11 +118,11 @@ internal static class AgentProposalChildBuilder
         {
           pr.ChildKey = childDesc.ChildKey;
           pr.LineIndex = addedRowIdx;
-          newReferences.Add(pr);
+          draft.NewReferences.Add(pr);
         }
       }
 
-      ApplyChildSumMappings(childDesc.Builder, rawRows, parentFormValues, explicitlyProvidedParentFields);
+      ApplyChildSumMappings(childDesc.Builder, rawRows, draft.FormValues, draft.ExplicitlyProvided);
 
       var columns = childEditableElements
         .Where(cel => seenColumnKeys.Contains(cel.Path))
@@ -183,7 +153,7 @@ internal static class AgentProposalChildBuilder
         ChildGridService = childDesc.ChildGridService,
         ChildFormService = childDesc.ChildFormService,
         Mode = mode,
-        HasUpdate = isEdit || rawRows.Count > 0,
+        HasUpdate = draft.IsEdit || rawRows.Count > 0,
         Rows = rawRows
       });
     }

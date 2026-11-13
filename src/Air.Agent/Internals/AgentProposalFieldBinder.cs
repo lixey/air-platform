@@ -6,11 +6,9 @@ namespace Platform.Agent.Internals;
 internal static class AgentProposalFieldBinder
 {
   public static async Task EnsureExistingReferenceValuesLoadedAsync(
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     IReadOnlyList<FormElementDto> editableElements,
-    Dictionary<string, object?> formValues,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
-    PlatformDbContext db,
-    PlatformAppService app,
     CancellationToken ct)
   {
     foreach (var el in editableElements)
@@ -22,80 +20,56 @@ internal static class AgentProposalFieldBinder
 
       if (sel.IsMultiple || el.ValueKind == FormValueKind.List)
       {
-        foreach (var existingId in ExtractLongList(formValues.GetValueOrDefault(el.Path)))
+        foreach (var existingId in ExtractLongList(draft.FormValues.GetValueOrDefault(el.Path)))
         {
-          await AgentContextQueryService.EnsureReferenceIdLoadedAsync(refSvc, existingId, dictionaries, db, app, ct);
+          await AgentContextQueryService.EnsureReferenceIdLoadedAsync(refSvc, existingId, draft.Dictionaries, ctx.Db, ctx.App, ct);
         }
       }
-      else if (formValues.TryGetValue(el.Path, out var curVal) && TryConvertToLong(curVal, out var curId) && curId > 0)
+      else if (draft.FormValues.TryGetValue(el.Path, out var curVal) && TryConvertToLong(curVal, out var curId) && curId > 0)
       {
-        await AgentContextQueryService.EnsureReferenceIdLoadedAsync(refSvc, curId, dictionaries, db, app, ct);
+        await AgentContextQueryService.EnsureReferenceIdLoadedAsync(refSvc, curId, draft.Dictionaries, ctx.Db, ctx.App, ct);
       }
     }
   }
 
   public static async Task ParseParentFieldsAsync(
-    JsonElement args,
-    JsonElement valuesSource,
-    bool hasNestedValues,
-    bool isEdit,
-    string? multiSelectMode,
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     IReadOnlyList<FormElementDto> editableElements,
     IReadOnlyList<GridCreateDescriptor> descriptors,
-    Dictionary<string, object?> formValues,
-    HashSet<string> explicitlyProvided,
-    List<PendingNewReference> newReferences,
-    List<(FormElementDto Element, AgentProposalDto TargetProposal)> linkedSelectPatches,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
-    Func<string, string?, AgentProposalDto?> findReferencedProposal,
-    IServiceProvider services,
-    PlatformDbContext db,
-    PlatformAppService app,
-    Localizer L,
     CancellationToken ct)
   {
     foreach (var el in editableElements)
     {
       var select = el.Model as FormSelectModel;
-      var hasProp = TryGetPropertyIgnoreCase(valuesSource, el.Path, out var rawProp) ||
-                    hasNestedValues && TryGetPropertyIgnoreCase(args, el.Path, out rawProp);
-
       if (select != null && (select.IsMultiple || el.ValueKind == FormValueKind.List))
       {
-        await ParseMultiSelectFieldAsync(
-          el, select, args, valuesSource, hasNestedValues, hasProp, rawProp, isEdit, multiSelectMode,
-          descriptors, formValues, explicitlyProvided, newReferences, dictionaries, findReferencedProposal, services, db, app, L, ct);
+        await ParseMultiSelectFieldAsync(ctx, draft, el, select, descriptors, ct);
         continue;
       }
 
       if (select != null && !string.IsNullOrEmpty(select.ReferenceService))
       {
-        await ParseSingleReferenceFieldAsync(
-          el, select, args, valuesSource, hasNestedValues, hasProp, rawProp,
-          descriptors, formValues, explicitlyProvided, newReferences, linkedSelectPatches, dictionaries, findReferencedProposal, services, db, app, L, ct);
+        await ParseSingleReferenceFieldAsync(ctx, draft, el, select, descriptors, ct);
         continue;
       }
 
-      if (hasProp && rawProp.ValueKind != JsonValueKind.Undefined)
+      if (draft.TryReadInputProperty(el.Path, out var rawProp) && rawProp.ValueKind != JsonValueKind.Undefined)
       {
-        formValues[el.Path] = ConvertJsonValue(rawProp, el.Type);
-        explicitlyProvided.Add(el.Path);
+        draft.FormValues[el.Path] = ConvertJsonValue(rawProp, el.Type);
+        draft.ExplicitlyProvided.Add(el.Path);
       }
     }
   }
 
   public static async Task ApplyLinkedSelectPatchesAsync(
-    IReadOnlyList<(FormElementDto Element, AgentProposalDto TargetProposal)> linkedSelectPatches,
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     IReadOnlyList<FormElementDto> editableElements,
-    Dictionary<string, object?> formValues,
-    HashSet<string> explicitlyProvided,
     HashSet<string> pendingRefPaths,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
-    PlatformDbContext db,
-    PlatformAppService app,
     CancellationToken ct)
   {
-    foreach (var (sourceEl, targetProp) in linkedSelectPatches)
+    foreach (var (sourceEl, targetProp) in draft.LinkedSelectPatches)
     {
       if (sourceEl.SelectPatches is not { Count: > 0 } patches || targetProp.Payload.ValueKind != JsonValueKind.Object)
       {
@@ -110,13 +84,13 @@ internal static class AgentProposalFieldBinder
 
       foreach (var patch in patches)
       {
-        if (explicitlyProvided.Contains(patch.TargetField) || pendingRefPaths.Contains(patch.TargetField))
+        if (draft.ExplicitlyProvided.Contains(patch.TargetField) || pendingRefPaths.Contains(patch.TargetField))
         {
           continue;
         }
 
         if (patch.OnlyWhenEmpty &&
-            formValues.TryGetValue(patch.TargetField, out var existingTarget) &&
+            draft.FormValues.TryGetValue(patch.TargetField, out var existingTarget) &&
             existingTarget != null &&
             !(TryConvertToDecimal(existingTarget, out var existingDec) && existingDec == 0m) &&
             existingTarget.ToString() is { Length: > 0 } s && s != "0")
@@ -134,19 +108,19 @@ internal static class AgentProposalFieldBinder
           if (targetEl?.Model is FormSelectModel { ReferenceService: { Length: > 0 } targetRefSvc } targetSel &&
               TryConvertToLong(unwrapped, out var patchedId) && patchedId > 0)
           {
-            await AgentContextQueryService.EnsureReferenceIdLoadedAsync(targetRefSvc, patchedId, dictionaries, db, app, ct);
+            await AgentContextQueryService.EnsureReferenceIdLoadedAsync(targetRefSvc, patchedId, draft.Dictionaries, ctx.Db, ctx.App, ct);
             if (targetSel.ReferenceFilter == null ||
-                !dictionaries.TryGetValue(targetRefSvc, out var tRows) ||
+                !draft.Dictionaries.TryGetValue(targetRefSvc, out var tRows) ||
                 FilterRowsByReferenceFilter(tRows, targetSel.ReferenceFilter).Any(r => TryGetRowId(r, out var rid) && rid == patchedId))
             {
-              formValues[patch.TargetField] = patchedId;
-              explicitlyProvided.Add(patch.TargetField);
+              draft.FormValues[patch.TargetField] = patchedId;
+              draft.ExplicitlyProvided.Add(patch.TargetField);
             }
           }
           else if (targetEl != null && targetEl.Model is not FormSelectModel)
           {
-            formValues[patch.TargetField] = unwrapped;
-            explicitlyProvided.Add(patch.TargetField);
+            draft.FormValues[patch.TargetField] = unwrapped;
+            draft.ExplicitlyProvided.Add(patch.TargetField);
           }
         }
       }
@@ -154,34 +128,20 @@ internal static class AgentProposalFieldBinder
   }
 
   private static async Task ParseMultiSelectFieldAsync(
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     FormElementDto el,
     FormSelectModel select,
-    JsonElement args,
-    JsonElement valuesSource,
-    bool hasNestedValues,
-    bool hasProp,
-    JsonElement rawProp,
-    bool isEdit,
-    string? multiSelectMode,
     IReadOnlyList<GridCreateDescriptor> descriptors,
-    Dictionary<string, object?> formValues,
-    HashSet<string> explicitlyProvided,
-    List<PendingNewReference> newReferences,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
-    Func<string, string?, AgentProposalDto?> findReferencedProposal,
-    IServiceProvider services,
-    PlatformDbContext db,
-    PlatformAppService app,
-    Localizer L,
     CancellationToken ct)
   {
+    var hasProp = draft.TryReadInputProperty(el.Path, out var rawProp);
     if (!hasProp && el.Path.EndsWith("Ids", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 3)
     {
       var baseMultiName = el.Path[..^3];
       foreach (var multiAlias in new[] { $"{baseMultiName}s", baseMultiName })
       {
-        if (TryGetPropertyIgnoreCase(valuesSource, multiAlias, out rawProp) ||
-            hasNestedValues && TryGetPropertyIgnoreCase(args, multiAlias, out rawProp))
+        if (draft.TryReadInputProperty(multiAlias, out rawProp))
         {
           hasProp = true;
           break;
@@ -191,20 +151,20 @@ internal static class AgentProposalFieldBinder
 
     if (hasProp && rawProp.ValueKind == JsonValueKind.Array)
     {
-      var ids = isEdit && string.Equals(multiSelectMode, "append", StringComparison.OrdinalIgnoreCase)
-        ? ExtractLongList(formValues.GetValueOrDefault(el.Path))
+      var ids = draft.IsEdit && string.Equals(draft.MultiSelectMode, "append", StringComparison.OrdinalIgnoreCase)
+        ? ExtractLongList(draft.FormValues.GetValueOrDefault(el.Path))
         : new List<long>();
       var refFormDesc = !string.IsNullOrEmpty(select.ReferenceService)
-        ? AgentFeatureRegistry.ResolveReferenceCreateForm(descriptors, select.ReferenceService, el, services, db, app)
+        ? AgentFeatureRegistry.ResolveReferenceCreateForm(descriptors, select.ReferenceService, el, ctx.Services, ctx.Db, ctx.App)
         : null;
 
       foreach (var item in rawProp.EnumerateArray())
       {
         if (AgentStepGraphHelper.TryExtractRefKey(item, out var multiRefKey))
         {
-          var multiTarget = findReferencedProposal(multiRefKey, select.ReferenceService)
-            ?? throw new InvalidOperationException(L["MutationRefused"]);
-          newReferences.Add(new PendingNewReference
+          var multiTarget = ctx.FindReferencedProposal(multiRefKey, select.ReferenceService)
+            ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
+          draft.NewReferences.Add(new PendingNewReference
           {
             FieldPath = el.Path,
             Name = AgentStepGraphHelper.GetProposalShortLabel(multiTarget),
@@ -224,9 +184,9 @@ internal static class AgentProposalFieldBinder
           select.ReferenceFilter,
           allowFuzzy: refFormDesc == null,
           allowWrongKindFallback: false,
-          dictionaries,
-          db,
-          app,
+          draft.Dictionaries,
+          ctx.Db,
+          ctx.App,
           ct,
           select.ReferenceLabelPaths);
         if (itemId is > 0 and var id)
@@ -238,7 +198,7 @@ internal static class AgentProposalFieldBinder
         }
         else if (!string.IsNullOrWhiteSpace(unresolvedItemName) && refFormDesc != null)
         {
-          newReferences.Add(new PendingNewReference
+          draft.NewReferences.Add(new PendingNewReference
           {
             FieldPath = el.Path,
             Name = unresolvedItemName,
@@ -249,45 +209,32 @@ internal static class AgentProposalFieldBinder
         }
       }
 
-      formValues[el.Path] = ids;
-      explicitlyProvided.Add(el.Path);
+      draft.FormValues[el.Path] = ids;
+      draft.ExplicitlyProvided.Add(el.Path);
     }
     else if (hasProp && rawProp.ValueKind == JsonValueKind.Null)
     {
-      formValues[el.Path] = new List<long>();
-      explicitlyProvided.Add(el.Path);
+      draft.FormValues[el.Path] = new List<long>();
+      draft.ExplicitlyProvided.Add(el.Path);
     }
   }
 
   private static async Task ParseSingleReferenceFieldAsync(
+    ProposalBuildContext ctx,
+    ProposalDraftState draft,
     FormElementDto el,
     FormSelectModel select,
-    JsonElement args,
-    JsonElement valuesSource,
-    bool hasNestedValues,
-    bool hasProp,
-    JsonElement rawProp,
     IReadOnlyList<GridCreateDescriptor> descriptors,
-    Dictionary<string, object?> formValues,
-    HashSet<string> explicitlyProvided,
-    List<PendingNewReference> newReferences,
-    List<(FormElementDto Element, AgentProposalDto TargetProposal)> linkedSelectPatches,
-    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
-    Func<string, string?, AgentProposalDto?> findReferencedProposal,
-    IServiceProvider services,
-    PlatformDbContext db,
-    PlatformAppService app,
-    Localizer L,
     CancellationToken ct)
   {
-    var refFormDesc = AgentFeatureRegistry.ResolveReferenceCreateForm(descriptors, select.ReferenceService!, el, services, db, app);
+    var refFormDesc = AgentFeatureRegistry.ResolveReferenceCreateForm(descriptors, select.ReferenceService!, el, ctx.Services, ctx.Db, ctx.App);
+    var hasProp = draft.TryReadInputProperty(el.Path, out var rawProp);
     if (!hasProp && el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 2)
     {
       var baseRefName = el.Path[..^2];
       foreach (var refAlias in new[] { $"{baseRefName}Name", baseRefName })
       {
-        if (TryGetPropertyIgnoreCase(valuesSource, refAlias, out rawProp) ||
-            hasNestedValues && TryGetPropertyIgnoreCase(args, refAlias, out rawProp))
+        if (draft.TryReadInputProperty(refAlias, out rawProp))
         {
           hasProp = true;
           break;
@@ -302,11 +249,11 @@ internal static class AgentProposalFieldBinder
 
     if (AgentStepGraphHelper.TryExtractRefKey(rawProp, out var singleRefKey))
     {
-      var singleTarget = findReferencedProposal(singleRefKey, select.ReferenceService)
-        ?? throw new InvalidOperationException(L["MutationRefused"]);
-      formValues[el.Path] = null;
-      explicitlyProvided.Add(el.Path);
-      newReferences.Add(new PendingNewReference
+      var singleTarget = ctx.FindReferencedProposal(singleRefKey, select.ReferenceService)
+        ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
+      draft.FormValues[el.Path] = null;
+      draft.ExplicitlyProvided.Add(el.Path);
+      draft.NewReferences.Add(new PendingNewReference
       {
         FieldPath = el.Path,
         Name = AgentStepGraphHelper.GetProposalShortLabel(singleTarget),
@@ -319,7 +266,7 @@ internal static class AgentProposalFieldBinder
       });
       if (el.SelectPatches is { Count: > 0 })
       {
-        linkedSelectPatches.Add((el, singleTarget));
+        draft.LinkedSelectPatches.Add((el, singleTarget));
       }
 
       return;
@@ -331,21 +278,21 @@ internal static class AgentProposalFieldBinder
       select.ReferenceFilter,
       allowFuzzy: refFormDesc == null,
       allowWrongKindFallback: true,
-      dictionaries,
-      db,
-      app,
+      draft.Dictionaries,
+      ctx.Db,
+      ctx.App,
       ct,
       select.ReferenceLabelPaths);
 
     if (resolvedId.HasValue)
     {
-      formValues[el.Path] = resolvedId.Value;
-      explicitlyProvided.Add(el.Path);
+      draft.FormValues[el.Path] = resolvedId.Value;
+      draft.ExplicitlyProvided.Add(el.Path);
     }
     else if (!string.IsNullOrWhiteSpace(unresolvedName))
     {
-      formValues[el.Path] = null;
-      explicitlyProvided.Add(el.Path);
+      draft.FormValues[el.Path] = null;
+      draft.ExplicitlyProvided.Add(el.Path);
       var extra = ExtractEqualityFilterMap(select.ReferenceFilter);
       if (objectExtraValues != null)
       {
@@ -355,7 +302,7 @@ internal static class AgentProposalFieldBinder
         }
       }
 
-      newReferences.Add(new PendingNewReference
+      draft.NewReferences.Add(new PendingNewReference
       {
         FieldPath = el.Path,
         Name = unresolvedName,
@@ -366,8 +313,8 @@ internal static class AgentProposalFieldBinder
     }
     else if (rawProp.ValueKind == JsonValueKind.Null)
     {
-      formValues[el.Path] = null;
-      explicitlyProvided.Add(el.Path);
+      draft.FormValues[el.Path] = null;
+      draft.ExplicitlyProvided.Add(el.Path);
     }
   }
 }
