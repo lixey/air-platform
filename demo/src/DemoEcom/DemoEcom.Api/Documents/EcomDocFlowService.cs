@@ -5,7 +5,21 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
   private const int NoteMaxLength = 2000;
 
   protected abstract long Type { get; }
-  protected EcomDocTexts Texts => field ??= EcomDocTexts.Of(L);
+
+  protected EcomDocTexts Texts
+  {
+    get
+    {
+      if (GetExecutionItem<EcomDocTexts>() is { } cached)
+      {
+        return cached;
+      }
+
+      var loaded = EcomDocTexts.Of(L);
+      SetExecutionItem(loaded);
+      return loaded;
+    }
+  }
 
   protected override void SetFlow() => Flow.State(doc => doc.DocStatusId);
 

@@ -250,14 +250,10 @@ dotnet_diagnostic.CA2225.severity = none # Disable named alternates for operator
 dotnet_diagnostic.CA2326.severity = none
 dotnet_diagnostic.CA2327.severity = none
 dotnet_diagnostic.IDE0046.severity = none # Do not force cascading ternary expressions over readable ifs
-dotnet_diagnostic.xUnit1051.severity = none # The test's cancellation token is not passed yet (docs/backlog.md)
+dotnet_diagnostic.xUnit1051.severity = none # The test's cancellation token is not passed yet
 
-# A source linked into several test projects cannot know which of their global usings it repeats (code-style.md, rule 6)
-[tests/Shared/*.cs]
-dotnet_diagnostic.IDE0005.severity = none
-
-# The files migrations are the output of the Entity Framework Core tools, kept as generated and never edited once shipped
-[src/Air.Data.{Postgres,SqlServer}/Migrations/*.cs]
+# Entity Framework Core migration files are generated output and never edited once shipped
+[**/Migrations/{20*,*ModelSnapshot,*.Designer}.cs]
 generated_code = true
 
 #### Non-C# Files in Project ####

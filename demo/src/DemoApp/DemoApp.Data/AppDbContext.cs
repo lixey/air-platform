@@ -20,19 +20,7 @@ public class AppDbContext : PlatformDbContext
   {
     base.OnModelCreating(modelBuilder);
 
-    modelBuilder.Entity<AppUser>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
-      .OnDelete(DeleteBehavior.Restrict);
     modelBuilder.Entity<AppUser>().HasOne(row => row.UserGroup).WithMany().HasForeignKey(row => row.UserGroupId)
       .OnDelete(DeleteBehavior.SetNull);
-    modelBuilder.Entity<AppUserGroup>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
-      .OnDelete(DeleteBehavior.Restrict);
-    modelBuilder.Entity<AppUserGroup>().HasOne(row => row.Color).WithMany().HasForeignKey(row => row.ColorId)
-      .OnDelete(DeleteBehavior.Restrict);
-    modelBuilder.Entity<AppTenant>().HasOne(row => row.Parent).WithMany().HasForeignKey(row => row.ParentId)
-      .OnDelete(DeleteBehavior.Restrict);
-    modelBuilder.Entity<AppAuthRole>().HasOne(row => row.Tenant).WithMany().HasForeignKey(row => row.TenantId)
-      .OnDelete(DeleteBehavior.Restrict);
-
-    modelBuilder.Entity<AppAuthRole>().HasIndex(row => row.Name).IsUnique().HasFilter("\"TenantId\" IS NULL");
   }
 }

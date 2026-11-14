@@ -8,22 +8,10 @@
 
 У корені репозиторію створюються:
 
-1. **`Directory.Build.props`** — задає `.NET 10`, `LangVersion=preview`, `Nullable=enable`, `<GenerateDocumentationFile>true</GenerateDocumentationFile>` (для автоматичного очищення зайвих `using` через `IDE0005`) та глобальні імпорти просторів імен платформи (`Platform.Data.*`, `Platform.Api.*`, `Platform.App.*`):
+1. **`Directory.Build.props`** — одним рядком імпортує спільну конфігурацію платформи `eng/Platform.Build.props`, яка автоматично вмикає `.NET 10`, `LangVersion=preview`, `Nullable=enable`, `<GenerateDocumentationFile>true</GenerateDocumentationFile>` (для очищення зайвих `using` через `IDE0005`), `BannedApiAnalyzers` (`RS0030`), правила `RootNamespace` та глобальні імпорти просторів імен платформи (`Platform.Data.*`, `Platform.Api.*`, `Platform.App.*`, `Platform.Agent.*`):
    ```xml
    <Project>
-     <PropertyGroup>
-       <TargetFramework>net10.0</TargetFramework>
-       <ImplicitUsings>enable</ImplicitUsings>
-       <Nullable>enable</Nullable>
-       <LangVersion>preview</LangVersion>
-       <GenerateDocumentationFile>true</GenerateDocumentationFile>
-       <NoWarn>$(NoWarn);CS1591;CS9107</NoWarn>
-     </PropertyGroup>
-     <ItemGroup>
-       <Using Include="Platform.Data" />
-       <Using Include="Platform.Data.Entities" />
-       <Using Include="Platform.Data.Schema" />
-     </ItemGroup>
+     <Import Project="../air-platform/eng/Platform.Build.props" />
    </Project>
    ```
 2. **`.editorconfig`** та **`.githooks/`** — копіюються з `air-platform` і активуються командою `git config core.hooksPath .githooks`.
@@ -102,8 +90,17 @@ await PlatformHost.RunAsync(
 ## 4. Фронтенд-воркспейс (`<web-dir>/`)
 
 1. Створюється Nx + Angular 22+ воркспейс зі суворою типізацією (`"strict": true`).
-2. У `tsconfig.base.json` прописується відносний шлях `"@air/ui": ["../../air-ui/src/index.ts"]` (або `["../../air-platform/air-ui/src/index.ts"]` для зовнішнього репозиторію поруч із платформою — нуль абсолютних шляхів у конфігураціях).
-3. Усі згенеровані контракти (`contracts.ts` та `ui-texts.json`) живуть у `air-ui/src/core/generated/` і імпортуються через `@air/ui` — не створюйте дублюючих папок `generated/` усередині окремих застосунків.
+2. У `tsconfig.base.json` прописується відносний аліас `"@air-ui/*": ["../../air-platform/air-ui/src/*"]` (або `["./libs/air-ui/src/*"]` у вбудованому `demo/web` — нуль абсолютних шляхів у конфігураціях).
+3. Конфігурація застосунку `app.config.ts` використовує єдиний провайдер `providePlatformUi()` з `@air-ui/app` без дублювання маршрутів, інтерцепторів чи ініціалізаторів:
+   ```ts
+   import { ApplicationConfig } from '@angular/core';
+   import { providePlatformUi } from '@air-ui/app';
+
+   export const appConfig: ApplicationConfig = {
+     providers: [providePlatformUi()],
+   };
+   ```
+4. Усі згенеровані контракти (`contracts.ts` та `ui-texts.json`) живуть у `air-ui/src/core/generated/` і імпортуються через `@air-ui/*` — не створюйте дублюючих папок `generated/` усередині окремих застосунків.
 
 ---
 

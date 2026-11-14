@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Provider Handle" xml:space="preserve">
+    <value>Provider Handle</value>
+  </data>
+  <data name="Toggle active" xml:space="preserve">
+    <value>Toggle active</value>
+  </data>
+  <data name="AI models" xml:space="preserve">
+    <value>AI models</value>
+  </data>
+  <data name="Model ID" xml:space="preserve">
+    <value>Model ID</value>
+  </data>
+  <data name="Provider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="Provider name" xml:space="preserve">
+    <value>Provider name</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="For photos" xml:space="preserve">
+    <value>For photos</value>
+  </data>
+  <data name="Refresh models" xml:space="preserve">
+    <value>Refresh models</value>
+  </data>
+  <data name="Set as default" xml:space="preserve">
+    <value>Set as default</value>
+  </data>
+  <data name="Set for photos" xml:space="preserve">
+    <value>Set for photos</value>
+  </data>
+  <data name="Title" xml:space="preserve">
+    <value>Title</value>
+  </data>
+  <data name="Kind" xml:space="preserve">
+    <value>Kind</value>
+  </data>
+  <data name="Module" xml:space="preserve">
+    <value>Module</value>
+  </data>
+  <data name="Priority" xml:space="preserve">
+    <value>Priority</value>
+  </data>
+  <data name="Updated At" xml:space="preserve">
+    <value>Updated At</value>
+  </data>
+  <data name="Content" xml:space="preserve">
+    <value>Content</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>Rules</value>
+  </data>
+  <data name="Seed" xml:space="preserve">
+    <value>Seed</value>
+  </data>
+  <data name="Facts" xml:space="preserve">
+    <value>Facts</value>
+  </data>
+  <data name="Preferences" xml:space="preserve">
+    <value>Preferences</value>
+  </data>
+  <data name="Toggle pinned" xml:space="preserve">
+    <value>Toggle pinned</value>
+  </data>
+  <data name="Active" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="At least one AI provider must remain active." xml:space="preserve">
+    <value>At least one AI provider must remain active.</value>
+  </data>
+  <data name="Cannot delete a provider that has models or is built-in." xml:space="preserve">
+    <value>Cannot delete a provider that has models or is built-in.</value>
+  </data>
+  <data name="Cannot activate a model of a disabled provider." xml:space="preserve">
+    <value>Cannot activate a model of a disabled provider.</value>
+  </data>
+  <data name="Agent Providers" xml:space="preserve">
+    <value>Agent Providers</value>
+  </data>
+  <data name="Agent Provider" xml:space="preserve">
+    <value>Agent Provider</value>
+  </data>
+  <data name="New Agent Provider" xml:space="preserve">
+    <value>New Agent Provider</value>
+  </data>
+  <data name="Agent Models" xml:space="preserve">
+    <value>Agent Models</value>
+  </data>
+  <data name="Agent Model" xml:space="preserve">
+    <value>Agent Model</value>
+  </data>
+  <data name="New Agent Model" xml:space="preserve">
+    <value>New Agent Model</value>
+  </data>
+  <data name="Agent Memories" xml:space="preserve">
+    <value>Agent Memories</value>
+  </data>
+  <data name="Agent Memory" xml:space="preserve">
+    <value>Agent Memory</value>
+  </data>
+  <data name="New Agent Memory" xml:space="preserve">
+    <value>New Agent Memory</value>
+  </data>
+</root>

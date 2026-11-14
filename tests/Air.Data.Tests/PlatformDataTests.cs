@@ -258,4 +258,51 @@ public sealed class PlatformDataTests : IDisposable
     var imported = await sqlDb.BulkImportAsync(AsyncEnumerable.Empty<TestOrder>());
     Assert.Equal(0, imported);
   }
+
+  [Fact]
+  public async Task BaseAppAuthRole_ConfiguresProviderAppropriateGlobalRoleUniqueIndex()
+  {
+    await using var sqliteDb = CreateDbContext();
+    var sqliteRoleEntity = sqliteDb.Model.FindEntityType(typeof(TestRole))!;
+    var sqliteIndex = Assert.Single(
+      sqliteRoleEntity.GetIndexes(),
+      i => i.IsUnique && i.Properties.Select(p => p.Name).SequenceEqual([nameof(BaseAppAuthRole.Name)]));
+    Assert.Equal("\"TenantId\" IS NULL", sqliteIndex.GetFilter());
+
+    var factory = new TestSqlServerDesignTimeFactory();
+    await using var sqlDb = factory.CreateDbContext([]);
+    var sqlRoleEntity = sqlDb.Model.FindEntityType(typeof(TestRole))!;
+    var sqlIndex = Assert.Single(
+      sqlRoleEntity.GetIndexes(),
+      i => i.IsUnique && i.Properties.Select(p => p.Name).SequenceEqual([nameof(BaseAppAuthRole.Name)]));
+    Assert.Equal("[TenantId] IS NULL", sqlIndex.GetFilter());
+
+    var sqliteOptions = new DbContextOptionsBuilder<TestDbContext>().UseSqlite(_connection).Options;
+    await using var ambientDb = new TestDbContext(sqliteOptions);
+    using (AsyncLocalTenantContext.UseSystemScope(correlationId: "test-global-role-index"))
+    {
+      ambientDb.Roles.AddRange(
+        new TestRole { TenantId = 1, Name = "Manager" },
+        new TestRole { TenantId = 2, Name = "Manager" },
+        new TestRole { TenantId = null, Name = "GlobalAdmin" });
+      await ambientDb.SaveChangesAsync();
+
+      ambientDb.Roles.Add(new TestRole { TenantId = null, Name = "GlobalAdmin" });
+      await Assert.ThrowsAsync<DbUpdateException>(() => ambientDb.SaveChangesAsync());
+    }
+  }
+
+  [Fact]
+  public void HeldRights_Covers_SupportsModulePrefixAndActionSuffixWildcards()
+  {
+    var auditorHeld = new HashSet<string>(["*.View", "*.MenuView"], StringComparer.Ordinal);
+    Assert.True(HeldRights.Covers(auditorHeld, "Ecom.CustomerOrder.View"));
+    Assert.True(HeldRights.Covers(auditorHeld, "Org.Product.MenuView"));
+    Assert.False(HeldRights.Covers(auditorHeld, "Ecom.CustomerOrder.Edit"));
+    Assert.False(HeldRights.Covers(auditorHeld, "Ecom.*"));
+
+    var doubleWildcard = new HashSet<string>(["*.*.Export"], StringComparer.Ordinal);
+    Assert.True(HeldRights.Covers(doubleWildcard, "Ecom.CustomerOrder.Export"));
+    Assert.False(HeldRights.Covers(doubleWildcard, "Ecom.CustomerOrder.Delete"));
+  }
 }

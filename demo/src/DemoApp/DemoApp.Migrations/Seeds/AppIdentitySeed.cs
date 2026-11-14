@@ -127,19 +127,7 @@ public static class AppIdentitySeed
         string[] auditorGrants =
         [
           "*.View",
-          "*.MenuView",
-          "Ecom.CustomerOrder.View", "Ecom.CustomerOrder.MenuView",
-          "Ecom.CustomerOrderLine.View", "Ecom.CustomerOrderLine.MenuView",
-          "Ecom.Product.View", "Ecom.Product.MenuView",
-          "Ecom.Customer.View", "Ecom.Customer.MenuView",
-          "Org.Company.View", "Org.Company.MenuView",
-          "Org.Department.View", "Org.Department.MenuView",
-          "Org.Employee.View", "Org.Employee.MenuView",
-          "App.User.View", "App.User.MenuView",
-          "App.Role.View", "App.Role.MenuView",
-          "App.Change.View", "App.Change.MenuView",
-          "App.Language.View", "App.Language.MenuView",
-          "App.Color.View", "App.Color.MenuView"
+          "*.MenuView"
         ];
         foreach (var g in auditorGrants)
         {

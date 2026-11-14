@@ -103,7 +103,7 @@ public sealed class AssemblyGraphTests
   }
 
   [Fact]
-  public void ModuleFormAndGridServices_DeclareZeroMutableInstanceFields()
+  public void ModuleFormGridAndFlowServices_DeclareZeroMutableInstanceFields()
   {
     Assembly[] appModuleAssemblies =
     [
@@ -115,7 +115,9 @@ public sealed class AssemblyGraphTests
     var moduleServices = appModuleAssemblies
       .SelectMany(a => a.GetTypes())
       .Where(t => t.IsClass &&
-                  (typeof(IFormService).IsAssignableFrom(t) || typeof(IGridService).IsAssignableFrom(t)))
+                  (typeof(IFormService).IsAssignableFrom(t) ||
+                   typeof(IGridService).IsAssignableFrom(t) ||
+                   typeof(IRecordStatuses).IsAssignableFrom(t)))
       .ToList();
 
     Assert.NotEmpty(moduleServices);

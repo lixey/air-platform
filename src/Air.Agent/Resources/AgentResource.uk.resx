@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1"/>
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3"/>
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Provider Handle" xml:space="preserve">
+    <value>Код провайдера</value>
+  </data>
+  <data name="Toggle active" xml:space="preserve">
+    <value>Увімк. / Вимк.</value>
+  </data>
+  <data name="AI models" xml:space="preserve">
+    <value>Моделі ШІ</value>
+  </data>
+  <data name="Model ID" xml:space="preserve">
+    <value>ID моделі</value>
+  </data>
+  <data name="Provider" xml:space="preserve">
+    <value>Провайдер</value>
+  </data>
+  <data name="Provider name" xml:space="preserve">
+    <value>Назва провайдера</value>
+  </data>
+  <data name="Default" xml:space="preserve">
+    <value>За замовчуванням</value>
+  </data>
+  <data name="For photos" xml:space="preserve">
+    <value>Для фото</value>
+  </data>
+  <data name="Refresh models" xml:space="preserve">
+    <value>Оновити моделі</value>
+  </data>
+  <data name="Set as default" xml:space="preserve">
+    <value>За замовчуванням</value>
+  </data>
+  <data name="Set for photos" xml:space="preserve">
+    <value>Для фото</value>
+  </data>
+  <data name="Title" xml:space="preserve">
+    <value>Заголовок</value>
+  </data>
+  <data name="Kind" xml:space="preserve">
+    <value>Тип</value>
+  </data>
+  <data name="Module" xml:space="preserve">
+    <value>Модуль</value>
+  </data>
+  <data name="Priority" xml:space="preserve">
+    <value>Пріоритет</value>
+  </data>
+  <data name="Updated At" xml:space="preserve">
+    <value>Оновлено</value>
+  </data>
+  <data name="Content" xml:space="preserve">
+    <value>Вміст</value>
+  </data>
+  <data name="Rules" xml:space="preserve">
+    <value>Правила</value>
+  </data>
+  <data name="Seed" xml:space="preserve">
+    <value>Базові знання</value>
+  </data>
+  <data name="Facts" xml:space="preserve">
+    <value>Факти</value>
+  </data>
+  <data name="Preferences" xml:space="preserve">
+    <value>Налаштування</value>
+  </data>
+  <data name="Toggle pinned" xml:space="preserve">
+    <value>Закріпити / Відкріпити</value>
+  </data>
+  <data name="Active" xml:space="preserve">
+    <value>Активні</value>
+  </data>
+  <data name="Disabled" xml:space="preserve">
+    <value>Вимкнені</value>
+  </data>
+  <data name="At least one AI provider must remain active." xml:space="preserve">
+    <value>Принаймні один провайдер ШІ має залишатися активним.</value>
+  </data>
+  <data name="Cannot delete a provider that has models or is built-in." xml:space="preserve">
+    <value>Неможливо видалити вбудованого провайдера або провайдера з моделями.</value>
+  </data>
+  <data name="Cannot activate a model of a disabled provider." xml:space="preserve">
+    <value>Неможливо увімкнути модель вимкненого провайдера.</value>
+  </data>
+  <data name="Agent Providers" xml:space="preserve">
+    <value>Провайдери ШІ</value>
+  </data>
+  <data name="Agent Provider" xml:space="preserve">
+    <value>Провайдер ШІ</value>
+  </data>
+  <data name="New Agent Provider" xml:space="preserve">
+    <value>Новий провайдер ШІ</value>
+  </data>
+  <data name="Agent Models" xml:space="preserve">
+    <value>Моделі ШІ</value>
+  </data>
+  <data name="Agent Model" xml:space="preserve">
+    <value>Модель ШІ</value>
+  </data>
+  <data name="New Agent Model" xml:space="preserve">
+    <value>Нова модель ШІ</value>
+  </data>
+  <data name="Agent Memories" xml:space="preserve">
+    <value>Пам'ять і правила ШІ</value>
+  </data>
+  <data name="Agent Memory" xml:space="preserve">
+    <value>Запис пам'яті ШІ</value>
+  </data>
+  <data name="New Agent Memory" xml:space="preserve">
+    <value>Новий запис пам'яті ШІ</value>
+  </data>
+</root>

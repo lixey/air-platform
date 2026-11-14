@@ -101,6 +101,21 @@ public abstract partial class PlatformDbContext : DbContext
   protected sealed override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
     PlatformMigrationHistory.Apply(optionsBuilder, ModuleHandle, GetType());
 
+  protected override void OnModelCreating(ModelBuilder modelBuilder)
+  {
+    base.OnModelCreating(modelBuilder);
+
+    var globalRoleFilter = Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true
+      ? "[TenantId] IS NULL"
+      : "\"TenantId\" IS NULL";
+    foreach (var entityType in modelBuilder.Model.GetEntityTypes()
+               .Where(t => !t.ClrType.IsAbstract && typeof(BaseAppAuthRole).IsAssignableFrom(t.ClrType))
+               .ToArray())
+    {
+      modelBuilder.Entity(entityType.ClrType).HasIndex(nameof(BaseAppAuthRole.Name)).IsUnique().HasFilter(globalRoleFilter);
+    }
+  }
+
   protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
   {
     base.ConfigureConventions(configurationBuilder);

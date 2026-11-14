@@ -8,7 +8,7 @@ AGENT_WEB_PORT ?= 4400
 AUDIT_CLI ?= auto
 AUDIT_MODEL ?= claude-opus-5-5-high
 AUDIT_CLAUDE_MODEL ?= claude-fable-5-2
-AUDIT_TIMEOUT ?= 300
+AUDIT_TIMEOUT ?= 600
 AUDIT_PROMPT ?= Perform a strict architectural and code review of the current git diff against AGENTS.md (including Section 7 ADR invariants). Do NOT run background tasks or subagents. Report objective bugs/regressions vs controversial design trade-offs concisely.
 ABS_PATH_PATTERN := ([/]Volumes[/]|[/]Users[/]|[/]home[/]|[A-Za-z]:\\Users\\)
 DAEMON_RUN := python3 -c 'import os, sys, subprocess; r, w = os.pipe(); f = open(sys.argv[1], "wb"); subprocess.Popen(sys.argv[2:], stdin=r, stdout=f, stderr=f, pass_fds=(w,), start_new_session=True)'

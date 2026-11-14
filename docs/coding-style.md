@@ -32,7 +32,7 @@
      ```csharp
      Elements.Add(e => e.Product)
        .AsReference<ProductGridService>(p => p.Name, p => p.Code)
-       .PatchOnSelect(p => p.SalePrice, e => e.Price);
+       .PatchOnSelect(e => e.Price, p => p.SalePrice);
 
      Hooks.PreventDeleteWhenUsedBy<EcomDocLine>(l => l.ProductId);
      ```
@@ -68,9 +68,9 @@
 Кожен сервіс фічі мешкає у власному файлі (`1 тип = 1 файл`) і дотримується незмінного порядку секцій зверху вниз:
 
 1. `public override Feature Feature => ...;` — явна прив'язка до фічі та прав RBAC.
-2. Опис структури екрана (`SetColumns()` / `SetElements()` / `SetFlow()` / `BuildLayout()`) через властивості екземпляра сервісу (`Columns`, `Elements`, `Query`, `Nav`, `Actions`, `Hooks`, `Rules`, `Parent`, `Restrictions`, `Flow`) — без повторення типів у параметрах методу:
-   - За замовчуванням перевизначайте **синхронні методи без параметрів**: `SetColumns()`, `SetElements()`, `SetQuery()`, `SetNav()`, `SetActions()`, `SetHooks()`, `SetRules()`, `SetParent()`, `SetRestrictions()`, `SetFlow()`.
-   - **Асинхронні** перевантаження `SetColumnsAsync(CancellationToken)`, `SetElementsAsync(CancellationToken)`, `SetNavAsync(CancellationToken)` та `SetActionsAsync(CancellationToken)` використовуйте лише тоді, коли опис метаданих або дій справді виконує `await`-запит до БД (наприклад, завантаження переліку ролей). Для динамічних підтверджень дії всередині синхронного `SetActions()` використовуйте `.ConfirmAsync((entity, ct) => ...)`. Одночасне перевизначення синхронного й асинхронного варіанта в одному класі заборонене й блокується при старті (`ServiceOverrideValidator`).
+2. Опис структури екрана (`SetColumns()` / `SetElements()` / `SetFlow()` / `SetPanels()`) через властивості екземпляра сервісу (`Columns`, `Elements`, `Query`, `Nav`, `Actions`, `Hooks`, `Rules`, `Parent`, `Restrictions`, `Flow`, `Panels`) — без повторення типів у параметрах методу:
+   - За замовчуванням перевизначайте **синхронні методи без параметрів**: `SetColumns()`, `SetElements()`, `SetQuery()`, `SetNav()`, `SetActions()`, `SetHooks()`, `SetRules()`, `SetParent()`, `SetRestrictions()`, `SetFlow()`, `SetPanels()`.
+   - **Асинхронні** перевантаження `SetColumnsAsync(CancellationToken)`, `SetElementsAsync(CancellationToken)`, `SetNavAsync(CancellationToken)`, `SetActionsAsync(CancellationToken)` та `SetPanelsAsync(CancellationToken)` використовуйте лише тоді, коли опис метаданих або дій справді виконує `await`-запит до БД (наприклад, завантаження переліку ролей). Для динамічних підтверджень дії всередині синхронного `SetActions()` використовуйте `.ConfirmAsync((entity, ct) => ...)`. Одночасне перевизначення синхронного й асинхронного варіанта в одному класі заборонене й блокується при старті (`ServiceOverrideValidator`).
    - Метадані відкриті для розширення в спадкоємцях (`base.SetColumns()`, `Columns.Items`, `Columns.Remove(...)`, `Elements.Items`, `Elements.Remove(...)`, `Flow.Items`, а також `Nav.WithoutCreate()`, `Nav.WithoutExport()`, `Nav.WithoutSaveAndClose()`, `Nav.Customize(...)`).
    - Для публікації власних HTTP-методів сервісу використовуйте єдиний атрибут `[Endpoint]` — усі ендпоінти сервісів працюють як `POST /api/{service}/{kebab-method}` і компілюються один раз на старті (`EndpointRegistry`).
    - Для посилань на довідники передавайте навігаційну властивість з **одним** типовим параметром (`Elements.Add(e => e.Brand).AsReference<OrgBrandGridService>()`), щоб платформа сама виводила тип сутності та зовнішній ключ `BrandId`.
@@ -81,7 +81,7 @@
 
 Не перевизначайте `Presentation` вручну, якщо автоматичне правило платформи (`<= 8` видимих скалярних полів → `Popover`, інакше → `Drawer`) вже дає потрібний результат.
 
-Прикладні сервіси форм і списків (`*FormService`, `*GridService`) не оголошують мутабельних бізнес-полів стану (`private bool _repriced;`) — якщо потрібно передати розраховане значення між `Compute`, `BeforeSave` та `AfterSave` під час одного збереження, використовуйте словник контексту мутації `c.Items["key"]` (`FormSaveContext<TEntity>.Items`). Великі базові рушії ядра (`FormService`, `GridService`) організовані як зв'язні `partial`-файли життєвого циклу навколо стану `this` замість передачі десятка аргументів у статичні хелпери.
+Прикладні сервіси форм, списків і потоків статусів (`*FormService`, `*GridService`, `StatusFlowService` / `*FlowService`) не оголошують мутабельних бізнес-полів стану (`private bool _repriced;`) — якщо потрібно передати розраховане значення між `Compute`, `BeforeSave` та `AfterSave` під час одного збереження або в межах одного виконання сервісу, використовуйте типізовані методи `GetExecutionItem<T>()` / `SetExecutionItem<T>()` або словник контексту мутації `c.Items["key"]` (`FormSaveContext<TEntity>.Items`). Великі базові рушії ядра (`FormService`, `GridService`) організовані як зв'язні `partial`-файли життєвого циклу навколо стану `this` замість передачі десятка аргументів у статичні хелпери.
 
 ---
 

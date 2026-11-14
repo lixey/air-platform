@@ -12,5 +12,4 @@ global using DemoApp.Tenant;
 global using DemoApp.User;
 global using DemoApp.UserGroup;
 global using Microsoft.AspNetCore.Builder;
-global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.DependencyInjection;

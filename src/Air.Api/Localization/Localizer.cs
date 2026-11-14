@@ -84,7 +84,15 @@ public sealed class Localizer : ILocalizer
     }
 
     var mgr = new System.Resources.ResourceManager(resourceType) { IgnoreCase = true };
-    _managers.Add(mgr);
+    if (resourceType.Namespace?.StartsWith("Platform.", StringComparison.Ordinal) == true)
+    {
+      _managers.Add(mgr);
+    }
+    else
+    {
+      _managers.Insert(0, mgr);
+    }
+
     _managersSnapshot = [.. _managers];
     IndexKeysLocked(mgr, System.Globalization.CultureInfo.InvariantCulture);
     IndexManagerCulturesLocked(mgr);

@@ -48,7 +48,7 @@
 - **Simple, Everyday English Vocabulary & Readability Over Line-Count Savings**: Always use clear, common English words in identifiers (e.g., `RemoveUserAsync`, `ClearAsync` instead of rare words like `EvictUserAsync`). Never sacrifice code readability or clarity for small line-count reductions — any deduplication that might obscure flow must be reviewed case-by-case with the user first.
 
 ## 5. UI & Form Conventions
-- **Reuse Platform Primitives**: Always use `air-ui` components, services, and tokens (`ui-nav`, `ui-btn`, `SelectService`, `OverlayService`, `fieldClasses`, `UiIcon` + `ICON_SET`, semantic classes `bg-surface`, `bg-field`, `border-line`, `border-field-edge`) instead of custom native controls. Use `flex items-center justify-center` on `<i [icon]="...">` tags.
+- **Reuse Platform Primitives**: Always use `air-ui` components, services, and tokens (`ui-nav`, `ui-btn`, `SelectService`, `OverlayService`, `fieldClasses`, `UiIcon` + `ICON_SET`, semantic classes `bg-surface`, `bg-field`, `border-line`, `border-field-edge`) instead of custom native controls.
 - **Responsive Panels**: Respect `LayoutPanelsService` (`panels.isNarrow()`). On narrow screens, open side panels inside a modal dialog (`presentation: 'dialog'`).
 - **Automatic Form Overlay Presentation Rule (`Popover` vs `Drawer`)**:
   - **Automatic by Default**: `FormService` automatically chooses `OverlayModel.Popover(handle)` for compact standalone forms (`<= 8` visible non-tree scalar fields, `0` tabs, `0` report tables, and `0` non-file child data tables) and `OverlayModel.Drawer(handle)` for all larger or composite forms (any form with `> 8` visible scalar fields, tabs, report tables, or non-file `Elements.AddChild(...)` grids).

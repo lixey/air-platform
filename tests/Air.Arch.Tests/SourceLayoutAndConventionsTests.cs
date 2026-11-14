@@ -21,8 +21,11 @@ public sealed class SourceLayoutAndConventionsTests
     var publicTypeRegex = new Regex(
       @"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+",
       RegexOptions.Multiline);
-    var contractTypeRegex = new Regex(
+    var dtoOrRequestRegex = new Regex(
       @"^public\s+(?:sealed\s+|abstract\s+|static\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+(?:Dto|Request)\b",
+      RegexOptions.Multiline);
+    var modelContractRegex = new Regex(
+      @"^public\s+(?:sealed\s+|abstract\s+|partial\s+|readonly\s+)*(?:class|record|struct|interface|enum)\s+[A-Za-z0-9_]+Model\b",
       RegexOptions.Multiline);
     var allowAnonRegex = new Regex(@"\[\s*AllowAnonymous\b");
     var newParentHooksRegex = new Regex(@"new\s+(?:FormParent|FormHooks|GridParent|GridHooks)\b");
@@ -95,7 +98,7 @@ public sealed class SourceLayoutAndConventionsTests
       var inDemoSrc = rel.StartsWith("demo/src/", StringComparison.Ordinal);
       var inInternals = rel.Contains("/Internals/", StringComparison.Ordinal);
 
-      if (inSrc && internalTypeRegex.IsMatch(txt) && !inInternals)
+      if ((inSrc || inDemoSrc) && internalTypeRegex.IsMatch(txt) && !inInternals)
       {
         errors.Add($"{rel}: internal type must be in Internals/");
       }
@@ -105,7 +108,9 @@ public sealed class SourceLayoutAndConventionsTests
         errors.Add($"{rel}: public type must not be in Internals/");
       }
 
-      if (inSrc && contractTypeRegex.IsMatch(txt) && !rel.Contains("/Contracts/", StringComparison.Ordinal))
+      var inEntityModels = rel.Contains("/Entities/", StringComparison.Ordinal) || rel.Contains("/Models/", StringComparison.Ordinal);
+      if ((inSrc || inDemoSrc) && !rel.Contains("/Contracts/", StringComparison.Ordinal) &&
+          (dtoOrRequestRegex.IsMatch(txt) || !inEntityModels && modelContractRegex.IsMatch(txt)))
       {
         errors.Add($"{rel}: contract type must be in Contracts/");
       }
@@ -336,12 +341,11 @@ public sealed class SourceLayoutAndConventionsTests
       }
 
       var projName = Path.GetFileNameWithoutExtension(csproj);
+      var isWebSdk = txt.Contains("Sdk=\"Microsoft.NET.Sdk.Web\"", StringComparison.Ordinal);
       map[dir] = projName.StartsWith("Air.", StringComparison.Ordinal)
         ? "Platform." + projName[4..]
-        : projName.StartsWith("Demo", StringComparison.Ordinal) &&
-          (projName.EndsWith(".Api", StringComparison.Ordinal) || projName.EndsWith(".Migrations", StringComparison.Ordinal)) &&
-          projName != "Demo.Api"
-          ? projName.Split('.')[0]
+        : projName.EndsWith(".Api", StringComparison.Ordinal) && !isWebSdk
+          ? projName[..^4]
           : projName;
     }
 

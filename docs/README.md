@@ -10,7 +10,7 @@
 
 1. **[Огляд платформи та канонічні принципи (цей документ)](#1-філософія-та-ключова-ідея-платформи)** — як мислить платформа, з яких проєктів вона складається та які 9 архітектурних законів (ADR) у ній діють.
 2. **[Архітектура ядра: Дані, Безпека, RBAC, Мутації та API (`docs/architecture.md`)](./architecture.md)** — детальний розбір `Air.Data` (сутності, мульти-тенантність, аудит `AppPlatformChange`, блокування, `DataProvider`, `QueryMap`) та `Air.Api` (модулі `ModuleDefinition<TSelf>`, `Feature`, модель прав `CanView`/`CanEdit`, `PlatformValidator`, сесії, `MutationRunner`, файли, локалізація).
-3. **[Рушії інтерфейсу, `@air/ui` та ШІ-асистент (`docs/ui-engines-and-agent.md`)](./ui-engines-and-agent.md)** — практичний довідник із `GridService`, `FormService`, `StatusFlowService`, `ReportService`, `ScreenService`, `FileGridService`, бібліотеки компонентів `@air/ui` та декларативного ШІ-асистента `Air.Agent`.
+3. **[Рушії інтерфейсу, `@air-ui/*` та ШІ-асистент (`docs/ui-engines-and-agent.md`)](./ui-engines-and-agent.md)** — практичний довідник із `GridService`, `FormService`, `StatusFlowService`, `ReportService`, `ScreenService`, `FileGridService`, бібліотеки компонентів `@air-ui/*` та декларативного ШІ-асистента `Air.Agent`.
 4. **[Посібник зі створення нового застосунку та модуля (`docs/new-app-guide.md`)](./new-app-guide.md)** — покроковий чекліст розгортання нового репозиторію або модуля (`*.Data`, `*.Migrations`, `*.Api`, хост, фронтенд і контракти).
 5. **[Канон коду C# 14, виразів та розумного тестування (`docs/coding-style.md`)](./coding-style.md)** — єдиний стандарт ідіом C# 14, типізованих `Expression`-налаштувань, правил читабельності без «заумності» та покриття тестами критичних шляхів і бізнес-логіки.
 6. **[Робочий процес, порти, перевірки якості та Git (`docs/workflow-and-git.md`)](./workflow-and-git.md)** — команди `Makefile` (`make format`, `make gate`, `make contracts`, `make audit`), розподіл портів IDE та Агента, стандарти коду й комітів.
@@ -24,7 +24,7 @@
 **Air Platform вирішує це радикально інакше:**
 
 - **100% декларативні метадані на бекенді:** Розробник описує сутність БД (`C# class`), реєструє фічу (`Feature<TService>()`) у модулі та створює компактні класи сервісів (`*GridService`, `*FormService`, `*FlowService`, `*ReportService`, `*ScreenService`), де декларативно вказує колонки, живі лічильники вкладок (`.ShowCounts()`), захист видалення (`PreventDeleteWhenUsedBy`), поля форми, зв'язки (`AsReference`, `AddChild`, `PatchOnSelect`, `SumTo`), неблокуючі попередження (`AsWarning`, `Warn`), умови доступності (`DisabledWhen`, `VisibleWhen`) та переходи статусів.
-- **Універсальний клієнтський рушій (`@air/ui`):** Фронтенд не містить жодної жорстко закодованої бізнес-форми чи таблиці. Він запитує метадані екрана (`ScreenDto`) у бекенду й автоматично будує таблиці з віртуальним скролом, фільтрами, сортуванням, експортом у Excel, багатосекційні форми-дровери, комбіновані робочі місця (`PanelScreen`), дерева прав та аналітичні звіти.
+- **Універсальний клієнтський рушій (`@air-ui/*`):** Фронтенд не містить жодної жорстко закодованої бізнес-форми чи таблиці. Він запитує метадані екрана (`ScreenDto`) у бекенду й автоматично будує таблиці з віртуальним скролом, фільтрами, сортуванням, експортом у Excel, багатосекційні форми-дровери, комбіновані робочі місця (`PanelScreen`), дерева прав та аналітичні звіти.
 - **Вбудований ШІ-асистент без ручних хендлерів (`Air.Agent`):** Достатньо додати `.AllowAgent()` до оголошення фічі та `.AddPlatformAgent()` у `PlatformHost` — і ШІ-асистент автоматично прочитає схему форми, довідники, дочірні таблиці та права поточного користувача, формуючи безпечні картки пропозицій `<ui_proposal>`, які проходять через той самий конвеєр валідації, попереджень та збереження `FormService`, що й звичайні дії користувача в UI.
 
 ---
@@ -34,7 +34,7 @@
 ```mermaid
 flowchart TD
   subgraph Frontend["Фронтенд (Angular 22+ / Tailwind v4)"]
-    AirUi["@air/ui (air-ui/)<br/>Динамічні екрани, Grid, Form, Report, PanelScreen, Overlay, Agent UI"]
+    AirUi["@air-ui/* (air-ui/)<br/>Динамічні екрани, Grid, Form, Report, PanelScreen, Overlay, Agent UI"]
     AppWeb["Прикладні фронтенди<br/>(напр. demo/web)"]
     AppWeb --> AirUi
   end
@@ -82,7 +82,7 @@ flowchart TD
 | **`Air.Mcp`**            | `Platform.Mcp.*`            | Протокол MCP та ізольований міст виконання між ШІ-провайдером і процесом платформи (`/api/mcp`).                                                                                                                                                                                        |
 | **`Air.Agent`**          | `Platform.Agent.*`          | Вбудований ШІ-асистент (`AddPlatformAgent` / `MapPlatformAgent`): збір метаданих і довідників за правами користувача, візуальні блоки (`<ui_kpi>`, `<ui_chart>`, `<ui_table>`, `<ui_html>`), картки `<ui_proposal>`, пам'ять `AppAgentMemory` (`<agent_memory>`) та CLI/API провайдери. |
 | **`Air.UiContracts`**    | `Platform.UiContracts`      | CLI-інструмент для миттєвої генерації `contracts.ts` та `ui-texts.json` у `air-ui/src/core/generated/`.                                                                                                                                                                                 |
-| **`air-ui/`**            | `@air/ui` (TypeScript)      | Універсальна бібліотека Angular 22+ компонентів, сервісів і семантичних токенів Tailwind CSS v4.                                                                                                                                                                                        |
+| **`air-ui/`**            | `@air-ui/*` (TypeScript)    | Універсальна бібліотека Angular 22+ компонентів, сервісів і семантичних токенів Tailwind CSS v4.                                                                                                                                                                                        |
 
 > [!NOTE]
 > **Нейтральність бренду в коді (`Platform.*`):** Слово `Air` використовується лише в назвах `.csproj` / `.slnx` файлів. Усі простори імен C# використовують префікс `Platform.*` (`Platform.Data`, `Platform.Api`, `Platform.App`, `Platform.Agent`, `Platform.Mcp`, `Platform.UiContracts`), що забезпечує прозору модульність і легке перевикористання.

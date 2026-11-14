@@ -90,7 +90,7 @@ export function checkedModelInput(kind: string, component: Type<unknown>): Type<
   return component;
 }
 
-function isOverriding(value: ComponentMap | OverridingComponentMap): value is OverridingComponentMap {
+export function isOverriding(value: ComponentMap | OverridingComponentMap): value is OverridingComponentMap {
   const keys = Object.keys(value);
   return keys.length === 2 && keys.includes('components') && keys.includes('overrides') && Array.isArray(value['overrides']);
 }
