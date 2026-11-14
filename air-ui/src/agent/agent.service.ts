@@ -9,6 +9,7 @@ import { Api } from '../core/api';
 import type { AgentModelDto, AgentSyncSourceDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { UncertainIdempotency } from '../core/uncertain-idempotency';
+import { ConfirmationService } from '../overlay/confirmation.service';
 import { OverlayService } from '../overlay/overlay.service';
 import { AGENT_BLOCK_PLUGINS } from './agent-block-models';
 import {
@@ -55,6 +56,7 @@ export class AgentService {
   private readonly auth = inject(AuthService);
   private readonly location = inject(Location);
   private readonly overlay = inject(OverlayService);
+  private readonly confirmation = inject(ConfirmationService);
   private readonly alert = inject(AlertService);
   private readonly locale = inject(LocaleService);
   private readonly texts = inject(TextsService);
@@ -84,6 +86,7 @@ export class AgentService {
   private readonly mutationHost: AgentMutationHost = {
     api: this.api,
     alert: this.alert,
+    confirmation: this.confirmation,
     texts: this.texts,
     uncertainKeys: this.uncertainKeys,
     getMessages: () => this.messages(),

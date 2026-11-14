@@ -30,7 +30,9 @@ public static class AgentProposalExecutor
       AlsoCommitted = others.Count > 0 ? others : null,
       RunId = batchResult.RunId,
       BatchCode = batchResult.BatchCode,
-      Warnings = primary.Warnings
+      Warnings = primary.Warnings,
+      NoticeTitle = primary.NoticeTitle,
+      NoticeMessages = primary.NoticeMessages
     };
   }
 
@@ -123,7 +125,7 @@ public static class AgentProposalExecutor
         : $"agent:{batchCode}";
       string? committedRunId = null;
 
-      var stepOutcomes = new List<(AgentProposalDto Proposal, long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)>();
+      var stepOutcomes = new List<(AgentProposalDto Proposal, AgentStepCommitOutcome Outcome)>();
       var allRefreshServices = new List<string>();
 
       using var correlationScope = AsyncLocalTenantContext.UseCorrelation(agentCorrelationId);
@@ -156,37 +158,39 @@ public static class AgentProposalExecutor
               }
             }
 
-            stepOutcomes.Add((stepProposal, outcome.RecordId, outcome.RecordLabel, outcome.FormServicePath, outcome.RefreshServices, outcome.Warnings));
+            stepOutcomes.Add((stepProposal, outcome));
           }
 
           allRefreshServices = stepOutcomes
-            .SelectMany(o => o.RefreshServices)
+            .SelectMany(o => o.Outcome.RefreshServices)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         },
         ct);
 
       var committedResults = new List<AgentCommitResultDto>(alreadyCommittedDtos);
-      foreach (var outcome in stepOutcomes)
+      foreach (var (proposal, outcome) in stepOutcomes)
       {
-        lock (outcome.Proposal)
+        lock (proposal)
         {
-          outcome.Proposal.Status = "committed";
-          outcome.Proposal.CommittedRecordId = outcome.RecordId;
-          outcome.Proposal.CommittedLabel = outcome.RecordLabel;
-          outcome.Proposal.FormService = !string.IsNullOrWhiteSpace(outcome.FormServicePath) ? outcome.FormServicePath : null;
+          proposal.Status = "committed";
+          proposal.CommittedRecordId = outcome.RecordId;
+          proposal.CommittedLabel = outcome.RecordLabel;
+          proposal.FormService = !string.IsNullOrWhiteSpace(outcome.FormServicePath) ? outcome.FormServicePath : null;
         }
 
         committedResults.Add(new AgentCommitResultDto
         {
-          ProposalId = outcome.Proposal.Id,
+          ProposalId = proposal.Id,
           RecordId = outcome.RecordId,
           RecordLabel = outcome.RecordLabel,
           FormService = outcome.FormServicePath,
           RefreshServices = allRefreshServices,
           RunId = committedRunId,
           BatchCode = batchCode,
-          Warnings = outcome.Warnings
+          Warnings = outcome.Warnings,
+          NoticeTitle = outcome.NoticeTitle,
+          NoticeMessages = outcome.NoticeMessages
         });
       }
 
@@ -213,7 +217,7 @@ public static class AgentProposalExecutor
     }
   }
 
-  private static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)> ExecuteStepCoreAsync(
+  private static async Task<AgentStepCommitOutcome> ExecuteStepCoreAsync(
     AgentProposalDto proposal,
     StagedProposalPayload payload,
     Dictionary<string, long> committedIdsByProposalId,
@@ -324,7 +328,7 @@ public static class AgentProposalExecutor
     var recordLabel = AgentBatchGraphCollector.BuildCommittedRecordLabel(
       proposal, payload, formInst, formElements, savedRecord.Entity, savedRecord.Id, L);
     var refreshServices = CollectModuleRefreshServices(formInst.Feature.Module);
-    return (savedRecord.Id, recordLabel, formInst.Service, refreshServices, collectedWarnings.Count > 0 ? collectedWarnings : null);
+    return new AgentStepCommitOutcome(savedRecord.Id, recordLabel, formInst.Service, refreshServices, collectedWarnings.Count > 0 ? collectedWarnings : null);
   }
 
   private static async Task<int?> RefreshIntraBatchVersionAsync(

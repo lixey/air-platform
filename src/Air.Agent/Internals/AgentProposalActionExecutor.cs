@@ -4,7 +4,7 @@ namespace Platform.Agent.Internals;
 
 internal static class AgentProposalActionExecutor
 {
-  public static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)> ExecuteRunActionStepAsync(
+  public static async Task<AgentStepCommitOutcome> ExecuteRunActionStepAsync(
     AgentProposalDto proposal,
     StagedProposalPayload payload,
     HashSet<(Type EntityType, long RecordId)> preVerifiedEdits,
@@ -63,6 +63,8 @@ internal static class AgentProposalActionExecutor
     long? openId;
     string? openScreen;
     List<MessageDto>? warnings;
+    string? noticeTitle;
+    List<MessageDto>? noticeMessages;
 
     if (typeof(IGridService).IsAssignableFrom(serviceType) &&
         ModuleCatalog.Instance.CreateServiceInstance(serviceType, stepScope.Db, stepScope.App) is IGridService gridInst)
@@ -82,6 +84,8 @@ internal static class AgentProposalActionExecutor
       openId = res.OpenId;
       openScreen = res.OpenScreen;
       warnings = res.Warnings;
+      noticeTitle = res.Title;
+      noticeMessages = res.Messages is { Count: > 0 } ? res.Messages : null;
     }
     else if (typeof(IFormService).IsAssignableFrom(serviceType) &&
              ModuleCatalog.Instance.CreateServiceInstance(serviceType, stepScope.Db, stepScope.App) is IFormService formInst)
@@ -103,6 +107,8 @@ internal static class AgentProposalActionExecutor
       openId = res.OpenId;
       openScreen = res.OpenScreen;
       warnings = res.Warnings;
+      noticeTitle = res.Title;
+      noticeMessages = res.Messages is { Count: > 0 } ? res.Messages : null;
     }
     else
     {
@@ -127,7 +133,7 @@ internal static class AgentProposalActionExecutor
       }
     }
 
-    return (finalId, label, finalFormPath, allRefresh, warnings);
+    return new AgentStepCommitOutcome(finalId, label, finalFormPath, allRefresh, warnings, noticeTitle, noticeMessages);
   }
 
   public static async Task<DeclaredActionPreviewDto?> RunActionPreviewCoreAsync(

@@ -393,4 +393,53 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     const uploaded = await uploadPromise;
     expect(uploaded?.id).toBe('att-1');
   });
+
+  it('opens ConfirmationService notice dialog when a committed action proposal returns noticeMessages', async () => {
+    const agent = TestBed.inject(AgentService);
+    (agent.messages as unknown as { set: (v: unknown) => void }).set([
+      {
+        id: 'm-notice',
+        role: 'assistant',
+        text: 'Ready to reconcile.',
+        blocks: [],
+        proposals: [
+          {
+            id: 'p-notice',
+            sessionId: agent.sessionId(),
+            operation: 'run-action',
+            service: 'fin/account-grid',
+            action: 'ReconcileBalance',
+            title: 'Reconcile balance',
+            badge: 'Action',
+            badgeColor: 'emerald',
+            fields: [],
+            children: [],
+            status: 'pending',
+          },
+        ],
+        memories: [],
+        attachments: [],
+      },
+    ]);
+
+    const confirmPromise = agent.confirmProposal('m-notice', 'p-notice');
+    const req = http.expectOne('/api/agent/confirm-proposal');
+    req.flush({
+      proposalId: 'p-notice',
+      recordId: 0,
+      recordLabel: 'Reconcile balance',
+      formService: '',
+      refreshServices: ['fin/account'],
+      noticeTitle: 'Balance reconciliation',
+      noticeMessages: [{ type: 'info', detail: 'All 4 accounts match ledger.' }],
+    });
+    await confirmPromise;
+
+    expect(openedOverlay).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'overlay.confirm',
+        presentation: 'dialog',
+      }),
+    );
+  });
 });

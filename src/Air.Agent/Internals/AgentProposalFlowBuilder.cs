@@ -177,7 +177,7 @@ internal static class AgentProposalFlowBuilder
     return proposal;
   }
 
-  public static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)> ExecuteMoveStatusStepAsync(
+  public static async Task<AgentStepCommitOutcome> ExecuteMoveStatusStepAsync(
     AgentProposalDto proposal,
     StagedProposalPayload payload,
     HashSet<(Type EntityType, long RecordId)> preVerifiedEdits,
@@ -263,7 +263,7 @@ internal static class AgentProposalFlowBuilder
 
     var formPath = formType != null ? ServicePathResolver.Resolve(formType) : payload.Service;
     var label = !string.IsNullOrWhiteSpace(proposal.Title) ? proposal.Title : $"#{payload.RecordId.Value}";
-    return (payload.RecordId.Value, label, formPath, [.. refreshServices], warnings);
+    return new AgentStepCommitOutcome(payload.RecordId.Value, label, formPath, [.. refreshServices], warnings);
   }
 
   internal static (Feature? Feature, Type? FormServiceType, Type? GridServiceType) ResolveMoveTargetFeature(string? requestedService)

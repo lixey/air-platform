@@ -9,11 +9,13 @@ import type { TextsService } from '../core/texts.service';
 import type { UncertainIdempotency } from '../core/uncertain-idempotency';
 import { stableJson } from '../form/form-value';
 import { GridService } from '../grid/grid.service';
+import type { ConfirmationService } from '../overlay/confirmation.service';
 import { type AgentChatMessage, type AgentProposal, extractAgentErrorMessage } from './agent-models';
 
 export interface AgentMutationHost {
   readonly api: Api;
   readonly alert: AlertService;
+  readonly confirmation?: Pick<ConfirmationService, 'noticeMessages'>;
   readonly texts: TextsService;
   readonly uncertainKeys: UncertainIdempotency;
   readonly getMessages: () => readonly AgentChatMessage[];
@@ -47,9 +49,15 @@ function applyCommitResult(host: AgentMutationHost, result: AgentCommitResultDto
   if (result.warnings?.length) {
     host.alert.warnings(result.warnings, result.recordLabel);
   }
+  if (result.noticeMessages?.length) {
+    host.confirmation?.noticeMessages(result.noticeTitle ?? result.recordLabel, result.noticeMessages);
+  }
   for (const extra of result.alsoCommitted ?? []) {
     if (extra.warnings?.length) {
       host.alert.warnings(extra.warnings, extra.recordLabel);
+    }
+    if (extra.noticeMessages?.length) {
+      host.confirmation?.noticeMessages(extra.noticeTitle ?? extra.recordLabel, extra.noticeMessages);
     }
   }
   host.updateMessages(list =>

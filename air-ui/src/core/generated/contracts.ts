@@ -456,6 +456,8 @@ export interface AgentCommitResultDto {
   runId?: string | null;
   batchCode?: string | null;
   warnings?: MessageDto[] | null;
+  noticeTitle?: string | null;
+  noticeMessages?: MessageDto[] | null;
 }
 
 export interface AgentMemoryConfirmRequest {

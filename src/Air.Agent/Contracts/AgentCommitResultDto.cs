@@ -20,4 +20,10 @@ public sealed class AgentCommitResultDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<MessageDto>? Warnings { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? NoticeTitle { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<MessageDto>? NoticeMessages { get; set; }
 }
