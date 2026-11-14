@@ -1,13 +1,11 @@
-using Platform.App.Form.Internals;
-
 namespace Platform.App.Form.Actions;
 
 public class FormActionBuilder<TEntity>
   where TEntity : class, IEntity
 {
-  internal FormActionEntry<TEntity> Entry { get; }
+  internal FormActionItem<TEntity> Entry { get; }
 
-  internal FormActionBuilder(FormActionEntry<TEntity> entry)
+  internal FormActionBuilder(FormActionItem<TEntity> entry)
   {
     Entry = entry;
   }

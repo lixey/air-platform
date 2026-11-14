@@ -1,3 +1,5 @@
+using Platform.App.Grid.Internals;
+
 namespace Platform.App.Grid;
 
 public static class GridColumnNumberExtensions
@@ -196,7 +198,7 @@ public static class GridColumnNumberExtensions
 
   private static GridColumn<TEntity, TRow, T> ApplySum<TEntity, TRow, T>(GridColumn<TEntity, TRow, T> column)
   {
-    column.Dto.IsSummed = true;
+    GridColumnRuntime.Of(column.Dto).IsSummed = true;
     return column;
   }
 

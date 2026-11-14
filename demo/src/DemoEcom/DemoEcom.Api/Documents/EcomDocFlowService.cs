@@ -3,7 +3,6 @@ namespace DemoEcom.Documents;
 public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<EcomDbContext, EcomDoc>(db)
 {
   private const int NoteMaxLength = 2000;
-  private IReadOnlyList<EcomDocStatus>? _statuses;
 
   protected abstract long Type { get; }
   protected EcomDocTexts Texts => field ??= EcomDocTexts.Of(L);
@@ -83,6 +82,15 @@ public abstract class EcomDocFlowService(EcomDbContext db) : StatusFlowService<E
     await base.LockAsync(context, records, cancellationToken);
   }
 
-  private async Task<IReadOnlyList<EcomDocStatus>> StatusesAsync(CancellationToken cancellationToken) =>
-    _statuses ??= await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
+  private async Task<IReadOnlyList<EcomDocStatus>> StatusesAsync(CancellationToken cancellationToken)
+  {
+    if (GetExecutionItem<IReadOnlyList<EcomDocStatus>>() is { } cached)
+    {
+      return cached;
+    }
+
+    var loaded = await EcomDocStatuses.OfTypeAsync(db, Type, cancellationToken);
+    SetExecutionItem<IReadOnlyList<EcomDocStatus>>(loaded);
+    return loaded;
+  }
 }

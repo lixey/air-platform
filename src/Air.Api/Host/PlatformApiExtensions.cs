@@ -151,18 +151,13 @@ public static class PlatformApiExtensions
         });
       }
 
-      var filesPath = builder.Configuration["Files:Path"];
-      if (string.IsNullOrWhiteSpace(filesPath))
+      if (builder.Services.All(d => d.ServiceType != typeof(IFileStorage)))
       {
-        filesPath = Path.Combine(builder.Environment.ContentRootPath, "platform_files");
-      }
-      else if (!Path.IsPathRooted(filesPath))
-      {
-        filesPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, filesPath));
+        builder.AddPlatformLocalFiles();
       }
 
-      builder.Services.TryAddSingleton<IFileStorage>(_ => new LocalFileStorage(filesPath));
       builder.Services.TryAddSingleton<IFileStores>(sp => new DefaultFileStores(sp.GetRequiredService<IFileStorage>()));
+
       builder.Services.TryAddScoped<IUserContext, UserContext>();
       builder.Services.TryAddScoped<PlatformAppService>();
       builder.Services.TryAddScoped<ITenantContext, HttpTenantContext>();
@@ -276,6 +271,26 @@ public static class PlatformApiExtensions
   {
     app.UsePlatformAuth();
     return app.MapPlatformApiEndpoints();
+  }
+
+  public static WebApplicationBuilder AddPlatformLocalFiles(
+    this WebApplicationBuilder builder,
+    string? path = null)
+  {
+    ArgumentNullException.ThrowIfNull(builder);
+    var resolvedPath = string.IsNullOrWhiteSpace(path) ? builder.Configuration["Files:Path"] : path;
+    if (string.IsNullOrWhiteSpace(resolvedPath))
+    {
+      resolvedPath = Path.Combine(builder.Environment.ContentRootPath, "platform_files");
+    }
+    else if (!Path.IsPathRooted(resolvedPath))
+    {
+      resolvedPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, resolvedPath));
+    }
+
+    builder.Services.Replace(ServiceDescriptor.Singleton<IFileStorage>(_ => new LocalFileStorage(resolvedPath)));
+    builder.Services.TryAddSingleton<IFileStores>(sp => new DefaultFileStores(sp.GetRequiredService<IFileStorage>()));
+    return builder;
   }
 
   public static WebApplicationBuilder AddPlatformJob<TJob>(

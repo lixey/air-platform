@@ -88,6 +88,8 @@ internal static class FormDraftEngine
     }
 
     ApplyMergedValuesToDraftEntity(values, draftEntity);
+    FormValueBinder.NormalizeNullableStrings(allElements, draftEntity);
+    FormValueBinder.NormalizeRightsTrees(allElements, draftEntity);
 
     var preComputeSnapshot = hasComputeHooks
       ? SerializeDraftSnapshot(draftEntity, snapshotElements, ignoreZeroNumbers: false)

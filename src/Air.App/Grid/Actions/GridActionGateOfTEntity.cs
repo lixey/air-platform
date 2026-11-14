@@ -1,4 +1,3 @@
-using Platform.App.Grid.Internals;
 using Platform.App.Screens.Internals;
 
 namespace Platform.App.Grid.Actions;
@@ -29,8 +28,8 @@ public sealed class GridActionGate<TEntity>
 
   private GridActionBuilder<TEntity> Register(ActionPermission permission)
   {
-    var entry = new GridActionEntry<TEntity>(_handle, permission);
-    _owner.Entries.Add(entry);
+    var entry = new GridActionItem<TEntity>(_handle, permission);
+    _owner.Items.Add(entry);
     return new GridActionBuilder<TEntity>(entry);
   }
 }

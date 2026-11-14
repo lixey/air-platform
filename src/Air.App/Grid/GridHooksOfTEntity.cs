@@ -1,3 +1,5 @@
+using Platform.App.Files.Internals;
+
 namespace Platform.App.Grid;
 
 public sealed class GridHooks<TEntity>(string? moduleHandle = null)
@@ -5,10 +7,29 @@ public sealed class GridHooks<TEntity>(string? moduleHandle = null)
 {
   internal bool IsMultiDeleteAllowed { get; private set; }
   internal List<Type> DependentEntityTypes { get; } = [];
+  internal List<Func<GridDeleteContext<TEntity>, List<Func<IServiceProvider?, CancellationToken, Task>>, CancellationToken, Task>> DeleteFileActions { get; } = [];
   public List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> BeforeDeleteActions { get; } = [];
   public List<Func<GridDeleteContext<TEntity>, CancellationToken, Task>> AfterDeleteActions { get; } = [];
 
   public void AllowMultiDelete(bool allow = true) => IsMultiDeleteAllowed = allow;
+
+  public void DeleteFiles<TFile>(Expression<Func<TFile, long>> foreignKey)
+    where TFile : BaseAppFile
+  {
+    ArgumentNullException.ThrowIfNull(foreignKey);
+    DependentEntityTypes.Add(typeof(TFile));
+    DeleteFileActions.Add((c, cleanups, ct) =>
+      FileStorageCleaner.RemoveDependentFilesAsync(c, foreignKey, cleanups, ct));
+  }
+
+  public void DeleteFiles<TFile>(Expression<Func<TFile, long?>> foreignKey)
+    where TFile : BaseAppFile
+  {
+    ArgumentNullException.ThrowIfNull(foreignKey);
+    DependentEntityTypes.Add(typeof(TFile));
+    DeleteFileActions.Add((c, cleanups, ct) =>
+      FileStorageCleaner.RemoveDependentFilesAsync(c, foreignKey, cleanups, ct));
+  }
 
   public void PreventDeleteWhenUsedBy<TDependent>(
     Expression<Func<TDependent, long>> foreignKey,
@@ -51,11 +72,11 @@ public sealed class GridHooks<TEntity>(string? moduleHandle = null)
         return;
       }
 
-      var ids = c.Records.Select(r => r.Id).Distinct().ToArray();
+      var nullableIds = c.Records.Select(static r => (long?)r.Id).Distinct().ToArray();
       var query = c.Db.Set<TDependent>()
         .AsNoTracking()
         .Select(foreignKey)
-        .Where(fk => fk.HasValue && ids.Contains(fk.Value))
+        .Where(fk => nullableIds.Contains(fk))
         .Select(fk => fk!.Value)
         .Distinct();
       var usedIds = query is IAsyncEnumerable<long>

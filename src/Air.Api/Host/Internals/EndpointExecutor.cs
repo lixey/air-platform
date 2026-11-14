@@ -22,28 +22,37 @@ internal static class EndpointExecutor
       return Results.NotFound();
     }
 
-    (serviceInstance as IPlatformService)?.BindContext(services.GetService<PlatformAppService>());
-    var feat = descriptor.StaticFeature ?? (serviceInstance as IPlatformService)?.Feature;
+    var ps = serviceInstance as IPlatformService;
+    ps?.BindContext(services.GetService<PlatformAppService>());
+    ps?.ResetExecutionScope();
+    var feat = descriptor.StaticFeature ?? ps?.Feature;
 
-    if (descriptor.IsDynamicAction)
+    try
     {
-      return await ExecuteDynamicAsync(descriptor, serviceInstance, httpRequest, services, ct);
-    }
+      if (descriptor.IsDynamicAction)
+      {
+        return await ExecuteDynamicAsync(descriptor, serviceInstance, httpRequest, services, ct);
+      }
 
-    return await ExecuteReflectedAsync(
-      descriptor.Method!,
-      descriptor.Parameters,
-      descriptor.CompiledInvoker!,
-      descriptor.Auth,
-      descriptor.IsAnonymous,
-      descriptor.RequireClientHeader,
-      descriptor.UsesRawHttp,
-      descriptor.UsesFormFiles,
-      serviceInstance,
-      feat,
-      httpRequest,
-      services,
-      ct);
+      return await ExecuteReflectedAsync(
+        descriptor.Method!,
+        descriptor.Parameters,
+        descriptor.CompiledInvoker!,
+        descriptor.Auth,
+        descriptor.IsAnonymous,
+        descriptor.RequireClientHeader,
+        descriptor.UsesRawHttp,
+        descriptor.UsesFormFiles,
+        serviceInstance,
+        feat,
+        httpRequest,
+        services,
+        ct);
+    }
+    finally
+    {
+      ps?.ResetExecutionScope();
+    }
   }
 
   internal static async Task<IResult> DispatchAsync(
@@ -55,54 +64,63 @@ internal static class EndpointExecutor
     IServiceProvider services,
     CancellationToken ct)
   {
-    (serviceInstance as IPlatformService)?.BindContext(services.GetService<PlatformAppService>());
-    if (EndpointRegistry.FindReflectedEndpoint(serviceType, actionName) is { CompiledInvoker: not null } reflected)
+    var ps = serviceInstance as IPlatformService;
+    ps?.BindContext(services.GetService<PlatformAppService>());
+    ps?.ResetExecutionScope();
+    try
     {
-      return await ExecuteReflectedAsync(
-        reflected.Method,
-        reflected.Parameters,
-        reflected.CompiledInvoker,
-        reflected.Auth,
-        reflected.IsAnonymous,
-        reflected.RequireClientHeader,
-        reflected.UsesRawHttp,
-        reflected.UsesFormFiles,
-        serviceInstance,
-        feat ?? (serviceInstance as IPlatformService)?.Feature,
-        httpRequest,
-        services,
-        ct);
-    }
-
-    if (serviceInstance is IPlatformService platformService)
-    {
-      var userContext = services.GetService<IUserContext>();
-      if (userContext is null or { IsAuthenticated: false })
+      if (EndpointRegistry.FindReflectedEndpoint(serviceType, actionName) is { CompiledInvoker: not null } reflected)
       {
-        return Results.Unauthorized();
+        return await ExecuteReflectedAsync(
+          reflected.Method,
+          reflected.Parameters,
+          reflected.CompiledInvoker,
+          reflected.Auth,
+          reflected.IsAnonymous,
+          reflected.RequireClientHeader,
+          reflected.UsesRawHttp,
+          reflected.UsesFormFiles,
+          serviceInstance,
+          feat ?? ps?.Feature,
+          httpRequest,
+          services,
+          ct);
       }
 
-      var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
-      if (isMalformed)
+      if (ps is not null)
       {
-        return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
-      }
-
-      try
-      {
-        var dyn = await platformService.ExecuteDynamicEndpointAsync(actionName, httpRequest, body, services, ct);
-        if (dyn is not null)
+        var userContext = services.GetService<IUserContext>();
+        if (userContext is null or { IsAuthenticated: false })
         {
-          return dyn;
+          return Results.Unauthorized();
+        }
+
+        var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+        if (isMalformed)
+        {
+          return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
+        }
+
+        try
+        {
+          var dyn = await ps.ExecuteDynamicEndpointAsync(actionName, httpRequest, body, services, ct);
+          if (dyn is not null)
+          {
+            return dyn;
+          }
+        }
+        catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
+        {
+          return mapped;
         }
       }
-      catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
-      {
-        return mapped;
-      }
-    }
 
-    return Results.NotFound();
+      return Results.NotFound();
+    }
+    finally
+    {
+      ps?.ResetExecutionScope();
+    }
   }
 
   public static async Task<IResult> ExecuteReflectedAsync(
@@ -219,8 +237,16 @@ internal static class EndpointExecutor
 
     try
     {
+      var actionName = !string.IsNullOrEmpty(descriptor.ActionName)
+        ? descriptor.ActionName
+        : httpRequest.RouteValues["__dynAction"] as string ?? string.Empty;
+      if (string.IsNullOrEmpty(actionName))
+      {
+        return Results.NotFound();
+      }
+
       var result = await platformService.ExecuteDynamicEndpointAsync(
-        descriptor.ActionName,
+        actionName,
         httpRequest,
         body,
         services,

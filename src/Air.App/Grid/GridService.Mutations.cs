@@ -54,7 +54,8 @@ public abstract partial class GridService<TEntity, TRow>
     IReadOnlyList<long> ids,
     CancellationToken ct,
     bool asTracking = false,
-    bool lockEntities = false)
+    bool lockEntities = false,
+    bool reloadTracked = false)
   {
     if (ids.Count == 0)
     {
@@ -82,15 +83,17 @@ public abstract partial class GridService<TEntity, TRow>
     {
       var sortedLockKeys = ids.Distinct().OrderBy(id => id).Select(id => new[] { id }).ToList();
       await MutationContext.AcquireLocksAsync(db, typeof(TEntity), sortedLockKeys, ct);
-      if (asTracking && db.Database.IsRelational())
+      reloadTracked = true;
+    }
+
+    if (reloadTracked && asTracking && db.Database.CurrentTransaction != null && db.Database.IsRelational())
+    {
+      var idSet = ids.ToHashSet();
+      foreach (var local in db.Set<TEntity>().Local.Where(e => idSet.Contains(e.Id)).ToList())
       {
-        var idSet = ids.ToHashSet();
-        foreach (var local in db.Set<TEntity>().Local.Where(e => idSet.Contains(e.Id)).ToList())
+        if (db.Entry(local).State == EntityState.Unchanged)
         {
-          if (db.Entry(local).State == EntityState.Unchanged)
-          {
-            await db.Entry(local).ReloadAsync(ct);
-          }
+          await db.Entry(local).ReloadAsync(ct);
         }
       }
     }
@@ -131,6 +134,7 @@ public abstract partial class GridService<TEntity, TRow>
     ParentService = request.ParentService;
     ParentId = request.ParentId;
     List<TEntity>? deletedRecords = null;
+    var postCommitFileCleanups = new List<Func<IServiceProvider?, CancellationToken, Task>>();
     var servicePath = ServicePathResolver.Resolve(GetType());
     var actionPath = $"{servicePath}/delete";
 
@@ -141,6 +145,7 @@ public abstract partial class GridService<TEntity, TRow>
       request.RawPayload,
       async mutationCt =>
       {
+        postCommitFileCleanups.Clear();
         var (ids, versions, versionCountMismatch) = NormalizeSelection(request);
 
         await InferBoundParentIdFromIdsAsync(ids, mutationCt);
@@ -221,6 +226,11 @@ public abstract partial class GridService<TEntity, TRow>
         List<AffectedDto>? affected;
         try
         {
+          foreach (var deleteFiles in hooks.DeleteFileActions)
+          {
+            await deleteFiles(ctx, postCommitFileCleanups, mutationCt);
+          }
+
           db.Set<TEntity>().RemoveRange(entities);
           await db.SaveChangesAsync(mutationCt);
 
@@ -272,9 +282,17 @@ public abstract partial class GridService<TEntity, TRow>
       ct,
       PlatformApp?.Services);
 
-    if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && deletedRecords is { Count: > 0 })
+    if (result.Outcome == MutationOutcome.Committed)
     {
-      await PlatformApp.ClearAuthCacheForEntitiesAsync(deletedRecords, db, ct);
+      foreach (var cleanup in postCommitFileCleanups)
+      {
+        await cleanup(PlatformApp?.Services, CancellationToken.None);
+      }
+
+      if (PlatformApp != null && deletedRecords is { Count: > 0 })
+      {
+        await PlatformApp.ClearAuthCacheForEntitiesAsync(deletedRecords, db, ct);
+      }
     }
 
     return result;
@@ -299,7 +317,7 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    return ParentScopeValidator.RecalculateBoundParentsAsync(
+    return BoundParentRecalculator.RecalculateBoundParentsAsync(
       db,
       PlatformApp,
       ParentService,
@@ -343,8 +361,7 @@ public abstract partial class GridService<TEntity, TRow>
     IReadOnlyList<TEntity> records,
     string defaultType = MessageType.Error)
   {
-    var queryDeclaration = GetQueryDeclaration();
-    var compiledLabel = queryDeclaration.LabelSelector?.Compile();
+    var compiledLabel = GetQueryDeclaration().CompiledLabelSelector;
     var byId = records.ToDictionary(r => r.Id);
 
     return errors.Select(e =>
@@ -357,7 +374,7 @@ public abstract partial class GridService<TEntity, TRow>
         {
           try
           {
-            label = compiledLabel.DynamicInvoke(rec)?.ToString();
+            label = compiledLabel(rec);
           }
           catch { }
         }
@@ -386,16 +403,15 @@ public abstract partial class GridService<TEntity, TRow>
         return null;
       }
 
-      if (queryDeclaration.ComputeAction != null)
-      {
-        await queryDeclaration.ComputeAction([row], ct);
-      }
-
-      var shaped = ShapeRow(row, cols.List, queryDeclaration.RowFlags);
-      await GridRowEnricher.PopulateCoversAsync(this, [shaped], cols.List, ct);
-      await GridRowEnricher.PopulateProjectedColorsAsync(this, [shaped], cols.List, ct);
-      await GridRowEnricher.PopulateRowAvailabilityAsync(this, [shaped], cols, ct);
-      return shaped;
+      var shaped = await GridRowShaper.ShapeAndEnrichBatchAsync(
+        this,
+        [row],
+        cols.List,
+        cols,
+        queryDeclaration,
+        includeScreenEnrichments: true,
+        ct);
+      return shaped[0];
     }
 
     var defaultSelector = GridRowEnricher.CanUseDefaultProjection(this, query, queryDeclaration)
@@ -409,23 +425,15 @@ public abstract partial class GridService<TEntity, TRow>
       return null;
     }
 
-    if (queryDeclaration.ComputeAction != null && entity is TRow typedRow)
-    {
-      await queryDeclaration.ComputeAction([typedRow], ct);
-    }
-
-    var shapedEntity = ShapeRow((entity as TRow)!, cols.List, queryDeclaration.RowFlags);
-    List<RowDto> singleShapedList = [shapedEntity];
-    if (queryDeclaration.RowComputeAction != null)
-    {
-      await GridRowShaper.InvokeRowComputeActionAsync([entity], singleShapedList, cols.List, queryDeclaration.RowComputeAction, ct);
-    }
-
-    await GridRowEnricher.PopulateComputedColumnsAsync(this, singleShapedList, cols.List, ct);
-    await GridRowEnricher.PopulateCoversAsync(this, singleShapedList, cols.List, ct);
-    await GridRowEnricher.PopulateProjectedColorsAsync(this, singleShapedList, cols.List, ct);
-    await GridRowEnricher.PopulateRowAvailabilityAsync(this, singleShapedList, cols, ct);
-    return shapedEntity;
+    var shapedEntity = await GridRowShaper.ShapeAndEnrichBatchAsync(
+      this,
+      [entity],
+      cols.List,
+      cols,
+      queryDeclaration,
+      includeScreenEnrichments: true,
+      ct);
+    return shapedEntity[0];
   }
 
   public virtual async Task<GridCellDto> SaveCellAsync(GridCellRequest request, IServiceProvider services, CancellationToken ct = default)
@@ -513,8 +521,8 @@ public abstract partial class GridService<TEntity, TRow>
     ParentId = request.ParentId;
     var parentScopeValid = await EnsureParentScopeAsync(lockParent: false, ct);
     var cols = await CreateColumnsAsync(ct);
-    LocalizeAndConfigureColumns(cols.List);
-    var exportColumns = cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.Cell is not GridCellCoverModel).ToList();
+    var exportColumns = ProjectScreenColumns(
+      cols.List.Where(c => !c.IsHidden && !string.IsNullOrWhiteSpace(c.Path) && c.Cell is not GridCellCoverModel));
 
     const int limit = 100_000;
     IAsyncEnumerable<RowDto> rowStream;
@@ -542,9 +550,13 @@ public abstract partial class GridService<TEntity, TRow>
       if (queryDeclaration.Selector != null)
       {
         var dataProvider = DataProvider.Create(query.AsNoTracking(), queryMap, queryDeclaration.Selector);
-        rowStream = queryDeclaration.ComputeAction != null
-          ? GridRowShaper.ShapeComputedChunksAsync(this, dataProvider.StreamChunksAsync(request, limit + 1, 500, ct), queryDeclaration.ComputeAction, exportColumns, ct)
-          : GridRowShaper.ShapeStreamAsync(this, dataProvider.StreamAsync(request, limit + 1, ct), exportColumns, ct);
+        rowStream = GridRowShaper.StreamShapedChunksAsync(
+          this,
+          dataProvider.StreamChunksAsync(request, limit + 1, 500, ct),
+          exportColumns,
+          cols,
+          queryDeclaration,
+          ct);
       }
       else
       {
@@ -554,17 +566,13 @@ public abstract partial class GridService<TEntity, TRow>
         var defaultDataProvider = exportSelector != null
           ? DataProvider.Create(query.AsNoTracking(), queryMap, exportSelector)
           : DataProvider.Create(GridRowEnricher.IncludeColumnNavigations<TEntity, TRow>(query.AsNoTracking(), exportColumns), queryMap);
-        var hasSubqueryCols = exportColumns.Any(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null);
-        rowStream = queryDeclaration.ComputeAction != null || queryDeclaration.RowComputeAction != null || hasSubqueryCols
-          ? GridRowShaper.ShapeEntityChunksAsync(
-            this,
-            defaultDataProvider.StreamChunksAsync(request, limit + 1, 500, ct),
-            exportColumns,
-            queryDeclaration.ComputeAction,
-            queryDeclaration.RowComputeAction,
-            hasSubqueryCols,
-            ct)
-          : GridRowShaper.ShapeEntityStreamAsync(this, defaultDataProvider.StreamAsync(request, limit + 1, ct), exportColumns, ct);
+        rowStream = GridRowShaper.StreamShapedChunksAsync(
+          this,
+          defaultDataProvider.StreamChunksAsync(request, limit + 1, 500, ct),
+          exportColumns,
+          cols,
+          queryDeclaration,
+          ct);
       }
     }
 
@@ -576,7 +584,7 @@ public abstract partial class GridService<TEntity, TRow>
       var cleanName = Regex.Replace(label, @"[\s\W]+", "_").Trim('_');
       TimeZones.TryFind(User?.TimeZone, out var exportTimeZone);
       var fileName = $"{cleanName}_{TimeZoneInfo.ConvertTime(Time.UtcNow, exportTimeZone):yyyyMMdd_HHmm}.xlsx";
-      await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => col.MemberType ?? PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
+      await GridExcelWriter.WriteAsync(fileStream, label, exportColumns, col => GridColumnRuntime.TryGet(col)?.MemberType ?? PropertyAccessorCache.GetProperty(typeof(TRow), col.Path ?? "")?.PropertyType, rowStream, L, exportTimeZone, limit, L["ExportTruncated", limit], ct);
       fileStream.Position = 0;
       return Results.File(fileStream, GridExcelWriter.ContentType, fileName);
     }

@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore.Metadata;
+using Platform.App.Changes.Internals;
 using Platform.App.Internals;
 
 namespace Platform.App.Changes;
@@ -6,10 +8,19 @@ namespace Platform.App.Changes;
 /// The change journal (AppPlatformChange) of the tenant: a grid an application routes with a sealed
 /// service of its own and a read-only feature.
 /// </summary>
-public abstract partial class ChangeGridService(PlatformDbContext db, IServiceProvider? services = null, PlatformAppService? app = null)
+public abstract partial class ChangeGridService(PlatformDbContext db, PlatformAppService? app = null)
   : GridService<AppPlatformChange>(db, app)
 {
-  private (string? Service, long? Id) _validatedParentScope;
+  private const string ValidatedParentScopeKey = "ChangeGrid.ValidatedParentScope";
+  private const string TableMetaCacheKey = "ChangeGrid.TableMetaCache";
+
+  protected ChangeGridService(PlatformDbContext db, IServiceProvider? services, PlatformAppService? app = null)
+    : this(db, app)
+  {
+    Services = services;
+  }
+
+  private IServiceProvider? Services => PlatformApp?.Services ?? field;
 
   protected override bool IsReadOnly => true;
 
@@ -31,10 +42,10 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
       var parentFeat = Catalog.FindFeature(request.ParentService);
       if (parentFeat == null &&
-          services != null &&
+          Services is { } sp &&
           Catalog.FindServiceType(request.ParentService) is { } parentServiceType)
       {
-        parentFeat = (services.GetService(parentServiceType) as IPlatformService)?.Feature;
+        parentFeat = (sp.GetService(parentServiceType) as IPlatformService)?.Feature;
       }
 
       if (parentFeat == null || !ServiceEndpointsExtensions.CanView(parentFeat, user))
@@ -61,7 +72,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
 
   protected override async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
   {
-    _validatedParentScope = default;
+    SetExecutionItem<(string? Service, long? Id)>(ValidatedParentScopeKey, default);
 
     if (string.IsNullOrEmpty(ParentService) && !ParentId.HasValue)
     {
@@ -79,17 +90,17 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       return false;
     }
 
-    var parentServiceType = ModuleCatalog.Instance.FindServiceType(ParentService);
+    var parentServiceType = Catalog.FindServiceType(ParentService);
     var entityType = ModuleCatalog.GetServiceEntityType(parentServiceType);
     if (parentServiceType == null || parentServiceType.IsAbstract || entityType == null)
     {
       return false;
     }
 
-    var targetDb = GetDbContextForTable(entityType.Name);
+    var (targetDb, _) = ResolveTableMetadata(entityType.Name);
     if (typeof(Form.IFormService).IsAssignableFrom(parentServiceType))
     {
-      var (allowed, _, _) = await Internals.ParentScopeValidator.ValidateAndLoadAsync(
+      var (allowed, _, _) = await ParentScopeValidator.ValidateAndLoadAsync(
         targetDb,
         PlatformApp,
         ParentId,
@@ -106,12 +117,12 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
         return false;
       }
 
-      _validatedParentScope = (ParentService, ParentId);
+      SetExecutionItem(ValidatedParentScopeKey, (ParentService, ParentId));
       return true;
     }
 
     if (typeof(IGridService).IsAssignableFrom(parentServiceType) &&
-        ModuleCatalog.Instance.CreateServiceInstance(parentServiceType, targetDb, PlatformApp, services) is IGridService parentGrid)
+        Catalog.CreateServiceInstance(parentServiceType, targetDb, PlatformApp, Services) is IGridService parentGrid)
     {
       if (!parentGrid.CanView(new GridRequest(), User))
       {
@@ -124,7 +135,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
         return false;
       }
 
-      _validatedParentScope = (ParentService, ParentId);
+      SetExecutionItem(ValidatedParentScopeKey, (ParentService, ParentId));
       return true;
     }
 
@@ -177,8 +188,9 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     var hasGlobalView = base.CanView(new GridRequest(), User);
     if (!string.IsNullOrEmpty(ParentService) || ParentId.HasValue)
     {
-      var isValidated = _validatedParentScope.Id == ParentId &&
-                        string.Equals(_validatedParentScope.Service, ParentService, StringComparison.OrdinalIgnoreCase);
+      var validatedParent = GetExecutionItem<(string? Service, long? Id)>(ValidatedParentScopeKey);
+      var isValidated = validatedParent.Id == ParentId &&
+                        string.Equals(validatedParent.Service, ParentService, StringComparison.OrdinalIgnoreCase);
       var tableName = isValidated && !string.IsNullOrEmpty(ParentService)
         ? ResolveParentTableName(ParentService)
         : string.Empty;
@@ -197,11 +209,11 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       Query.Where(_ => false);
     }
 
-    Query.NamedFilter("operation")
+    Query.NamedFilter("Operation")
       .All("All").Default()
-      .Item("added", "Added", r => r.Operation == ChangeOperations.Added).Color(UiColor.Green)
-      .Item("modified", "Modified", r => r.Operation == ChangeOperations.Modified).Color(UiColor.Amber)
-      .Item("deleted", "Deleted", r => r.Operation == ChangeOperations.Deleted).Color(UiColor.Red);
+      .Item("Added", "Added", r => r.Operation == ChangeOperations.Added).Color(UiColor.Green)
+      .Item("Modified", "Modified", r => r.Operation == ChangeOperations.Modified).Color(UiColor.Amber)
+      .Item("Deleted", "Deleted", r => r.Operation == ChangeOperations.Deleted).Color(UiColor.Red);
 
     Query.SortByDescending(r => r.At).ThenByDescending(r => r.Id);
     Query.SearchBy(
@@ -251,17 +263,17 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       var onlyDiff = e.Operation == ChangeOperations.Modified;
       if (row.Values.ContainsKey("before") && e.Before != null)
       {
-        row["before"] = FormatCompactAuditJson(e.Before, e.After, onlyDiff);
+        row["before"] = ChangeAuditFormatter.FormatCompactAuditJson(e.Before, e.After, onlyDiff);
       }
 
       if (row.Values.ContainsKey("after") && e.After != null)
       {
-        row["after"] = FormatCompactAuditJson(e.After, e.Before, onlyDiff);
+        row["after"] = ChangeAuditFormatter.FormatCompactAuditJson(e.After, e.Before, onlyDiff);
       }
 
       if (row.Values.ContainsKey("correlationId") && !string.IsNullOrEmpty(e.CorrelationId))
       {
-        row["correlationId"] = FormatCorrelationLabel(e.CorrelationId, L);
+        row["correlationId"] = ChangeAuditFormatter.FormatCorrelationLabel(e.CorrelationId, L);
       }
     }
   }
@@ -275,7 +287,7 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
       return string.Empty;
     }
 
-    var targetDb = GetDbContextForTable(entityType.Name);
+    var (targetDb, _) = ResolveTableMetadata(entityType.Name);
     var efEntity = targetDb.Model.FindEntityType(entityType);
     return efEntity?.GetTableName() ?? entityType.Name;
   }
@@ -296,26 +308,49 @@ public abstract partial class ChangeGridService(PlatformDbContext db, IServicePr
     return null;
   }
 
-  private PlatformDbContext GetDbContextForTable(string table)
+  private (PlatformDbContext Db, IEntityType? EntityType) ResolveTableMetadata(string table)
   {
-    if (db.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
+    var cache = GetExecutionItem<Dictionary<string, (PlatformDbContext Db, IEntityType? EntityType)>>(TableMetaCacheKey);
+    if (cache is null)
     {
-      return db;
+      cache = new Dictionary<string, (PlatformDbContext Db, IEntityType? EntityType)>(StringComparer.Ordinal);
+      SetExecutionItem(TableMetaCacheKey, cache);
     }
 
-    if ((services ?? PlatformApp?.Services) is { } sp)
+    if (cache.TryGetValue(table, out var cached))
+    {
+      return cached;
+    }
+
+    var localEntity = db.Model.GetEntityTypes()
+      .FirstOrDefault(e => e.ClrType.Name == table || e.GetTableName() == table);
+    if (localEntity != null)
+    {
+      var hit = (db, (IEntityType?)localEntity);
+      cache[table] = hit;
+      return hit;
+    }
+
+    if (Services is { } sp)
     {
       foreach (var dbType in Catalog.DbContextTypes)
       {
-        if (dbType != db.GetType() &&
-            sp.GetService(dbType) is PlatformDbContext otherDb &&
-            otherDb.Model.GetEntityTypes().Any(e => e.ClrType.Name == table || e.GetTableName() == table))
+        if (dbType != db.GetType() && sp.GetService(dbType) is PlatformDbContext otherDb)
         {
-          return otherDb;
+          var otherEntity = otherDb.Model.GetEntityTypes()
+            .FirstOrDefault(e => e.ClrType.Name == table || e.GetTableName() == table);
+          if (otherEntity != null)
+          {
+            var hit = (otherDb, (IEntityType?)otherEntity);
+            cache[table] = hit;
+            return hit;
+          }
         }
       }
     }
 
-    return db;
+    var fallback = (db, (IEntityType?)null);
+    cache[table] = fallback;
+    return fallback;
   }
 }

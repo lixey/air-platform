@@ -9,9 +9,27 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected TimeProvider Time => PlatformApp?.Time ?? db.Time;
+  protected IDictionary<string, object?> ExecutionItems => _executionItems ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+
+  protected T? GetExecutionItem<T>(string key) =>
+    _executionItems is not null && _executionItems.TryGetValue(key, out var value) && value is T typed
+      ? typed
+      : default;
+
+  protected void SetExecutionItem<T>(string key, T value) =>
+    ExecutionItems[key] = value;
+
+  protected T? GetExecutionItem<T>() =>
+    GetExecutionItem<T>(typeof(T).FullName ?? typeof(T).Name);
+
+  protected void SetExecutionItem<T>(T value) =>
+    SetExecutionItem(typeof(T).FullName ?? typeof(T).Name, value);
 
   void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
+  void IPlatformService.ResetExecutionScope() => _executionItems = null;
 
+  private Dictionary<string, object?>? _executionItems;
+  private int _executionDepth;
   private readonly List<OptionDto> _statuses = [];
   private readonly HashSet<long> _finalStatusIds = [];
   private readonly List<Type> _followers = [];
@@ -54,46 +72,37 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
       }
     }
 
-    if (seenStatusIds.Count > 0)
+    if (seenStatusIds.Count > 0 && _initialStatusId.HasValue && !seenStatusIds.Contains(_initialStatusId.Value))
     {
-      if (_initialStatusId.HasValue && !seenStatusIds.Contains(_initialStatusId.Value))
+      throw new InvalidOperationException(
+        $"Status flow '{GetType().FullName}' sets initial status ID '{_initialStatusId.Value}' which is not declared in flow.Status(...).");
+    }
+
+    foreach (var transition in _transitionsByName.Values)
+    {
+      transition.Asked?.ValidateConfiguration(GetType());
+      if (transition.RequiredRight?.Feature?.ServiceType is { } rightServiceType)
+      {
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), rightServiceType, $"Transition.Allow on '{transition.Name}'");
+      }
+
+      if (seenStatusIds.Count == 0)
+      {
+        continue;
+      }
+
+      if (!seenStatusIds.Contains(transition.To))
       {
         throw new InvalidOperationException(
-          $"Status flow '{GetType().FullName}' sets initial status ID '{_initialStatusId.Value}' which is not declared in flow.Status(...).");
+          $"Transition '{transition.Name}' in '{GetType().FullName}' targets undeclared status ID '{transition.To}'.");
       }
 
-      foreach (var transition in _transitionsByName.Values)
+      foreach (var fromId in transition.From)
       {
-        transition.Asked?.ValidateConfiguration(GetType());
-        if (transition.RequiredRight?.Feature?.ServiceType is { } rightServiceType)
-        {
-          ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), rightServiceType, $"Transition.Allow on '{transition.Name}'");
-        }
-
-        if (!seenStatusIds.Contains(transition.To))
+        if (!seenStatusIds.Contains(fromId))
         {
           throw new InvalidOperationException(
-            $"Transition '{transition.Name}' in '{GetType().FullName}' targets undeclared status ID '{transition.To}'.");
-        }
-
-        foreach (var fromId in transition.From)
-        {
-          if (!seenStatusIds.Contains(fromId))
-          {
-            throw new InvalidOperationException(
-              $"Transition '{transition.Name}' in '{GetType().FullName}' references undeclared source status ID '{fromId}'.");
-          }
-        }
-      }
-    }
-    else
-    {
-      foreach (var transition in _transitionsByName.Values)
-      {
-        transition.Asked?.ValidateConfiguration(GetType());
-        if (transition.RequiredRight?.Feature?.ServiceType is { } rightServiceType)
-        {
-          ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), rightServiceType, $"Transition.Allow on '{transition.Name}'");
+            $"Transition '{transition.Name}' in '{GetType().FullName}' references undeclared source status ID '{fromId}'.");
         }
       }
     }
@@ -127,6 +136,12 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     return _childRules.Any(r => r.ReferencesChildFlow(childFlowType));
   }
 
+  bool IRecordStatuses<TEntity>.HasCustomRecordLock =>
+    FlowTypeDescriptorCache<TEntity>.OverridesLockAsync(GetType());
+
+  void IRecordStatuses<TEntity>.MarkRecordsLocked(IMutationContext context, IReadOnlyList<TEntity> records) =>
+    _preLockedBatch = (context, records.Where(static r => r.Id > 0).Select(static r => r.Id).ToHashSet());
+
   async Task IRecordStatuses<TEntity>.LockRecordsAsync(
     IMutationContext context,
     IReadOnlyList<TEntity> records,
@@ -159,16 +174,16 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     return rule;
   }
 
+  public long ReadStatus(TEntity record)
+  {
+    EnsureDeclared();
+    return (_statusReader ??= _statusMember!.Compile())(record);
+  }
+
   public bool Allows(TEntity record, Transition<TEntity> transition)
   {
     EnsureDeclared();
-    if (_statusReader == null)
-    {
-      return false;
-    }
-
-    var currentStatus = _statusReader(record);
-    return transition.From.Contains(currentStatus);
+    return _statusReader != null && transition.From.Contains(_statusReader(record));
   }
 
   public Task MoveAsync(
@@ -193,20 +208,11 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     CancellationToken cancellationToken = default)
   {
     var list = records.Where(r => r.Id > 0).ToList();
-    if (list.Count == 0)
+    if (list.Count > 0)
     {
-      return;
+      await rule.ExecuteAsync(context, list, cancellationToken);
     }
-
-    await DispatchRuleAsync(rule, context, list, cancellationToken);
   }
-
-  private static Task DispatchRuleAsync(
-    ChildRule rule,
-    IMutationContext context,
-    IReadOnlyList<TEntity> records,
-    CancellationToken ct) =>
-    rule.ExecuteAsync(context, records, ct);
 
   public PropertyInfo? FindParentKeyProperty(Type childEntityType)
   {
@@ -233,46 +239,57 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
       return;
     }
 
-    var orderedIds = movedRecordIds.OrderBy(id => id).ToList();
-    if (Db.Database.CurrentTransaction != null)
+    _executionDepth++;
+    try
     {
-      var candidates = await Db.Set<TEntity>()
-        .AsNoTracking()
+      var orderedIds = movedRecordIds.OrderBy(id => id).ToList();
+      if (Db.Database.CurrentTransaction != null)
+      {
+        var candidates = await Db.Set<TEntity>()
+          .AsNoTracking()
+          .Where(e => orderedIds.Contains(e.Id))
+          .OrderBy(e => e.Id)
+          .ToListAsync(cancellationToken);
+        if (candidates.Count == 0)
+        {
+          return;
+        }
+
+        await LockAsync(context, candidates, cancellationToken);
+        foreach (var tracked in Db.Set<TEntity>().Local.Where(e => orderedIds.Contains(e.Id)).ToList())
+        {
+          if (Db.Entry(tracked).State == EntityState.Unchanged && Db.Database.IsRelational())
+          {
+            await Db.Entry(tracked).ReloadAsync(cancellationToken);
+          }
+        }
+      }
+
+      var parents = await Db.Set<TEntity>()
+        .AsTracking()
         .Where(e => orderedIds.Contains(e.Id))
         .OrderBy(e => e.Id)
         .ToListAsync(cancellationToken);
-      if (candidates.Count == 0)
+
+      if (parents.Count == 0)
       {
         return;
       }
 
-      await LockAsync(context, candidates, cancellationToken);
-      foreach (var tracked in Db.Set<TEntity>().Local.Where(e => orderedIds.Contains(e.Id)).ToList())
+      foreach (var rule in _childRules)
       {
-        if (Db.Entry(tracked).State == EntityState.Unchanged && Db.Database.IsRelational())
+        await rule.ExecuteAsync(context, parents, cancellationToken);
+        if (context.Errors.Count > 0)
         {
-          await Db.Entry(tracked).ReloadAsync(cancellationToken);
+          return;
         }
       }
     }
-
-    var parents = await Db.Set<TEntity>()
-      .AsTracking()
-      .Where(e => orderedIds.Contains(e.Id))
-      .OrderBy(e => e.Id)
-      .ToListAsync(cancellationToken);
-
-    if (parents.Count == 0)
+    finally
     {
-      return;
-    }
-
-    foreach (var rule in _childRules)
-    {
-      await DispatchRuleAsync(rule, context, parents, cancellationToken);
-      if (context.Errors.Count > 0)
+      if (--_executionDepth == 0)
       {
-        return;
+        _executionItems = null;
       }
     }
   }
@@ -440,6 +457,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
 
   public TEntity Initialize(TEntity record)
   {
+    EnsureDeclared();
     if (Initial is { } initial && _statusSetter != null)
     {
       _statusSetter(record, initial.Id);
@@ -496,6 +514,31 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     {
       return;
     }
+
+    _executionDepth++;
+    try
+    {
+      await MoveCoreAsync(context, records, transition, input, note, extraEffects, preLocked, cancellationToken);
+    }
+    finally
+    {
+      if (--_executionDepth == 0)
+      {
+        _executionItems = null;
+      }
+    }
+  }
+
+  private async Task MoveCoreAsync(
+    IMutationContext context,
+    IReadOnlyList<TEntity> records,
+    Transition<TEntity> transition,
+    object? input,
+    string? note,
+    IReadOnlyList<Func<Move<TEntity>, CancellationToken, Task>> extraEffects,
+    (IMutationContext Context, HashSet<long> Ids)? preLocked,
+    CancellationToken cancellationToken)
+  {
 
     records = records.Count > 1 ? records.OrderBy(r => r.Id).ToList() : records;
     var alreadyLocked = preLocked is { } pre &&
@@ -654,12 +697,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
           var fkProp = (_followerForeignKeys.TryGetValue(followerType, out var explicitFk) ? explicitFk : null)
             ?? _followerForeignKeys.FirstOrDefault(kv => kv.Key.IsAssignableFrom(followerType)).Value
             ?? follower.FindParentKeyProperty(typeof(TEntity))
-            ?? typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-              .FirstOrDefault(p => (p.PropertyType == typeof(long) || p.PropertyType == typeof(long?)) &&
-                p.Name.Length > 2 &&
-                p.Name.EndsWith("Id", StringComparison.OrdinalIgnoreCase) &&
-                (string.Equals(p.Name, parentEntityType.Name + "Id", StringComparison.OrdinalIgnoreCase) ||
-                 parentEntityType.Name.EndsWith(p.Name[..^2], StringComparison.OrdinalIgnoreCase)));
+            ?? FlowTypeDescriptorCache<TEntity>.FindConventionParentKey(parentEntityType);
           if (fkProp != null)
           {
             var parentIds = records
@@ -678,30 +716,6 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
         }
       }
     }
-  }
-
-  private static Action<TEntity, long>? BuildStatusSetter(Expression body)
-  {
-    var unwrapped = body is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } ue
-      ? ue.Operand
-      : body;
-    if (unwrapped is not MemberExpression { Member: PropertyInfo { CanWrite: true } pi })
-    {
-      return null;
-    }
-
-    var targetType = Nullable.GetUnderlyingType(pi.PropertyType) ?? pi.PropertyType;
-    if (targetType == typeof(long))
-    {
-      return (entity, val) => pi.SetValue(entity, val);
-    }
-
-    if (targetType.IsEnum)
-    {
-      return (entity, val) => pi.SetValue(entity, Enum.ToObject(targetType, val));
-    }
-
-    return (entity, val) => pi.SetValue(entity, Convert.ChangeType(val, targetType, CultureInfo.InvariantCulture));
   }
 
   private void EnsureDeclared()
@@ -742,29 +756,29 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
         Initial = _statuses.FirstOrDefault(s => s.Id == flow.InitialStatusId.Value);
       }
 
+      var serviceType = GetType();
       if (flow.StateMember != null)
       {
         _statusMember = flow.StateMember;
-        _statusReader = _statusMember.Compile();
-        _statusSetter = BuildStatusSetter(_statusMember.Body);
+        (_statusReader, _statusSetter) = FlowTypeDescriptorCache<TEntity>.GetStateAccessors(serviceType, _statusMember);
       }
 
-      var allProps = GetType().GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-      foreach (var p in allProps.Where(p => typeof(Transition<TEntity>).IsAssignableFrom(p.PropertyType)))
+      var (transitionGetters, ruleGetters) = FlowTypeDescriptorCache<TEntity>.GetPropertyAccessors(serviceType);
+      foreach (var (getter, isPublic) in transitionGetters)
       {
-        if (p.GetValue(this) is Transition<TEntity> t)
+        if (getter(this) is { } t)
         {
           _transitionsByName[t.Name] = t;
-          if (p.GetMethod?.IsPublic == true)
+          if (isPublic)
           {
             _publicTransitions.Add(t);
           }
         }
       }
 
-      foreach (var p in allProps.Where(p => typeof(ChildRule).IsAssignableFrom(p.PropertyType)))
+      foreach (var ruleGetter in ruleGetters)
       {
-        if (p.GetValue(this) is ChildRule rule && !_childRules.Contains(rule))
+        if (ruleGetter(this) is { } rule && !_childRules.Contains(rule))
         {
           _childRules.Add(rule);
         }

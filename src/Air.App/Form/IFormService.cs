@@ -3,6 +3,7 @@ namespace Platform.App.Form;
 public interface IFormService : IPlatformService
 {
   PlatformDbContext DbContext { get; }
+  internal PlatformAppService? HostApp => null;
   string Service { get; }
   bool IsFormReadOnly { get; }
   OverlayDto Overlay(string service);

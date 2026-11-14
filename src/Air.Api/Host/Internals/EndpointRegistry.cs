@@ -102,6 +102,27 @@ internal sealed class EndpointRegistry
             dbContextByRoute[$"/api{pattern}"] = dbContextType;
           }
         }
+
+        if (probe.HasAsyncDynamicEndpoints)
+        {
+          var catchAllPattern = $"/{serviceName}/{{__dynAction}}";
+          if (!byRoute.ContainsKey(catchAllPattern))
+          {
+            var catchAllDesc = new EndpointDescriptor
+            {
+              RoutePattern = catchAllPattern,
+              ServiceName = serviceName,
+              ActionName = string.Empty,
+              ServiceType = serviceType,
+              DbContextType = dbContextType,
+              StaticFeature = feat,
+              Auth = EndpointAuth.Custom,
+              IsDynamicAction = true
+            };
+            descriptors.Add(catchAllDesc);
+            byRoute[catchAllPattern] = catchAllDesc;
+          }
+        }
       }
     }
 

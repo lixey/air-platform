@@ -15,16 +15,16 @@ internal sealed class TestCountedInvoiceGridService(AppTestDbContext db, Platfor
   protected override void SetQuery()
   {
     Query.Where(x => !x.IsHidden);
-    Query.NamedFilter("stage", "Stage")
+    Query.NamedFilter("Stage", "Stage")
       .Inline()
       .ShowCounts()
-      .Item("open", "Open", x => x.Status == 1)
+      .Item("Open", "Open", x => x.Status == 1)
       .Default()
-      .Item("closed", "Closed", x => x.Status == 2)
-      .Item("archived", "Archived", x => x.Status == 3)
+      .Item("Closed", "Closed", x => x.Status == 2)
+      .Item("Archived", "Archived", x => x.Status == 3)
       .ShowCount(false)
       .All("All");
-    Query.NamedFilter("highValue", "High value", x => x.AuditedTotal >= 100m)
+    Query.NamedFilter("HighValue", "High value", x => x.AuditedTotal >= 100m)
       .ShowCount();
   }
 

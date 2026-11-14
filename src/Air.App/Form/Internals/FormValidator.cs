@@ -248,18 +248,6 @@ internal static class FormValidator
             Type = MessageType.Error
           });
         }
-        else
-        {
-          var normalized = RightsTree.Normalize(treeNodes, keyList);
-          if (entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<string>)))
-          {
-            entityProp.SetValue(entity, normalized);
-          }
-          else if (entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(string[])))
-          {
-            entityProp.SetValue(entity, normalized.ToArray());
-          }
-        }
       }
     }
   }
@@ -276,7 +264,8 @@ internal static class FormValidator
   {
     foreach (var el in elements)
     {
-      if (el.UniqueWithin == null || string.IsNullOrEmpty(el.Path) || el.Path.Contains('.'))
+      var binding = FormElementBinding.TryGet(el);
+      if (binding?.UniqueWithin == null || string.IsNullOrEmpty(el.Path) || el.Path.Contains('.'))
       {
         continue;
       }
@@ -297,7 +286,7 @@ internal static class FormValidator
       Expression cond = Expression.Equal(Expression.Property(param, prop), Expression.Constant(val, prop.PropertyType));
       var skip = false;
 
-      foreach (var withinName in el.UniqueWithin)
+      foreach (var withinName in binding.UniqueWithin)
       {
         var withinProp = PropertyAccessorCache.GetProperty(typeof(TEntity), withinName);
         if (withinProp == null || !withinProp.CanRead)
@@ -336,7 +325,7 @@ internal static class FormValidator
         ruleCtx.Failures.Add(new MessageDto
         {
           Path = el.Path,
-          Detail = l[el.UniqueMessage ?? "FormValidationUnique"],
+          Detail = l[binding.UniqueMessage ?? "FormValidationUnique"],
           Code = "form.validation.unique",
           Type = MessageType.Error
         });
@@ -394,7 +383,7 @@ internal static class FormValidator
         continue;
       }
 
-      var refGridType = el.ReferenceServiceType
+      var refGridType = FormElementBinding.TryGet(el)?.ReferenceServiceType
         ?? (selectModel?.ReferenceService is { Length: > 0 } rs ? ModuleCatalog.Instance.FindServiceType(rs) : null);
       if (refGridType == null)
       {

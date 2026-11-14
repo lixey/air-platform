@@ -145,19 +145,18 @@ public abstract partial class GridService<TEntity, TRow>
     var baseEntityQuery = BuildBaseEntityQuery(gridReq, out _, out var queryDeclaration);
     var filteredQuery = ApplyActiveNamedFilters(baseEntityQuery, gridReq, queryDeclaration);
     var cols = await CreateColumnsAsync(ct);
-    var allColumns = cols.List.ToList();
+    var allColumns = cols.List;
+    var activeColumns = allColumns;
 
     if (isReferenceSelect)
     {
-      var labelPaths = gridReq!.ReferenceLabelPaths!;
-      var patchColumns = gridReq.PatchSourceColumns ?? [];
-      var preserved = new HashSet<string>(labelPaths, StringComparer.OrdinalIgnoreCase);
-      foreach (var p in patchColumns)
+      var preserved = new HashSet<string>(gridReq!.ReferenceLabelPaths!, StringComparer.OrdinalIgnoreCase);
+      foreach (var p in gridReq.PatchSourceColumns ?? [])
       {
         preserved.Add(p);
       }
 
-      cols.RetainOnly(preserved);
+      activeColumns = allColumns.Where(c => c.Path != null && preserved.Contains(c.Path)).ToList();
     }
 
     if (request.PageSize <= 0 && queryDeclaration.CustomPageSize is > 0)
@@ -179,19 +178,18 @@ public abstract partial class GridService<TEntity, TRow>
       var noTrackingFiltered = filteredQuery.AsNoTracking();
       var dataProvider = DataProvider.Create(noTrackingFiltered, queryMap, queryDeclaration.Selector);
       var page = await dataProvider.GetPageAsync(request, ct);
-      if (queryDeclaration.ComputeAction != null && page.Rows.Count > 0)
-      {
-        await queryDeclaration.ComputeAction(page.Rows, ct);
-      }
-
-      var shapedRows = page.Rows.Select(r => ShapeRow(r, cols.List, queryDeclaration.RowFlags)).ToList();
-      await GridRowEnricher.PopulateCoversAsync(this, shapedRows, cols.List, ct);
-      await GridRowEnricher.PopulateProjectedColorsAsync(this, shapedRows, cols.List, ct);
-      await GridRowEnricher.PopulateRowAvailabilityAsync(this, shapedRows, cols, ct);
+      var shapedRows = await GridRowShaper.ShapeAndEnrichBatchAsync(
+        this,
+        page.Rows,
+        activeColumns,
+        cols,
+        queryDeclaration,
+        includeScreenEnrichments: true,
+        ct);
       var filteredEntities = DataProvider.Create(noTrackingFiltered, queryMap, queryDeclaration.Selector).Filter(request);
-      var bottomRows = !isSelect ? await GridSummaryCalculator.ComputeSumRowsAsync(db, filteredEntities, queryDeclaration.Selector, cols.List, ct) : null;
+      var bottomRows = !isSelect ? await GridSummaryCalculator.ComputeSumRowsAsync(db, filteredEntities, queryDeclaration.Selector, activeColumns, ct) : null;
       var namedFilterCounts = !isSelect && request.Page <= 1
-        ? await ComputeNamedFilterCountsAsync(baseEntityQuery, gridReq, request, queryDeclaration, queryMap, page.Total, ct)
+        ? await GridNamedFilterCounter.ComputeAsync(baseEntityQuery, gridReq, request, queryDeclaration, queryMap, page.Total, ct)
         : null;
       return new GridPageDto<RowDto>
       {
@@ -207,7 +205,7 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var defaultSelector = GridRowEnricher.CanUseDefaultProjection(this, filteredQuery, queryDeclaration)
-      ? GridProjectionBuilder.TryBuildSelector<TEntity>(cols.List, HasCustomShapeRow)
+      ? GridProjectionBuilder.TryBuildSelector<TEntity>(activeColumns, HasCustomShapeRow)
       : null;
 
     Page<TEntity> defaultPage;
@@ -223,24 +221,18 @@ public abstract partial class GridService<TEntity, TRow>
       defaultPage = await defaultDataProvider.GetPageAsync(request, ct);
     }
 
-    if (queryDeclaration.ComputeAction != null && defaultPage.Rows.Count > 0 && defaultPage.Rows is IReadOnlyList<TRow> typedPageRows)
-    {
-      await queryDeclaration.ComputeAction(typedPageRows, ct);
-    }
-
-    var defaultShapedRows = defaultPage.Rows.Select(r => ShapeRow((r as TRow)!, cols.List, queryDeclaration.RowFlags)).ToList();
-    if (queryDeclaration.RowComputeAction != null && defaultPage.Rows.Count > 0)
-    {
-      await GridRowShaper.InvokeRowComputeActionAsync(defaultPage.Rows, defaultShapedRows, cols.List, queryDeclaration.RowComputeAction, ct);
-    }
-
-    await GridRowEnricher.PopulateComputedColumnsAsync(this, defaultShapedRows, cols.List, ct);
-    await GridRowEnricher.PopulateCoversAsync(this, defaultShapedRows, cols.List, ct);
-    await GridRowEnricher.PopulateRowAvailabilityAsync(this, defaultShapedRows, cols, ct);
+    var defaultShapedRows = await GridRowShaper.ShapeAndEnrichBatchAsync(
+      this,
+      defaultPage.Rows,
+      activeColumns,
+      cols,
+      queryDeclaration,
+      includeScreenEnrichments: true,
+      ct);
     var sumSourceQuery = DataProvider.Create(filteredQuery.AsNoTracking(), queryMap).Filter(request);
-    var defaultBottomRows = !isSelect ? await GridSummaryCalculator.ComputeSumRowsAsync<TEntity, TRow>(db, sumSourceQuery, null, cols.List, ct) : null;
+    var defaultBottomRows = !isSelect ? await GridSummaryCalculator.ComputeSumRowsAsync<TEntity, TRow>(db, sumSourceQuery, null, activeColumns, ct) : null;
     var defaultNamedFilterCounts = !isSelect && request.Page <= 1
-      ? await ComputeNamedFilterCountsAsync(baseEntityQuery, gridReq, request, queryDeclaration, queryMap, defaultPage.Total, ct)
+      ? await GridNamedFilterCounter.ComputeAsync(baseEntityQuery, gridReq, request, queryDeclaration, queryMap, defaultPage.Total, ct)
       : null;
 
     return new GridPageDto<RowDto>
@@ -254,89 +246,6 @@ public abstract partial class GridService<TEntity, TRow>
       Size = defaultPage.Size,
       HasMore = defaultPage.HasMore
     };
-  }
-
-  private static async Task<Dictionary<string, int>?> ComputeNamedFilterCountsAsync(
-    IQueryable<TEntity> baseEntityQuery,
-    GridRequest? gridReq,
-    ListRequest request,
-    GridQuery<TEntity, TRow> queryDeclaration,
-    QueryMap<TEntity> queryMap,
-    int? currentTotal,
-    CancellationToken ct)
-  {
-    var hasCountedGroup = queryDeclaration.NamedFilterGroups.Any(g => g.Items.Any(i => i.IsCountShown));
-    var hasCountedToggle = queryDeclaration.NamedFilters.Any(i => i.IsCountShown);
-    if (!hasCountedGroup && !hasCountedToggle)
-    {
-      return null;
-    }
-
-    var nfs = gridReq?.NamedFilters ?? [];
-    var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-    foreach (var group in queryDeclaration.NamedFilterGroups)
-    {
-      if (!group.Items.Any(i => i.IsCountShown))
-      {
-        continue;
-      }
-
-      var reqKey = nfs.FirstOrDefault(k => group.Items.Any(i => string.Equals(i.Key, k, StringComparison.OrdinalIgnoreCase)));
-      var chosen = reqKey != null
-        ? group.Items.FirstOrDefault(i => string.Equals(i.Key, reqKey, StringComparison.OrdinalIgnoreCase))
-        : group.Items.FirstOrDefault(i => i.IsDefault);
-
-      foreach (var item in group.Items)
-      {
-        if (!item.IsCountShown)
-        {
-          continue;
-        }
-
-        if (ReferenceEquals(item, chosen) && currentTotal.HasValue)
-        {
-          counts[item.Key] = currentTotal.Value;
-          continue;
-        }
-
-        var itemQuery = ApplyActiveNamedFilters(
-          baseEntityQuery,
-          gridReq,
-          queryDeclaration,
-          overrideGroup: group,
-          overrideGroupItem: item).AsNoTracking();
-        counts[item.Key] = queryDeclaration.Selector != null
-          ? await DataProvider.Create(itemQuery, queryMap, queryDeclaration.Selector).CountAsync(request, ct)
-          : await DataProvider.Create(itemQuery, queryMap).CountAsync(request, ct);
-      }
-    }
-
-    foreach (var nf in queryDeclaration.NamedFilters)
-    {
-      if (!nf.IsCountShown)
-      {
-        continue;
-      }
-
-      var isCurrentlyOn = nfs.Any(k => string.Equals(k, nf.Key, StringComparison.OrdinalIgnoreCase));
-      if (isCurrentlyOn && currentTotal.HasValue)
-      {
-        counts[nf.Key] = currentTotal.Value;
-        continue;
-      }
-
-      var toggleQuery = ApplyActiveNamedFilters(
-        baseEntityQuery,
-        gridReq,
-        queryDeclaration,
-        overrideToggle: nf).AsNoTracking();
-      counts[nf.Key] = queryDeclaration.Selector != null
-        ? await DataProvider.Create(toggleQuery, queryMap, queryDeclaration.Selector).CountAsync(request, ct)
-        : await DataProvider.Create(toggleQuery, queryMap).CountAsync(request, ct);
-    }
-
-    return counts.Count > 0 ? counts : null;
   }
 
   private static void NormalizeGridRequest(

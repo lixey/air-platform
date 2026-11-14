@@ -10,6 +10,4 @@ public sealed class GridDeleteContext<TEntity> : GridSelectionContext<TEntity> w
     : base(selectedIds, records, flusher, db)
   {
   }
-
-  public Dictionary<long, string?> Labels { get; } = [];
 }

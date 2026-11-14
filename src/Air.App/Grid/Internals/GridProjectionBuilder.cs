@@ -32,18 +32,19 @@ internal static class GridProjectionBuilder
     for (var i = 0; i < columns.Count; i++)
     {
       var col = columns[i];
-      if (col.FormServiceResolver != null ||
-          col.ColorEvaluator != null && col.ColorExpression == null && string.IsNullOrEmpty(col.ColorNavPath))
+      var runtime = GridColumnRuntime.TryGet(col);
+      if (runtime?.FormServiceResolver != null ||
+          runtime?.ColorEvaluator != null && runtime.ColorExpression == null && string.IsNullOrEmpty(runtime.ColorNavPath))
       {
         return null;
       }
 
       colSigBuilder
         .Append(col.Path).Append('|')
-        .Append(col.ValueExpression?.ToString()).Append('|')
-        .Append(col.IsSubqueryExpression ? '1' : '0').Append('|')
-        .Append(col.ColorNavPath).Append('|')
-        .Append(col.ColorExpressionKey ?? col.ColorExpression?.ToString()).Append('|')
+        .Append(runtime?.ValueExpression?.ToString()).Append('|')
+        .Append(runtime?.IsSubqueryExpression == true ? '1' : '0').Append('|')
+        .Append(runtime?.ColorNavPath).Append('|')
+        .Append(runtime?.ColorExpressionKey ?? runtime?.ColorExpression?.ToString()).Append('|')
         .Append(col.ReferenceService != null ? '1' : '0')
         .Append(col.IsHidden ? '1' : '0')
         .Append(col.Cell is GridCellCoverModel ? '1' : '0');
@@ -81,6 +82,7 @@ internal static class GridProjectionBuilder
 
     foreach (var col in columns)
     {
+      var runtime = GridColumnRuntime.TryGet(col);
       if (!string.IsNullOrWhiteSpace(col.Path))
       {
         if (col.Cell is GridCellCoverModel)
@@ -93,14 +95,14 @@ internal static class GridProjectionBuilder
           continue;
         }
 
-        if (col.ValueExpression != null)
+        if (runtime?.ValueExpression != null)
         {
-          if (!col.IsSubqueryExpression && !TryAddExpressionMemberPaths(entityType, col.ValueExpression, root))
+          if (!runtime.IsSubqueryExpression && !TryAddExpressionMemberPaths(entityType, runtime.ValueExpression, root))
           {
             return null;
           }
         }
-        else if (col.IsComputed)
+        else if (runtime?.IsComputed == true)
         {
           continue;
         }
@@ -122,14 +124,14 @@ internal static class GridProjectionBuilder
         }
       }
 
-      if (col.ColorExpression != null && !TryAddExpressionMemberPaths(entityType, col.ColorExpression, root))
+      if (runtime?.ColorExpression != null && !TryAddExpressionMemberPaths(entityType, runtime.ColorExpression, root))
       {
         return null;
       }
 
-      if (!string.IsNullOrWhiteSpace(col.ColorNavPath))
+      if (!string.IsNullOrWhiteSpace(runtime?.ColorNavPath))
       {
-        var colorNavMembers = GridProjectionNode.ResolveMembers(entityType, col.ColorNavPath);
+        var colorNavMembers = GridProjectionNode.ResolveMembers(entityType, runtime.ColorNavPath);
         if (colorNavMembers.Count == 0 || !GridProjectionNode.CanConstructNavigation(colorNavMembers[^1]))
         {
           return null;

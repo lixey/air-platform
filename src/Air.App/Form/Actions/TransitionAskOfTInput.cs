@@ -21,15 +21,16 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
     var elements = CreateElements();
     foreach (var el in elements.List)
     {
-      if (el.ReferenceServiceType != null)
+      var binding = FormElementBinding.TryGet(el);
+      if (binding?.ReferenceServiceType != null)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(ownerServiceType, el.ReferenceServiceType, $"Ask.AsReference on '{el.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, ownerServiceType);
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(ownerServiceType, binding.ReferenceServiceType, $"Ask.AsReference on '{el.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(binding.ReferenceServiceType, ownerServiceType);
       }
 
-      if (el.CreateFormServiceType != null)
+      if (binding?.CreateFormServiceType != null)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(ownerServiceType, el.CreateFormServiceType, $"Ask.AllowCreate on '{el.Path}'");
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(ownerServiceType, binding.CreateFormServiceType, $"Ask.AllowCreate on '{el.Path}'");
       }
     }
   }
@@ -45,8 +46,8 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
   {
     var elements = CreateElements();
     var scope = new ElementResolveScope(ownerServiceType, feature, db, app, user, localizer, IsReadOnly: false);
-    await ElementResolver.ResolveAsync<TInput>(scope, elements, ct);
-    return elements.List;
+    ElementResolver.ConfigureStructuralElements<TInput>(scope, elements);
+    return await ElementResolver.ProjectWireElementsAsync(scope, elements.List, includeCreateOverlays: true, ct: ct);
   }
 
   public override object? Read(JsonElement? input)
@@ -88,7 +89,7 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
   {
     var target = input as TInput ?? new TInput();
     var elements = CreateElements();
-    var saveCtx = new FormSaveContext<TInput> { Entity = target, IsNew = true, Db = db };
+    var saveCtx = new FormSaveContext<TInput>(db) { Entity = target, IsNew = true };
     var ruleCtx = new RuleContext<TInput> { SaveContext = saveCtx, Localizer = localizer };
     FormValidator.ValidateElementConstraints(db, localizer, elements.List, target, ruleCtx, onlyAcceptingInput: true);
     await FormValidator.ValidateReferenceElementsAsync(

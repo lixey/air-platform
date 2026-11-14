@@ -476,6 +476,44 @@ internal static class FormValueBinder
     }
   }
 
+  public static void NormalizeRightsTrees(IReadOnlyList<FormElementDto> elements, object target)
+  {
+    var targetType = target.GetType();
+    foreach (var el in elements)
+    {
+      if (el.Model is not FormCheckboxTreeModel { Nodes: { } treeNodes } ||
+          string.IsNullOrEmpty(el.Path) ||
+          el.Path.Contains('.'))
+      {
+        continue;
+      }
+
+      var prop = PropertyAccessorCache.GetProperty(targetType, el.Path);
+      if (prop is not { CanRead: true, CanWrite: true } ||
+          PropertyAccessorCache.GetValue(target, prop.Name) is not IEnumerable<string> treeKeys)
+      {
+        continue;
+      }
+
+      var keyList = treeKeys.ToList();
+      var allowedKeys = RightsTree.FlattenKeys(treeNodes);
+      if (!keyList.All(allowedKeys.Contains))
+      {
+        continue;
+      }
+
+      var normalized = RightsTree.Normalize(treeNodes, keyList);
+      if (prop.PropertyType.IsAssignableFrom(typeof(List<string>)))
+      {
+        prop.SetValue(target, normalized);
+      }
+      else if (prop.PropertyType.IsAssignableFrom(typeof(string[])))
+      {
+        prop.SetValue(target, normalized.ToArray());
+      }
+    }
+  }
+
   public static HashSet<string> CreateSystemProtectedSet(PropertyInfo? boundProperty, bool isParentOptional, bool isNew)
   {
     var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

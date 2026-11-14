@@ -35,7 +35,7 @@ public abstract partial class FileGridService<TFile>
     }
 
     var rules = FileRulesAttribute.Of(typeof(TFile));
-    if (ValidateFileHeader(file.FileName, file.ContentType, file.Length, rules, out var cleanedName, out var normalizedType) is { } headerError)
+    if (FileUploadValidator.ValidateHeader(file.FileName, file.ContentType, file.Length, rules, L, out var cleanedName, out var normalizedType) is { } headerError)
     {
       return new GridActionDto
       {
@@ -52,7 +52,7 @@ public abstract partial class FileGridService<TFile>
       fileBytes = ms.ToArray();
     }
 
-    if (ValidateFileMagicBytes(normalizedType, fileBytes) is { } contentError)
+    if (FileUploadValidator.ValidateMagicBytes(normalizedType, fileBytes, L) is { } contentError)
     {
       return new GridActionDto
       {
@@ -61,42 +61,16 @@ public abstract partial class FileGridService<TFile>
       };
     }
 
-    var sha256 = Convert.ToHexStringLower(SHA256.HashData(fileBytes));
-
-    string? normalizedMetadata = null;
-    if (!string.IsNullOrWhiteSpace(request.Metadata))
+    if (!FileUploadValidator.TryNormalizeMetadata(request.Metadata, L, out var normalizedMetadata, out var metadataError))
     {
-      if (request.Metadata.Length > 16384)
+      return new GridActionDto
       {
-        return new GridActionDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Messages = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
-        };
-      }
-
-      try
-      {
-        var parsedMeta = System.Text.Json.JsonSerializer.Deserialize<FileMetadataDto>(
-          request.Metadata,
-          new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
-        if (parsedMeta != null)
-        {
-          normalizedMetadata = System.Text.Json.JsonSerializer.Serialize(
-            parsedMeta,
-            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
-        }
-      }
-      catch
-      {
-        return new GridActionDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Messages = [new MessageDto { Detail = L["FileMetadataInvalid"], Path = "metadata", Code = "file.metadata", Type = MessageType.Error }]
-        };
-      }
+        Outcome = MutationOutcome.Refused,
+        Messages = [metadataError!]
+      };
     }
 
+    var sha256 = Convert.ToHexStringLower(SHA256.HashData(fileBytes));
     ParentId = request.ParentId ?? ParentId;
     var thumbFile = files["thumbnail"];
     var servicePath = ServicePathResolver.Resolve(GetType());
@@ -120,57 +94,6 @@ public abstract partial class FileGridService<TFile>
         mutationCt),
       cancellationToken,
       PlatformApp?.Services);
-  }
-
-  private MessageDto? ValidateFileHeader(
-    string fileName,
-    string? contentType,
-    long fileLength,
-    FileRulesAttribute rules,
-    out string cleanedName,
-    out string normalizedType)
-  {
-    cleanedName = string.Empty;
-    normalizedType = "application/octet-stream";
-
-    if (FileTypeTable.NameOf(fileName) is not { } validName)
-    {
-      return new MessageDto { Detail = L["FileNameRefused"], Code = "file.name", Type = MessageType.Error };
-    }
-
-    cleanedName = validName;
-    if (rules.MaxBytes > 0 && fileLength > rules.MaxBytes)
-    {
-      return new MessageDto { Detail = L["FileTooLarge", Math.Round(rules.MaxBytes / (1024d * 1024d), 1)], Code = "file.size", Type = MessageType.Error };
-    }
-
-    var allowedTypes = FileTypeTable.TypesOf(rules.ContentTypes)
-      .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-    normalizedType = FileTypeTable.Normalize(contentType) ?? "application/octet-stream";
-    if (allowedTypes.Count > 0 && !allowedTypes.Contains(normalizedType))
-    {
-      return new MessageDto { Detail = L["FileTypeRefused", string.Join(", ", allowedTypes)], Code = "file.type", Type = MessageType.Error };
-    }
-
-    if (allowedTypes.Count > 0 && !FileTypeTable.HasExtension(normalizedType, cleanedName))
-    {
-      return new MessageDto { Detail = L["FileExtensionRefused", normalizedType], Code = "file.extension", Type = MessageType.Error };
-    }
-
-    return null;
-  }
-
-  private MessageDto? ValidateFileMagicBytes(string normalizedType, ReadOnlySpan<byte> fileBytes)
-  {
-    var headSpan = fileBytes[..Math.Min(fileBytes.Length, 12)];
-    if (!FileTypeTable.StartsAsDeclared(normalizedType, headSpan) ||
-        FileTypeTable.IsZipDocument(normalizedType) && !FileTypeTable.StartsAsZip(headSpan))
-    {
-      return new MessageDto { Detail = L["FileContentRefused", normalizedType], Code = "file.content", Type = MessageType.Error };
-    }
-
-    return null;
   }
 
   private async Task<GridActionDto> SaveUploadedFileInMutationAsync(
@@ -349,43 +272,27 @@ public abstract partial class FileGridService<TFile>
   public override async Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
-    ParentService = request.ParentService ?? ParentService;
-    ParentId = request.ParentId ?? ParentId;
-
     var rules = FileRulesAttribute.Of(typeof(TFile));
-    var storeKey = rules.StoreType != null ? FileStore.KeyOf(rules.StoreType) : null;
     var keysToDelete = new List<(string? Store, string Key)>();
-    var servicePath = ServicePathResolver.Resolve(GetType());
-    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{string.Join(',', request.SelectedIds ?? [])}";
 
-    var result = await MutationRunner.RunIdempotentMutationAsync<GridDeleteDto>(
-      db,
-      $"{servicePath}/delete",
-      request.IdempotencyKey,
-      rawPayload,
-      async mutationCt =>
+    var result = await RunFileMutationAsync(
+      request,
+      "delete",
+      $"{request.ParentService ?? ParentService}|{request.ParentId ?? ParentId}|{request.Id}|{string.Join(',', request.SelectedIds ?? [])}",
+      CanDelete,
+      static () => new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 },
+      async (ids, mutationCt) =>
       {
-        var ids = request.SelectedIds ?? [];
-        if (ids.Count == 0 && request.Id.HasValue)
-        {
-          ids = [request.Id.Value];
-        }
-
-        var parent = GetParent();
-        await InferBoundParentIdFromIdsAsync(ids, mutationCt);
-
-        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || !CanDelete())
-        {
-          return new GridDeleteDto { Outcome = MutationOutcome.Refused, Deleted = 0 };
-        }
-
+        keysToDelete.Clear();
         var list = await RestrictedQuery().AsTracking().Where(f => ids.Contains(f.Id)).ToListAsync(mutationCt);
         if (list.Count == 0)
         {
           return new GridDeleteDto { Outcome = MutationOutcome.Committed, Deleted = 0 };
         }
 
+        var parent = GetParent();
         var parentsLosingCover = new HashSet<object>();
+        keysToDelete.AddRange(FileStorageCleaner.CollectKeys(list));
 
         foreach (var item in list)
         {
@@ -394,17 +301,6 @@ public abstract partial class FileGridService<TFile>
               parent.BoundProperty.GetValue(item) is { } parentVal)
           {
             parentsLosingCover.Add(parentVal);
-          }
-
-          var itemStore = item.Store ?? storeKey;
-          if (!string.IsNullOrEmpty(item.StorageKey))
-          {
-            keysToDelete.Add((itemStore, item.StorageKey));
-          }
-
-          if (!string.IsNullOrEmpty(item.ThumbnailKey))
-          {
-            keysToDelete.Add((itemStore, item.ThumbnailKey));
           }
 
           db.Set<TFile>().Remove(item);
@@ -439,34 +335,11 @@ public abstract partial class FileGridService<TFile>
           Deleted = list.Count
         };
       },
-      cancellationToken,
-      PlatformApp?.Services);
+      cancellationToken);
 
     if (result.Outcome == MutationOutcome.Committed && keysToDelete.Count > 0)
     {
-      var distinctKeys = keysToDelete.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToList();
-      var referencedKeys = (await db.Set<TFile>()
-        .AsNoTracking()
-        .Where(f => distinctKeys.Contains(f.StorageKey) || f.ThumbnailKey != null && distinctKeys.Contains(f.ThumbnailKey))
-        .Select(f => new { f.StorageKey, f.ThumbnailKey })
-        .ToListAsync(cancellationToken))
-        .SelectMany(f => new[] { f.StorageKey, f.ThumbnailKey })
-        .Where(k => !string.IsNullOrEmpty(k))
-        .ToHashSet(StringComparer.Ordinal);
-
-      foreach (var (itemStore, key) in keysToDelete.DistinctBy(x => x.Key))
-      {
-        if (referencedKeys.Contains(key))
-        {
-          continue;
-        }
-
-        try
-        {
-          await Stores.Of(itemStore).DeleteAsync(key, cancellationToken);
-        }
-        catch { }
-      }
+      await FileStorageCleaner.DeleteUnreferencedBlobsAsync<TFile>(db, Stores, keysToDelete, CancellationToken.None);
     }
 
     return result;
@@ -474,44 +347,33 @@ public abstract partial class FileGridService<TFile>
 
   [Endpoint]
   [RequireAction(Right.Edit)]
-  public virtual async Task<GridActionDto> SetCover(GridRequest request, CancellationToken cancellationToken = default)
+  public virtual Task<GridActionDto> SetCover(GridRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
-    ParentService = request.ParentService ?? ParentService;
-    ParentId = request.ParentId ?? ParentId;
-    var servicePath = ServicePathResolver.Resolve(GetType());
-    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{string.Join(',', request.SelectedIds ?? [])}";
-
-    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
-      db,
-      $"{servicePath}/set-cover",
-      request.IdempotencyKey,
-      rawPayload,
-      async mutationCt =>
+    return RunFileMutationAsync(
+      request,
+      "set-cover",
+      $"{request.ParentService ?? ParentService}|{request.ParentId ?? ParentId}|{request.Id}|{string.Join(',', request.SelectedIds ?? [])}",
+      () => !IsReadOnly && HasCovers,
+      static () => new GridActionDto { Outcome = MutationOutcome.Refused },
+      async (ids, mutationCt) =>
       {
-        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly || !HasCovers)
+        if (ids.Count == 0)
         {
           return new GridActionDto { Outcome = MutationOutcome.Refused };
         }
 
-        var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
-        if (!targetId.HasValue)
-        {
-          return new GridActionDto { Outcome = MutationOutcome.Refused };
-        }
-
-        var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId.Value, mutationCt);
+        var targetId = ids[0];
+        var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId, mutationCt);
         if (target == null)
         {
           return new GridActionDto { Outcome = MutationOutcome.Refused };
         }
 
         var parent = GetParent();
-
         if (parent.BoundProperty != null)
         {
-          var parentVal = parent.BoundProperty.GetValue(target);
-          if (parentVal != null)
+          if (parent.BoundProperty.GetValue(target) is { } parentVal)
           {
             var lambda = BuildParentFilter(parent.BoundProperty, parentVal);
             var siblings = await db.Set<TFile>().AsTracking().Where(lambda).ToListAsync(mutationCt);
@@ -519,7 +381,7 @@ public abstract partial class FileGridService<TFile>
             {
               if (sibling is IHasCoverFile cf)
               {
-                cf.IsCover = sibling.Id == targetId.Value;
+                cf.IsCover = sibling.Id == targetId;
               }
             }
           }
@@ -533,38 +395,29 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto { Outcome = MutationOutcome.Committed };
       },
       cancellationToken,
-      PlatformApp?.Services);
+      preferSingleId: true);
   }
 
   [Endpoint]
   [RequireAction(Right.Edit)]
-  public virtual async Task<GridActionDto> Move(FileMoveRequest request, CancellationToken cancellationToken = default)
+  public virtual Task<GridActionDto> Move(FileMoveRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
-    ParentService = request.ParentService ?? ParentService;
-    ParentId = request.ParentId ?? ParentId;
-    var servicePath = ServicePathResolver.Resolve(GetType());
-    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{request.BeforeId}|{string.Join(',', request.SelectedIds ?? [])}";
-
-    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
-      db,
-      $"{servicePath}/move",
-      request.IdempotencyKey,
-      rawPayload,
-      async mutationCt =>
+    return RunFileMutationAsync(
+      request,
+      "move",
+      $"{request.ParentService ?? ParentService}|{request.ParentId ?? ParentId}|{request.Id}|{request.BeforeId}|{string.Join(',', request.SelectedIds ?? [])}",
+      () => !IsReadOnly,
+      static () => new GridActionDto { Outcome = MutationOutcome.Refused },
+      async (ids, mutationCt) =>
       {
-        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
+        if (ids.Count == 0)
         {
           return new GridActionDto { Outcome = MutationOutcome.Refused };
         }
 
-        var targetId = request.Id ?? request.SelectedIds?.FirstOrDefault();
-        if (!targetId.HasValue)
-        {
-          return new GridActionDto { Outcome = MutationOutcome.Refused };
-        }
-
-        var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId.Value, mutationCt);
+        var targetId = ids[0];
+        var target = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == targetId, mutationCt);
         if (target == null)
         {
           return new GridActionDto { Outcome = MutationOutcome.Refused };
@@ -576,7 +429,6 @@ public abstract partial class FileGridService<TFile>
         }
 
         var parent = GetParent();
-
         var siblingsQuery = RestrictedQuery().AsTracking().Where(f => f.Id != target.Id);
         if (parent.BoundProperty != null && parent.BoundProperty.GetValue(target) is { } parentVal)
         {
@@ -606,31 +458,22 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto { Outcome = MutationOutcome.Committed };
       },
       cancellationToken,
-      PlatformApp?.Services);
+      preferSingleId: true);
   }
 
   [Endpoint]
   [RequireAction(Right.Edit)]
-  public virtual async Task<GridActionDto> SetInfo(FileInfoRequest request, CancellationToken cancellationToken = default)
+  public virtual Task<GridActionDto> SetInfo(FileInfoRequest request, CancellationToken cancellationToken = default)
   {
     ArgumentNullException.ThrowIfNull(request);
-    ParentService = request.ParentService ?? ParentService;
-    ParentId = request.ParentId ?? ParentId;
-    var servicePath = ServicePathResolver.Resolve(GetType());
-    var rawPayload = request.RawPayload ?? $"{ParentService}|{ParentId}|{request.Id}|{request.Name}|{request.Description}";
-
-    return await MutationRunner.RunIdempotentMutationAsync<GridActionDto>(
-      db,
-      $"{servicePath}/set-info",
-      request.IdempotencyKey,
-      rawPayload,
-      async mutationCt =>
+    return RunFileMutationAsync(
+      request,
+      "set-info",
+      $"{request.ParentService ?? ParentService}|{request.ParentId ?? ParentId}|{request.Id}|{request.Name}|{request.Description}",
+      () => !IsReadOnly,
+      static () => new GridActionDto { Outcome = MutationOutcome.Refused },
+      async (ids, mutationCt) =>
       {
-        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || IsReadOnly)
-        {
-          return new GridActionDto { Outcome = MutationOutcome.Refused };
-        }
-
         var stem = request.Name?.Trim() ?? string.Empty;
         if (stem.Length == 0 || stem.Any(c => c is '/' or '\\' || char.IsControl(c)))
         {
@@ -651,9 +494,7 @@ public abstract partial class FileGridService<TFile>
           };
         }
 
-        var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
-          ?? throw new InvalidOperationException(L["FileIdRequired"]);
-
+        var id = ids.Count > 0 ? ids[0] : throw new InvalidOperationException(L["FileIdRequired"]);
         var file = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == id, mutationCt)
           ?? throw new KeyNotFoundException(L["FileNotFound"]);
 
@@ -677,7 +518,58 @@ public abstract partial class FileGridService<TFile>
         return new GridActionDto { Outcome = MutationOutcome.Committed };
       },
       cancellationToken,
+      preferSingleId: true);
+  }
+
+  private async Task<TResult> RunFileMutationAsync<TResult>(
+    GridRequest request,
+    string actionName,
+    string fallbackPayload,
+    Func<bool> canExecute,
+    Func<TResult> refusedResult,
+    Func<IReadOnlyList<long>, CancellationToken, Task<TResult>> execute,
+    CancellationToken ct,
+    bool preferSingleId = false)
+    where TResult : MutationResultDto, new()
+  {
+    ParentService = request.ParentService ?? ParentService;
+    ParentId = request.ParentId ?? ParentId;
+    var servicePath = ServicePathResolver.Resolve(GetType());
+    var rawPayload = request.RawPayload ?? fallbackPayload;
+
+    return await MutationRunner.RunIdempotentMutationAsync(
+      db,
+      $"{servicePath}/{actionName}",
+      request.IdempotencyKey,
+      rawPayload,
+      async mutationCt =>
+      {
+        var ids = ResolveSelectedIds(request, preferSingleId);
+        await InferBoundParentIdFromIdsAsync(ids, mutationCt);
+        if (!await EnsureParentScopeAsync(lockParent: true, mutationCt) || !canExecute())
+        {
+          return refusedResult();
+        }
+
+        return await execute(ids, mutationCt);
+      },
+      ct,
       PlatformApp?.Services);
+  }
+
+  private static IReadOnlyList<long> ResolveSelectedIds(GridRequest request, bool preferSingleId = false)
+  {
+    if (preferSingleId && request.Id.HasValue)
+    {
+      return [request.Id.Value];
+    }
+
+    if (request.SelectedIds is { Count: > 0 } selected)
+    {
+      return selected;
+    }
+
+    return request.Id.HasValue ? [request.Id.Value] : [];
   }
 
   async Task<GridActionDto> IFormFilesSource.AttachFileAsync(
@@ -710,7 +602,7 @@ public abstract partial class FileGridService<TFile>
     }
 
     var rules = FileRulesAttribute.Of(typeof(TFile));
-    if (ValidateFileHeader(fileName, contentType, content.Length, rules, out var cleanedName, out var normalizedType) is { } headerError)
+    if (FileUploadValidator.ValidateHeader(fileName, contentType, content.Length, rules, L, out var cleanedName, out var normalizedType) is { } headerError)
     {
       return new GridActionDto
       {
@@ -719,7 +611,7 @@ public abstract partial class FileGridService<TFile>
       };
     }
 
-    if (ValidateFileMagicBytes(normalizedType, content) is { } contentError)
+    if (FileUploadValidator.ValidateMagicBytes(normalizedType, content, L) is { } contentError)
     {
       return new GridActionDto
       {

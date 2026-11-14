@@ -1,14 +1,13 @@
+using Microsoft.EntityFrameworkCore.Metadata;
+using Platform.App.Changes.Internals;
 using Platform.App.Internals;
-using Platform.App.Screens.Internals;
 
 namespace Platform.App.Changes;
 
 public abstract partial class ChangeGridService
 {
-  private static readonly JsonSerializerOptions UnescapedJsonOptions = new()
-  {
-    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-  };
+  private const string OverlayCacheKey = "ChangeGrid.OverlayCache";
+  private const string FkLabelCacheKey = "ChangeGrid.FkLabelCache";
 
   public override Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) =>
     request?.Id is > 0
@@ -51,12 +50,10 @@ public abstract partial class ChangeGridService
       return new ScreenDto { Layout = emptyLayout, OverlayWidth = PanelSize.Px(560) };
     }
 
-    var targetDb = GetDbContextForTable(change.Table);
-    var efEntity = targetDb.Model.GetEntityTypes()
-      .FirstOrDefault(e => e.ClrType.Name == change.Table || e.GetTableName() == change.Table);
+    var (targetDb, efEntity) = ResolveTableMetadata(change.Table);
     var entityType = efEntity?.ClrType;
-    var targetFeat = (!string.IsNullOrEmpty(ParentService) ? ModuleCatalog.Instance.FindFeature(ParentService) : null)
-      ?? ModuleCatalog.Instance.FindFeatureForEntity(entityType, change.Table);
+    var targetFeat = (!string.IsNullOrEmpty(ParentService) ? Catalog.FindFeature(ParentService) : null)
+      ?? Catalog.FindFeatureForEntity(entityType, change.Table);
     var modL = targetFeat != null && !string.IsNullOrEmpty(targetFeat.Module)
       ? Localizer.Instance.For(targetFeat.Module)
       : L;
@@ -87,8 +84,8 @@ public abstract partial class ChangeGridService
       _ => UiColor.Slate
     };
 
-    var beforeDict = ParseJsonDictionary(change.Before);
-    var afterDict = ParseJsonDictionary(change.After);
+    var beforeDict = ChangeAuditFormatter.ParseJsonDictionary(change.Before);
+    var afterDict = ChangeAuditFormatter.ParseJsonDictionary(change.After);
 
     var allKeys = new List<string>();
     foreach (var k in beforeDict.Keys.Concat(afterDict.Keys))
@@ -102,7 +99,7 @@ public abstract partial class ChangeGridService
     }
 
     var orderedKeys = allKeys
-      .OrderBy(k => k is "CreatedAt" or "UpdatedAt" ? 1 : 0)
+      .OrderBy(static k => k is "CreatedAt" or "UpdatedAt" ? 1 : 0)
       .ToList();
 
     var fields = new List<ChangeDiffFieldDto>(orderedKeys.Count);
@@ -114,7 +111,6 @@ public abstract partial class ChangeGridService
       var formattedBefore = await FormatAuditPropertyValueAsync(
         targetDb,
         efEntity,
-        modL,
         key,
         beforeElem,
         ct
@@ -124,7 +120,6 @@ public abstract partial class ChangeGridService
         : await FormatAuditPropertyValueAsync(
             targetDb,
             efEntity,
-            modL,
             key,
             afterElem,
             ct
@@ -140,7 +135,7 @@ public abstract partial class ChangeGridService
         continue;
       }
 
-      var label = ResolveFieldLabel(targetFeat, modL, entityType, key);
+      var label = ChangeAuditFormatter.ResolveFieldLabel(targetFeat, modL, entityType, key);
       var isChanged = change.Operation == ChangeOperations.Modified &&
                       !string.Equals(formattedBefore, formattedAfter, StringComparison.Ordinal);
 
@@ -192,7 +187,7 @@ public abstract partial class ChangeGridService
       ]
     };
 
-    var (sourceBadge, sourceBadgeColor) = ResolveSourceBadge(change.CorrelationId, L);
+    var (sourceBadge, sourceBadgeColor) = ChangeAuditFormatter.ResolveSourceBadge(change.CorrelationId, L);
     var relatedChanges = await BuildRelatedChangesAsync(change, L, ct);
     if (sourceBadge == null && relatedChanges.Count > 1)
     {
@@ -228,49 +223,9 @@ public abstract partial class ChangeGridService
     };
   }
 
-  private static Dictionary<string, JsonElement> ParseJsonDictionary(string? json)
-  {
-    var dict = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-    if (string.IsNullOrWhiteSpace(json))
-    {
-      return dict;
-    }
-
-    try
-    {
-      using var doc = JsonDocument.Parse(json);
-      if (doc.RootElement.ValueKind == JsonValueKind.Object)
-      {
-        foreach (var prop in doc.RootElement.EnumerateObject())
-        {
-          dict[prop.Name] = prop.Value.Clone();
-        }
-      }
-    }
-    catch { }
-
-    return dict;
-  }
-
-  private static string ResolveFieldLabel(Feature? feat, Localizer modL, Type? entityType, string propName)
-  {
-    var camel = char.ToLowerInvariant(propName[0]) + propName[1..];
-    var spaced = Grid.Columns.PathToLabel(camel, entityType);
-    if (spaced.EndsWith(" Id", StringComparison.Ordinal) && spaced.Length > 3)
-    {
-      spaced = spaced[..^3];
-    }
-
-    var fallback = modL.TextOr(propName, modL[spaced]);
-    return feat != null
-      ? ScreenBuilderHelpers.ResolveFieldLabel(modL, feat, camel, fallback)
-      : fallback;
-  }
-
   private async Task<string?> FormatAuditPropertyValueAsync(
     PlatformDbContext targetDb,
-    Microsoft.EntityFrameworkCore.Metadata.IEntityType? efEntity,
-    Localizer modL,
+    IEntityType? efEntity,
     string propName,
     JsonElement elem,
     CancellationToken ct
@@ -298,23 +253,44 @@ public abstract partial class ChangeGridService
       var principalType = fk?.PrincipalEntityType.ClrType;
       if (principalType != null && fk?.PrincipalKey.Properties is [{ ClrType: var pkType }])
       {
-        try
+        var labelCache = GetExecutionItem<Dictionary<(Type, long), string?>>(FkLabelCacheKey);
+        if (labelCache is null)
         {
-          var principalDb = targetDb.Model.FindEntityType(principalType) != null ? targetDb : GetDbContextForTable(principalType.Name);
-          var pkVal = pkType == typeof(long)
-            ? (object)fkId
-            : Convert.ChangeType(fkId, Nullable.GetUnderlyingType(pkType) ?? pkType, CultureInfo.InvariantCulture);
-          var refEntity = await principalDb.FindAsync(principalType, [pkVal], ct);
-          if (refEntity != null)
+          labelCache = [];
+          SetExecutionItem(FkLabelCacheKey, labelCache);
+        }
+
+        if (!labelCache.TryGetValue((principalType, fkId), out var resolvedName))
+        {
+          try
           {
-            var rawName = PropertyAccessorCache.GetReferenceLabel(refEntity);
-            if (!string.IsNullOrWhiteSpace(rawName))
+            var principalDb = targetDb.Model.FindEntityType(principalType) != null
+              ? targetDb
+              : ResolveTableMetadata(principalType.Name).Db;
+            var pkVal = pkType == typeof(long)
+              ? (object)fkId
+              : Convert.ChangeType(fkId, Nullable.GetUnderlyingType(pkType) ?? pkType, CultureInfo.InvariantCulture);
+            var refEntity = await principalDb.FindAsync(principalType, [pkVal], ct);
+            if (refEntity != null)
             {
-              return rawName;
+              var rawName = PropertyAccessorCache.GetReferenceLabel(refEntity);
+              if (!string.IsNullOrWhiteSpace(rawName))
+              {
+                resolvedName = rawName;
+              }
             }
           }
+          catch
+          {
+          }
+
+          labelCache[(principalType, fkId)] = resolvedName;
         }
-        catch { }
+
+        if (!string.IsNullOrWhiteSpace(resolvedName))
+        {
+          return resolvedName;
+        }
       }
     }
 
@@ -344,146 +320,6 @@ public abstract partial class ChangeGridService
     return elem.GetRawText();
   }
 
-  private static string? FormatCompactAuditJson(string? targetJson, string? compareJson, bool onlyDiff)
-  {
-    if (string.IsNullOrWhiteSpace(targetJson))
-    {
-      return targetJson;
-    }
-
-    try
-    {
-      using var targetDoc = JsonDocument.Parse(targetJson);
-      if (targetDoc.RootElement.ValueKind != JsonValueKind.Object)
-      {
-        return UnescapeJsonText(targetJson);
-      }
-
-      JsonDocument? compareDoc = null;
-      if (onlyDiff && !string.IsNullOrWhiteSpace(compareJson))
-      {
-        try
-        {
-          compareDoc = JsonDocument.Parse(compareJson);
-        }
-        catch { }
-      }
-
-      using (compareDoc)
-      {
-        var hasCompareObj = compareDoc?.RootElement.ValueKind == JsonValueKind.Object;
-        var filtered = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-
-        foreach (var prop in targetDoc.RootElement.EnumerateObject())
-        {
-          if (prop.Name is "Id" or "TenantId" or "Ver" or "CreatedAt" or "UpdatedAt")
-          {
-            continue;
-          }
-
-          if (onlyDiff && hasCompareObj)
-          {
-            if (compareDoc!.RootElement.TryGetProperty(prop.Name, out var otherVal) &&
-                string.Equals(prop.Value.GetRawText(), otherVal.GetRawText(), StringComparison.Ordinal))
-            {
-              continue;
-            }
-          }
-          else if (!onlyDiff && prop.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-          {
-            continue;
-          }
-
-          filtered[prop.Name] = prop.Value;
-        }
-
-        if (filtered.Count > 0)
-        {
-          return JsonSerializer.Serialize(filtered, UnescapedJsonOptions);
-        }
-      }
-    }
-    catch { }
-
-    return UnescapeJsonText(targetJson);
-  }
-
-  private static string? UnescapeJsonText(string? json)
-  {
-    if (string.IsNullOrEmpty(json) || !json.Contains("\\u", StringComparison.OrdinalIgnoreCase))
-    {
-      return json;
-    }
-
-    try
-    {
-      using var doc = JsonDocument.Parse(json);
-      return JsonSerializer.Serialize(doc.RootElement, UnescapedJsonOptions);
-    }
-    catch
-    {
-      return Regex.Unescape(json);
-    }
-  }
-
-  private static string FormatCorrelationLabel(string correlationId, Localizer loc)
-  {
-    if (TryParseAgentCorrelation(correlationId, out var code, out var batchCount))
-    {
-      return batchCount is > 1
-        ? loc["ChangeAgentBatchBadge", batchCount.Value, code]
-        : loc["ChangeAgentSingleBadge", code];
-    }
-
-    return correlationId;
-  }
-
-  private static (string? Badge, string? Color) ResolveSourceBadge(string? correlationId, Localizer loc)
-  {
-    if (string.IsNullOrWhiteSpace(correlationId) || !TryParseAgentCorrelation(correlationId, out var code, out var batchCount))
-    {
-      return (null, null);
-    }
-
-    return batchCount is > 1
-      ? (loc["ChangeAgentBatchBadge", batchCount.Value, code], UiColor.Violet)
-      : (loc["ChangeAgentSingleBadge", code], UiColor.Blue);
-  }
-
-  private static bool TryParseAgentCorrelation(string correlationId, out string code, out int? batchCount)
-  {
-    code = string.Empty;
-    batchCount = null;
-
-    if (correlationId.StartsWith("agent-batch:", StringComparison.OrdinalIgnoreCase))
-    {
-      var rest = correlationId["agent-batch:".Length..];
-      var sep = rest.IndexOf(':');
-      if (sep > 0)
-      {
-        code = rest[..sep];
-        if (int.TryParse(rest[(sep + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
-        {
-          batchCount = parsed;
-        }
-      }
-      else
-      {
-        code = rest;
-      }
-
-      return !string.IsNullOrWhiteSpace(code);
-    }
-
-    if (correlationId.StartsWith("agent:", StringComparison.OrdinalIgnoreCase))
-    {
-      code = correlationId["agent:".Length..];
-      return !string.IsNullOrWhiteSpace(code);
-    }
-
-    return false;
-  }
-
   private async Task<List<ChangeDiffRelatedItemDto>> BuildRelatedChangesAsync(
     AppPlatformChange current,
     Localizer loc,
@@ -509,18 +345,15 @@ public abstract partial class ChangeGridService
 
     var hasGlobalView = base.CanView(new GridRequest(), User);
     var items = new List<ChangeDiffRelatedItemDto>(siblings.Count);
+    var defaultFeatureByTable = new Dictionary<string, Feature?>(StringComparer.Ordinal);
 
     foreach (var sib in siblings)
     {
-      var sibDb = GetDbContextForTable(sib.Table);
-      var sibEf = sibDb.Model.GetEntityTypes()
-        .FirstOrDefault(e => e.ClrType.Name == sib.Table || e.GetTableName() == sib.Table);
+      var (sibDb, sibEf) = ResolveTableMetadata(sib.Table);
       var sibClr = sibEf?.ClrType;
-      var sibFeat = (!string.IsNullOrEmpty(ParentService) && sib.Table == current.Table && sib.RowId == current.RowId
-          ? ModuleCatalog.Instance.FindFeature(ParentService)
-          : null)
-        ?? ModuleCatalog.Instance.FindFeatureForEntity(sibClr, sib.Table);
-
+      var sibFeat = !string.IsNullOrEmpty(ParentService) && sib.Table == current.Table && sib.RowId == current.RowId
+        ? Catalog.FindFeature(ParentService) ?? ResolveDefaultFeatureForTable(sib.Table, sibClr, defaultFeatureByTable)
+        : ResolveDefaultFeatureForTable(sib.Table, sibClr, defaultFeatureByTable);
       if (!hasGlobalView && sib.Id != current.Id)
       {
         var (canSeeSibling, resolvedSibFeat) = await ResolvePermittedSiblingFeatureAsync(sibDb, sibClr, sib.Table, sib.RowId, sibFeat, ct);
@@ -539,11 +372,9 @@ public abstract partial class ChangeGridService
         ? sibModL.TextOr(sibFeat.Label, sibModL.TextOr(sibFeat.Handle, sib.Table))
         : loc[sib.Table];
 
-      var summary = TryExtractRecordSummary(sib.After ?? sib.Before);
-      var itemTitle = sib.RowId > 0
-        ? (!string.IsNullOrEmpty(summary) ? $"{sibEntityLabel} #{sib.RowId} · {summary}" : $"{sibEntityLabel} #{sib.RowId}")
-        : (!string.IsNullOrEmpty(summary) ? $"{sibEntityLabel} · {summary}" : sibEntityLabel);
-
+      var summary = ChangeAuditFormatter.TryExtractRecordSummary(sib.After ?? sib.Before);
+      var baseTitle = sib.RowId > 0 ? $"{sibEntityLabel} #{sib.RowId}" : sibEntityLabel;
+      var itemTitle = !string.IsNullOrEmpty(summary) ? $"{baseTitle} · {summary}" : baseTitle;
       var sibOpColor = sib.Operation switch
       {
         ChangeOperations.Added => UiColor.Green,
@@ -558,19 +389,9 @@ public abstract partial class ChangeGridService
           sibFeat != null &&
           ServiceEndpointsExtensions.CanView(sibFeat, User))
       {
-        var formServiceType = ResolvePrimaryFormServiceType(sibFeat, sibClr);
-        if (formServiceType != null)
+        var (formService, overlay) = await ResolveFormOverlayForFeatureAsync(sibFeat, sibClr, sibDb, ct);
+        if (!string.IsNullOrEmpty(formService))
         {
-          var formService = ServicePathResolver.Resolve(formServiceType);
-          OverlayDto? overlay = null;
-          var sp = services ?? PlatformApp?.Services;
-          var formInst = sp?.GetService(formServiceType) as IFormService
-                         ?? ModuleCatalog.Instance.CreateServiceInstance(formServiceType, sibDb, PlatformApp, sp) as IFormService;
-          if (formInst != null)
-          {
-            overlay = await formInst.OverlayAsync(formService, ct);
-          }
-
           open = new OpenTargetDto
           {
             Service = formService,
@@ -596,35 +417,60 @@ public abstract partial class ChangeGridService
     return items;
   }
 
-  private static string? TryExtractRecordSummary(string? json)
+  private Feature? ResolveDefaultFeatureForTable(
+    string table,
+    Type? clrType,
+    Dictionary<string, Feature?> cache)
   {
-    if (string.IsNullOrWhiteSpace(json))
+    if (!cache.TryGetValue(table, out var feat))
     {
-      return null;
+      feat = Catalog.FindFeatureForEntity(clrType, table);
+      cache[table] = feat;
     }
 
-    try
+    return feat;
+  }
+
+  private async Task<(string? Service, OverlayDto? Overlay)> ResolveFormOverlayForFeatureAsync(
+    Feature feat,
+    Type? clrType,
+    PlatformDbContext targetDb,
+    CancellationToken ct)
+  {
+    var cache = GetExecutionItem<Dictionary<(Feature, Type?), (string? Service, OverlayDto? Overlay)>>(OverlayCacheKey);
+    if (cache is null)
     {
-      using var doc = JsonDocument.Parse(json);
-      if (doc.RootElement.ValueKind != JsonValueKind.Object)
-      {
-        return null;
-      }
-
-      foreach (var key in new[] { "Name", "Title", "Code", "Login", "Note" })
-      {
-        if (doc.RootElement.TryGetProperty(key, out var prop) &&
-            prop.ValueKind == JsonValueKind.String &&
-            prop.GetString() is { Length: > 0 } val)
-        {
-          var trimmed = val.Trim();
-          return trimmed.Length > 48 ? $"{trimmed[..45]}…" : trimmed;
-        }
-      }
+      cache = [];
+      SetExecutionItem(OverlayCacheKey, cache);
     }
-    catch { }
 
-    return null;
+    var cacheKey = (feat, clrType);
+    if (cache.TryGetValue(cacheKey, out var cached))
+    {
+      return cached;
+    }
+
+    var formServiceType = ResolvePrimaryFormServiceType(Catalog, feat, clrType);
+    if (formServiceType == null)
+    {
+      cache[cacheKey] = default;
+      return default;
+    }
+
+    var formService = ServicePathResolver.Resolve(formServiceType);
+    OverlayDto? overlay = null;
+    var sp = Services;
+    var formInst = sp?.GetService(formServiceType) as IFormService
+                   ?? Catalog.CreateServiceInstance(formServiceType, targetDb, PlatformApp, sp) as IFormService;
+    if (formInst != null)
+    {
+      formInst.BindContext(PlatformApp);
+      overlay = await formInst.OverlayAsync(formService, ct);
+    }
+
+    var resolved = ((string?)formService, overlay);
+    cache[cacheKey] = resolved;
+    return resolved;
   }
 
   private async Task<(bool Allowed, Feature? ResolvedFeature)> ResolvePermittedSiblingFeatureAsync(
@@ -642,18 +488,18 @@ public abstract partial class ChangeGridService
       User != null &&
       (User.Can(feat.History) || User.Can(feat.All) || User.Can("*"));
 
-    var candidateFeatures = ModuleCatalog.Instance.AllFeatures
+    var candidateFeatures = Catalog.AllFeatures
       .Where(f =>
         sibClr != null && f.ServiceType != null && ModuleCatalog.GetServiceEntityType(f.ServiceType) == sibClr ||
         string.Equals(f.Handle, sibTable, StringComparison.OrdinalIgnoreCase))
       .Distinct()
       .ToList();
 
-    foreach (var st in ModuleCatalog.Instance.AllServiceTypes)
+    foreach (var st in Catalog.AllServiceTypes)
     {
       if (sibClr != null &&
           ModuleCatalog.GetServiceEntityType(st) == sibClr &&
-          ModuleCatalog.Instance.FindFeature(st) is { } svcFeat &&
+          Catalog.FindFeature(st) is { } svcFeat &&
           !candidateFeatures.Contains(svcFeat))
       {
         candidateFeatures.Add(svcFeat);
@@ -671,7 +517,7 @@ public abstract partial class ChangeGridService
       return (candidateFeatures.All(CanSeeFeature), defaultFeat);
     }
 
-    var sp = services ?? PlatformApp?.Services;
+    var sp = Services;
     foreach (var feat in candidateFeatures)
     {
       if (!CanSeeFeature(feat))
@@ -679,10 +525,10 @@ public abstract partial class ChangeGridService
         continue;
       }
 
-      var formType = ResolvePrimaryFormServiceType(feat, sibClr);
+      var formType = ResolvePrimaryFormServiceType(Catalog, feat, sibClr);
       if (formType != null &&
           (sp?.GetService(formType) as IFormService
-           ?? ModuleCatalog.Instance.CreateServiceInstance(formType, sibDb, PlatformApp, sp) as IFormService) is { } form)
+           ?? Catalog.CreateServiceInstance(formType, sibDb, PlatformApp, sp) as IFormService) is { } form)
       {
         form.BindContext(PlatformApp);
         if (await form.LoadParentRecordAsync(sibRowId, ct) != null)
@@ -695,24 +541,24 @@ public abstract partial class ChangeGridService
     return (false, null);
   }
 
-  private static Type? ResolvePrimaryFormServiceType(Feature feat, Type? entityType)
+  private static Type? ResolvePrimaryFormServiceType(ModuleCatalog catalog, Feature feat, Type? entityType)
   {
     if (feat.ServiceType != null && !feat.ServiceType.IsAbstract && typeof(IFormService).IsAssignableFrom(feat.ServiceType))
     {
       return feat.ServiceType;
     }
 
-    return ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+    return catalog.AllServiceTypes.FirstOrDefault(t =>
              !t.IsAbstract &&
              typeof(IFormService).IsAssignableFrom(t) &&
-             ReferenceEquals(ModuleCatalog.Instance.FindFeature(t), feat)
+             ReferenceEquals(catalog.FindFeature(t), feat)
            )
-           ?? ModuleCatalog.Instance.AllServiceTypes.FirstOrDefault(t =>
+           ?? catalog.AllServiceTypes.FirstOrDefault(t =>
              !t.IsAbstract &&
              typeof(IFormService).IsAssignableFrom(t) &&
              entityType != null &&
              ModuleCatalog.GetServiceEntityType(t) == entityType &&
-             ModuleCatalog.Instance.FindFeature(t) == null &&
+             catalog.FindFeature(t) == null &&
              (string.Equals(t.Name, $"{feat.Module}{feat.Handle}FormService", StringComparison.OrdinalIgnoreCase) ||
               string.Equals(t.Name, $"{feat.Handle}FormService", StringComparison.OrdinalIgnoreCase))
            );

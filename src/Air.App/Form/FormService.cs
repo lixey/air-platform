@@ -10,6 +10,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   public PlatformDbContext DbContext => db;
   protected internal PlatformAppService? PlatformApp { get; private set; } = app;
+  PlatformAppService? IFormService.HostApp => PlatformApp;
   protected internal IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected internal ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
   protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
@@ -66,6 +67,16 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   public bool IsFormReadOnly => IsReadOnly;
 
   internal FormExecutionState<TEntity> State { get; } = new();
+
+  protected T? GetExecutionItem<T>(string key) => State.GetItem<T>(key);
+
+  protected void SetExecutionItem<T>(string key, T value) => State.SetItem(key, value);
+
+  protected T? GetExecutionItem<T>() =>
+    GetExecutionItem<T>(typeof(T).FullName ?? typeof(T).Name);
+
+  protected void SetExecutionItem<T>(T value) =>
+    SetExecutionItem(typeof(T).FullName ?? typeof(T).Name, value);
 
   public IReadOnlyList<MessageDto>? GetLastSaveWarnings() => State.LastSaveWarnings;
 
@@ -153,11 +164,24 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     return query;
   }
 
+  private IQueryable<TEntity> UnscopedReachable(bool asTracking = false)
+  {
+    try
+    {
+      return Reachable(asTracking);
+    }
+    catch (ParentNotLoadedException)
+    {
+      return asTracking ? db.Set<TEntity>().AsTracking() : db.Set<TEntity>().AsNoTracking();
+    }
+  }
+
   public void SetRequest(FormRequest request)
   {
     if (Request.Id != request.Id)
     {
       State.LastElements = null;
+      State.CachedActions = null;
       State.ClearItems();
     }
 
@@ -165,6 +189,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
         !string.Equals(Request.ParentService, request.ParentService, StringComparison.OrdinalIgnoreCase))
     {
       State.ParentRecordLoaded = false;
+      State.CachedActions = null;
     }
 
     Request = request;
@@ -317,7 +342,7 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
     var parent = GetParent();
     if (!IsNew && Request.Id is > 0 && CurrentEntity?.Id != Request.Id.Value)
     {
-      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == Request.Id.Value, ct);
+      CurrentEntity = await LoadEntityWithIncludesAsync(Request.Id.Value, State.LastElements, asTracking: true, ct);
       if (CurrentEntity != null)
       {
         RestoreBoundParentId(CurrentEntity, parent);

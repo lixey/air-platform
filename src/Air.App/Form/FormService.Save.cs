@@ -131,16 +131,31 @@ public abstract partial class FormService<TEntity>
   private async Task<TEntity> LockAndLoadExistingAsync(
     long id,
     FormParent<TEntity> parent,
+    CancellationToken ct) =>
+    (await LockAndLoadExistingAsync<object>(id, parent, beforeEntityLock: null, ct)).Entity!;
+
+  private async Task<(TEntity? Entity, TShortCircuit? Refusal)> LockAndLoadExistingAsync<TShortCircuit>(
+    long id,
+    FormParent<TEntity> parent,
+    Func<TEntity, CancellationToken, Task<(bool Continue, TShortCircuit? Refusal)>>? beforeEntityLock,
     CancellationToken ct)
   {
     var requestedParentId = Request.ParentId;
-    if (parent.BoundProperty != null &&
-        (parent.MatchesService(Request.ParentService) || (await ResolveParentChildBuilderAsync(requirePreset: true, ct))?.PresetProvider == null))
+    var needsBoundParentProbe = parent.BoundProperty != null &&
+      (parent.MatchesService(Request.ParentService) || (await ResolveParentChildBuilderAsync(requirePreset: true, ct))?.PresetProvider == null);
+
+    TEntity? probe = null;
+    if (needsBoundParentProbe || beforeEntityLock != null)
     {
-      var probe = await db.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
-      if (probe != null)
+      probe = await UnscopedReachable(asTracking: false).FirstOrDefaultAsync(e => e.Id == id, ct);
+      if (beforeEntityLock != null && probe == null)
       {
-        var probeParentId = parent.BoundProperty.GetValue(probe) as long?;
+        throw new KeyNotFoundException(L["FormNotFound"]);
+      }
+
+      if (needsBoundParentProbe && probe != null)
+      {
+        var probeParentId = parent.BoundProperty!.GetValue(probe) as long?;
         if (requestedParentId is > 0 && probeParentId is > 0 && probeParentId.Value != requestedParentId.Value)
         {
           throw new FormRefusedException(MutationOutcome.Refused, L["MutationRefused"], [new MessageDto { Detail = L["FormNotFound"], Type = MessageType.Error }]);
@@ -158,7 +173,24 @@ public abstract partial class FormService<TEntity>
 
     var lockedParentId = Request.ParentId;
     await EnsureParentScopeAsync(parent, lockParent: true, ct);
+
+    if (beforeEntityLock != null)
+    {
+      var (shouldContinue, refusal) = await beforeEntityLock(probe!, ct);
+      if (!shouldContinue)
+      {
+        return (null, refusal);
+      }
+    }
+
     await MutationContext.AcquireLocksAsync(db, typeof(TEntity), [[id]], ct);
+
+    if (db.Set<TEntity>().Local.FirstOrDefault(e => e.Id == id) is { } localBeforeLock &&
+        db.Entry(localBeforeLock).State == EntityState.Unchanged &&
+        db.Database.IsRelational())
+    {
+      await db.Entry(localBeforeLock).ReloadAsync(ct);
+    }
 
     var entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id, ct)
       ?? throw new KeyNotFoundException(L["FormNotFound"]);
@@ -170,7 +202,7 @@ public abstract partial class FormService<TEntity>
       await EnsureParentScopeAsync(parent, lockParent: true, ct);
     }
 
-    return entity;
+    return (entity, default);
   }
 
   private async Task<object> SaveCoreAsync(
@@ -304,6 +336,7 @@ public abstract partial class FormService<TEntity>
 
       FormValueBinder.SetPropertyValue(entity, effectiveCellPath, cp.Value);
       FormValueBinder.NormalizeNullableStrings(elements.List, entity);
+      FormValueBinder.NormalizeRightsTrees(elements.List, entity);
       if (await FormSelectPatcher.ApplyServerSelectPatchesAsync(
             db,
             PlatformApp,
@@ -353,6 +386,7 @@ public abstract partial class FormService<TEntity>
         disabledElementPaths);
       FormValueBinder.CopyMatchingProperties(input, entity, protectedPaths);
       FormValueBinder.NormalizeNullableStrings(elements.List, entity);
+      FormValueBinder.NormalizeRightsTrees(elements.List, entity);
       if (await FormSelectPatcher.ApplyServerSelectPatchesAsync(
             db,
             PlatformApp,
@@ -411,7 +445,7 @@ public abstract partial class FormService<TEntity>
     var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(elements, hooks, entity, originalValues, presentPaths, ct, disabledElementPaths);
     if (saveCtx.Errors.Count > 0)
     {
-      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.ToErrorMessages());
     }
 
     if (ruleCtx.Failures.Count > 0)
@@ -426,7 +460,7 @@ public abstract partial class FormService<TEntity>
 
     if (saveCtx.Errors.Count > 0)
     {
-      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+      throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.ToErrorMessages());
     }
 
     FormValidator.ValidateElementConstraints(db, L, elements.List, entity, ruleCtx, onlyAcceptingInput: false, disabledElementPaths);
@@ -456,7 +490,7 @@ public abstract partial class FormService<TEntity>
 
       if (saveCtx.Errors.Count > 0)
       {
-        throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.Errors);
+        throw new FormRefusedException(MutationOutcome.Refused, L["FormInvalid"], saveCtx.ToErrorMessages());
       }
 
       if (db.ChangeTracker.HasChanges())
@@ -471,7 +505,7 @@ public abstract partial class FormService<TEntity>
         ? oldPid
         : (long?)null;
       var newParentId = parent.BoundProperty.GetValue(entity) as long? ?? Request.ParentId;
-      State.LastAffectedParents = await ParentScopeValidator.RecalculateBoundParentsAsync(
+      State.LastAffectedParents = await BoundParentRecalculator.RecalculateBoundParentsAsync(
         db,
         PlatformApp,
         Request.ParentService,
@@ -483,7 +517,7 @@ public abstract partial class FormService<TEntity>
     }
 
     State.LastSavedEntity = entity;
-    State.LastSaveWarnings = saveCtx.Warnings.Count > 0 ? [.. saveCtx.Warnings] : null;
+    State.LastSaveWarnings = saveCtx.Warnings.Count > 0 ? saveCtx.ToWarningMessages() : null;
     return entity;
   }
 
@@ -496,11 +530,10 @@ public abstract partial class FormService<TEntity>
     CancellationToken ct,
     IReadOnlySet<string>? disabledElementPaths = null)
   {
-    var saveCtx = new FormSaveContext<TEntity>
+    var saveCtx = new FormSaveContext<TEntity>(db)
     {
       Entity = entity,
       IsNew = IsNew,
-      Db = db,
       OriginalValues = originalValues,
       PresentPaths = presentPaths
     };

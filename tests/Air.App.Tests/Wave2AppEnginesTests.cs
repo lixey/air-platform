@@ -331,9 +331,9 @@ public sealed class Wave2AppEnginesTests : IDisposable
     Assert.Equal("drawer", tabForm.Overlay("test/tab-form").Presentation);
     Assert.Equal("drawer", (await tabForm.OverlayAsync("test/tab-form", CancellationToken.None)).Presentation);
 
-    // 4. Async-only SetElementsAsync with AddChild -> BOTH sync Overlay() and async OverlayAsync() resolve to Drawer!
+    // 4. Async-only SetElementsAsync with AddChild -> OverlayAsync() resolves to Drawer, and sync Overlay() rejects unprobed async metadata without sync-over-async!
     var asyncChildForm = new TestAutoDrawerAsyncChildFormService(db, app);
-    Assert.Equal("drawer", asyncChildForm.Overlay("test/async-child-form").Presentation);
+    Assert.Throws<InvalidOperationException>(() => asyncChildForm.Overlay("test/async-child-form"));
     Assert.Equal("drawer", (await asyncChildForm.OverlayAsync("test/async-child-form", CancellationToken.None)).Presentation);
 
     // 5. Explicit override Presentation -> honored verbatim (and OverlayAsk does NOT overwrite custom 480px width with 720px!)

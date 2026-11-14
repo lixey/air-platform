@@ -8,6 +8,7 @@ public interface IPlatformService
   Feature Feature { get; }
   IEnumerable<string> GetDeclaredActions() => [];
   IEnumerable<string> GetDynamicEndpointNames(ModuleCatalog catalog) => [];
+  bool HasAsyncDynamicEndpoints => false;
 
   Task<IResult?> ExecuteDynamicEndpointAsync(
     string method,
@@ -18,5 +19,6 @@ public interface IPlatformService
     Task.FromResult<IResult?>(null);
 
   void BindContext(PlatformAppService? app) { }
+  void ResetExecutionScope() { }
   void ValidateConfiguration(ModuleCatalog catalog) { }
 }

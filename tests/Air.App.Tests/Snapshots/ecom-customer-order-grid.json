@@ -849,7 +849,7 @@
                     {
                       "kind": "GridNavNamedFilter",
                       "label": "All",
-                      "key": "Status.all"
+                      "key": "Status.All"
                     }
                   ],
                   "isInline": true,

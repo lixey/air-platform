@@ -180,21 +180,17 @@ public Transition Cancel => FromOpen().To(Canceled)
 
 ## 4. Аналітичні звіти (`ReportService`), Комбіновані екрани (`ScreenService`), Файли (`FileGridService`) та Аудит (`ChangeGridService`)
 
-- **`ReportService`:** базовий сервіс інтерактивних аналітичних дашбордів (`GetReportAsync(ReportRequest, CancellationToken)` -> `ReportDataDto`), який підтримує групи швидких фільтрів (`FilterGroups`), картки KPI (`Kpis`), стовпчикові/лінійні/кругові діаграми (`Charts`) та деталізовану таблицю (`Table`) з клікабельним відкриттям картки документа (`RowDto.Open`) і семантичними кольорами бейджів через `RowDto.Colors` (у `Cells` завжди передається скалярний текст `L[statusName]`, а колір — у `Colors["status"]`). Див. еталон `EcomSalesReportService` у `demo/`.
-- **`ScreenService` та мультипанельні робочі місця (`PanelLayout.Screen<TService>`):** дозволяє компонувати кілька повноцінних екранів платформи (наприклад, реєстр замовлень поруч із залишками складу або звітом) без жодного рядка кастомного фронтенд-коду:
+- **`ReportService`:** базовий сервіс інтерактивних аналітичних дашбордів (`GetReportAsync(ReportRequest, CancellationToken)` -> `ReportDataDto`), який підтримує групи швидких фільтрів (`FilterGroups` із типізованим читачем `Filters(request)`), картки KPI (`Kpis`), стовпчикові/лінійні/кругові діаграми (`Charts`) та одну чи кілька таблиць (`Tables`, зручний псевдонім `Table` і типізований будівник `Table(rows).OpenWith<TForm>(...)`) з клікабельним відкриттям картки документа (`RowDto.Open`) та семантичними кольорами бейджів через `RowDto.Colors`. Див. еталон `EcomSalesReportService` у `demo/`.
+- **`ScreenService` та мультипанельні робочі місця (`SetPanels` / `SetPanelsAsync`):** дозволяє декларативно компонувати кілька повноцінних екранів платформи (наприклад, реєстр замовлень поруч із залишками складу або звітом) без жодного рядка кастомного фронтенд-коду:
   ```csharp
-  public override Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
-    Task.FromResult(new ScreenDto
-    {
-      Layout = PanelLayout.Row(servicePath)
-        .Screen<EcomCustomerOrderGridService>("orders", p => p.Label(L["Customer Orders"]).Fill().Min(520))
-        .Screen<EcomStockBalanceGridService>("stock", p => p.Label(L["Stock Balances"]).Size(480).Resizable().Collapsible())
-        .Build()
-    });
+  protected override void SetPanels() =>
+    Panels.Row()
+      .Screen<EcomCustomerOrderGridService>("orders", p => p.Label("Customer Orders").Fill().Min(520))
+      .Screen<EcomStockBalanceGridService>("stock", p => p.Label("Stock Balances").Size(480).Resizable().Collapsible());
   ```
-  Кожна вбудована панель рендериться компонентом `PanelScreenComponent` із незалежною навігацією та реактивним оновленням, а `PlatformValidator` на старті перевіряє всі вкладені сервіси на вертикальну ізоляцію модулів (ADR #8).
-- **`FileGridService<TFile>` / `FileGridService<TDbContext, TFile>`:** вбудований сервіс файлів із перевіркою сигнатур байтів, генерацією прев'ю, обкладинками (`IHasCoverFile`) та підписаними URL `FileLinks`.
-- **`ChangeGridService`:** глобальний переглядач історії `AppPlatformChange` із розшифруванням назв довідників і часовим поясом користувача.
+  Кореневий ключ макета для збереження розмірів панелей і локалізація підписів через модульний `L[...]` застосовуються автоматично. Кожна вбудована панель рендериться компонентом `PanelScreenComponent` із незалежною навігацією та реактивним оновленням, а `PlatformValidator` на старті перевіряє всі вкладені сервіси на вертикальну ізоляцію модулів (ADR #8).
+- **`FileGridService<TFile>` / `FileGridService<TDbContext, TFile>` та `Hooks.DeleteFiles<TFile>(fkExpr)`:** вбудований сервіс файлів із перевіркою сигнатур байтів, генерацією прев'ю, обкладинками (`IHasCoverFile`), підписаними URL `FileLinks` (`options.AddLocalFiles(path)`) та декларативним очищенням файлів і фізичних блобів у `IFileStorage` після коміту транзакції видалення батьківського запису.
+- **`ChangeGridService`:** глобальний переглядач історії `AppPlatformChange` із мемоізованим у межах запиту розшифруванням назв довідників і часовим поясом користувача.
 
 ---
 

@@ -1,12 +1,10 @@
-using Platform.App.Grid.Internals;
-
 namespace Platform.App.Grid.Actions;
 
 public sealed class GridActionBuilder<TEntity, TInput> : GridActionBuilder<TEntity>
   where TEntity : class, IEntity
   where TInput : class, new()
 {
-  internal GridActionBuilder(GridActionEntry<TEntity> entry) : base(entry)
+  internal GridActionBuilder(GridActionItem<TEntity> entry) : base(entry)
   {
   }
 

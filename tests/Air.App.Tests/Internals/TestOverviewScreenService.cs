@@ -7,12 +7,9 @@ internal sealed class TestOverviewScreenService(PlatformAppService? app = null) 
   public PlatformAppService? CurrentAppService => PlatformApp;
   public long? LastSeenUserId { get; private set; }
 
-  public override Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default)
+  protected override void SetPanels()
   {
     LastSeenUserId = User?.UserId;
-    return Task.FromResult(new ScreenDto
-    {
-      Layout = PanelLayout.Column(servicePath).Build()
-    });
+    Panels.Column();
   }
 }

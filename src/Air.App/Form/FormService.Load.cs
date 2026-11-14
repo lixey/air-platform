@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Metadata;
 using Platform.App.Form.Internals;
 using Platform.App.Internals;
 
@@ -17,7 +18,7 @@ public abstract partial class FormService<TEntity>
     var parent = GetParent();
     if (!IsNew && CurrentEntity?.Id != id!.Value)
     {
-      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct)
+      CurrentEntity = await LoadEntityWithIncludesAsync(id.Value, State.LastElements, asTracking: true, ct)
         ?? throw new KeyNotFoundException(L["FormNotFound"]);
       RestoreBoundParentId(CurrentEntity, parent);
     }
@@ -37,77 +38,14 @@ public abstract partial class FormService<TEntity>
     }
     else
     {
-      var query = Reachable(asTracking: true);
-      var needsQuery = CurrentEntity?.Id != id!.Value;
       var efModel = db.Model.FindEntityType(typeof(TEntity));
-      if (efModel != null)
-      {
-        var refNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var rawInfoNavPaths = new List<string>();
-        foreach (var el in elements.List)
-        {
-          if (!string.IsNullOrEmpty(el.NavigationPropertyName))
-          {
-            refNames.Add(el.NavigationPropertyName);
-          }
-          else if (!string.IsNullOrEmpty(el.ReferencePath))
-          {
-            refNames.Add(el.ReferencePath);
-          }
-          else if (!string.IsNullOrEmpty(el.Path) && el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 2)
-          {
-            refNames.Add(el.Path[..^2]);
-          }
-
-          if (el.InfoNavigationPaths is { Count: > 0 } navPaths)
-          {
-            rawInfoNavPaths.AddRange(navPaths);
-          }
-        }
-
-        var includePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var validNavPath in ResolveValidEntityNavigationPaths(efModel, rawInfoNavPaths))
-        {
-          refNames.Add(validNavPath.Split('.')[0]);
-          if (validNavPath.Contains('.'))
-          {
-            includePaths.Add(validNavPath);
-          }
-        }
-
-        if (elements.StatusFlow is IRecordStatuses<TEntity> sf &&
-            (sf.StatusMember.Body as MemberExpression ?? (sf.StatusMember.Body as UnaryExpression)?.Operand as MemberExpression)?.Member.Name is { Length: > 2 } statusProp &&
-            statusProp.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
-        {
-          refNames.Add(statusProp[..^2]);
-        }
-
-        foreach (var nav in efModel.GetNavigations())
-        {
-          if (!nav.IsCollection && refNames.Contains(nav.Name))
-          {
-            query = query.Include(nav.Name);
-            if (!needsQuery && PropertyAccessorCache.GetValue(CurrentEntity!, nav.Name) == null)
-            {
-              var fkPropName = nav.ForeignKey.Properties.FirstOrDefault()?.Name;
-              if (fkPropName != null &&
-                  FormValidator.TryExtractIntegralOrEnumId(PropertyAccessorCache.GetValue(CurrentEntity!, fkPropName), out var fkId) &&
-                  fkId > 0)
-              {
-                needsQuery = true;
-              }
-            }
-          }
-        }
-
-        foreach (var incPath in includePaths)
-        {
-          query = query.Include(incPath);
-        }
-      }
+      var (refNames, includePaths) = CollectElementNavigationIncludes(efModel, elements);
+      var needsQuery = CurrentEntity?.Id != id!.Value ||
+                       HasMissingIncludedNavigations(CurrentEntity!, efModel, refNames, includePaths);
 
       entity = needsQuery
-        ? await query.FirstOrDefaultAsync(e => e.Id == id!.Value, ct) ?? throw new KeyNotFoundException(L["FormNotFound"])
+        ? await QueryEntityWithIncludes(refNames, includePaths, asTracking: true).FirstOrDefaultAsync(e => e.Id == id!.Value, ct)
+          ?? throw new KeyNotFoundException(L["FormNotFound"])
         : CurrentEntity!;
 
       RestoreBoundParentId(entity, parent);
@@ -141,6 +79,219 @@ public abstract partial class FormService<TEntity>
     }
 
     return entity;
+  }
+
+  private static readonly ConcurrentDictionary<(Type ServiceType, IModel Model), (HashSet<string> RefNames, HashSet<string> IncludePaths)?> StaticElementIncludesCache = new();
+
+  private Task<TEntity?> LoadEntityWithIncludesAsync(
+    long id,
+    FormElements<TEntity>? elements,
+    bool asTracking,
+    CancellationToken ct)
+  {
+    var efModel = db.Model.FindEntityType(typeof(TEntity));
+    if (efModel == null)
+    {
+      return Reachable(asTracking).FirstOrDefaultAsync(e => e.Id == id, ct);
+    }
+
+    if (elements != null)
+    {
+      var (refNames, includePaths) = CollectElementNavigationIncludes(efModel, elements);
+      return QueryEntityWithIncludes(refNames, includePaths, asTracking).FirstOrDefaultAsync(e => e.Id == id, ct);
+    }
+
+    if (GetOrProbeStaticElementIncludes(efModel) is { } staticIncludes)
+    {
+      return QueryEntityWithIncludes(staticIncludes.RefNames, staticIncludes.IncludePaths, asTracking).FirstOrDefaultAsync(e => e.Id == id, ct);
+    }
+
+    return Reachable(asTracking).FirstOrDefaultAsync(e => e.Id == id, ct);
+  }
+
+  private (HashSet<string> RefNames, HashSet<string> IncludePaths)? GetOrProbeStaticElementIncludes(IEntityType efModel)
+  {
+    var serviceType = GetType();
+    if (ServiceOverrideFlags.For(serviceType).OverridesSetElementsAsync)
+    {
+      return null;
+    }
+
+    return StaticElementIncludesCache.GetOrAdd((serviceType, efModel.Model), _ =>
+    {
+      try
+      {
+        var probe = new FormElements<TEntity>();
+        var savedElements = Elements;
+        Elements = probe;
+        try
+        {
+          SetElements();
+        }
+        finally
+        {
+          Elements = savedElements;
+        }
+
+        return CollectElementNavigationIncludes(efModel, probe);
+      }
+      catch
+      {
+        return null;
+      }
+    });
+  }
+
+  private IQueryable<TEntity> QueryEntityWithIncludes(
+    HashSet<string> refNames,
+    HashSet<string>? includePaths,
+    bool asTracking)
+  {
+    var query = Reachable(asTracking);
+    var efModel = db.Model.FindEntityType(typeof(TEntity));
+    if (efModel == null)
+    {
+      return query;
+    }
+
+    foreach (var nav in efModel.GetNavigations())
+    {
+      if (!nav.IsCollection && !nav.TargetEntityType.IsOwned() && refNames.Contains(nav.Name))
+      {
+        query = query.Include(nav.Name);
+      }
+    }
+
+    if (includePaths is { Count: > 0 })
+    {
+      foreach (var incPath in includePaths)
+      {
+        query = query.Include(incPath);
+      }
+    }
+
+    return query;
+  }
+
+  private static (HashSet<string> RefNames, HashSet<string> IncludePaths) CollectElementNavigationIncludes(
+    IEntityType? efModel,
+    FormElements<TEntity> elements)
+  {
+    var refNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var includePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (efModel == null)
+    {
+      return (refNames, includePaths);
+    }
+
+    var rawInfoNavPaths = new List<string>();
+    foreach (var el in elements.List)
+    {
+      var binding = FormElementBinding.TryGet(el);
+      if (!string.IsNullOrEmpty(binding?.NavigationPropertyName))
+      {
+        refNames.Add(binding.NavigationPropertyName);
+      }
+      else if (!string.IsNullOrEmpty(el.ReferencePath))
+      {
+        refNames.Add(el.ReferencePath);
+      }
+      else if (!string.IsNullOrEmpty(el.Path) && el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) && el.Path.Length > 2)
+      {
+        refNames.Add(el.Path[..^2]);
+      }
+
+      if (binding?.InfoNavigationPaths is { Count: > 0 } navPaths)
+      {
+        rawInfoNavPaths.AddRange(navPaths);
+      }
+    }
+
+    foreach (var validNavPath in ResolveValidEntityNavigationPaths(efModel, rawInfoNavPaths))
+    {
+      refNames.Add(validNavPath.Split('.')[0]);
+      if (validNavPath.Contains('.'))
+      {
+        includePaths.Add(validNavPath);
+      }
+    }
+
+    if (elements.StatusFlow is IRecordStatuses<TEntity> sf &&
+        (sf.StatusMember.Body as MemberExpression ?? (sf.StatusMember.Body as UnaryExpression)?.Operand as MemberExpression)?.Member.Name is { Length: > 2 } statusProp &&
+        statusProp.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
+    {
+      refNames.Add(statusProp[..^2]);
+    }
+
+    return (refNames, includePaths);
+  }
+
+  private static bool HasMissingIncludedNavigations(
+    TEntity entity,
+    IEntityType? efModel,
+    HashSet<string> refNames,
+    HashSet<string> includePaths)
+  {
+    if (efModel == null)
+    {
+      return false;
+    }
+
+    foreach (var nav in efModel.GetNavigations())
+    {
+      if (!nav.IsCollection && !nav.TargetEntityType.IsOwned() && refNames.Contains(nav.Name) &&
+          IsNavigationSegmentUnloaded(entity, efModel, nav.Name))
+      {
+        return true;
+      }
+    }
+
+    foreach (var path in includePaths)
+    {
+      var segments = path.Split('.');
+      object? currentObj = entity;
+      var currentModel = efModel;
+      foreach (var segment in segments)
+      {
+        if (currentObj == null || currentModel == null)
+        {
+          break;
+        }
+
+        if (IsNavigationSegmentUnloaded(currentObj, currentModel, segment))
+        {
+          return true;
+        }
+
+        currentObj = PropertyAccessorCache.GetValue(currentObj, segment);
+        currentModel = currentModel.GetNavigations()
+          .FirstOrDefault(n => !n.IsCollection && string.Equals(n.Name, segment, StringComparison.OrdinalIgnoreCase))
+          ?.TargetEntityType;
+      }
+    }
+
+    return false;
+  }
+
+  private static bool IsNavigationSegmentUnloaded(object instance, IEntityType model, string navName)
+  {
+    var nav = model.GetNavigations()
+      .FirstOrDefault(n => !n.IsCollection && string.Equals(n.Name, navName, StringComparison.OrdinalIgnoreCase));
+    if (nav == null)
+    {
+      return false;
+    }
+
+    var fkPropName = nav.ForeignKey.Properties.FirstOrDefault()?.Name;
+    if (fkPropName == null ||
+        !FormValidator.TryExtractIntegralOrEnumId(PropertyAccessorCache.GetValue(instance, fkPropName), out var fkId) ||
+        fkId <= 0)
+    {
+      return false;
+    }
+
+    var navVal = PropertyAccessorCache.GetValue(instance, nav.Name);
+    return navVal == null || navVal is IEntity navEntity && navEntity.Id != fkId;
   }
 
   public virtual async Task<FormDataDto> BuildFormDataAsync(
@@ -247,14 +398,10 @@ public abstract partial class FormService<TEntity>
     IsNew = !isEdit;
     State.LastElements = null;
 
-    if (isEdit && CurrentEntity?.Id != recordId!.Value)
+    if (!isEdit)
     {
-      CurrentEntity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == recordId.Value, ct)
-        ?? throw new KeyNotFoundException(L["FormNotFound"]);
-      RestoreBoundParentId(CurrentEntity, parent);
+      await PreloadParentRecordAsync(parent, ct);
     }
-
-    await PreloadParentRecordAsync(parent, ct);
 
     object? modelObj = null;
     try
@@ -273,12 +420,14 @@ public abstract partial class FormService<TEntity>
       Request.ParentId = entityPid;
     }
 
+    var parentReloaded = false;
     if (Request.ParentId is > 0 && State.PreloadedParentId != Request.ParentId)
     {
       await PreloadParentRecordAsync(parent, ct);
+      parentReloaded = true;
     }
 
-    var elements = await EnsureElementsAsync(ct, reload: true);
+    var elements = await EnsureElementsAsync(ct, reload: parentReloaded || State.LastElements == null);
     var hooks = GetHooks();
     return await FormDraftEngine.BuildDraftResultAsync(
       db,
@@ -312,7 +461,7 @@ public abstract partial class FormService<TEntity>
           originalValues,
           explicitlyProvided,
           ct);
-        return (saveCtx.Errors, ruleCtx.Failures);
+        return (saveCtx.ToErrorMessages(), ruleCtx.Failures);
       },
       ct);
   }

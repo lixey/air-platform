@@ -1,3 +1,4 @@
+using Platform.App.Grid.Internals;
 using Platform.App.Internals;
 using Platform.Data.Internals;
 
@@ -30,7 +31,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
   public GridColumn<TEntity, TRow, TProp> Format(Func<TProp, object?> formatter)
   {
     ArgumentNullException.ThrowIfNull(formatter);
-    dto.ValueFormatter = val =>
+    GridColumnRuntime.Of(dto).ValueFormatter = val =>
     {
       if (val is TProp typed)
       {
@@ -97,7 +98,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
 
   public GridColumn<TEntity, TRow, TProp> Computed()
   {
-    dto.IsComputed = true;
+    GridColumnRuntime.Of(dto).IsComputed = true;
     dto.IsSortable = false;
     dto.IsFilterable = false;
     return this;
@@ -118,7 +119,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
   public GridColumn<TEntity, TRow, TProp> Required(bool required = true)
   {
     dto.IsRequired = required;
-    dto.ExplicitRequired = required;
+    GridColumnRuntime.Of(dto).ExplicitRequired = required;
     return this;
   }
 
@@ -151,7 +152,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     dto.Cell = new GridCellOpenFormModel();
     dto.Width ??= 80;
     dto.IsSticky = true;
-    dto.FormServiceResolver = row => row is TRow typed ? resolver(typed) : null;
+    GridColumnRuntime.Of(dto).FormServiceResolver = row => row is TRow typed ? resolver(typed) : null;
     return this;
   }
 
@@ -235,11 +236,23 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
   public GridColumn<TEntity, TRow, TProp> Editable(Func<bool> condition) =>
     Editable(condition());
 
+  public GridColumn<TEntity, TRow, TProp> ConfirmEdit(string? confirmText = null)
+  {
+    dto.ConfirmsEdit = true;
+    if (!string.IsNullOrWhiteSpace(confirmText))
+    {
+      dto.ConfirmText = confirmText;
+    }
+
+    return this;
+  }
+
   public GridColumn<TEntity, TRow, TProp> PickedBy<TSource>(Delegate method, int minLength = 2)
   {
     var readsParent = ParentScopeValidator.DeclaresParentScope(typeof(TSource));
-    dto.PickerSourceType = typeof(TSource);
-    dto.PickerTargetMethod = method.Method;
+    var runtime = GridColumnRuntime.Of(dto);
+    runtime.PickerSourceType = typeof(TSource);
+    runtime.PickerTargetMethod = method.Method;
     dto.Cell = new GridCellPickerModel
     {
       ReferenceService = ServicePathResolver.Resolve(typeof(TSource)),
@@ -277,13 +290,13 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
 
   public GridColumn<TEntity, TRow, TProp> FilterBy<TFilterVal>(Expression<Func<TEntity, TFilterVal>> filterExpression)
   {
-    dto.FilterExpression = filterExpression;
+    GridColumnRuntime.Of(dto).FilterExpression = filterExpression;
     return this;
   }
 
   public GridColumn<TEntity, TRow, TProp> ColorByValue(Func<TProp, string?> colorSelector)
   {
-    dto.ColorEvaluator = obj => obj is TProp val ? colorSelector(val) : null;
+    GridColumnRuntime.Of(dto).ColorEvaluator = obj => obj is TProp val ? colorSelector(val) : null;
     ApplyColorPath();
     return this;
   }
@@ -296,7 +309,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
 
   public GridColumn<TEntity, TRow, TProp> ColorByRow(Func<TRow, string?> colorSelector)
   {
-    dto.ColorEvaluator = obj => obj is TRow row ? colorSelector(row) : null;
+    GridColumnRuntime.Of(dto).ColorEvaluator = obj => obj is TRow row ? colorSelector(row) : null;
     ApplyColorPath();
     return this;
   }
@@ -307,7 +320,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     dto.Type = UiFieldType.Text;
     dto.Cell = new GridCellReferenceModel();
     dto.Header = new GridHeaderReferenceModel();
-    dto.ReferenceServiceType = typeof(TGridService);
+    GridColumnRuntime.Of(dto).ReferenceServiceType = typeof(TGridService);
     dto.ReferenceService = ServicePathResolver.Resolve(typeof(TGridService));
     if (dto.Path != null && !dto.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
     {
@@ -336,7 +349,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     if (!string.IsNullOrEmpty(dto.ReferenceService))
     {
       ReferenceLookupAllowlist.RegisterFilterField(
-        dto.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(dto.ReferenceService),
+        GridColumnRuntime.TryGet(dto)?.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(dto.ReferenceService),
         path);
     }
 
@@ -379,10 +392,11 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
           (typeof(TEntity), exprKey),
           _ => colorSelector.Compile());
 
-    dto.ColorExpression = colorSelector;
-    dto.ColorExpressionKey = exprKey;
-    dto.ColorNavPath = navPath;
-    dto.ColorEvaluator = obj =>
+    var runtime = GridColumnRuntime.Of(dto);
+    runtime.ColorExpression = colorSelector;
+    runtime.ColorExpressionKey = exprKey;
+    runtime.ColorNavPath = navPath;
+    runtime.ColorEvaluator = obj =>
     {
       if (obj is TEntity entity)
       {
@@ -403,7 +417,8 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
 
   private void ReapplyColorPathIfConfigured()
   {
-    if (dto.ColorEvaluator != null || dto.ColorExpression != null || !string.IsNullOrEmpty(dto.ColorNavPath))
+    var runtime = GridColumnRuntime.TryGet(dto);
+    if (runtime?.ColorEvaluator != null || runtime?.ColorExpression != null || !string.IsNullOrEmpty(runtime?.ColorNavPath))
     {
       ApplyColorPath();
     }
@@ -414,7 +429,7 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     var isRef = dto.Cell is GridCellReferenceModel or GridCellSelectModel ||
                 dto.ReferenceService != null ||
                 dto.Options is { Count: > 0 } ||
-                typeof(Reference).IsAssignableFrom(dto.MemberType);
+                typeof(Reference).IsAssignableFrom(GridColumnRuntime.TryGet(dto)?.MemberType);
     dto.Cell.ColorPath = isRef ? $"{dto.Path}.color" : dto.Path;
   }
 

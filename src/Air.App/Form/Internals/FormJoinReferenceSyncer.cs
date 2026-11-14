@@ -15,8 +15,9 @@ internal static class FormJoinReferenceSyncer
       ? m2.Member as PropertyInfo
       : null;
     var getRefId = referenceKey.Compile();
+    var binding = FormElementBinding.Of(dto);
 
-    dto.JoinLoader = async (db, ownerId, ct) =>
+    binding.JoinLoader = async (db, ownerId, ct) =>
     {
       var param = ownerKey.Parameters[0];
       var ownerPred = Expression.Lambda<Func<TJoin, bool>>(
@@ -30,7 +31,7 @@ internal static class FormJoinReferenceSyncer
         .ToListAsync(ct);
     };
 
-    dto.JoinSyncer = async (db, ownerId, desiredIds, ct) =>
+    binding.JoinSyncer = async (db, ownerId, desiredIds, ct) =>
     {
       var distinctDesired = desiredIds.Where(id => id > 0).Distinct().ToList();
       var param = ownerKey.Parameters[0];

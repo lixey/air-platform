@@ -65,7 +65,6 @@
       <Using Include="Platform.App.Form.Contracts" />
       <Using Include="Platform.App.Grid" />
       <Using Include="Platform.App.Grid.Actions" />
-      <Using Include="Platform.App.Grid.AddOns.Covers.Contracts" />
       <Using Include="Platform.App.Grid.Contracts" />
       <Using Include="Platform.App.Grid.Selection" />
       <Using Include="Platform.App.Host" />

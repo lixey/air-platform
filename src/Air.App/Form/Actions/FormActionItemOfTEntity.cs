@@ -1,14 +1,22 @@
 using Platform.App.Screens.Internals;
 
-namespace Platform.App.Form.Internals;
+namespace Platform.App.Form.Actions;
 
-internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission permission)
+public sealed class FormActionItem<TEntity>
   where TEntity : class, IEntity
 {
-  public string Handle { get; } = handle;
-  public string Key { get; } = handle.ToLowerInvariant();
-  public string Method { get; } = ServicePathResolver.ToKebabCase(handle);
-  public ActionPermission Permission { get; } = permission;
+  internal FormActionItem(string handle, ActionPermission permission)
+  {
+    Handle = handle;
+    Key = handle.ToLowerInvariant();
+    Method = ServicePathResolver.ToKebabCase(handle);
+    Permission = permission;
+  }
+
+  public string Handle { get; }
+  public string Key { get; }
+  public string Method { get; }
+  internal ActionPermission Permission { get; }
 
   public string? LabelText { get; set; }
   public string? TitleText { get; set; }
@@ -16,21 +24,21 @@ internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission p
   public string? ColorHandle { get; set; }
   public string? VariantHandle { get; set; }
   public string? ConfirmMessage { get; set; }
-  public Func<TEntity, CancellationToken, Task<string?>>? ConfirmProvider { get; set; }
+  internal Func<TEntity, CancellationToken, Task<string?>>? ConfirmProvider { get; set; }
   public bool IsInMenu { get; set; }
   public bool IsAllowedInReadOnly { get; set; }
-  public RecordAsk? Ask { get; set; }
-  public Func<TEntity?, CancellationToken, Task<object?>>? DefaultProvider { get; set; }
-  public List<RecordAvailability> Offers { get; } = [];
-  public List<(Func<FormActionContext<TEntity>, TEntity, object?, CancellationToken, Task<bool>> Guard, string Refusal, string? Path)> Guards { get; } = [];
-  public Func<FormActionContext<TEntity>, TEntity, object?, CancellationToken, Task>? Handler { get; set; }
+  internal RecordAsk? Ask { get; set; }
+  internal Func<TEntity?, CancellationToken, Task<object?>>? DefaultProvider { get; set; }
+  internal List<RecordAvailability> Offers { get; } = [];
+  internal List<(Func<FormActionContext<TEntity>, TEntity, object?, CancellationToken, Task<bool>> Guard, string Refusal, string? Path)> Guards { get; } = [];
+  internal Func<FormActionContext<TEntity>, TEntity, object?, CancellationToken, Task>? Handler { get; set; }
 
   public bool Matches(string actionKey) =>
     string.Equals(Handle, actionKey, StringComparison.OrdinalIgnoreCase) ||
     string.Equals(Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
     string.Equals(Method, actionKey, StringComparison.OrdinalIgnoreCase);
 
-  public void ValidateConfiguration(Type hostServiceType, Feature hostFeature)
+  internal void ValidateConfiguration(Type hostServiceType, Feature hostFeature)
   {
     Permission.ValidateConfiguration(hostServiceType, hostFeature, Handle);
     if (Handler == null)
@@ -42,7 +50,7 @@ internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission p
     Ask?.ValidateConfiguration(hostServiceType);
   }
 
-  public async Task<FormNavActionModel> BuildModelAsync(
+  internal async Task<FormNavActionModel> BuildModelAsync(
     Type ownerServiceType,
     Feature feature,
     string servicePath,
@@ -95,7 +103,7 @@ internal sealed class FormActionEntry<TEntity>(string handle, ActionPermission p
     return model;
   }
 
-  public async Task<GridNavActionModel> BuildGridModelAsync(
+  internal async Task<GridNavActionModel> BuildGridModelAsync(
     Type ownerServiceType,
     Feature feature,
     string gridServicePath,

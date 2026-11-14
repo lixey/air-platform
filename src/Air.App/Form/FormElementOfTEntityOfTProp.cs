@@ -12,7 +12,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
   public FormElement<TEntity, TProp> Label(string label)
   {
-    dto.HasExplicitLabel = true;
+    FormElementBinding.Of(dto).HasExplicitLabel = true;
     dto.Label = label;
     return this;
   }
@@ -35,7 +35,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
   public FormElement<TEntity, TProp> Required(bool required = true)
   {
-    dto.ExplicitRequired = required;
+    FormElementBinding.Of(dto).ExplicitRequired = required;
     dto.IsRequired = required;
     return this;
   }
@@ -121,15 +121,17 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
   public FormElement<TEntity, TProp> Unique(string? message = null)
   {
-    dto.UniqueMessage = message ?? "FormValidationUnique";
-    dto.UniqueWithin = [];
+    var binding = FormElementBinding.Of(dto);
+    binding.UniqueMessage = message ?? "FormValidationUnique";
+    binding.UniqueWithin = [];
     return this;
   }
 
   public FormElement<TEntity, TProp> Unique(string? message, params Expression<Func<TEntity, object?>>[] withKeys)
   {
-    dto.UniqueMessage = message ?? "FormValidationUnique";
-    dto.UniqueWithin = withKeys.Select(k => GetMemberName(k.Body)).Where(n => n != null).Select(n => n!).ToList();
+    var binding = FormElementBinding.Of(dto);
+    binding.UniqueMessage = message ?? "FormValidationUnique";
+    binding.UniqueWithin = withKeys.Select(k => GetMemberName(k.Body)).Where(n => n != null).Select(n => n!).ToList();
     return this;
   }
 
@@ -239,25 +241,27 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
   public FormElement<TEntity, TProp> AllowCreate(bool allow = true)
   {
-    dto.AllowsCreate = allow;
+    FormElementBinding.Of(dto).AllowsCreate = allow;
     return this;
   }
 
   public FormElement<TEntity, TProp> AllowCreate<TFormService>() where TFormService : class
   {
-    dto.AllowsCreate = true;
-    dto.CreateFormServiceType = typeof(TFormService);
+    var binding = FormElementBinding.Of(dto);
+    binding.AllowsCreate = true;
+    binding.CreateFormServiceType = typeof(TFormService);
     return this;
   }
 
   private FormElement<TEntity, TProp> ConfigureReference<TGridService>(IEnumerable<string>? rawLabelPaths)
   {
     StripDefaultIdLabel();
+    var binding = FormElementBinding.Of(dto);
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.Reference;
-    dto.ReferenceServiceType = typeof(TGridService);
-    var effectivePropType = dto.ResolvedPropertyType ?? typeof(TProp);
-    if (dto.ExplicitRequired == null &&
+    binding.ReferenceServiceType = typeof(TGridService);
+    var effectivePropType = binding.ResolvedPropertyType ?? typeof(TProp);
+    if (binding.ExplicitRequired == null &&
         effectivePropType.IsValueType &&
         Nullable.GetUnderlyingType(effectivePropType) == null &&
         !dto.IsDisabled &&
@@ -287,14 +291,15 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
   private void ConfigureReferences<TGridService>()
   {
     StripDefaultIdLabel();
-    if (!dto.HasExplicitLabel && dto.Label is { } lbl && lbl.EndsWith(" Ids", StringComparison.Ordinal) && lbl.Length > 4)
+    var binding = FormElementBinding.Of(dto);
+    if (!binding.HasExplicitLabel && dto.Label is { } lbl && lbl.EndsWith(" Ids", StringComparison.Ordinal) && lbl.Length > 4)
     {
       dto.Label = lbl[..^4] + "s";
     }
 
     dto.Type = UiFieldType.Text;
     dto.ValueKind = FormValueKind.List;
-    dto.ReferenceServiceType = typeof(TGridService);
+    binding.ReferenceServiceType = typeof(TGridService);
     ReferenceLookupAllowlist.RegisterLabels(typeof(TGridService), ["name"]);
     dto.ReferencePath ??= dto.Path.EndsWith("Ids", StringComparison.Ordinal)
       ? dto.Path[..^3] + "s"
@@ -314,7 +319,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
       targetPath = ResolveEntityFkOrPath(targetPath);
 
       var camelSource = Elements.ToCamelPath(sourcePath);
-      ReferenceLookupAllowlist.RegisterPatchColumn(dto.ReferenceServiceType, camelSource);
+      ReferenceLookupAllowlist.RegisterPatchColumn(FormElementBinding.TryGet(dto)?.ReferenceServiceType, camelSource);
       dto.SelectPatches ??= [];
       dto.SelectPatches.Add(new SelectPatchDto
       {
@@ -337,7 +342,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
       var sourcePath = Elements.ToCamelPath(sourceMemberPath);
       var draftPath = Elements.ToCamelPath(draftMemberPath);
-      ReferenceLookupAllowlist.RegisterFilterField(dto.ReferenceServiceType, sourcePath);
+      ReferenceLookupAllowlist.RegisterFilterField(FormElementBinding.TryGet(dto)?.ReferenceServiceType, sourcePath);
       selectModel.ReferenceDraftRules ??= [];
       selectModel.ReferenceDraftRules.Add(new ReferenceDraftRuleDto
       {
@@ -370,7 +375,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     if (dto.Model is FormSelectModel selectModel && !string.IsNullOrEmpty(sourceMemberPath))
     {
       var sourcePath = Elements.ToCamelPath(sourceMemberPath);
-      ReferenceLookupAllowlist.RegisterFilterField(dto.ReferenceServiceType, sourcePath);
+      ReferenceLookupAllowlist.RegisterFilterField(FormElementBinding.TryGet(dto)?.ReferenceServiceType, sourcePath);
       var rule = FilterNode.Rule(sourcePath, FilterOperator.Equals, value);
       selectModel.ReferenceFilter = CombineFilter(selectModel.ReferenceFilter, rule);
     }
@@ -383,7 +388,7 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
     if (dto.Model is FormSelectModel selectModel)
     {
       var translated = FilterNodeTranslator.Translate(predicate);
-      RegisterFilterNodeFields(dto.ReferenceServiceType, translated);
+      RegisterFilterNodeFields(FormElementBinding.TryGet(dto)?.ReferenceServiceType, translated);
       selectModel.ReferenceFilter = CombineFilter(selectModel.ReferenceFilter, translated);
     }
 
@@ -433,7 +438,10 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
 
   private void StripDefaultIdLabel()
   {
-    if (!dto.HasExplicitLabel && dto.Label is { } lbl && lbl.EndsWith(" Id", StringComparison.Ordinal) && lbl.Length > 3)
+    if (FormElementBinding.TryGet(dto)?.HasExplicitLabel != true &&
+        dto.Label is { } lbl &&
+        lbl.EndsWith(" Id", StringComparison.Ordinal) &&
+        lbl.Length > 3)
     {
       dto.Label = lbl[..^3];
     }

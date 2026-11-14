@@ -65,6 +65,9 @@ public sealed class PlatformOptions
     return this;
   }
 
+  public PlatformOptions AddLocalFiles(string? path = null) =>
+    ConfigureBuilder(builder => builder.AddPlatformLocalFiles(path));
+
   public PlatformOptions AddJob<TJob>(TimeSpan interval, TimeSpan? initialDelay = null)
     where TJob : class, IPlatformJob
   {

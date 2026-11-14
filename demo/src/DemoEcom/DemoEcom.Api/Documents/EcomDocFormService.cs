@@ -9,16 +9,16 @@ public abstract class EcomDocFormService(EcomDbContext db, EcomService? ecom = n
 
   protected IReadOnlyList<EcomDocStatus> Statuses
   {
-    get => ExecutionItems.TryGetValue(nameof(Statuses), out var v) && v is IReadOnlyList<EcomDocStatus> list ? list : [];
-    private set => ExecutionItems[nameof(Statuses)] = value;
+    get => GetExecutionItem<IReadOnlyList<EcomDocStatus>>(nameof(Statuses)) ?? [];
+    private set => SetExecutionItem(nameof(Statuses), value);
   }
 
   protected EcomDoc? Doc => CurrentEntity;
 
   protected EcomDocStatus? Status
   {
-    get => ExecutionItems.TryGetValue(nameof(Status), out var v) && v is EcomDocStatus s ? s : Doc?.DocStatus;
-    private set => ExecutionItems[nameof(Status)] = value;
+    get => GetExecutionItem<EcomDocStatus>(nameof(Status)) ?? Doc?.DocStatus;
+    private set => SetExecutionItem(nameof(Status), value);
   }
 
   protected bool Frozen => Status is not { IsEditable: true };

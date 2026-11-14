@@ -1,14 +1,22 @@
 using Platform.App.Screens.Internals;
 
-namespace Platform.App.Grid.Internals;
+namespace Platform.App.Grid.Actions;
 
-internal sealed class GridActionEntry<TEntity>(string handle, ActionPermission permission)
+public sealed class GridActionItem<TEntity>
   where TEntity : class, IEntity
 {
-  public string Handle { get; } = handle;
-  public string Key { get; } = handle.ToLowerInvariant();
-  public string Method { get; } = ServicePathResolver.ToKebabCase(handle);
-  public ActionPermission Permission { get; } = permission;
+  internal GridActionItem(string handle, ActionPermission permission)
+  {
+    Handle = handle;
+    Key = handle.ToLowerInvariant();
+    Method = ServicePathResolver.ToKebabCase(handle);
+    Permission = permission;
+  }
+
+  public string Handle { get; }
+  public string Key { get; }
+  public string Method { get; }
+  internal ActionPermission Permission { get; }
 
   public string? LabelText { get; set; }
   public string? TitleText { get; set; }
@@ -23,18 +31,18 @@ internal sealed class GridActionEntry<TEntity>(string handle, ActionPermission p
   public bool IsSingle { get; set; }
   public bool IsWithoutTransaction { get; set; }
 
-  public RecordAsk? Ask { get; set; }
-  public Func<IReadOnlyList<long>, CancellationToken, Task<object?>>? DefaultProvider { get; set; }
-  public List<RecordAvailability> Offers { get; } = [];
-  public List<(Func<GridBatchContext<TEntity>, IReadOnlyList<TEntity>, object?, Localizer, CancellationToken, Task<bool>> Guard, string Refusal, string? Path)> Guards { get; } = [];
-  public Func<GridBatchContext<TEntity>, object?, CancellationToken, Task>? Handler { get; set; }
+  internal RecordAsk? Ask { get; set; }
+  internal Func<IReadOnlyList<long>, CancellationToken, Task<object?>>? DefaultProvider { get; set; }
+  internal List<RecordAvailability> Offers { get; } = [];
+  internal List<(Func<GridBatchContext<TEntity>, IReadOnlyList<TEntity>, object?, Localizer, CancellationToken, Task<bool>> Guard, string Refusal, string? Path)> Guards { get; } = [];
+  internal Func<GridBatchContext<TEntity>, object?, CancellationToken, Task>? Handler { get; set; }
 
   public bool Matches(string actionKey) =>
     string.Equals(Handle, actionKey, StringComparison.OrdinalIgnoreCase) ||
     string.Equals(Key, actionKey, StringComparison.OrdinalIgnoreCase) ||
     string.Equals(Method, actionKey, StringComparison.OrdinalIgnoreCase);
 
-  public void ValidateConfiguration(Type hostServiceType, Feature hostFeature)
+  internal void ValidateConfiguration(Type hostServiceType, Feature hostFeature)
   {
     Permission.ValidateConfiguration(hostServiceType, hostFeature, Handle);
     if (Handler == null)
@@ -46,7 +54,7 @@ internal sealed class GridActionEntry<TEntity>(string handle, ActionPermission p
     Ask?.ValidateConfiguration(hostServiceType);
   }
 
-  public async Task<GridNavActionModel> BuildModelAsync(
+  internal async Task<GridNavActionModel> BuildModelAsync(
     Type ownerServiceType,
     Feature feature,
     string servicePath,

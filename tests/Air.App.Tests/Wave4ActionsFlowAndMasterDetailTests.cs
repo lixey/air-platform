@@ -369,7 +369,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
     await db.SaveChangesAsync();
 
     var masterFormPath = ServicePathResolver.Resolve(typeof(TestOrderMasterFormService));
-    var affectedDenied = await Platform.App.Internals.ParentScopeValidator.RecalculateBoundParentsAsync(
+    var affectedDenied = await Platform.App.Internals.BoundParentRecalculator.RecalculateBoundParentsAsync(
       db,
       noParentViewApp,
       masterFormPath,

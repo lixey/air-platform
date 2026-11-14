@@ -2,18 +2,29 @@ using Platform.App.Internals;
 
 namespace Platform.App.Form;
 
-public class FormSaveContext<TEntity> : IMutationContext
+public class FormSaveContext<TEntity>(PlatformDbContext? db = null) : MutationContext(db)
 {
+  private Dictionary<string, object?>? _items;
+
   public required TEntity Entity { get; init; }
   public bool IsNew { get; init; }
-  internal PlatformDbContext? Db { get; init; }
   internal IReadOnlyDictionary<string, object?>? OriginalValues { get; init; }
   internal IReadOnlySet<string>? PresentPaths { get; init; }
-  private readonly List<MutationError> _mutationErrors = [];
-  private readonly List<MutationError> _mutationWarnings = [];
-  public List<MessageDto> Errors { get; } = [];
-  public List<MessageDto> Warnings { get; } = [];
-  public IDictionary<string, object?> Items => field ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+  public IDictionary<string, object?> Items => _items ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+
+  public T? GetExecutionItem<T>(string key) =>
+    _items is not null && _items.TryGetValue(key, out var value) && value is T typed
+      ? typed
+      : default;
+
+  public void SetExecutionItem<T>(string key, T value) =>
+    Items[key] = value;
+
+  public T? GetExecutionItem<T>() =>
+    GetExecutionItem<T>(typeof(T).FullName ?? typeof(T).Name);
+
+  public void SetExecutionItem<T>(T value) =>
+    SetExecutionItem(typeof(T).FullName ?? typeof(T).Name, value);
 
   public bool HasInput(string path) =>
     !string.IsNullOrEmpty(path) && PresentPaths != null && PresentPaths.Contains(path);
@@ -24,62 +35,37 @@ public class FormSaveContext<TEntity> : IMutationContext
     return body is MemberExpression me && HasInput(me.Member.Name);
   }
 
-  IReadOnlyList<MutationError> IMutationContext.Errors => _mutationErrors;
-  IReadOnlyList<MutationError> IMutationContext.Warnings => _mutationWarnings;
+  public void AddError(string detail) =>
+    AddError(new MutationError("form.error", detail));
 
-  public void AddError(MutationError error)
-  {
-    _mutationErrors.Add(error);
-    Errors.Add(error.ToMessage());
-  }
+  public void AddError(string code, string detail, string? path) =>
+    AddError(new MutationError(code, detail, path));
 
-  public void AddError(string detail, string? path = null)
+  public void AddError<TProp>(Expression<Func<TEntity, TProp>> property, string detail, string code = "form.error")
   {
-    _mutationErrors.Add(new MutationError("form.error", detail, path));
-    Errors.Add(new MessageDto { Detail = detail, Path = path, Type = MessageType.Error });
-  }
-
-  public void AddError(string code, string detail, string? path = null)
-  {
-    _mutationErrors.Add(new MutationError(code, detail, path));
-    Errors.Add(new MessageDto { Code = code, Detail = detail, Path = path, Type = MessageType.Error });
-  }
-
-  public void AddError(string code, string message, long? recordId, string? path = null)
-  {
-    _mutationErrors.Add(new MutationError(code, message, path, recordId));
-    Errors.Add(new MessageDto { Code = code, Detail = message, Path = path, RecordId = recordId, Type = MessageType.Error });
-  }
-
-  public void Warn(MutationError warning)
-  {
-    _mutationWarnings.Add(warning);
-    Warnings.Add(warning.ToMessage(MessageType.Warning));
-  }
-
-  public void Warn(string message, string? code = null, long? recordId = null, string? path = null)
-  {
-    var err = new MutationError(code ?? "form.warning", message, path, recordId);
-    _mutationWarnings.Add(err);
-    Warnings.Add(new MessageDto { Code = err.Code, Detail = message, Path = path, RecordId = recordId, Type = MessageType.Warning });
+    var body = property.Body is UnaryExpression ue ? ue.Operand : property.Body;
+    var path = body is MemberExpression me ? Elements.ToCamelPath(me.Member.Name) : null;
+    AddError(new MutationError(code, detail, path));
   }
 
   public void Refuse(string detail, string? path = null) =>
-    AddError(detail, path);
+    AddError(new MutationError("form.error", detail, path));
 
-  public async Task FlushAsync(CancellationToken cancellationToken)
+  internal List<MessageDto> ToErrorMessages() =>
+    [.. Errors.Select(static e => ToFormMessage(e, MessageType.Error, "form.error"))];
+
+  internal List<MessageDto> ToWarningMessages() =>
+    [.. Warnings.Select(static w => ToFormMessage(w, MessageType.Warning, null))];
+
+  private static MessageDto ToFormMessage(MutationError item, string type, string? omitDefaultCode) => new()
   {
-    if (Db != null)
-    {
-      await Db.SaveChangesAsync(cancellationToken);
-    }
-  }
-
-  public Task LockAsync<TLocked>(CancellationToken cancellationToken, params long[] key) where TLocked : class =>
-    MutationContext.AcquireLocksAsync(Db, typeof(TLocked), [key], cancellationToken);
-
-  public Task LockAsync<TLocked>(IEnumerable<long[]> keys, CancellationToken cancellationToken) where TLocked : class =>
-    MutationContext.AcquireLocksAsync(Db, typeof(TLocked), keys, cancellationToken);
+    Code = omitDefaultCode != null && string.Equals(item.Code, omitDefaultCode, StringComparison.Ordinal) ? null : item.Code,
+    Detail = item.Title,
+    Path = item.Path,
+    RecordId = item.RecordId,
+    RecordLabel = item.RecordLabel,
+    Type = type
+  };
 
   public TProp Original<TProp>(Expression<Func<TEntity, TProp>> property)
   {

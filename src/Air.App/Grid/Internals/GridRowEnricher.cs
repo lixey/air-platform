@@ -138,7 +138,15 @@ internal static class GridRowEnricher
       return;
     }
 
-    var subqueryCols = columns.Where(c => !c.IsHidden && c.IsSubqueryExpression && c.ValueExpression != null && !string.IsNullOrEmpty(c.Path)).ToList();
+    var subqueryCols = new List<(GridColumnDto Col, GridColumnRuntime Runtime)>();
+    foreach (var c in columns)
+    {
+      if (!c.IsHidden && !string.IsNullOrEmpty(c.Path) && GridColumnRuntime.TryGet(c) is { IsSubqueryExpression: true, ValueExpression: not null } rt)
+      {
+        subqueryCols.Add((c, rt));
+      }
+    }
+
     if (subqueryCols.Count == 0)
     {
       return;
@@ -150,11 +158,11 @@ internal static class GridRowEnricher
       return;
     }
 
-    var baseQuery = grid.BaseQueryInternal().AsNoTracking();
-    foreach (var col in subqueryCols)
+    var baseQuery = grid.ReachableEntities();
+    foreach (var (col, runtime) in subqueryCols)
     {
-      var evaluator = GetComputedColumnEvaluator<TEntity>(col.ValueExpression!.ReturnType);
-      var valuesById = await evaluator(baseQuery, rowIds, col.ValueExpression, col.ValueFormatter, ct);
+      var evaluator = GetComputedColumnEvaluator<TEntity>(runtime.ValueExpression!.ReturnType);
+      var valuesById = await evaluator(baseQuery, rowIds, runtime.ValueExpression, runtime.ValueFormatter, ct);
       foreach (var row in shapedRows)
       {
         if (row.Id is not { } rowId || !valuesById.TryGetValue(rowId, out var computedVal) || computedVal == null)
@@ -162,7 +170,7 @@ internal static class GridRowEnricher
           continue;
         }
 
-        if (col.Options is { Count: > 0 } options && col.ValueFormatter == null && computedVal is not Reference)
+        if (col.Options is { Count: > 0 } options && runtime.ValueFormatter == null && computedVal is not Reference)
         {
           var optId = Convert.ToInt64(computedVal, CultureInfo.InvariantCulture);
           var opt = options.FirstOrDefault(o => o.Id == optId);
@@ -247,7 +255,15 @@ internal static class GridRowEnricher
       return;
     }
 
-    var colorCols = columns.Where(c => c.ColorEvaluator != null && !string.IsNullOrEmpty(c.Path)).ToList();
+    var colorCols = new List<(GridColumnDto Col, Func<object, string?> ColorEvaluator)>();
+    foreach (var c in columns)
+    {
+      if (!string.IsNullOrEmpty(c.Path) && GridColumnRuntime.TryGet(c)?.ColorEvaluator is { } colorEval)
+      {
+        colorCols.Add((c, colorEval));
+      }
+    }
+
     if (colorCols.Count == 0)
     {
       return;
@@ -259,7 +275,7 @@ internal static class GridRowEnricher
       return;
     }
 
-    var entityQuery = IncludeColumnNavigations<TEntity, TRow>(grid.BaseQueryInternal().AsNoTracking(), colorCols)
+    var entityQuery = IncludeColumnNavigations<TEntity, TRow>(grid.ReachableEntities(), colorCols.Select(x => x.Col))
       .Where(e => rowIds.Contains(e.Id));
     var entitiesById = await entityQuery.ToDictionaryAsync(e => e.Id, ct);
 
@@ -270,9 +286,9 @@ internal static class GridRowEnricher
         continue;
       }
 
-      foreach (var col in colorCols)
+      foreach (var (col, colorEval) in colorCols)
       {
-        var hue = col.ColorEvaluator!(entity)?.ToLowerInvariant();
+        var hue = colorEval(entity)?.ToLowerInvariant();
         if (string.IsNullOrEmpty(hue) || string.IsNullOrEmpty(col.Path))
         {
           continue;
@@ -360,9 +376,10 @@ internal static class GridRowEnricher
         }
       }
 
-      if (!string.IsNullOrEmpty(col.ColorNavPath))
+      var runtime = GridColumnRuntime.TryGet(col);
+      if (!string.IsNullOrEmpty(runtime?.ColorNavPath))
       {
-        var actualColorNavPath = ResolvePropertyPath<TEntity, TRow>(entityType, col.ColorNavPath.Split('.'));
+        var actualColorNavPath = ResolvePropertyPath<TEntity, TRow>(entityType, runtime.ColorNavPath.Split('.'));
         if (actualColorNavPath != null)
         {
           try
@@ -373,9 +390,9 @@ internal static class GridRowEnricher
         }
       }
 
-      if (col.ValueExpression != null && !col.IsSubqueryExpression)
+      if (runtime?.ValueExpression != null && !runtime.IsSubqueryExpression)
       {
-        foreach (var navPath in Form.Elements.ExtractNavigationPaths(col.ValueExpression))
+        foreach (var navPath in Form.Elements.ExtractNavigationPaths(runtime.ValueExpression))
         {
           try
           {

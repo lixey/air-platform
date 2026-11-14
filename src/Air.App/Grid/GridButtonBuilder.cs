@@ -7,8 +7,6 @@ public sealed class GridButtonBuilder
   public string? IconHandle { get; private set; }
   public string? ColorHandle { get; private set; }
   public string? VariantHandle { get; private set; }
-  public bool IsInMenu { get; private set; }
-  public bool IsSingle { get; private set; }
 
   public GridButtonBuilder Label(string label)
   {
@@ -46,18 +44,6 @@ public sealed class GridButtonBuilder
   public GridButtonBuilder Soft()
   {
     VariantHandle = ButtonVariant.Soft;
-    return this;
-  }
-
-  public GridButtonBuilder InMenu()
-  {
-    IsInMenu = true;
-    return this;
-  }
-
-  public GridButtonBuilder Single(bool single = true)
-  {
-    IsSingle = single;
     return this;
   }
 }

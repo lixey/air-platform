@@ -15,8 +15,12 @@ public sealed class ReportDataDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<ReportChartDto>? Charts { get; init; }
 
-  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  public ReportTableDto? Table { get; init; }
+  [JsonIgnore]
+  public ReportTableDto? Table
+  {
+    get => Tables is { Count: > 0 } ? Tables[0] : null;
+    init => Tables = value is not null ? [value] : null;
+  }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<ReportTableDto>? Tables { get; init; }

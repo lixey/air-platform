@@ -56,7 +56,7 @@ internal static class FormSelectPatcher
         continue;
       }
 
-      if (await TryReadReferenceRowAsync(db, app, el.ReferenceServiceType, refSvc, selectedId, ct) is not { } selectedRow)
+      if (await TryReadReferenceRowAsync(db, app, FormElementBinding.TryGet(el)?.ReferenceServiceType, refSvc, selectedId, ct) is not { } selectedRow)
       {
         continue;
       }
@@ -230,7 +230,7 @@ internal static class FormSelectPatcher
       }
 
       if (candidates.Count == 0 ||
-          await TryReadReferenceRowAsync(db, app, sourceEl.ReferenceServiceType, refSvc, selectedId, ct) is not { } selectedRowDto)
+          await TryReadReferenceRowAsync(db, app, FormElementBinding.TryGet(sourceEl)?.ReferenceServiceType, refSvc, selectedId, ct) is not { } selectedRowDto)
       {
         continue;
       }
@@ -317,7 +317,7 @@ internal static class FormSelectPatcher
       return true;
     }
 
-    var targetRow = await TryReadReferenceRowAsync(db, app, targetEl.ReferenceServiceType, targetRefSvc, targetId, ct);
+    var targetRow = await TryReadReferenceRowAsync(db, app, FormElementBinding.TryGet(targetEl)?.ReferenceServiceType, targetRefSvc, targetId, ct);
     return targetRow == null || MatchesRowFilter(targetRow, targetFilter);
   }
 

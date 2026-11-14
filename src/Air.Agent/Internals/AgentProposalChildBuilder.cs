@@ -4,24 +4,25 @@ namespace Platform.Agent.Internals;
 
 internal static class AgentProposalChildBuilder
 {
-  public static HashSet<string> CollectChildReferenceServices(
+  public static async Task<HashSet<string>> CollectChildReferenceServicesAsync(
     ProposalBuildContext ctx,
     IReadOnlyList<AgentEditableChildDescriptor> editableChildren,
     bool isEdit,
     long? recordId,
-    string parentServicePath)
+    string parentServicePath,
+    CancellationToken ct = default)
   {
     var refServices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var childDesc in editableChildren)
     {
-      using var scope = AgentModuleScope.OpenForService(ctx.Services, childDesc.ChildFormType, ctx.Db, ctx.App);
+      await using var scope = AgentModuleScope.OpenForService(ctx.Services, childDesc.ChildFormType, ctx.Db, ctx.App);
       if (ModuleCatalog.Instance.CreateServiceInstance(childDesc.ChildFormType, scope.Db, scope.App) is not IFormService childForm)
       {
         continue;
       }
 
       childForm.SetRequest(new FormRequest { ParentId = isEdit ? recordId : null, ParentService = parentServicePath });
-      var (cEls, _) = childForm.GetElementsMetadataAsync(CancellationToken.None).GetAwaiter().GetResult();
+      var (cEls, _) = await childForm.GetElementsMetadataAsync(ct);
       foreach (var cel in cEls.Where(AgentFeatureRegistry.IsEditableElement))
       {
         if (cel.Model is FormSelectModel cs && !string.IsNullOrEmpty(cs.ReferenceService))

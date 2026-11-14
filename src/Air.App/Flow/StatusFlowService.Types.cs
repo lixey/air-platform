@@ -151,8 +151,8 @@ public abstract partial class StatusFlowService<TEntity>
   {
     private readonly List<(
       Transition<TEntity> Transition,
-      Expression<Func<TChild, bool>>? AnyPredicate,
-      Expression<Func<TChild, bool>>? RestPredicate,
+      Expression<Func<TChild, bool>>? AnyExpression,
+      Expression<Func<TChild, bool>>? RestExpression,
       IReadOnlyList<long>? AnyStatuses,
       IReadOnlyList<long>? RestStatuses
     )> _clauses = [];
@@ -172,6 +172,7 @@ public abstract partial class StatusFlowService<TEntity>
     private readonly StatusFlowService<TEntity> _parentFlow;
     private readonly StatusFlowService<TChild> _childFlow;
     private readonly Expression<Func<TChild, long>> _parentKey;
+    private Func<TChild, long>? _compiledParentKey;
 
     internal override bool ReferencesChildFlow(Type childFlowType) =>
       childFlowType.IsAssignableFrom(_childFlow.GetType()) || _childFlow.GetType().IsAssignableFrom(childFlowType);
@@ -213,15 +214,17 @@ public abstract partial class StatusFlowService<TEntity>
       if (_clauses.Count > 0)
       {
         var parentIds = parents.Select(p => p.Id).Distinct().ToList();
-        var keyCompiled = _parentKey.Compile();
-        var filterExpr = ParentScopeValidator.BuildKeyInFilter(_parentKey, parentIds);
+        var filterExpr = ParentFilterExpressions.BuildKeyInFilter(_parentKey, parentIds);
 
         var allChildren = await _parentFlow.Db.Set<TChild>()
           .Where(filterExpr)
           .ToListAsync(ct);
 
-        var byParent = allChildren.ToLookup(keyCompiled);
-        var childStatusReader = _childFlow._statusReader ?? _childFlow.StatusMember.Compile();
+        var parentKeyGetter = _compiledParentKey ??= _parentKey.Compile(preferInterpretation: true);
+        var byParent = allChildren.ToLookup(parentKeyGetter);
+        var childStatusReader = _childFlow._statusReader ?? _childFlow.StatusMember.Compile(preferInterpretation: true);
+        Func<TChild, bool>?[]? compiledAny = null;
+        Func<TChild, bool>?[]? compiledRest = null;
 
         foreach (var parent in parents)
         {
@@ -231,8 +234,9 @@ public abstract partial class StatusFlowService<TEntity>
             continue;
           }
 
-          foreach (var clause in _clauses)
+          for (var i = 0; i < _clauses.Count; i++)
           {
+            var clause = _clauses[i];
             if (!_parentFlow.Allows(parent, clause.Transition))
             {
               continue;
@@ -256,8 +260,10 @@ public abstract partial class StatusFlowService<TEntity>
             }
             else
             {
-              var anyPred = clause.AnyPredicate?.Compile();
-              var restPred = clause.RestPredicate?.Compile();
+              compiledAny ??= new Func<TChild, bool>?[_clauses.Count];
+              compiledRest ??= new Func<TChild, bool>?[_clauses.Count];
+              var anyPred = clause.AnyExpression is { } ae ? (compiledAny[i] ??= ae.Compile(preferInterpretation: true)) : null;
+              var restPred = clause.RestExpression is { } re ? (compiledRest[i] ??= re.Compile(preferInterpretation: true)) : null;
               if (anyPred != null && !children.Any(anyPred))
               {
                 continue;

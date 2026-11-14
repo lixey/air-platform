@@ -1,3 +1,5 @@
+using Platform.App.Form.Internals;
+
 namespace Platform.App.Form;
 
 public static class FormElementChoiceExtensions
@@ -16,7 +18,7 @@ public static class FormElementChoiceExtensions
   {
     element.Dto.Type = UiFieldType.Text;
     element.Dto.ValueKind = FormValueKind.List;
-    element.Dto.IsRightsTree = held == null;
+    FormElementBinding.Of(element.Dto).IsRightsTree = held == null;
     if (!element.HasExplicitSpan)
     {
       element.Dto.Span = 12;

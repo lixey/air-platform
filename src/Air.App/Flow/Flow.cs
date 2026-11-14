@@ -85,7 +85,7 @@ public class Flow<TEntity>
   {
     ArgumentNullException.ThrowIfNull(fk);
     FollowerTypes.Add(typeof(TFlowService));
-    if (ParentScopeValidator.ExtractBoundProperty(fk) is { } prop)
+    if (ParentFilterExpressions.ExtractBoundProperty(fk) is { } prop)
     {
       FollowerForeignKeys[typeof(TFlowService)] = prop;
     }
@@ -95,7 +95,7 @@ public class Flow<TEntity>
   {
     ArgumentNullException.ThrowIfNull(fk);
     FollowerTypes.Add(typeof(TFlowService));
-    if (ParentScopeValidator.ExtractBoundProperty(fk) is { } prop)
+    if (ParentFilterExpressions.ExtractBoundProperty(fk) is { } prop)
     {
       FollowerForeignKeys[typeof(TFlowService)] = prop;
     }

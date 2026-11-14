@@ -7,6 +7,7 @@ internal sealed class FormExecutionState<TEntity>
 
   public IDictionary<string, object?> Items => _items ??= new Dictionary<string, object?>(StringComparer.Ordinal);
   public FormElements<TEntity>? LastElements { get; set; }
+  public FormActions<TEntity>? CachedActions { get; set; }
   public FormParent<TEntity>? CachedParent { get; set; }
   public FormHooks<TEntity>? CachedHooks { get; set; }
   public TEntity? LastSavedEntity { get; set; }
@@ -19,11 +20,21 @@ internal sealed class FormExecutionState<TEntity>
 
   public void ClearItems() => _items = null;
 
+  public T? GetItem<T>(string key) =>
+    _items is not null && _items.TryGetValue(key, out var value) && value is T typed
+      ? typed
+      : default;
+
+  public void SetItem<T>(string key, T value) =>
+    Items[key] = value;
+
   public void ResetSaveOutcome()
   {
     LastSavedEntity = null;
     LastSaveWarnings = null;
     LastAffectedParents = null;
+    CachedActions = null;
+    ClearItems();
   }
 
   public void CacheParentScope(

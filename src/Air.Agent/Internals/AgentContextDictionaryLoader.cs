@@ -342,15 +342,16 @@ internal static class AgentContextDictionaryLoader
           title = Localizer.Instance.For(feat.Module)[feat.Name],
           activeFilters = data.ActiveFilters,
           kpis = data.Kpis,
-          table = data.Table == null
-            ? null
-            : new
+          tables = data.Tables is { Count: > 0 } tables
+            ? tables.Select(t => new
             {
-              title = data.Table.Title,
-              columns = data.Table.Columns,
-              rows = data.Table.Rows.Take(20).Select(r => CleanGridRow(r)).Where(r => r != null).ToList(),
-              bottomRows = data.Table.BottomRows?.Select(r => CleanGridRow(r)).Where(r => r != null).ToList()
-            }
+              key = t.Key,
+              title = t.Title,
+              columns = t.Columns,
+              rows = t.Rows.Take(20).Select(r => CleanGridRow(r)).Where(r => r != null).ToList(),
+              bottomRows = t.BottomRows?.Select(r => CleanGridRow(r)).Where(r => r != null).ToList()
+            }).ToList()
+            : null
         };
       }
       catch { }

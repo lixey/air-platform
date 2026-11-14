@@ -11,6 +11,8 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 {
   private const int OrderStep = 1024;
   private static readonly bool HasCovers = typeof(IHasCoverFile).IsAssignableFrom(typeof(TFile));
+  private static readonly DateTimeOffset ZipMinTimestamp = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+  private static readonly DateTimeOffset ZipMaxTimestamp = new(2107, 12, 31, 23, 59, 58, TimeSpan.Zero);
 
   bool IFileCoverSource.HasCovers => HasCovers;
 
@@ -20,7 +22,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
   protected FileLinks Links => field ??= PlatformApp?.Services.GetService<FileLinks>() ?? new();
 
-  protected IFileStores Stores => PlatformApp?.Services.GetService<IFileStores>() ?? new DefaultFileStores(new LocalFileStorage());
+  protected IFileStores Stores => FileStorageCleaner.ResolveStores(PlatformApp?.Services);
 
   protected override void SetQuery() => Query.SortBy(r => r.SortOrder).ThenByDescending(r => r.Id);
 
@@ -118,8 +120,18 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     }
   }
 
+  private static DateTimeOffset ClampZipTimestamp(DateTimeOffset timestamp)
+  {
+    if (timestamp < ZipMinTimestamp)
+    {
+      return ZipMinTimestamp;
+    }
+
+    return timestamp > ZipMaxTimestamp ? ZipMaxTimestamp : timestamp;
+  }
+
   private static Expression<Func<TFile, bool>> BuildParentFilter(PropertyInfo boundProp, object parentVal) =>
-    ParentScopeValidator.BuildParentKeyFilter<TFile>(boundProp, parentVal);
+    ParentFilterExpressions.BuildParentKeyFilter<TFile>(boundProp, parentVal);
 
   [Endpoint]
   [RequireAction(Right.View)]
@@ -259,7 +271,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
         }
 
         var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
-        entry.LastWriteTime = file.CreatedAt;
+        entry.LastWriteTime = ClampZipTimestamp(file.CreatedAt);
         await using var entryStream = entry.Open();
         await fileStream.CopyToAsync(entryStream, cancellationToken);
       }
@@ -355,7 +367,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
       return new Dictionary<long, GridCoverDto>();
     }
 
-    var inOwnersLambda = ParentScopeValidator.BuildKeyInFilter<TFile>(parent.BoundProperty, owners);
+    var inOwnersLambda = ParentFilterExpressions.BuildKeyInFilter<TFile>(parent.BoundProperty, owners);
     var param = inOwnersLambda.Parameters[0];
     var isCoverExpr = Expression.Equal(
       Expression.Property(param, nameof(IHasCoverFile.IsCover)),

@@ -61,6 +61,17 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   public bool AllowsMultiDelete => GetHooks().IsMultiDeleteAllowed;
 
   internal GridExecutionState<TEntity, TRow> State { get; } = new();
+  protected IDictionary<string, object?> ExecutionItems => State.Items;
+
+  protected T? GetExecutionItem<T>(string key) => State.GetItem<T>(key);
+
+  protected void SetExecutionItem<T>(string key, T value) => State.SetItem(key, value);
+
+  protected T? GetExecutionItem<T>() =>
+    GetExecutionItem<T>(typeof(T).FullName ?? typeof(T).Name);
+
+  protected void SetExecutionItem<T>(T value) =>
+    SetExecutionItem(typeof(T).FullName ?? typeof(T).Name, value);
   internal bool IsSqlServerProvider => db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true;
 
   internal bool HasCustomShapeRow =>
@@ -106,23 +117,20 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   protected virtual async Task<OverlayDto?> ResolveFormOverlayAsync(CancellationToken ct = default)
   {
-    if (Columns.Count == 0 && Columns.FormServiceType == null)
-    {
-      await CreateColumnsAsync(ct);
-    }
+    var cols = await CreateColumnsAsync(ct);
 
     if (ResolveFormOverlay() is { } customOverlay)
     {
       return customOverlay;
     }
 
-    var detectedFormService = ResolveFormServicePath(Columns);
+    var detectedFormService = ResolveFormServicePath(cols);
     if (detectedFormService is null)
     {
       return null;
     }
 
-    var formType = ResolveFormServiceType(Columns) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
+    var formType = ResolveFormServiceType(cols) ?? ModuleCatalog.Instance.FindServiceType(detectedFormService);
     return await ResolveFormOverlayForTypeAsync(formType, detectedFormService, ct);
   }
 
@@ -132,7 +140,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
     IReadOnlyList<(string Name, Func<TRow, bool> Predicate)>? rowFlags = null) =>
     GridRowShaper.ShapeDefaultRow(this, row, columns, rowFlags);
 
-  internal IQueryable<TEntity> BaseQueryInternal() => BaseQuery(db);
+  internal IQueryable<TEntity> ReachableEntities() =>
+    BuildBaseEntityQuery(null, out _, out _, preserveParent: true).AsNoTracking();
 
   internal RowDto ShapeRowInternal(
     TRow row,
@@ -235,6 +244,16 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   protected virtual async Task<bool> EnsureParentScopeAsync(bool lockParent, CancellationToken ct)
   {
+    if (!lockParent &&
+        State.CachedParentValidation is { } cachedParent &&
+        string.Equals(cachedParent.ParentService, ParentService, StringComparison.OrdinalIgnoreCase) &&
+        cachedParent.ParentId == ParentId)
+    {
+      State.PreloadedParent = cachedParent.Preloaded;
+      State.PreloadedParentId = cachedParent.ParentId;
+      return cachedParent.Allowed;
+    }
+
     var parent = GetParent();
     var hasRequiredBoundParent = parent.BoundProperty != null && !parent.IsOptional;
     var (allowed, preloaded, parentChildren) = await ParentScopeValidator.ValidateAndLoadAsync(
@@ -250,6 +269,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
       lockParent,
       ct);
     State.CacheParentScope(
+      allowed,
       preloaded,
       ParentId,
       ParentService,

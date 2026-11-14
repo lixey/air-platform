@@ -19,7 +19,7 @@ public sealed class FormParent<TEntity>
     BoundParentServiceType = typeof(TParentService);
     BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
     IsOptional = optional;
-    BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
+    BoundProperty = ParentFilterExpressions.ExtractBoundProperty(member);
   }
 
   public void Bind<TParentService>(Expression<Func<TEntity, long?>> member, bool optional = false)
@@ -27,6 +27,6 @@ public sealed class FormParent<TEntity>
     BoundParentServiceType = typeof(TParentService);
     BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
     IsOptional = optional;
-    BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
+    BoundProperty = ParentFilterExpressions.ExtractBoundProperty(member);
   }
 }

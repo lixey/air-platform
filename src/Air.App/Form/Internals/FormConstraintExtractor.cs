@@ -9,7 +9,8 @@ internal static class FormConstraintExtractor
   {
     foreach (var el in elements)
     {
-      if (string.IsNullOrEmpty(el.NavigationPropertyName))
+      var navPropName = FormElementBinding.TryGet(el)?.NavigationPropertyName;
+      if (string.IsNullOrEmpty(navPropName))
       {
         continue;
       }
@@ -20,7 +21,7 @@ internal static class FormConstraintExtractor
           !el.IsServerOwned)
       {
         throw new InvalidOperationException(
-          $"Navigation property '{rootEntityType.Name}.{el.NavigationPropertyName}' added to form elements must configure .AsReference<...>() or .AsInfo().");
+          $"Navigation property '{rootEntityType.Name}.{navPropName}' added to form elements must configure .AsReference<...>() or .AsInfo().");
       }
     }
   }
@@ -34,17 +35,20 @@ internal static class FormConstraintExtractor
 
     foreach (var el in elements)
     {
-      if (!string.IsNullOrEmpty(el.NavigationPropertyName) && efEntityType != null)
+      var binding = FormElementBinding.TryGet(el);
+      var navPropName = binding?.NavigationPropertyName;
+      if (!string.IsNullOrEmpty(navPropName) && efEntityType != null)
       {
         var efNav = efEntityType.GetNavigations()
-          .FirstOrDefault(n => !n.IsCollection && string.Equals(n.Name, el.NavigationPropertyName, StringComparison.OrdinalIgnoreCase));
+          .FirstOrDefault(n => !n.IsCollection && string.Equals(n.Name, navPropName, StringComparison.OrdinalIgnoreCase));
         if (efNav?.ForeignKey.Properties is [{ } fkMetadata])
         {
           el.Path = Elements.ToCamelPath(fkMetadata.Name);
-          el.ResolvedPropertyType = fkMetadata.ClrType;
-          if (!el.HasExplicitLabel)
+          var mutableBinding = binding ?? FormElementBinding.Of(el);
+          mutableBinding.ResolvedPropertyType = fkMetadata.ClrType;
+          if (!mutableBinding.HasExplicitLabel)
           {
-            el.Label = Elements.PathToLabel(el.ReferencePath ?? el.NavigationPropertyName, rootEntityType);
+            el.Label = Elements.PathToLabel(el.ReferencePath ?? navPropName, rootEntityType);
           }
         }
       }
@@ -54,7 +58,8 @@ internal static class FormConstraintExtractor
         continue;
       }
 
-      if ((el.IsDisabled || el.IsServerOwned) && el.ExplicitRequired != true)
+      var explicitRequired = binding?.ExplicitRequired;
+      if ((el.IsDisabled || el.IsServerOwned) && explicitRequired != true)
       {
         el.IsRequired = false;
       }
@@ -82,7 +87,7 @@ internal static class FormConstraintExtractor
           el.Constraints.Scale ??= efProp.GetScale();
         }
 
-        if (!efProp.IsNullable && el.ExplicitRequired != false && !el.IsDisabled && !el.IsServerOwned)
+        if (!efProp.IsNullable && explicitRequired != false && !el.IsDisabled && !el.IsServerOwned)
         {
           if (propType == typeof(string) || efProp.IsForeignKey())
           {
@@ -100,7 +105,7 @@ internal static class FormConstraintExtractor
         switch (attr)
         {
           case RequiredAttribute req:
-            if (el.ExplicitRequired != false && !el.IsDisabled && !el.IsServerOwned)
+            if (explicitRequired != false && !el.IsDisabled && !el.IsServerOwned)
             {
               el.IsRequired = true;
               el.Constraints.AllowsNull = false;

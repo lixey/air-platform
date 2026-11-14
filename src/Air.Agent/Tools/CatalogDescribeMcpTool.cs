@@ -106,7 +106,7 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
           service = ServicePathResolver.Resolve(directType),
           title = Localizer.Instance.For(reportSvc.Feature.Module)[reportSvc.Feature.Name],
           kpis = data.Kpis,
-          table = data.Table
+          tables = data.Tables
         };
       }
     }

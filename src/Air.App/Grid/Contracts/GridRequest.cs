@@ -18,7 +18,6 @@ public class GridRequest : ListRequest, IScopedServiceRequest
   public List<string>? ReferenceLabelPaths { get; set; }
   public List<string>? PatchSourceColumns { get; set; }
   public bool IsReferencePicker { get; set; }
-  public bool IncludesInactive { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public List<string>? NamedFilters { get; set; }

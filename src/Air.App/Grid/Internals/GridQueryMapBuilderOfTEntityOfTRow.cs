@@ -28,16 +28,17 @@ internal static class GridQueryMapBuilder<TEntity, TRow>
       for (var i = 0; i < columns.Count; i++)
       {
         var col = columns[i];
-        if (col.FilterExpression is not null || col.IsSubqueryExpression)
+        var runtime = GridColumnRuntime.TryGet(col);
+        if (runtime?.FilterExpression is not null || runtime?.IsSubqueryExpression == true)
         {
           canCache = false;
           break;
         }
 
-        var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
+        var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(runtime?.MemberType);
         sb.Append(col.Path).Append('|')
           .Append(col.FilterPath).Append('|')
-          .Append(col.ValueExpression?.ToString()).Append('|')
+          .Append(runtime?.ValueExpression?.ToString()).Append('|')
           .Append(isRef ? '1' : '0').Append('|')
           .Append(col.IsHidden ? '1' : '0').Append('|')
           .Append(col.IsSortable ? '1' : '0').Append('|')
@@ -146,32 +147,33 @@ internal static class GridQueryMapBuilder<TEntity, TRow>
         continue;
       }
 
-      if (col.FilterExpression is not null)
+      var runtime = GridColumnRuntime.TryGet(col);
+      if (runtime?.FilterExpression is not null)
       {
         var filterKey = !string.IsNullOrEmpty(col.FilterPath) ? col.FilterPath : col.Path;
         if (col.IsFilterable)
         {
-          builder.Field(filterKey, col.FilterExpression, f => f.FilterOnly());
+          builder.Field(filterKey, runtime.FilterExpression, f => f.FilterOnly());
           if (!string.Equals(filterKey, col.Path, StringComparison.OrdinalIgnoreCase))
           {
-            builder.Field(col.Path, col.FilterExpression, f => f.FilterOnly());
+            builder.Field(col.Path, runtime.FilterExpression, f => f.FilterOnly());
           }
         }
 
         continue;
       }
 
-      if (col.ValueExpression is not null)
+      if (runtime?.ValueExpression is not null)
       {
-        builder.Field(col.Path, col.ValueExpression);
+        builder.Field(col.Path, runtime.ValueExpression);
         ApplyColumnCapabilities(
           col.Path,
           col,
-          searchableString: !hasExplicitSearchFields && !col.IsHidden && col.ValueExpression.ReturnType == typeof(string));
+          searchableString: !hasExplicitSearchFields && !col.IsHidden && runtime.ValueExpression.ReturnType == typeof(string));
         continue;
       }
 
-      var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(col.MemberType);
+      var isRef = col.ReferenceService != null || col.Cell is GridCellReferenceModel || typeof(Reference).IsAssignableFrom(runtime?.MemberType);
       if (isRef)
       {
         var primaryLabelProp = col.ReferenceLabelPaths is { Count: > 0 } ? col.ReferenceLabelPaths[0] : null;

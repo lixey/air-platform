@@ -6,10 +6,8 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
 
   public override async Task<ReportDataDto> GetReportAsync(ReportRequest request, CancellationToken ct = default)
   {
-    var rawPeriod = request.Filters != null && request.Filters.TryGetValue("period", out var p) && !string.IsNullOrWhiteSpace(p)
-      ? p
-      : "year";
-    var period = rawPeriod is "30d" or "90d" or "year" or "12m" ? rawPeriod : "year";
+    var filters = Filters(request);
+    var period = filters.Choice("period", "year", "30d", "90d", "year", "12m");
 
     var today = Time.Today;
     var fromDate = period switch
@@ -33,11 +31,7 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
     var defaultCurrency = currencies.Contains(OrgCurrencyData.UahCode)
       ? OrgCurrencyData.UahCode
       : currencies[0];
-    var currency = request.Filters != null &&
-                   request.Filters.TryGetValue("currency", out var reqCur) &&
-                   currencies.Any(c => string.Equals(c, reqCur, StringComparison.OrdinalIgnoreCase))
-      ? currencies.First(c => string.Equals(c, reqCur, StringComparison.OrdinalIgnoreCase))
-      : defaultCurrency;
+    var currency = filters.Choice("currency", defaultCurrency, currencies);
 
     var baseQuery = db.EcomDoc
       .AsNoTracking()
@@ -99,29 +93,6 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
         Name = L[g.Key.StatusName],
         Value = g.Count(),
         Color = g.Key.StatusColor
-      })
-      .ToList();
-
-    var canOpenOrder = ecom?.Can(Ecom.CustomerOrder.View) == true;
-    var orderFormService = ServicePathResolver.Resolve<EcomCustomerOrderFormService>();
-    var topRows = recentOrders
-      .Select(o => new RowDto
-      {
-        Id = o.Id,
-        Open = canOpenOrder ? new OpenTargetDto { Service = orderFormService, Id = o.Id } : null,
-        Cells = new Dictionary<string, object?>
-        {
-          ["number"] = o.Number,
-          ["date"] = o.Date,
-          ["customer"] = o.CustomerName,
-          ["status"] = L[o.StatusName],
-          ["amount"] = o.Amount,
-          ["paid"] = o.PaidAmount
-        },
-        Colors = new Dictionary<string, string>
-        {
-          ["status"] = o.StatusColor
-        }
       })
       .ToList();
 
@@ -190,23 +161,19 @@ public sealed class EcomSalesReportService(EcomDbContext db, EcomService? ecom =
           Slices = byStatus
         }
       ],
-      Table = new ReportTableDto
-      {
-        Key = "top-orders",
-        Title = L["Recent customer orders"],
-        Searchable = true,
-        Sortable = true,
-        Columns =
-        [
-          new ReportColumnDto { Key = "number", Label = L["Number"], Kind = ReportColumnKind.Text, Width = 120 },
-          new ReportColumnDto { Key = "date", Label = L["Date"], Kind = ReportColumnKind.Date, Width = 120 },
-          new ReportColumnDto { Key = "customer", Label = L["Customer"], Kind = ReportColumnKind.Text, Width = 220 },
-          new ReportColumnDto { Key = "status", Label = L["Status"], Kind = ReportColumnKind.Badge, Width = 150 },
-          new ReportColumnDto { Key = "amount", Label = L["Amount"], Kind = ReportColumnKind.Money, Currency = currency, Width = 140 },
-          new ReportColumnDto { Key = "paid", Label = L["Paid"], Kind = ReportColumnKind.Money, Currency = currency, Width = 140 }
-        ],
-        Rows = topRows
-      }
+      Table = Table(recentOrders)
+        .Key("top-orders")
+        .Title("Recent customer orders")
+        .Searchable()
+        .Sortable()
+        .OpenWith<EcomCustomerOrderFormService>(o => o.Id, ecom?.Can(Ecom.CustomerOrder.View) == true)
+        .Text("number", "Number", o => o.Number, width: 120)
+        .Date("date", "Date", o => o.Date, width: 120)
+        .Text("customer", "Customer", o => o.CustomerName, width: 220)
+        .Badge("status", "Status", o => L[o.StatusName], color: o => o.StatusColor, width: 150)
+        .Money("amount", "Amount", o => o.Amount, currency, width: 140)
+        .Money("paid", "Paid", o => o.PaidAmount, currency, width: 140)
+        .Build()
     };
   }
 }

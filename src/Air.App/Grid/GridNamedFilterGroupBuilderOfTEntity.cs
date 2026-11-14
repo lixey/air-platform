@@ -4,13 +4,14 @@ public sealed class GridNamedFilterGroupBuilder<TEntity>(GridNamedFilterGroup<TE
 {
   public GridNamedFilterGroupBuilder<TEntity> Item(string key, string label, Expression<Func<TEntity, bool>> predicate)
   {
+    CodeRows.EnsurePascalCaseHandle(key, $"NamedFilter item in group '{group.Key}'");
     group.Items.Add(new GridNamedFilterItem<TEntity>($"{group.Key}.{key}", label, predicate) { IsCountShown = group.IsCountShown });
     return this;
   }
 
   public GridNamedFilterGroupBuilder<TEntity> All(string label)
   {
-    group.Items.Add(new GridNamedFilterItem<TEntity>($"{group.Key}.all", label, null) { IsCountShown = group.IsCountShown });
+    group.Items.Add(new GridNamedFilterItem<TEntity>($"{group.Key}.All", label, null) { IsCountShown = group.IsCountShown });
     return this;
   }
 

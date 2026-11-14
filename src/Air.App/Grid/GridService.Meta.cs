@@ -1,3 +1,4 @@
+using Platform.App.Grid.Internals;
 using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
@@ -7,71 +8,87 @@ public abstract partial class GridService<TEntity, TRow>
 {
   private GridRestrictions<TEntity> BuildRestrictions()
   {
+    if (State.CachedRestrictions is { } cached &&
+        string.Equals(cached.ParentService, ParentService, StringComparison.OrdinalIgnoreCase) &&
+        cached.ParentId == ParentId)
+    {
+      return Restrictions = cached.Value;
+    }
+
     Restrictions = new GridRestrictions<TEntity>();
+    var restrictions = Restrictions;
     SetRestrictions();
-    return Restrictions;
+    State.CachedRestrictions = (ParentService, ParentId, restrictions);
+    return restrictions;
   }
 
   internal GridQuery<TEntity, TRow> GetQueryDeclaration()
   {
-    if (State.CachedQuery is { } cached && cached.ParentService == ParentService && cached.ParentId == ParentId)
+    if (State.CachedQuery is { } cached &&
+        string.Equals(cached.ParentService, ParentService, StringComparison.OrdinalIgnoreCase) &&
+        cached.ParentId == ParentId)
     {
       return Query = cached.Value;
     }
 
     Query = new GridQuery<TEntity, TRow>();
+    var query = Query;
     SetQuery();
-    State.CachedQuery = (ParentService, ParentId, Query);
-    return Query;
+    State.CachedQuery = (ParentService, ParentId, query);
+    return query;
   }
 
   internal Task<GridActions<TEntity>> BuildActionsInternalAsync(CancellationToken ct = default) =>
     BuildActionsAsync(ct);
 
-  private async Task<GridActions<TEntity>> BuildActionsAsync(CancellationToken ct = default)
+  private async Task<GridActions<TEntity>> BuildActionsAsync(CancellationToken ct = default, bool bypassCache = false)
   {
+    var selectedKey = SelectedIds.Count == 0 ? string.Empty : string.Join(',', SelectedIds);
+    if (!bypassCache &&
+        State.CachedActions is { } cached &&
+        string.Equals(cached.ParentService, ParentService, StringComparison.OrdinalIgnoreCase) &&
+        cached.ParentId == ParentId &&
+        string.Equals(cached.SelectedKey, selectedKey, StringComparison.Ordinal))
+    {
+      return Actions = cached.Value;
+    }
+
     Actions = new GridActions<TEntity>();
+    var actions = Actions;
     await SetActionsAsync(ct);
-    return Actions;
+    State.CachedActions = (ParentService, ParentId, selectedKey, actions);
+    return actions;
   }
 
   private async Task<Columns<TEntity, TRow>> CreateColumnsAsync(CancellationToken ct = default)
   {
-    Columns = new Columns<TEntity, TRow>();
-    await SetColumnsAsync(ct);
-    FinalizeColumns(Columns);
-    return Columns;
-  }
+    if (State.CachedColumns is { } cached &&
+        string.Equals(cached.ParentService, ParentService, StringComparison.OrdinalIgnoreCase) &&
+        cached.ParentId == ParentId)
+    {
+      return Columns = cached.Value;
+    }
 
-  private bool OverridesBaseMethod(string methodName) =>
-    GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)?.DeclaringType != typeof(GridService<TEntity, TRow>);
+    Columns = new Columns<TEntity, TRow>();
+    var cols = Columns;
+    await SetColumnsAsync(ct);
+    FinalizeColumns(cols);
+    State.CachedColumns = (ParentService, ParentId, cols);
+    return cols;
+  }
 
   private Columns<TEntity, TRow> CreateColumnsSync()
   {
     Columns = new Columns<TEntity, TRow>();
     var cols = Columns;
-    if (!OverridesBaseMethod(nameof(SetColumnsAsync)))
+    if (!ServiceOverrideFlags.For(GetType()).OverridesSetColumnsAsync)
     {
-      SetColumns();
-      FinalizeColumns(cols);
-      return cols;
-    }
-
-    try
-    {
-      SetColumnsAsync(CancellationToken.None).GetAwaiter().GetResult();
-    }
-    catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
-    {
-      if (cols.Count == 0)
+      try
       {
-        try
-        {
-          SetColumns();
-        }
-        catch (ParentNotLoadedException)
-        {
-        }
+        SetColumns();
+      }
+      catch (Exception ex) when (db == null && ex is not ParentNotLoadedException)
+      {
       }
     }
 
@@ -92,16 +109,17 @@ public abstract partial class GridService<TEntity, TRow>
     string? resolvedParentFormPath = null;
     foreach (var col in cols.List)
     {
-      if (col.PickerSourceType != null)
+      var runtime = GridColumnRuntime.TryGet(col);
+      if (runtime?.PickerSourceType != null)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.PickerSourceType, $"PickedBy on '{col.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(col.PickerSourceType, GetType());
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), runtime.PickerSourceType, $"PickedBy on '{col.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(runtime.PickerSourceType, GetType());
       }
 
-      if (col.ReferenceServiceType != null)
+      if (runtime?.ReferenceServiceType != null)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), col.ReferenceServiceType, $"AsReference on '{col.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(col.ReferenceServiceType, GetType());
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(GetType(), runtime.ReferenceServiceType, $"AsReference on '{col.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(runtime.ReferenceServiceType, GetType());
       }
 
       if (col.Cell is GridCellCoverModel { Service.Length: > 0, ParentService.Length: 0 } cover)
@@ -155,22 +173,14 @@ public abstract partial class GridService<TEntity, TRow>
 
     Nav = new GridNav(L);
     var nav = Nav;
-    if (!OverridesBaseMethod(nameof(SetNavAsync)))
+    if (!ServiceOverrideFlags.For(GetType()).OverridesSetGridNavAsync)
     {
-      SetNav();
-      FinalizeNav(nav, effectivePath);
-      return nav;
-    }
-
-    try
-    {
-      SetNavAsync(CancellationToken.None).GetAwaiter().GetResult();
-    }
-    catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
-    {
-      if (nav.Creates.Count == 0 && nav.PickerEntries.Count == 0 && nav.Start.Count == 0 && nav.Elements.Count == 0)
+      try
       {
         SetNav();
+      }
+      catch (Exception ex) when (db == null && ex is not ParentNotLoadedException)
+      {
       }
     }
 
@@ -206,40 +216,28 @@ public abstract partial class GridService<TEntity, TRow>
     }
   }
 
-  private GridActions<TEntity> ProbeActions()
+  private GridActions<TEntity> ProbeActionsSync()
   {
     Actions = new GridActions<TEntity>();
     var actions = Actions;
+    if (ServiceOverrideFlags.For(GetType()).OverridesSetGridActionsAsync)
+    {
+      return actions;
+    }
+
     try
     {
-      SetActionsAsync(CancellationToken.None).GetAwaiter().GetResult();
+      SetActions();
     }
     catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
     {
-      if (actions.Entries.Count == 0 && actions.InheritedFormServiceTypes.Count == 0)
-      {
-        try
-        {
-          SetActions();
-        }
-        catch (ParentNotLoadedException)
-        {
-        }
-      }
-
-      var overridesAsync = GetType()
-        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
-        .DeclaringType != typeof(GridService<TEntity, TRow>);
-      if (db == null && overridesAsync && actions.Entries.Count == 0 && actions.InheritedFormServiceTypes.Count == 0)
-      {
-        throw new InvalidOperationException(
-          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (db != null)' before registering actions.",
-          ex);
-      }
     }
 
     return actions;
   }
+
+  private bool HasInheritedAsyncFormActions() =>
+    ProbeActionsSync().InheritedFormServiceTypes.Any(static t => ServiceOverrideFlags.For(t).OverridesSetFormActionsAsync);
 
   private async Task<GridActions<TEntity>> ProbeActionsAsync(CancellationToken ct)
   {
@@ -251,7 +249,9 @@ public abstract partial class GridService<TEntity, TRow>
     }
     catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
     {
-      if (actions.Entries.Count == 0 && actions.InheritedFormServiceTypes.Count == 0)
+      if (actions.Entries.Count == 0 &&
+          actions.InheritedFormServiceTypes.Count == 0 &&
+          !ServiceOverrideFlags.For(GetType()).OverridesSetGridActionsAsync)
       {
         try
         {
@@ -341,30 +341,54 @@ public abstract partial class GridService<TEntity, TRow>
   {
     var cols = ProbeColumnsSafe();
     (cols.StatusFlow as IRecordStatuses)?.RegisterMetadata();
-    foreach (var entry in ProbeActions().Entries)
+    foreach (var entry in ProbeActionsSync().Entries)
     {
-      entry.Ask?.BuildElements();
+      entry.Ask?.ValidateConfiguration(GetType());
     }
   }
 
   public async Task RegisterMetadataAsync(CancellationToken ct = default)
   {
-    var cols = ProbeColumnsSafe();
+    Columns<TEntity, TRow> cols;
+    try
+    {
+      cols = db != null ? await CreateColumnsAsync(ct) : ProbeColumnsSafe();
+    }
+    catch (ParentNotLoadedException)
+    {
+      cols = new Columns<TEntity, TRow>();
+    }
+
+    if (db != null)
+    {
+      try
+      {
+        _ = await GetNavAsync(ct: ct);
+      }
+      catch (ParentNotLoadedException)
+      {
+      }
+    }
+    else
+    {
+      _ = ProbeNavSafe();
+    }
+
     (cols.StatusFlow as IRecordStatuses)?.RegisterMetadata();
     foreach (var entry in (await ProbeActionsAsync(ct)).Entries)
     {
-      entry.Ask?.BuildElements();
+      entry.Ask?.ValidateConfiguration(GetType());
     }
   }
 
   IEnumerable<string> IPlatformService.GetDeclaredActions() =>
-    ProbeActions().Entries
+    ProbeActionsSync().Entries
       .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
       .Where(n => !string.IsNullOrWhiteSpace(n))!;
 
   IReadOnlyList<string> IGridService.GetRoutableActionMethods(ModuleCatalog catalog)
   {
-    var actions = ProbeActions();
+    var actions = ProbeActionsSync();
     var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var entry in actions.Entries)
     {
@@ -412,13 +436,22 @@ public abstract partial class GridService<TEntity, TRow>
       (nameof(SetActions), nameof(SetActionsAsync)));
 
     _ = GetParent();
+    try
+    {
+      _ = GetQueryDeclaration();
+    }
+    catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
+    {
+    }
+
     var cols = ProbeColumnsSafe();
     foreach (var col in cols.List)
     {
-      if (col.PickerTargetMethod != null && !ServiceEndpointsExtensions.IsEndpointMethod(col.PickerTargetMethod))
+      var pickerTargetMethod = GridColumnRuntime.TryGet(col)?.PickerTargetMethod;
+      if (pickerTargetMethod != null && !ServiceEndpointsExtensions.IsEndpointMethod(pickerTargetMethod))
       {
         throw new InvalidOperationException(
-          $"Grid picker method '{gridType.FullName}.{col.PickerTargetMethod.Name}' registered via PickedBy on '{col.Path}' must be public and decorated with [Endpoint], [RequireAction], or [RequireRight].");
+          $"Grid picker method '{gridType.FullName}.{pickerTargetMethod.Name}' registered via PickedBy on '{col.Path}' must be public and decorated with [Endpoint], [RequireAction], or [RequireRight].");
       }
     }
 
@@ -433,7 +466,7 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    var actions = ProbeActions();
+    var actions = ProbeActionsSync();
     var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var entry in actions.Entries)
     {

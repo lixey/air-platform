@@ -1,9 +1,16 @@
 namespace Platform.App.Grid;
 
-public sealed class GridNamedFilterGroup<TEntity>(string key, string? label)
+public sealed class GridNamedFilterGroup<TEntity>
 {
-  public string Key { get; } = key;
-  public string? Label { get; } = label;
+  public GridNamedFilterGroup(string key, string? label)
+  {
+    CodeRows.EnsurePascalCaseHandle(key, "NamedFilter group");
+    Key = key;
+    Label = label;
+  }
+
+  public string Key { get; }
+  public string? Label { get; }
   public bool IsRemembered { get; set; }
   public bool IsCountShown { get; set; }
   public bool IsInline { get; set; }

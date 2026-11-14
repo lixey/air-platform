@@ -84,24 +84,24 @@ public sealed class DeclarativePrimitivesAndDemoTests : IDisposable
 
     var navGroup = Assert.Single(
       nav.Elements.OfType<GridNavNamedFilterGroupModel>(),
-      g => g.Key == "stage");
+      g => g.Key == "Stage");
     Assert.True(navGroup.IsInline);
 
     var defaultPage = await grid.GetDataAsync(new GridRequest { IsDataOnly = true }, CancellationToken.None);
     Assert.Equal(3, defaultPage.Rows.Count);
     Assert.NotNull(defaultPage.NamedFilterCounts);
-    Assert.Equal(3, defaultPage.NamedFilterCounts!["stage.open"]);
-    Assert.Equal(1, defaultPage.NamedFilterCounts["stage.closed"]);
-    Assert.Equal(4, defaultPage.NamedFilterCounts["stage.all"]);
-    Assert.False(defaultPage.NamedFilterCounts.ContainsKey("stage.archived"));
-    Assert.Equal(2, defaultPage.NamedFilterCounts["highValue"]);
+    Assert.Equal(3, defaultPage.NamedFilterCounts!["Stage.Open"]);
+    Assert.Equal(1, defaultPage.NamedFilterCounts["Stage.Closed"]);
+    Assert.Equal(4, defaultPage.NamedFilterCounts["Stage.All"]);
+    Assert.False(defaultPage.NamedFilterCounts.ContainsKey("Stage.Archived"));
+    Assert.Equal(2, defaultPage.NamedFilterCounts["HighValue"]);
 
     var allPage = await grid.GetDataAsync(
       new GridRequest { IsDataOnly = true, NamedFilters = ["stage.all"] },
       CancellationToken.None);
     Assert.Equal(4, allPage.Rows.Count);
     Assert.NotNull(allPage.NamedFilterCounts);
-    Assert.Equal(3, allPage.NamedFilterCounts!["highValue"]);
+    Assert.Equal(3, allPage.NamedFilterCounts!["HighValue"]);
 
     var secondPage = await grid.GetDataAsync(
       new GridRequest { IsDataOnly = true, Page = 2, PageSize = 2 },

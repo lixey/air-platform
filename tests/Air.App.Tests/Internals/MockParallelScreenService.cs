@@ -4,11 +4,6 @@ internal sealed class MockParallelScreenService(PlatformAppService? app = null) 
 {
   public override Feature Feature => MockParallelScreenModule.Workspace;
 
-  public override Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default) =>
-    Task.FromResult(new ScreenDto
-    {
-      Layout = PanelLayout.Row(servicePath)
-        .Screen<TestInvoiceGridService>("illegal")
-        .Build()
-    });
+  protected override void SetPanels() =>
+    Panels.Screen<TestInvoiceGridService>("illegal");
 }

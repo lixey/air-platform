@@ -185,7 +185,7 @@ public abstract partial class GridService<TEntity, TRow>
           }
 
           SelectedIds = ids;
-          var actions = await BuildActionsAsync(mutationCt);
+          var actions = await BuildActionsAsync(mutationCt, bypassCache: true);
           var entry = actions.Entries.FirstOrDefault(e => e.Matches(actionKey));
           if (entry?.Handler == null)
           {
@@ -540,35 +540,47 @@ public abstract partial class GridService<TEntity, TRow>
           }
         }
 
-        var candidates = await RestrictedQuery()
-          .AsNoTracking()
-          .Where(e => selectedIds.Contains(e.Id))
-          .OrderBy(e => e.Id)
-          .ToListAsync(mutationCt);
-        if (candidates.Count != selectedIds.Count)
+        var context = new MutationContext(db);
+        List<TEntity> entities;
+        List<MessageDto> missing;
+
+        if (statusFlow.HasCustomRecordLock)
         {
-          var foundIds = candidates.Select(c => c.Id).ToHashSet();
-          var missingCandidates = selectedIds
-            .Where(id => !foundIds.Contains(id))
-            .Select(id => new MessageDto
-            {
-              Code = "grid.delete.unavailable",
-              Detail = L["GridDeleteUnavailable"],
-              RecordId = id,
-              Type = MessageType.Error
-            })
-            .ToList();
-          return new GridActionDto
+          var (candidates, missingCandidates) = await LoadSelectedEntitiesAsync(
+            selectedIds,
+            mutationCt,
+            asTracking: false,
+            lockEntities: false);
+          if (missingCandidates.Count > 0)
           {
-            Outcome = MutationOutcome.Refused,
-            Messages = missingCandidates
-          };
+            return new GridActionDto
+            {
+              Outcome = MutationOutcome.Refused,
+              Messages = missingCandidates
+            };
+          }
+
+          await statusFlow.LockRecordsAsync(context, candidates, mutationCt);
+          (entities, missing) = await LoadSelectedEntitiesAsync(
+            selectedIds,
+            mutationCt,
+            asTracking: true,
+            lockEntities: true,
+            reloadTracked: true);
+        }
+        else
+        {
+          (entities, missing) = await LoadSelectedEntitiesAsync(
+            selectedIds,
+            mutationCt,
+            asTracking: true,
+            lockEntities: true);
+          if (missing.Count == 0)
+          {
+            statusFlow.MarkRecordsLocked(context, entities);
+          }
         }
 
-        var context = new MutationContext(db);
-        await statusFlow.LockRecordsAsync(context, candidates, mutationCt);
-
-        var (entities, missing) = await LoadSelectedEntitiesAsync(selectedIds, mutationCt, asTracking: true, lockEntities: true);
         if (missing.Count > 0)
         {
           return new GridActionDto

@@ -23,6 +23,12 @@ public class Elements
   public FormElementDto? Find(string path) =>
     Items.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase));
 
+  public static (Type? ReferenceServiceType, Type? CreateFormServiceType) GetReferenceBinding(FormElementDto element)
+  {
+    var binding = FormElementBinding.TryGet(element);
+    return (binding?.ReferenceServiceType, binding?.CreateFormServiceType);
+  }
+
   public bool Remove(string path) =>
     Items.RemoveAll(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)) > 0;
 
@@ -134,9 +140,10 @@ public class Elements
       TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
-      IsDisabled = _disabled,
-      ResolvedPropertyType = typeof(TProp)
+      IsDisabled = _disabled
     };
+    var binding = FormElementBinding.Of(el);
+    binding.ResolvedPropertyType = typeof(TProp);
 
     if (memberPath.Contains('.'))
     {
@@ -145,14 +152,14 @@ public class Elements
       var navPaths = ExtractNavigationPaths(expression);
       if (navPaths.Count > 0)
       {
-        el.InfoNavigationPaths = navPaths;
+        binding.InfoNavigationPaths = navPaths;
       }
 
-      el.InfoValueGetter = obj => PropertyAccessorCache.GetPathValue(obj, memberPath);
+      binding.InfoValueGetter = obj => PropertyAccessorCache.GetPathValue(obj, memberPath);
     }
     else if (!string.IsNullOrEmpty(memberPath) && typeof(IEntity).IsAssignableFrom(typeof(TProp)))
     {
-      el.NavigationPropertyName = memberPath;
+      binding.NavigationPropertyName = memberPath;
       el.ReferencePath = path;
       var navProp = PropertyAccessorCache.GetProperty(typeof(TEntity), memberPath);
       var explicitFkName = navProp?.GetCustomAttribute<ForeignKeyAttribute>()?.Name;
@@ -162,7 +169,7 @@ public class Elements
       el.Label = PathToLabel(path, typeof(TEntity));
       el.Type = ResolveFieldType(fkProp.PropertyType);
       el.Model = ResolveDefaultModel(fkProp.PropertyType);
-      el.ResolvedPropertyType = fkProp.PropertyType;
+      binding.ResolvedPropertyType = fkProp.PropertyType;
     }
 
     Items.Add(el);
@@ -188,31 +195,32 @@ public class Elements
     {
       Path = path,
       Label = label,
-      HasExplicitLabel = true,
       Type = ResolveFieldType(typeof(TProp)),
       TemporalType = ResolveTemporalType(typeof(TProp)),
       Model = new FormInfoModel(),
       Tab = _currentTab,
       IsDisabled = true,
-      IsServerOwned = true,
-      ResolvedPropertyType = typeof(TProp),
-      InfoNavigationPaths = navPaths.Count > 0 ? navPaths : null,
-      InfoValueGetter = obj =>
+      IsServerOwned = true
+    };
+    var binding = FormElementBinding.Of(el);
+    binding.HasExplicitLabel = true;
+    binding.ResolvedPropertyType = typeof(TProp);
+    binding.InfoNavigationPaths = navPaths.Count > 0 ? navPaths : null;
+    binding.InfoValueGetter = obj =>
+    {
+      if (obj is TEntity typed)
       {
-        if (obj is TEntity typed)
+        try
         {
-          try
-          {
-            return compiled(typed);
-          }
-          catch (NullReferenceException)
-          {
-            return null;
-          }
+          return compiled(typed);
         }
-
-        return null;
+        catch (NullReferenceException)
+        {
+          return null;
+        }
       }
+
+      return null;
     };
     Items.Add(el);
     return new FormElement<TEntity, TProp>(el);
@@ -344,9 +352,9 @@ public class Elements
       Model = ResolveDefaultModel(typeof(TProp)),
       Tab = _currentTab,
       IsDisabled = _disabled || isDotPath,
-      IsServerOwned = isDotPath,
-      ResolvedPropertyType = typeof(TProp)
+      IsServerOwned = isDotPath
     };
+    FormElementBinding.Of(el).ResolvedPropertyType = typeof(TProp);
     Items.Add(el);
     return new FormElement<object, TProp>(el);
   }

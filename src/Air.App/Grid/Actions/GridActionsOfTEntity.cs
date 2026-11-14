@@ -1,12 +1,23 @@
-using Platform.App.Grid.Internals;
-
 namespace Platform.App.Grid.Actions;
 
 public class GridActions<TEntity>
   where TEntity : class, IEntity
 {
-  internal List<GridActionEntry<TEntity>> Entries { get; } = [];
+  public List<GridActionItem<TEntity>> Items { get; } = [];
+  internal List<GridActionItem<TEntity>> Entries => Items;
   internal List<Type> InheritedFormServiceTypes { get; } = [];
+
+  public GridActionItem<TEntity>? Find(string handle) =>
+    Items.FirstOrDefault(a => a.Matches(handle));
+
+  public bool Remove(string handle) =>
+    Items.RemoveAll(a => a.Matches(handle)) > 0;
+
+  public void Clear()
+  {
+    Items.Clear();
+    InheritedFormServiceTypes.Clear();
+  }
 
   public GridActionGate<TEntity> Add(string handle)
   {

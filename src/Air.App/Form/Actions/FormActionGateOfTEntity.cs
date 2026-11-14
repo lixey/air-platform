@@ -1,4 +1,3 @@
-using Platform.App.Form.Internals;
 using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form.Actions;
@@ -29,8 +28,8 @@ public sealed class FormActionGate<TEntity>
 
   private FormActionBuilder<TEntity> Register(ActionPermission permission)
   {
-    var entry = new FormActionEntry<TEntity>(_handle, permission);
-    _owner.Entries.Add(entry);
+    var entry = new FormActionItem<TEntity>(_handle, permission);
+    _owner.Items.Add(entry);
     return new FormActionBuilder<TEntity>(entry);
   }
 }

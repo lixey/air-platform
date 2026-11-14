@@ -1,12 +1,10 @@
-using Platform.App.Form.Internals;
-
 namespace Platform.App.Form.Actions;
 
 public sealed class FormActionBuilder<TEntity, TInput> : FormActionBuilder<TEntity>
   where TEntity : class, IEntity
   where TInput : class, new()
 {
-  internal FormActionBuilder(FormActionEntry<TEntity> entry) : base(entry)
+  internal FormActionBuilder(FormActionItem<TEntity> entry) : base(entry)
   {
   }
 

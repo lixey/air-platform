@@ -14,7 +14,9 @@ internal static class GridSummaryCalculator
     where TEntity : class, IEntity, new()
     where TRow : class
   {
-    var sumCols = columns.Where(c => c.IsSummed && !c.IsComputed && !string.IsNullOrEmpty(c.Path)).ToList();
+    var sumCols = columns
+      .Where(c => !string.IsNullOrEmpty(c.Path) && GridColumnRuntime.TryGet(c) is { IsSummed: true, IsComputed: false })
+      .ToList();
     if (sumCols.Count == 0)
     {
       return null;
@@ -33,13 +35,14 @@ internal static class GridSummaryCalculator
         continue;
       }
 
+      var runtime = GridColumnRuntime.TryGet(col);
       Expression? current;
       Type? currentType;
 
-      if (selector == null && col.ValueExpression != null)
+      if (selector == null && runtime?.ValueExpression != null)
       {
-        current = ParameterRebinder.Rebind(col.ValueExpression, rowParam);
-        currentType = col.ValueExpression.ReturnType;
+        current = ParameterRebinder.Rebind(runtime.ValueExpression, rowParam);
+        currentType = runtime.ValueExpression.ReturnType;
       }
       else
       {
@@ -80,7 +83,7 @@ internal static class GridSummaryCalculator
 
     if (!convertDecimalToDouble &&
         resolved.Count > 1 &&
-        resolved.All(r => !r.Col.IsSubqueryExpression) &&
+        resolved.All(r => GridColumnRuntime.TryGet(r.Col)?.IsSubqueryExpression != true) &&
         await TryComputeBatchSumsAsync<TEntity, TRow>(filteredEntities, selector, rowParam, resolved, sumRow, ct))
     {
       return sumRow.Cells.Count > 0 ? [sumRow] : null;
@@ -269,7 +272,8 @@ internal static class GridSummaryCalculator
 
     GridRowShaper.PutValue(sumRow.Cells, col.Path, total);
 
-    if (col.ColorEvaluator == null)
+    var runtime = GridColumnRuntime.TryGet(col);
+    if (runtime?.ColorEvaluator == null)
     {
       return;
     }
@@ -277,11 +281,11 @@ internal static class GridSummaryCalculator
     string? hue = null;
     try
     {
-      if (col.ColorExpression == null)
+      if (runtime.ColorExpression == null)
       {
-        hue = col.ColorEvaluator(total);
+        hue = runtime.ColorEvaluator(total);
       }
-      else if (ReferencesOnlyColumnProperty(col.ColorExpression, col.Path))
+      else if (ReferencesOnlyColumnProperty(runtime.ColorExpression, col.Path))
       {
         var prop = PropertyAccessorCache.GetProperty(typeof(TEntity), col.Path);
         if (prop is { CanWrite: true })
@@ -289,7 +293,7 @@ internal static class GridSummaryCalculator
           var dummy = new TEntity();
           var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
           prop.SetValue(dummy, Convert.ChangeType(total, targetType, CultureInfo.InvariantCulture));
-          hue = col.ColorEvaluator(dummy);
+          hue = runtime.ColorEvaluator(dummy);
         }
       }
     }

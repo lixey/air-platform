@@ -33,15 +33,14 @@ public abstract partial class FormService<TEntity>
     await PopulateReferencesCoreAsync(dict, entity, formModel.Elements, ct);
   }
 
-  private async Task ResolveTimeZoneInheritLabelsAsync(
+  private async Task<string?> ResolveTimeZoneInheritLabelAsync(
     Form.Elements elements,
     TEntity? entity,
     CancellationToken ct)
   {
-    var tzModels = elements.List.Select(e => e.Model).OfType<FormTimeZoneModel>().ToList();
-    if (tzModels.Count == 0)
+    if (!elements.List.Any(e => e.Model is FormTimeZoneModel))
     {
-      return;
+      return null;
     }
 
     var isTenantForm = typeof(BaseAppTenant).IsAssignableFrom(typeof(TEntity));
@@ -49,9 +48,9 @@ public abstract partial class FormService<TEntity>
       ? entity is BaseAppTenant tenantEntity ? tenantEntity.ParentId : Request.ParentId
       : entity is IHasTenant hasTenant && hasTenant.TenantId > 0
         ? hasTenant.TenantId
-        : db.TenantContext.TenantId;
+        : db?.TenantContext.TenantId;
     string? resolvedZone = null;
-    if (startTenantId is > 0 && db.SetOfBase<BaseAppTenant>() is { } tenantQuery)
+    if (startTenantId is > 0 && db?.SetOfBase<BaseAppTenant>() is { } tenantQuery)
     {
       var currentId = startTenantId;
       var visited = new HashSet<long>();
@@ -77,16 +76,14 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    var inheritLabel = !string.IsNullOrWhiteSpace(resolvedZone)
-      ? (isTenantForm
-          ? L["TimeZoneAsParentOrganisation", resolvedZone]
-          : L["TimeZoneAsOrganisation", resolvedZone])
-      : L["TimeZoneByBrowser"];
-
-    foreach (var tz in tzModels)
+    if (string.IsNullOrWhiteSpace(resolvedZone))
     {
-      tz.Inherit = inheritLabel;
+      return L["TimeZoneByBrowser"];
     }
+
+    return isTenantForm
+      ? L["TimeZoneAsParentOrganisation", resolvedZone]
+      : L["TimeZoneAsOrganisation", resolvedZone];
   }
 
   private async Task<TEntity?> PopulateInfoValuesAsync(
@@ -103,9 +100,16 @@ public abstract partial class FormService<TEntity>
       return lastSavedEntity;
     }
 
-    var infoElements = elements
-      .Where(el => el.InfoValueGetter != null && (el.Model is FormInfoModel || el.Path.Contains('.')))
-      .ToList();
+    var infoElements = new List<(FormElementDto Element, FormElementBinding Binding)>();
+    foreach (var el in elements)
+    {
+      if (FormElementBinding.TryGet(el) is { InfoValueGetter: not null } b &&
+          (el.Model is FormInfoModel || el.Path.Contains('.')))
+      {
+        infoElements.Add((el, b));
+      }
+    }
+
     if (infoElements.Count == 0)
     {
       return lastSavedEntity;
@@ -115,8 +119,8 @@ public abstract partial class FormService<TEntity>
     var allNavPaths = ResolveValidEntityNavigationPaths(
       efModel,
       infoElements
-        .Where(el => el.InfoNavigationPaths is { Count: > 0 })
-        .SelectMany(el => el.InfoNavigationPaths!));
+        .Where(x => x.Binding.InfoNavigationPaths is { Count: > 0 })
+        .SelectMany(x => x.Binding.InfoNavigationPaths!));
 
     if (allNavPaths.Count > 0 && entityId is > 0)
     {
@@ -180,10 +184,10 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    foreach (var el in infoElements)
+    foreach (var (el, binding) in infoElements)
     {
-      dict[el.Path] = el.InfoValueGetter!(infoTarget)
-        ?? (lastSavedEntity != null && !ReferenceEquals(infoTarget, lastSavedEntity) ? el.InfoValueGetter!(lastSavedEntity) : null);
+      dict[el.Path] = binding.InfoValueGetter!(infoTarget)
+        ?? (lastSavedEntity != null && !ReferenceEquals(infoTarget, lastSavedEntity) ? binding.InfoValueGetter!(lastSavedEntity) : null);
     }
 
     return lastSavedEntity;
@@ -246,6 +250,7 @@ public abstract partial class FormService<TEntity>
         continue;
       }
 
+      var binding = FormElementBinding.TryGet(el);
       var selectModel = el.Model as FormSelectModel;
       var labelPaths = selectModel?.ReferenceLabelPaths;
 
@@ -256,7 +261,7 @@ public abstract partial class FormService<TEntity>
         var refs = new List<Reference>(keys.Count);
         if (keys.Count > 0 && !string.IsNullOrEmpty(selectModel.ReferenceService))
         {
-          var refServiceType = el.ReferenceServiceType
+          var refServiceType = binding?.ReferenceServiceType
             ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
             ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType;
           var refGrid = refServiceType != null
@@ -303,7 +308,7 @@ public abstract partial class FormService<TEntity>
 
       if (navObj == null)
       {
-        var candidateName = el.NavigationPropertyName
+        var candidateName = binding?.NavigationPropertyName
           ?? (el.Path.EndsWith("Id", StringComparison.OrdinalIgnoreCase) ? el.Path[..^2] : el.Path);
         if (PropertyAccessorCache.GetProperty(navSourceType, candidateName) is not null)
         {
@@ -325,10 +330,10 @@ public abstract partial class FormService<TEntity>
       }
 
       var singleRefServiceType = selectModel != null && !string.IsNullOrEmpty(selectModel.ReferenceService)
-        ? el.ReferenceServiceType
+        ? binding?.ReferenceServiceType
           ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService)
           ?? ModuleCatalog.Instance.FindFeature(selectModel.ReferenceService)?.ServiceType
-        : el.ReferenceServiceType;
+        : binding?.ReferenceServiceType;
       var singleRefGrid = singleRefServiceType != null
         ? ModuleCatalog.Instance.CreateServiceInstance(singleRefServiceType, db, PlatformApp) as Grid.IGridService
         : null;
@@ -417,12 +422,13 @@ public abstract partial class FormService<TEntity>
   {
     foreach (var el in elements)
     {
-      if (el.JoinLoader == null || string.IsNullOrEmpty(el.Path))
+      var joinLoader = FormElementBinding.TryGet(el)?.JoinLoader;
+      if (joinLoader == null || string.IsNullOrEmpty(el.Path))
       {
         continue;
       }
 
-      var ids = await el.JoinLoader(db, entity.Id, ct);
+      var ids = await joinLoader(db, entity.Id, ct);
       var entityProp = PropertyAccessorCache.GetProperty(typeof(TEntity), el.Path);
       if (entityProp != null && entityProp.CanWrite && entityProp.PropertyType.IsAssignableFrom(typeof(List<long>)))
       {
@@ -439,7 +445,8 @@ public abstract partial class FormService<TEntity>
     var anyChanged = false;
     foreach (var el in elements)
     {
-      if (el.JoinSyncer == null || string.IsNullOrEmpty(el.Path))
+      var joinSyncer = FormElementBinding.TryGet(el)?.JoinSyncer;
+      if (joinSyncer == null || string.IsNullOrEmpty(el.Path))
       {
         continue;
       }
@@ -465,7 +472,7 @@ public abstract partial class FormService<TEntity>
         }
       }
 
-      if (await el.JoinSyncer(db, entity.Id, desired, ct))
+      if (await joinSyncer(db, entity.Id, desired, ct))
       {
         anyChanged = true;
       }

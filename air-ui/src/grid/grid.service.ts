@@ -319,8 +319,17 @@ export class GridService {
   }
 
   namedFilterCountOf(key: string): number | null {
-    const count = this.data()?.namedFilterCounts?.[key];
-    return typeof count === 'number' ? count : null;
+    const counts = this.data()?.namedFilterCounts;
+    if (!counts) {
+      return null;
+    }
+    const exact = counts[key];
+    if (typeof exact === 'number') {
+      return exact;
+    }
+    const lower = key.toLowerCase();
+    const match = Object.entries(counts).find(([k]) => k.toLowerCase() === lower)?.[1];
+    return typeof match === 'number' ? match : null;
   }
 
   pressNamedFilter(key: string): void {

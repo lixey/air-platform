@@ -7,6 +7,9 @@ namespace Platform.App.Grid;
 public abstract partial class GridService<TEntity, TRow>
 {
   void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
+  void IPlatformService.ResetExecutionScope() => State.ClearItems();
+  bool IPlatformService.HasAsyncDynamicEndpoints =>
+    ServiceOverrideFlags.For(GetType()).OverridesSetGridActionsAsync || HasInheritedAsyncFormActions();
 
   [Endpoint(Auth = EndpointAuth.Custom, ResponseType = typeof(ScreenDto))]
   public async Task<IResult> GetData(

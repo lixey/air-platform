@@ -1,4 +1,4 @@
-namespace Platform.App.Grid.AddOns.Covers.Contracts;
+namespace Platform.App.Grid.Contracts;
 
 [UiContract]
 public sealed class GridCoverDto

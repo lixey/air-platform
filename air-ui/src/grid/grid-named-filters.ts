@@ -56,29 +56,32 @@ export class GridNamedFilters {
 
   /** Whether the toggle or the item of this key is pressed; reads a signal. */
   isOn(key: string): boolean {
-    return this.chosen().includes(key);
+    return hasKey(this.chosen(), key);
   }
 
   /** Presses a toggle or an item, keeps the choice of a remembered filter, and says whether the keys changed. */
   press(key: string): boolean {
     const filters = this.filters();
     const chosen = untracked(this.chosen);
-    const owner = filters.find(filter => keysOf(filter).includes(key));
+    const owner = filters.find(filter => hasKey(keysOf(filter), key));
     if (!owner) {
       return false;
     }
 
     let next: readonly string[];
     if (owner.kind === 'GridNavNamedFilter') {
-      next = chosen.includes(key) ? chosen.filter(other => other !== key) : [...chosen, key];
-    } else if (chosen.includes(key)) {
-      return false;
+      const canonical = owner.key;
+      next = hasKey(chosen, canonical) ? chosen.filter(other => !sameKey(other, canonical)) : [...chosen, canonical];
     } else {
+      const item = owner.items.find(candidate => sameKey(candidate.key, key));
+      if (!item || hasKey(chosen, item.key)) {
+        return false;
+      }
       const items = keysOf(owner);
-      next = [...chosen.filter(other => !items.includes(other)), key];
+      next = [...chosen.filter(other => !hasKey(items, other)), item.key];
     }
     const order = filters.flatMap(keysOf);
-    this._chosen.set(order.filter(other => next.includes(other)));
+    this._chosen.set(order.filter(other => hasKey(next, other)));
     if (owner.isRemembered) {
       this.keep(filters);
     }
@@ -156,8 +159,16 @@ function markedOf(filter: NamedFilter): readonly string[] {
  */
 function rememberedOf(filter: NamedFilter, kept: readonly string[]): readonly string[] {
   if (filter.kind === 'GridNavNamedFilter') {
-    return kept.includes(filter.key) ? [filter.key] : [];
+    return hasKey(kept, filter.key) ? [filter.key] : [];
   }
-  const item = filter.items.find(candidate => kept.includes(candidate.key));
+  const item = filter.items.find(candidate => hasKey(kept, candidate.key));
   return item ? [item.key] : markedOf(filter);
+}
+
+function sameKey(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+function hasKey(keys: readonly string[], key: string): boolean {
+  return keys.some(candidate => sameKey(candidate, key));
 }

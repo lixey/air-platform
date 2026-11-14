@@ -39,7 +39,7 @@ public abstract partial class GridService<TEntity, TRow>
     var formOverlay = await ResolveFormOverlayAsync(ct);
     var nav = await GetNavAsync(servicePath, ct);
 
-    LocalizeAndConfigureColumns(columns.List);
+    var projectedColumns = ProjectScreenColumns(columns.List);
 
     var parentChild = ResolveParentChildBuilder();
     var isUserReadOnly = User is { IsAuthenticated: true } && !ServiceEndpointsExtensions.CanEdit(Feature, User);
@@ -302,11 +302,13 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     FilterNode? initialFilter = null;
-    if (!isPickerOrSelect)
+    if (!isPickerOrSelect && queryDeclaration.InitialFilters.Count > 0)
     {
+      var projectedInitialRules = new List<FilterNode>(queryDeclaration.InitialFilters.Count);
       foreach (var rule in queryDeclaration.InitialFilters)
       {
-        if (rule.Picked is null)
+        var picked = rule.Picked;
+        if (picked is null)
         {
           var col = columns.List.FirstOrDefault(c =>
             string.Equals(c.Path, rule.Field, StringComparison.OrdinalIgnoreCase) ||
@@ -315,7 +317,7 @@ public abstract partial class GridService<TEntity, TRow>
           {
             if (rule.Value is IEnumerable enumerable and not string)
             {
-              rule.Picked = enumerable.Cast<object?>()
+              picked = enumerable.Cast<object?>()
                 .Where(v => v != null)
                 .Select(v =>
                 {
@@ -333,7 +335,7 @@ public abstract partial class GridService<TEntity, TRow>
             {
               var id = Convert.ToInt64(rule.Value, CultureInfo.InvariantCulture);
               var opt = opts.FirstOrDefault(o => o.Id == id);
-              rule.Picked =
+              picked =
               [
                 new PickedValue
                 {
@@ -344,19 +346,27 @@ public abstract partial class GridService<TEntity, TRow>
             }
           }
         }
+
+        projectedInitialRules.Add(ReferenceEquals(picked, rule.Picked)
+          ? rule
+          : new FilterRule
+          {
+            Field = rule.Field,
+            Operator = rule.Operator,
+            Value = rule.Value,
+            Picked = picked
+          });
       }
 
-      initialFilter = queryDeclaration.InitialFilters.Count == 1
-        ? queryDeclaration.InitialFilters[0]
-        : queryDeclaration.InitialFilters.Count > 1
-          ? FilterNode.All([.. queryDeclaration.InitialFilters.Cast<FilterNode>()])
-          : null;
+      initialFilter = projectedInitialRules.Count == 1
+        ? projectedInitialRules[0]
+        : FilterNode.All([.. projectedInitialRules]);
     }
 
     var gridModel = new GridModel
     {
       Service = servicePath,
-      Columns = columns.List.ToList(),
+      Columns = projectedColumns,
       PageSize = queryDeclaration.CustomPageSize ?? 200,
       IsReadOnly = isGridReadOnly,
       Form = formOverlay,
@@ -398,12 +408,12 @@ public abstract partial class GridService<TEntity, TRow>
       }
     }
 
-    LocalizeAndConfigureColumns(matching);
+    var projectedMatching = ProjectScreenColumns(matching);
 
     var selectGridModel = new GridModel
     {
       Service = servicePath,
-      Columns = matching,
+      Columns = projectedMatching,
       IsReadOnly = true,
       Form = new OverlayDto(),
       Nav = new NavModel
@@ -421,73 +431,123 @@ public abstract partial class GridService<TEntity, TRow>
     return new ScreenDto { Layout = selectLayout };
   }
 
-  private void LocalizeAndConfigureColumns(IEnumerable<GridColumnDto> columns)
+  private List<GridColumnDto> ProjectScreenColumns(IEnumerable<GridColumnDto> columns)
   {
     var gridType = GetType();
     var dbModel = db.Model;
+    var projected = new List<GridColumnDto>();
+
     foreach (var col in columns)
     {
-      if (!string.IsNullOrEmpty(col.Label))
-      {
-        col.Label = ScreenBuilderHelpers.ResolveFieldLabel(L, Feature, col.Path, col.Label);
-      }
-
-      if (!string.IsNullOrEmpty(col.Title))
-      {
-        col.Title = L[col.Title];
-      }
-
-      col.Options = ScreenBuilderHelpers.LocalizeOptions(L, col.Options);
+      var runtime = GridColumnRuntime.TryGet(col);
       if (!string.IsNullOrEmpty(col.ReferenceService))
       {
-        var refServiceType = ModuleCatalog.Instance.FindServiceType(col.ReferenceService);
+        var refServiceType = runtime?.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(col.ReferenceService);
         ModuleCatalog.EnsureModuleServiceAccessAllowed(gridType, refServiceType, $"AsReference on '{col.Path}'");
       }
 
       if (col.Cell is GridCellPickerModel cellPicker && !string.IsNullOrEmpty(cellPicker.ReferenceService))
       {
-        var pickerServiceType = col.PickerSourceType ?? ModuleCatalog.Instance.FindServiceType(cellPicker.ReferenceService);
+        var pickerServiceType = runtime?.PickerSourceType ?? ModuleCatalog.Instance.FindServiceType(cellPicker.ReferenceService);
         ModuleCatalog.EnsureModuleServiceAccessAllowed(gridType, pickerServiceType, $"PickedBy on '{col.Path}'");
       }
 
-      if (col.ExplicitRequired.HasValue)
+      var isRequired = ResolveColumnRequired(col, runtime, dbModel);
+
+      var localizedOptions = ScreenBuilderHelpers.LocalizeOptions(L, col.Options);
+      var operators = col.Operators;
+      if (col.IsFilterable && operators == null)
       {
-        col.IsRequired = col.ExplicitRequired.Value;
-      }
-      else if (col.FilterExpression is not null)
-      {
-        var retType = col.FilterExpression.ReturnType;
-        var isCollection = retType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(retType);
-        col.IsRequired = !isCollection && retType.IsValueType && Nullable.GetUnderlyingType(retType) is null;
-      }
-      else if (col.ValueExpression is not null)
-      {
-        col.IsRequired = false;
-      }
-      else if (!string.IsNullOrEmpty(col.Path))
-      {
-        col.IsRequired = ColumnRequiredResolver.Resolve(typeof(TEntity), col.Path, dbModel)
-          ?? (typeof(TRow) != typeof(TEntity) ? ColumnRequiredResolver.Resolve(typeof(TRow), col.Path, dbModel) ?? false : false);
+        var isRefOrSelect = col.ReferenceService != null || localizedOptions is { Count: > 0 } || col.Cell is GridCellReferenceModel;
+        operators = GridFilterOperators.ForField(col.Type, isRefOrSelect, col.TemporalType != null);
       }
 
-      if (col.IsFilterable && col.Operators == null)
-      {
-        var isRefOrSelect = col.ReferenceService != null || col.Options is { Count: > 0 } || col.Cell is GridCellReferenceModel;
-        col.Operators = GridFilterOperators.ForField(col.Type, isRefOrSelect, col.TemporalType != null);
-      }
-
-      if (col.IsFilterable && col.Header == null)
+      var header = col.Header;
+      if (col.IsFilterable && header == null)
       {
         if (col.Type is UiFieldType.Date or UiFieldType.DateTime)
         {
-          col.Header = new GridHeaderDateModel();
+          header = new GridHeaderDateModel();
         }
         else if (col.Type == UiFieldType.Checkbox)
         {
-          col.Header = new GridHeaderCheckboxModel();
+          header = new GridHeaderCheckboxModel();
         }
       }
+
+      var clone = new GridColumnDto
+      {
+        Path = col.Path,
+        FilterPath = col.FilterPath,
+        Label = !string.IsNullOrEmpty(col.Label) ? ScreenBuilderHelpers.ResolveFieldLabel(L, Feature, col.Path, col.Label) : col.Label,
+        Title = !string.IsNullOrEmpty(col.Title) ? L[col.Title] : col.Title,
+        Type = col.Type,
+        TemporalType = col.TemporalType,
+        Width = col.Width,
+        MaxWidth = col.MaxWidth,
+        IsSortable = col.IsSortable,
+        IsFilterable = col.IsFilterable,
+        Operators = operators,
+        IsResizable = col.IsResizable,
+        IsHidden = col.IsHidden,
+        IsDisabled = col.IsDisabled,
+        IsRequired = isRequired,
+        IsSticky = col.IsSticky,
+        IsStickyRight = col.IsStickyRight,
+        IsWrapped = col.IsWrapped,
+        IsEditable = col.IsEditable,
+        ConfirmsEdit = col.ConfirmsEdit,
+        ConfirmText = !string.IsNullOrEmpty(col.ConfirmText) ? L[col.ConfirmText] : col.ConfirmText,
+        ReferenceService = col.ReferenceService,
+        ReferenceLabelPaths = col.ReferenceLabelPaths,
+        ReferenceFilter = col.ReferenceFilter,
+        NumberEdit = col.NumberEdit,
+        Options = localizedOptions,
+        Cell = col.Cell,
+        Header = header,
+        SelectionSummary = col.SelectionSummary
+      };
+
+      GridColumnRuntime.Link(col, clone);
+      projected.Add(clone);
     }
+
+    return projected;
+  }
+
+  private static bool ResolveColumnRequired(
+    GridColumnDto col,
+    GridColumnRuntime? runtime,
+    Microsoft.EntityFrameworkCore.Metadata.IModel dbModel)
+  {
+    if (runtime?.ExplicitRequired is { } explicitRequired)
+    {
+      return explicitRequired;
+    }
+
+    if (runtime?.FilterExpression is { } filterExpr)
+    {
+      var retType = filterExpr.ReturnType;
+      var isCollection = retType != typeof(string) && typeof(IEnumerable).IsAssignableFrom(retType);
+      return !isCollection && retType.IsValueType && Nullable.GetUnderlyingType(retType) is null;
+    }
+
+    if (runtime?.ValueExpression is not null)
+    {
+      return false;
+    }
+
+    if (string.IsNullOrEmpty(col.Path))
+    {
+      return col.IsRequired;
+    }
+
+    if (ColumnRequiredResolver.Resolve(typeof(TEntity), col.Path, dbModel) is { } entityRequired)
+    {
+      return entityRequired;
+    }
+
+    return typeof(TRow) != typeof(TEntity) && (ColumnRequiredResolver.Resolve(typeof(TRow), col.Path, dbModel) ?? false);
   }
 
   internal async Task<OverlayDto> ResolveFormOverlayForTypeAsync(

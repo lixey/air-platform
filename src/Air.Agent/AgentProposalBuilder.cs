@@ -111,7 +111,7 @@ public static class AgentProposalBuilder
       .Cast<string>()
       .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var childRefSvc in AgentProposalChildBuilder.CollectChildReferenceServices(formCtx, editableChildren, isEdit, recordId, targetDesc.ServicePath))
+    foreach (var childRefSvc in await AgentProposalChildBuilder.CollectChildReferenceServicesAsync(formCtx, editableChildren, isEdit, recordId, targetDesc.ServicePath, ct))
     {
       refServices.Add(childRefSvc);
     }

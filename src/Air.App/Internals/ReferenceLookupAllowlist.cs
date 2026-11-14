@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Platform.App.Internals;
 
 internal static class ReferenceLookupAllowlist
@@ -6,68 +8,61 @@ internal static class ReferenceLookupAllowlist
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedPatches = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<string, byte>> AllowedFilters = new();
   private static readonly ConcurrentDictionary<Type, ConcurrentDictionary<Type, byte>> AllowedReferrers = new();
-  private static readonly SemaphoreSlim WarmSemaphore = new(1, 1);
-  private static readonly Lock SyncLock = new();
-  private static (ModuleCatalog? Catalog, int ServiceCount) _warmedAsyncCatalog;
-  private static (ModuleCatalog? Catalog, int ServiceCount) _warmedSyncCatalog;
+  private static readonly ConditionalWeakTable<ModuleCatalog, StrongBox<(int ServiceCount, Type[] ScopedServiceTypes, ConcurrentDictionary<Type, byte> WarmedAsyncTypes)>> StaticCatalogStates = new();
 
   public static async Task EnsureWarmAsync(IServiceProvider? services, CancellationToken ct = default)
   {
     var catalog = ModuleCatalog.Instance;
-    var count = catalog.ServiceCount;
-    if (ReferenceEquals(_warmedAsyncCatalog.Catalog, catalog) && _warmedAsyncCatalog.ServiceCount == count || services == null)
+    var (scopedServiceTypes, warmedAsyncTypes) = EnsureStaticAllowlist(catalog);
+    if (services == null || scopedServiceTypes.Length == 0 || warmedAsyncTypes.Count >= scopedServiceTypes.Length)
     {
       return;
     }
 
-    await WarmSemaphore.WaitAsync(ct);
-    try
+    var appInstance = services.GetService<PlatformAppService>();
+    foreach (var serviceType in scopedServiceTypes)
     {
-      catalog = ModuleCatalog.Instance;
-      count = catalog.ServiceCount;
-      if (ReferenceEquals(_warmedAsyncCatalog.Catalog, catalog) && _warmedAsyncCatalog.ServiceCount == count)
+      if (warmedAsyncTypes.ContainsKey(serviceType))
       {
-        return;
+        continue;
       }
 
-      var appInstance = services.GetService<PlatformAppService>();
-      foreach (var serviceType in catalog.AllServiceTypes)
+      var dbContextType = ModuleCatalog.GetServiceDbContextType(serviceType);
+      if (dbContextType != null && services.GetService(dbContextType) == null)
       {
-        try
-        {
-          if (typeof(Form.IFormService).IsAssignableFrom(serviceType))
-          {
-            if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Form.IFormService form)
-            {
-              await form.RegisterMetadataAsync(ct);
-            }
-          }
-          else if (typeof(Grid.IGridService).IsAssignableFrom(serviceType))
-          {
-            if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Grid.IGridService grid)
-            {
-              await grid.RegisterMetadataAsync(ct);
-            }
-          }
-          else if (typeof(Screens.IRecordStatuses).IsAssignableFrom(serviceType))
-          {
-            if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Screens.IRecordStatuses flow)
-            {
-              flow.RegisterMetadata();
-            }
-          }
-        }
-        catch
-        {
-        }
+        continue;
       }
 
-      _warmedAsyncCatalog = (catalog, count);
-      _warmedSyncCatalog = (catalog, count);
-    }
-    finally
-    {
-      WarmSemaphore.Release();
+      try
+      {
+        if (typeof(Form.IFormService).IsAssignableFrom(serviceType))
+        {
+          if (catalog.CreateServiceInstance(serviceType, services, appInstance) is Form.IFormService form)
+          {
+            await form.RegisterMetadataAsync(ct);
+            warmedAsyncTypes[serviceType] = 1;
+          }
+        }
+        else if (typeof(Grid.IGridService).IsAssignableFrom(serviceType) &&
+                 catalog.CreateServiceInstance(serviceType, services, appInstance) is Grid.IGridService grid)
+        {
+          await grid.RegisterMetadataAsync(ct);
+          warmedAsyncTypes[serviceType] = 1;
+        }
+        else if (typeof(Screens.ScreenService).IsAssignableFrom(serviceType) &&
+                 catalog.CreateServiceInstance(serviceType, services, appInstance) is Screens.ScreenService screen)
+        {
+          await screen.RegisterMetadataAsync(ct);
+          warmedAsyncTypes[serviceType] = 1;
+        }
+      }
+      catch (ParentNotLoadedException)
+      {
+        warmedAsyncTypes[serviceType] = 1;
+      }
+      catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+      {
+      }
     }
   }
 
@@ -123,7 +118,7 @@ internal static class ReferenceLookupAllowlist
 
   public static bool CanUserLookup(Type targetServiceType, ModuleCatalog catalog, IUserContext user)
   {
-    EnsureWarmSync(catalog);
+    _ = EnsureStaticAllowlist(catalog);
 
     if (!AllowedReferrers.TryGetValue(targetServiceType, out var referrers) || referrers.IsEmpty)
     {
@@ -142,31 +137,58 @@ internal static class ReferenceLookupAllowlist
     return false;
   }
 
-  private static void EnsureWarmSync(ModuleCatalog catalog)
+  private static (Type[] ScopedServiceTypes, ConcurrentDictionary<Type, byte> WarmedAsyncTypes) EnsureStaticAllowlist(ModuleCatalog catalog)
   {
+    var box = StaticCatalogStates.GetValue(catalog, static _ => new StrongBox<(int, Type[], ConcurrentDictionary<Type, byte>)>((-1, [], new())));
     var count = catalog.ServiceCount;
-    if (ReferenceEquals(_warmedSyncCatalog.Catalog, catalog) && _warmedSyncCatalog.ServiceCount == count)
+    var snapshot = box.Value;
+    if (snapshot.ServiceCount == count)
     {
-      return;
+      return (snapshot.ScopedServiceTypes, snapshot.WarmedAsyncTypes);
     }
 
-    lock (SyncLock)
+    lock (box)
     {
       count = catalog.ServiceCount;
-      if (ReferenceEquals(_warmedSyncCatalog.Catalog, catalog) && _warmedSyncCatalog.ServiceCount == count)
+      if (box.Value.ServiceCount == count)
       {
-        return;
+        return (box.Value.ScopedServiceTypes, box.Value.WarmedAsyncTypes);
       }
 
+      var scopedTypes = new List<Type>();
       foreach (var serviceType in catalog.AllServiceTypes)
       {
-        if (catalog.CreateServiceInstance(serviceType) is IPlatformService ps)
+        var flags = ServiceOverrideFlags.For(serviceType);
+        if (flags.HasAsyncFormMetadata || flags.HasAsyncGridMetadata || flags.OverridesSetPanelsAsync)
         {
-          ps.ValidateConfiguration(catalog);
+          scopedTypes.Add(serviceType);
+        }
+
+        var probe = catalog.CreateServiceInstance(serviceType);
+        if (probe is Screens.IRecordStatuses flow)
+        {
+          flow.RegisterMetadata();
+        }
+        else if (probe is IPlatformService ps)
+        {
+          try
+          {
+            ps.ValidateConfiguration(catalog);
+          }
+          catch (ParentNotLoadedException)
+          {
+            if (!scopedTypes.Contains(serviceType))
+            {
+              scopedTypes.Add(serviceType);
+            }
+          }
         }
       }
 
-      _warmedSyncCatalog = (catalog, count);
+      var built = scopedTypes.ToArray();
+      var warmed = new ConcurrentDictionary<Type, byte>();
+      box.Value = (count, built, warmed);
+      return (built, warmed);
     }
   }
 

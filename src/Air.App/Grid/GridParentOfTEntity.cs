@@ -21,7 +21,7 @@ public sealed class GridParent<TEntity>
     BoundParentServiceType = typeof(TParentService);
     BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
     IsOptional = optional;
-    BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
+    BoundProperty = ParentFilterExpressions.ExtractBoundProperty(member);
 
     var param = member.Parameters[0];
     FilterFunc = (q, parentId) =>
@@ -37,7 +37,7 @@ public sealed class GridParent<TEntity>
     BoundParentServiceType = typeof(TParentService);
     BoundParentService = ServicePathResolver.Resolve(typeof(TParentService));
     IsOptional = optional;
-    BoundProperty = ParentScopeValidator.ExtractBoundProperty(member);
+    BoundProperty = ParentFilterExpressions.ExtractBoundProperty(member);
 
     var param = member.Parameters[0];
     FilterFunc = (q, parentId) =>

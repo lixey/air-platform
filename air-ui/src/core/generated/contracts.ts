@@ -1246,7 +1246,6 @@ export interface GridRequest extends ListRequest {
   referenceLabelPaths?: string[] | null;
   patchSourceColumns?: string[] | null;
   isReferencePicker?: boolean;
-  includesInactive?: boolean;
   namedFilters?: string[] | null;
   formDraft?: Record<string, unknown> | null;
 }
@@ -1547,7 +1546,6 @@ export interface ReportDataDto {
   activeFilters: Record<string, string>;
   kpis?: ReportKpiDto[] | null;
   charts?: ReportChartDto[] | null;
-  table?: ReportTableDto | null;
   tables?: ReportTableDto[] | null;
 }
 

@@ -1,8 +1,29 @@
+using Platform.App.Internals;
+
 namespace Platform.App.Screens;
 
 public abstract class ScreenService(PlatformAppService? app = null) : PlatformService(app), IScreenService
 {
-  public abstract Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default);
+  protected internal ScreenPanels Panels { get; private set; } = new(string.Empty);
+
+  protected virtual void SetPanels() { }
+
+  protected virtual Task SetPanelsAsync(CancellationToken cancellationToken = default)
+  {
+    SetPanels();
+    return Task.CompletedTask;
+  }
+
+  public virtual async Task<ScreenDto> BuildScreenAsync(string servicePath, CancellationToken ct = default)
+  {
+    var effectivePath = !string.IsNullOrWhiteSpace(servicePath)
+      ? servicePath
+      : ServicePathResolver.Resolve(GetType());
+    Panels = new ScreenPanels(effectivePath);
+    var panels = Panels;
+    await SetPanelsAsync(ct);
+    return new ScreenDto { Layout = panels.Build(L) };
+  }
 
   [Endpoint(Auth = EndpointAuth.View)]
   public virtual async Task<ScreenDto> GetData(HttpRequest httpRequest, CancellationToken ct = default)
@@ -28,17 +49,52 @@ public abstract class ScreenService(PlatformAppService? app = null) : PlatformSe
 
   void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
   {
-    ScreenDto? screen;
+    var screenType = GetType();
+    ServiceOverrideValidator.EnsureSingleSyncOrAsyncOverride(
+      screenType,
+      typeof(ScreenService),
+      (nameof(SetPanels), nameof(SetPanelsAsync)));
+
+    if (ServiceOverrideFlags.For(screenType).OverridesSetPanelsAsync)
+    {
+      return;
+    }
+
+    ScreenDto screen;
     try
     {
-      screen = BuildScreenAsync(ServicePathResolver.Resolve(GetType())).GetAwaiter().GetResult();
+      var panels = new ScreenPanels(ServicePathResolver.Resolve(screenType));
+      Panels = panels;
+      SetPanels();
+      screen = new ScreenDto { Layout = panels.Build(L) };
     }
     catch when (PlatformApp is null)
     {
       return;
     }
 
-    EnforceAndFilterScreen(GetType(), screen, user: null, catalog);
+    EnforceAndFilterScreen(screenType, screen, user: null, catalog);
+  }
+
+  public async Task RegisterMetadataAsync(CancellationToken ct = default)
+  {
+    var screenType = GetType();
+    if (!ServiceOverrideFlags.For(screenType).OverridesSetPanelsAsync)
+    {
+      return;
+    }
+
+    ScreenDto screen;
+    try
+    {
+      screen = await BuildScreenAsync(ServicePathResolver.Resolve(screenType), ct);
+    }
+    catch when (PlatformApp is null)
+    {
+      return;
+    }
+
+    EnforceAndFilterScreen(screenType, screen, user: null, Catalog);
   }
 
   public static void EnforceAndFilterScreen(

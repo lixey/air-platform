@@ -32,4 +32,7 @@ public sealed class OrgProductGridService(OrgDbContext db, OrgService? org = nul
     Query.ReferenceLabel(r => r.Article, r => r.Name);
     Query.SearchBy(r => r.Id, r => r.Article, r => r.Name, r => r.Brand, r => r.Supplier, r => r.Category, r => r.Unit);
   }
+
+  protected override void SetHooks() =>
+    Hooks.DeleteFiles<OrgProductFile>(f => f.ProductId);
 }

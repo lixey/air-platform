@@ -23,6 +23,18 @@ public abstract partial class FormService<TEntity>
     return Actions;
   }
 
+  private async Task<FormActions<TEntity>> EnsureActionsAsync(CancellationToken ct = default, bool reload = false)
+  {
+    if (!reload && State.CachedActions != null)
+    {
+      return Actions = State.CachedActions;
+    }
+
+    var actions = await BuildActionsAsync(ct);
+    State.CachedActions = actions;
+    return actions;
+  }
+
   private async Task<FormNav> BuildNavAsync(CancellationToken ct = default)
   {
     Nav = new FormNav();
@@ -44,12 +56,16 @@ public abstract partial class FormService<TEntity>
       return Elements = State.LastElements;
     }
 
-    await EnsureEntityAndParentLoadedAsync(ct);
+    if (db != null)
+    {
+      await EnsureEntityAndParentLoadedAsync(ct);
+    }
+
     var elements = await BuildElementsAsync(ct);
     (elements.StatusFlow as IPlatformService)?.BindContext(PlatformApp);
     var parent = GetParent();
     LockBoundParentElement(elements, parent, Request.ParentId);
-    await ElementResolver.ResolveAsync<TEntity>(CreateResolveScope(), elements, ct);
+    ElementResolver.ConfigureStructuralElements<TEntity>(CreateResolveScope(), elements);
     State.LastElements = elements;
     return elements;
   }
@@ -76,7 +92,7 @@ public abstract partial class FormService<TEntity>
     elements.Tabs.Count == 0 &&
     elements.Tables.Count == 0 &&
     elements.Children.All(c => c.IsFiles) &&
-    elements.List.Count(e => !e.IsHidden && !e.IsRightsTree) <= 8;
+    elements.List.Count(e => !e.IsHidden && FormElementBinding.TryGet(e)?.IsRightsTree != true) <= 8;
 
   private OverlayDto BuildResolvedOverlay(string service, FormElements<TEntity> elements)
   {
@@ -105,8 +121,18 @@ public abstract partial class FormService<TEntity>
   public virtual async Task<OverlayDto> OverlayAsync(string service, CancellationToken ct = default) =>
     BuildResolvedOverlay(service, await ProbeElementsForOverlayAsync(ct));
 
-  public virtual OverlayDto Overlay(string service) =>
-    BuildResolvedOverlay(service, State.LastElements ?? ProbeElementsSafeSync());
+  public virtual OverlayDto Overlay(string service)
+  {
+    if (State.LastElements is null &&
+        ServiceOverrideFlags.For(GetType()).OverridesSetElementsAsync &&
+        Presentation($"{service}.modal") is null)
+    {
+      throw new InvalidOperationException(
+        $"Form '{GetType().Name}' overrides '{nameof(SetElementsAsync)}'; await '{nameof(OverlayAsync)}' instead of calling synchronous '{nameof(Overlay)}'.");
+    }
+
+    return BuildResolvedOverlay(service, State.LastElements ?? ProbeSyncElements());
+  }
 
   protected virtual (string? Width, string? Height) OverlayAsk(FormElements<TEntity> elements)
   {
@@ -227,26 +253,21 @@ public abstract partial class FormService<TEntity>
     return probe.Children.Where(c => !c.IsFiles && c.SumMappings.Count > 0).ToList();
   }
 
-  private FormElements<TEntity> ProbeElementsSafeSync()
+  private FormElements<TEntity> ProbeSyncElements()
   {
     Elements = new FormElements<TEntity>();
     var probe = Elements;
+    if (ServiceOverrideFlags.For(GetType()).OverridesSetElementsAsync)
+    {
+      return probe;
+    }
+
     try
     {
-      SetElementsAsync(CancellationToken.None).GetAwaiter().GetResult();
+      SetElements();
     }
     catch
     {
-      if (probe.List.Count == 0 && probe.Children.Count == 0)
-      {
-        try
-        {
-          SetElements();
-        }
-        catch
-        {
-        }
-      }
     }
 
     return probe;
@@ -266,7 +287,7 @@ public abstract partial class FormService<TEntity>
     }
     catch
     {
-      if (probe.List.Count == 0 && probe.Children.Count == 0)
+      if (probe.List.Count == 0 && probe.Children.Count == 0 && !ServiceOverrideFlags.For(GetType()).OverridesSetElementsAsync)
       {
         try
         {
@@ -296,36 +317,21 @@ public abstract partial class FormService<TEntity>
     return await ProbeElementsSafeAsync(ct);
   }
 
-  private FormActions<TEntity> ProbeActions()
+  private FormActions<TEntity> ProbeActionsSync()
   {
     Actions = new FormActions<TEntity>();
     var actions = Actions;
+    if (ServiceOverrideFlags.For(GetType()).OverridesSetFormActionsAsync)
+    {
+      return actions;
+    }
+
     try
     {
-      SetActionsAsync(CancellationToken.None).GetAwaiter().GetResult();
+      SetActions();
     }
     catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
     {
-      if (actions.Entries.Count == 0)
-      {
-        try
-        {
-          SetActions();
-        }
-        catch (ParentNotLoadedException)
-        {
-        }
-      }
-
-      var overridesAsync = GetType()
-        .GetMethod(nameof(SetActionsAsync), BindingFlags.Instance | BindingFlags.NonPublic)?
-        .DeclaringType != typeof(FormService<TEntity>);
-      if (db == null && overridesAsync && actions.Entries.Count == 0)
-      {
-        throw new InvalidOperationException(
-          $"{GetType().Name}.{nameof(SetActionsAsync)} accessed null runtime dependencies during startup action discovery. Guard runtime-only queries with 'if (CurrentEntity != null)' or 'if (db != null)' before registering actions.",
-          ex);
-      }
     }
 
     return actions;
@@ -341,7 +347,7 @@ public abstract partial class FormService<TEntity>
     }
     catch (Exception ex) when (db == null || ex is ParentNotLoadedException)
     {
-      if (actions.Entries.Count == 0)
+      if (actions.Entries.Count == 0 && !ServiceOverrideFlags.For(GetType()).OverridesSetFormActionsAsync)
       {
         try
         {
@@ -367,9 +373,10 @@ public abstract partial class FormService<TEntity>
       var probe = await ProbeElementsSafeAsync(ct);
       foreach (var el in probe.List)
       {
-        if (el.ReferenceServiceType != null)
+        var refServiceType = FormElementBinding.TryGet(el)?.ReferenceServiceType;
+        if (refServiceType != null)
         {
-          ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, GetType());
+          ReferenceLookupAllowlist.RegisterReferrer(refServiceType, GetType());
         }
       }
 
@@ -395,21 +402,28 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    return (elements.List, elements.Children);
+    var inheritTz = await ResolveTimeZoneInheritLabelAsync(elements, CurrentEntity, ct);
+    var projected = await ElementResolver.ProjectWireElementsAsync(
+      CreateResolveScope(),
+      elements.List,
+      inheritTimeZoneLabel: inheritTz,
+      includeCreateOverlays: false,
+      ct: ct);
+    return (projected, elements.Children);
   }
 
   async Task<bool> IFormService.HasStatusFlowAsync(CancellationToken ct) =>
     (await ProbeElementsSafeAsync(ct)).StatusFlow is IRecordStatuses<TEntity>;
 
   IEnumerable<string> IPlatformService.GetDeclaredActions() =>
-    ProbeActions().Entries
+    ProbeActionsSync().Entries
       .Select(e => e.Permission.GetDeclaredActionName(e.Handle))
       .Where(n => !string.IsNullOrWhiteSpace(n))!;
 
   IReadOnlyList<string> IFormService.GetRoutableActionMethods(ModuleCatalog catalog)
   {
     var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var entry in ProbeActions().Entries)
+    foreach (var entry in ProbeActionsSync().Entries)
     {
       routes.Add(entry.Method);
       routes.Add(entry.Key);
@@ -417,7 +431,7 @@ public abstract partial class FormService<TEntity>
 
     StatusMoveNavBuilder.AddStatusAndFeatureRoutes(
       routes,
-      ProbeElementsSafeSync().StatusFlow as IRecordStatuses,
+      ProbeSyncElements().StatusFlow as IRecordStatuses,
       Feature,
       typeof(TEntity),
       catalog);
@@ -442,7 +456,7 @@ public abstract partial class FormService<TEntity>
 
     _ = GetParent();
 
-    var probe = ProbeElementsSafeSync();
+    var probe = ProbeSyncElements();
     FormConstraintExtractor.ValidateNavigationElements(typeof(TEntity), probe.List);
 
     if (probe.RecordLabelGridType != null)
@@ -462,19 +476,20 @@ public abstract partial class FormService<TEntity>
 
     foreach (var el in probe.List)
     {
-      if (el.ReferenceServiceType != null)
+      var binding = FormElementBinding.TryGet(el);
+      if (binding?.ReferenceServiceType != null)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(formType, el.ReferenceServiceType, $"AsReference on '{el.Path}'");
-        ReferenceLookupAllowlist.RegisterReferrer(el.ReferenceServiceType, formType);
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(formType, binding.ReferenceServiceType, $"AsReference on '{el.Path}'");
+        ReferenceLookupAllowlist.RegisterReferrer(binding.ReferenceServiceType, formType);
       }
 
-      if (el.CreateFormServiceType != null)
+      if (binding?.CreateFormServiceType != null)
       {
-        ModuleCatalog.EnsureModuleServiceAccessAllowed(formType, el.CreateFormServiceType, $"AllowCreate on '{el.Path}'");
+        ModuleCatalog.EnsureModuleServiceAccessAllowed(formType, binding.CreateFormServiceType, $"AllowCreate on '{el.Path}'");
       }
     }
 
-    var actions = ProbeActions();
+    var actions = ProbeActionsSync();
     var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var entry in actions.Entries)
     {
@@ -490,7 +505,7 @@ public abstract partial class FormService<TEntity>
 
   void IFormService.ValidateInheritedGridActions(Type gridType)
   {
-    foreach (var entry in ProbeActions().Entries)
+    foreach (var entry in ProbeActionsSync().Entries)
     {
       if (entry.ConfirmProvider != null && string.IsNullOrEmpty(entry.ConfirmMessage) && entry.Ask == null)
       {

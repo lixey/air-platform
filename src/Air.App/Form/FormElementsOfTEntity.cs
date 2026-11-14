@@ -157,5 +157,5 @@ public sealed class FormElements<TEntity> : Elements<TEntity>
 
   private static TEntity? LoadParentEntity(PlatformDbContext ctxDb, long parentId) =>
     ctxDb.Set<TEntity>().Local.FirstOrDefault(e => e.Id == parentId)
-    ?? ctxDb.Set<TEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == parentId).GetAwaiter().GetResult();
+    ?? ctxDb.Set<TEntity>().Find(parentId);
 }

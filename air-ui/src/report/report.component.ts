@@ -101,10 +101,6 @@ import { asUiColor, ReportTableComponent } from './report-table.component';
           </div>
         }
 
-        @if (report.table; as table) {
-          <ui-report-table [table]="table" />
-        }
-
         @if (report.tables && report.tables.length > 0) {
           @for (t of report.tables; track t.key ?? $index) {
             <ui-report-table [table]="t" />

@@ -1,13 +1,11 @@
-using Platform.App.Grid.Internals;
-
 namespace Platform.App.Grid.Actions;
 
 public class GridActionBuilder<TEntity>
   where TEntity : class, IEntity
 {
-  internal GridActionEntry<TEntity> Entry { get; }
+  internal GridActionItem<TEntity> Entry { get; }
 
-  internal GridActionBuilder(GridActionEntry<TEntity> entry)
+  internal GridActionBuilder(GridActionItem<TEntity> entry)
   {
     Entry = entry;
   }

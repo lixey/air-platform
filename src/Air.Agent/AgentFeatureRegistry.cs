@@ -241,9 +241,10 @@ public static class AgentFeatureRegistry
     PlatformDbContext? fallbackDb,
     PlatformAppService? fallbackApp)
   {
-    if (element.CreateFormServiceType != null)
+    var (refServiceType, createFormServiceType) = Elements.GetReferenceBinding(element);
+    if (createFormServiceType != null)
     {
-      var path = ServicePathResolver.Resolve(element.CreateFormServiceType);
+      var path = ServicePathResolver.Resolve(createFormServiceType);
       var match = agentForms.FirstOrDefault(f => string.Equals(f.ServicePath, path, StringComparison.OrdinalIgnoreCase));
       if (match != null)
       {
@@ -251,7 +252,7 @@ public static class AgentFeatureRegistry
       }
     }
 
-    var gridType = element.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(referenceService);
+    var gridType = refServiceType ?? ModuleCatalog.Instance.FindServiceType(referenceService);
     if (gridType != null && typeof(IGridService).IsAssignableFrom(gridType))
     {
       try

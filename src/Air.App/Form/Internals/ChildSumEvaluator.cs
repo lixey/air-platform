@@ -60,7 +60,7 @@ internal static class ChildSumEvaluator
              childGrid.GetBoundParentProperty() is { } boundProp)
     {
       object parentVal = boundProp.PropertyType == typeof(long?) ? (long?)parentEntity.Id : parentEntity.Id;
-      query = db.Set<TChildEntity>().AsNoTracking().Where(ParentScopeValidator.BuildParentKeyFilter<TChildEntity>(boundProp, parentVal));
+      query = db.Set<TChildEntity>().AsNoTracking().Where(ParentFilterExpressions.BuildParentKeyFilter<TChildEntity>(boundProp, parentVal));
     }
 
     if (query == null)

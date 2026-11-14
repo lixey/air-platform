@@ -67,46 +67,4 @@ public sealed class FormElementDto
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public FilterNode? DisabledWhen { get; set; }
-
-  [JsonIgnore]
-  internal Func<DbContext, long, CancellationToken, Task<List<long>>>? JoinLoader { get; set; }
-
-  [JsonIgnore]
-  internal Func<DbContext, long, IReadOnlyList<long>, CancellationToken, Task<bool>>? JoinSyncer { get; set; }
-
-  [JsonIgnore]
-  internal string? UniqueMessage { get; set; }
-
-  [JsonIgnore]
-  internal List<string>? UniqueWithin { get; set; }
-
-  [JsonIgnore]
-  internal bool? ExplicitRequired { get; set; }
-
-  [JsonIgnore]
-  internal bool HasExplicitLabel { get; set; }
-
-  [JsonIgnore]
-  internal string? NavigationPropertyName { get; set; }
-
-  [JsonIgnore]
-  internal Type? ResolvedPropertyType { get; set; }
-
-  [JsonIgnore]
-  public Type? ReferenceServiceType { get; set; }
-
-  [JsonIgnore]
-  public bool AllowsCreate { get; set; }
-
-  [JsonIgnore]
-  public Type? CreateFormServiceType { get; set; }
-
-  [JsonIgnore]
-  internal bool IsRightsTree { get; set; }
-
-  [JsonIgnore]
-  internal Func<object, object?>? InfoValueGetter { get; set; }
-
-  [JsonIgnore]
-  internal List<string>? InfoNavigationPaths { get; set; }
 }

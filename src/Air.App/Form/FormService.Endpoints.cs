@@ -1,4 +1,5 @@
 using Platform.Api.Host.Internals;
+using Platform.App.Internals;
 using Platform.App.Screens.Internals;
 
 namespace Platform.App.Form;
@@ -6,6 +7,8 @@ namespace Platform.App.Form;
 public abstract partial class FormService<TEntity>
 {
   void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
+  void IPlatformService.ResetExecutionScope() => State.ClearItems();
+  bool IPlatformService.HasAsyncDynamicEndpoints => ServiceOverrideFlags.For(GetType()).OverridesSetFormActionsAsync;
 
   [Endpoint(Auth = EndpointAuth.View)]
   public async Task<ScreenDto> GetData(

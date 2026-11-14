@@ -55,9 +55,9 @@ public class Columns
       Type = isRefType ? UiFieldType.Text : UiMemberDefaults.ResolveFieldType(typeof(TProp)),
       TemporalType = UiMemberDefaults.ResolveTemporalType(typeof(TProp)),
       Cell = isRefType ? new GridCellReferenceModel() : GridColumnDefaults.ResolveDefaultCell(typeof(TProp)),
-      Header = isRefType ? new GridHeaderReferenceModel() : null,
-      MemberType = typeof(TProp)
+      Header = isRefType ? new GridHeaderReferenceModel() : null
     };
+    GridColumnRuntime.Of(col).MemberType = typeof(TProp);
     Items.Add(col);
     return new GridColumn<TRow, TRow, TProp>(col, this);
   }
@@ -90,12 +90,13 @@ public class Columns
       Type = isRefType ? UiFieldType.Text : UiMemberDefaults.ResolveFieldType(typeof(TProp)),
       TemporalType = UiMemberDefaults.ResolveTemporalType(typeof(TProp)),
       Cell = isRefType ? new GridCellReferenceModel() : GridColumnDefaults.ResolveDefaultCell(typeof(TProp)),
-      Header = isRefType ? new GridHeaderReferenceModel() : null,
-      MemberType = typeof(TProp),
-      ValueExpression = expression,
-      ValueEvaluator = evaluator,
-      IsSubqueryExpression = isSubquery
+      Header = isRefType ? new GridHeaderReferenceModel() : null
     };
+    var runtime = GridColumnRuntime.Of(col);
+    runtime.MemberType = typeof(TProp);
+    runtime.ValueExpression = expression;
+    runtime.ValueEvaluator = evaluator;
+    runtime.IsSubqueryExpression = isSubquery;
     Items.Add(col);
     return new GridColumn<TRow, TRow, TProp>(col, this);
   }
@@ -131,9 +132,9 @@ public class Columns
       Label = PathToLabel(camelPath, null),
       Type = UiMemberDefaults.ResolveFieldType(typeof(TProp)),
       TemporalType = UiMemberDefaults.ResolveTemporalType(typeof(TProp)),
-      Cell = GridColumnDefaults.ResolveDefaultCell(typeof(TProp)),
-      MemberType = typeof(TProp)
+      Cell = GridColumnDefaults.ResolveDefaultCell(typeof(TProp))
     };
+    GridColumnRuntime.Of(col).MemberType = typeof(TProp);
     Items.Add(col);
     return new GridColumn<object, object, TProp>(col, this);
   }

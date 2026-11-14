@@ -1,3 +1,4 @@
+using Platform.App.Form.Internals;
 using Platform.App.Internals;
 
 namespace Platform.App.Screens.Internals;
@@ -40,12 +41,14 @@ internal static class StatusMoveNavBuilder
   public static List<FormElementDto> LocalizeElements(IReadOnlyList<FormElementDto> elements, Localizer l) =>
     [.. elements.Select(e =>
     {
-      if (!string.IsNullOrEmpty(e.Label))
+      if (string.IsNullOrEmpty(e.Label))
       {
-        e.Label = l[e.Label];
+        return e;
       }
 
-      return e;
+      var clone = ElementResolver.CloneElement(e, label: l[e.Label]);
+      FormElementBinding.Link(e, clone);
+      return clone;
     })];
 
   public static async Task<(
@@ -194,7 +197,8 @@ internal static class StatusMoveNavBuilder
             je.TryGetInt64(out var refId) &&
             refId > 0)
         {
-          var refServiceType = el.ReferenceServiceType ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService);
+          var refServiceType = FormElementBinding.TryGet(el)?.ReferenceServiceType
+            ?? ModuleCatalog.Instance.FindServiceType(selectModel.ReferenceService);
           if (ModuleCatalog.GetServiceEntityType(refServiceType) is { } refEntityType)
           {
             var refGrid = refServiceType != null

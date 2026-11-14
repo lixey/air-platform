@@ -21,7 +21,7 @@ public abstract partial class FormService<TEntity>
     TEntity? entity = null;
     if (id is > 0)
     {
-      entity = await Reachable(asTracking: true).FirstOrDefaultAsync(e => e.Id == id.Value, ct);
+      entity = await LoadEntityWithIncludesAsync(id.Value, State.LastElements, asTracking: true, ct);
       if (entity != null)
       {
         RestoreBoundParentId(entity, parent);
@@ -35,6 +35,7 @@ public abstract partial class FormService<TEntity>
     (elements.StatusFlow as IPlatformService)?.BindContext(PlatformApp);
     LockBoundParentElement(elements, parent, Request.ParentId);
 
+    HashSet<string>? presetDisabledPaths = null;
     if (IsNew && request.Value is { ValueKind: JsonValueKind.Object } presetJson)
     {
       foreach (var prop in presetJson.EnumerateObject())
@@ -46,24 +47,27 @@ public abstract partial class FormService<TEntity>
 
         var targetName = ResolvePresetPropertyName(prop.Name);
         var targetCamel = Form.Elements.ToCamelPath(targetName);
-        foreach (var el in elements.List)
-        {
-          if (string.Equals(el.Path, targetCamel, StringComparison.OrdinalIgnoreCase))
-          {
-            el.IsDisabled = true;
-          }
-        }
+        presetDisabledPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        presetDisabledPaths.Add(targetCamel);
       }
     }
 
-    await ElementResolver.ResolveAsync<TEntity>(CreateResolveScope(), elements, ct);
-    await ResolveTimeZoneInheritLabelsAsync(elements, entity, ct);
+    var scope = CreateResolveScope();
+    ElementResolver.ConfigureStructuralElements<TEntity>(scope, elements);
+    var inheritTimeZoneLabel = await ResolveTimeZoneInheritLabelAsync(elements, entity, ct);
     State.LastElements = elements;
+    var projectedElements = await ElementResolver.ProjectWireElementsAsync(
+      scope,
+      elements.List,
+      inheritTimeZoneLabel,
+      presetDisabledPaths,
+      includeCreateOverlays: true,
+      ct);
 
     var formModel = new FormModel
     {
       Service = servicePath,
-      Elements = elements.List.ToList(),
+      Elements = projectedElements,
       Tabs = elements.Tabs.Count > 0
         ? elements.Tabs.Select(t => new FormTabDto
         {
@@ -108,7 +112,7 @@ public abstract partial class FormService<TEntity>
     if (entity != null && id is > 0)
     {
       var isParentReadOnly = (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
-      var actions = await BuildActionsAsync(ct);
+      var actions = await EnsureActionsAsync(ct);
       var permittedActions = new List<(NavElementModel Model, bool IsInMenu)>();
       foreach (var entry in actions.Entries)
       {
@@ -211,7 +215,7 @@ public abstract partial class FormService<TEntity>
       }
     }
 
-    var actions = await BuildActionsAsync(ct);
+    var actions = await EnsureActionsAsync(ct, reload: idChanged);
     foreach (var entry in actions.Entries)
     {
       for (var i = 0; i < entry.Offers.Count; i++)
@@ -226,6 +230,17 @@ public abstract partial class FormService<TEntity>
     if (offers.Count == 0)
     {
       return null;
+    }
+
+    var inMemoryTarget = CurrentEntity?.Id == id.Value
+      ? CurrentEntity
+      : State.LastSavedEntity?.Id == id.Value
+        ? State.LastSavedEntity
+        : null;
+    if (inMemoryTarget != null &&
+        DirectScalarPredicateEvaluator.TryEvaluateAll(inMemoryTarget, offers, out var inMemoryUnavailable))
+    {
+      return inMemoryUnavailable is { Count: > 0 } ? inMemoryUnavailable : null;
     }
 
     var evaluated = await OfferBatchEvaluator.EvaluateAsync(db, [id.Value], offers, ct);
@@ -516,7 +531,7 @@ public abstract partial class FormService<TEntity>
       var isServiceLocked = IsServiceLockedReadOnly;
       var isParentReadOnly = ResolveParentChildBuilder()?.IsReadOnly == true;
       var isReadOnlyEntity = typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity));
-      var currentStatus = statusFlow.StatusMember.Compile()(entity);
+      var currentStatus = statusFlow.ReadStatus(entity);
       foreach (var transition in statusFlow.Transitions)
       {
         if (!StatusMoveNavBuilder.CanMoveOnScreen(
