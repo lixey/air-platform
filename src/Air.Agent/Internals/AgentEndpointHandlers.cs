@@ -7,15 +7,14 @@ internal static class AgentEndpointHandlers
   public static bool HasDatabaseRegistered(IServiceProvider services) =>
     services.GetService<DbScope>() != null || services.GetService<PlatformDbContext>() != null;
 
-  public static CultureInfo ApplyTurnCulture(HttpRequest request, string? locale)
+  public static void ApplyTurnCulture(HttpRequest request, string? locale, out CultureInfo culture)
   {
     var cultures = request.HttpContext?.RequestServices?.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance;
-    var culture = (!string.IsNullOrWhiteSpace(locale)
+    culture = (!string.IsNullOrWhiteSpace(locale)
       ? cultures.Resolve(locale)
       : cultures.ResolveRequest(request)).CultureInfo;
     CultureInfo.CurrentCulture = culture;
     CultureInfo.CurrentUICulture = culture;
-    return culture;
   }
 
   public static string? ResolveUserTimeZone(HttpContext ctx)
@@ -127,130 +126,6 @@ internal static class AgentEndpointHandlers
     return (provider, finalModel, finalModelName);
   }
 
-  public static async Task<IResult> HandleStatusAsync(
-    HttpContext ctx,
-    AgentStore store,
-    IEnumerable<IAgentProvider> providers,
-    IEnumerable<IAgentSyncProvider> syncProviders,
-    IAgentModelSynchronizer synchronizer,
-    AgentOptions options,
-    CancellationToken ct)
-  {
-    var enabledProviders = providers
-      .Where(p => options.EnabledProviders.Count == 0 || options.EnabledProviders.Contains(p.Handle))
-      .ToList();
-
-    List<AgentModelDto> models = [];
-    var defaultModel = options.DefaultModel;
-    string? photoModel = null;
-
-    if (HasDatabaseRegistered(ctx.RequestServices))
-    {
-      await using var dbScope = AgentModuleScope.OpenDefault(ctx.RequestServices);
-      List<AppAgentModel> dbModels;
-      (enabledProviders, dbModels) = await LoadActiveProvidersAndModelsAsync(
-        dbScope.Db, store, synchronizer, options, enabledProviders, ct);
-
-      var availableHandles = enabledProviders
-        .Where(p => p.IsAvailable)
-        .Select(p => p.Handle)
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-      if (availableHandles.Count > 0)
-      {
-        dbModels = dbModels.Where(m => availableHandles.Contains(m.ProviderHandle)).ToList();
-      }
-
-      var multiProvider = dbModels.Select(m => m.ProviderHandle).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
-      models = dbModels.Select(m => new AgentModelDto
-      {
-        Id = m.ModelId,
-        Name = multiProvider ? $"{m.Name} [{m.ProviderHandle}]" : m.Name,
-        Provider = m.ProviderHandle,
-        IsDefault = m.IsDefault,
-        IsForPhotos = m.IsForPhotos
-      }).ToList();
-
-      var defRow = dbModels.FirstOrDefault(m => m.IsDefault) ?? dbModels.FirstOrDefault();
-      defaultModel = defRow?.ModelId ?? options.DefaultModel;
-      photoModel = (dbModels.FirstOrDefault(m => m.IsForPhotos) ?? defRow)?.ModelId;
-    }
-
-    var providerDtos = enabledProviders.Select(p => new AgentProviderDto
-    {
-      Handle = p.Handle,
-      Name = p.Name,
-      IsAvailable = p.IsAvailable
-    }).ToList();
-
-    var activeProvider = enabledProviders.FirstOrDefault(p =>
-                           string.Equals(p.Handle, options.DefaultProvider, StringComparison.OrdinalIgnoreCase) && p.IsAvailable)
-                         ?? enabledProviders.FirstOrDefault(p => p.IsAvailable)
-                         ?? enabledProviders.FirstOrDefault();
-
-    if (models.FirstOrDefault(m => m.IsDefault) is { } defModelDto)
-    {
-      activeProvider = enabledProviders.FirstOrDefault(p =>
-        string.Equals(p.Handle, defModelDto.Provider, StringComparison.OrdinalIgnoreCase)) ?? activeProvider;
-    }
-
-    var syncSources = new List<AgentSyncSourceDto>();
-    foreach (var sp in syncProviders)
-    {
-      try
-      {
-        var provided = await sp.GetSourcesAsync(ctx.RequestServices, ct);
-        if (provided.Count > 0)
-        {
-          syncSources.AddRange(provided);
-        }
-      }
-      catch { }
-    }
-
-    return Results.Ok(new AgentStatusDto
-    {
-      ActiveProvider = activeProvider?.Handle ?? options.DefaultProvider,
-      DefaultModel = defaultModel,
-      PhotoModel = photoModel,
-      Providers = providerDtos,
-      Models = models,
-      SyncSources = syncSources
-    });
-  }
-
-  public static async Task<IResult> HandleUploadAsync(HttpContext ctx, AgentStore store, CancellationToken ct)
-  {
-    var req = ctx.Request;
-    var culture = PlatformEndpointsExtensions.ResolveRequestCulture(req);
-    CultureInfo.CurrentCulture = culture;
-    CultureInfo.CurrentUICulture = culture;
-
-    if (!req.HasFormContentType)
-    {
-      return Results.BadRequest(new { title = Localizer.Instance["RequestInvalid"] });
-    }
-
-    var form = await req.ReadFormAsync(ct);
-    var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
-    if (file is null || file.Length == 0)
-    {
-      return Results.BadRequest(new { title = Localizer.Instance["FileCountRefused"] });
-    }
-
-    var owner = AgentStore.ResolveOwner(ctx.RequestServices);
-    try
-    {
-      await using var stream = file.OpenReadStream();
-      var saved = await store.SaveAttachmentAsync(owner, file.FileName, file.ContentType, stream, ct);
-      return Results.Ok(saved);
-    }
-    catch (InvalidOperationException ex)
-    {
-      return Results.BadRequest(new { title = ex.Message });
-    }
-  }
-
   public static IResult HandleGetAttachment(string id, HttpContext ctx, AgentStore store)
   {
     var owner = AgentStore.ResolveOwner(ctx.RequestServices);
@@ -286,7 +161,7 @@ internal static class AgentEndpointHandlers
     IAgentModelSynchronizer synchronizer,
     CancellationToken ct)
   {
-    var culture = ApplyTurnCulture(ctx.Request, body.Locale);
+    ApplyTurnCulture(ctx.Request, body.Locale, out var culture);
     if (!string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))
     {
       ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -374,7 +249,7 @@ internal static class AgentEndpointHandlers
     }
   }
 
-  private static async Task<(List<IAgentProvider> EnabledProviders, List<AppAgentModel> DbModels)> LoadActiveProvidersAndModelsAsync(
+  internal static async Task<(List<IAgentProvider> EnabledProviders, List<AppAgentModel> DbModels)> LoadActiveProvidersAndModelsAsync(
     PlatformDbContext db,
     AgentStore store,
     IAgentModelSynchronizer synchronizer,

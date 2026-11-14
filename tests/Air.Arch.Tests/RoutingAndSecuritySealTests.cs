@@ -48,7 +48,7 @@ public sealed class RoutingAndSecuritySealTests
         e => (e.RoutePattern.RawText ?? string.Empty).StartsWith("/api", StringComparison.OrdinalIgnoreCase) &&
              (e.RoutePattern.RawText ?? string.Empty).Contains("{*", StringComparison.Ordinal));
 
-      // 2. Explicit auto-mapped routes for Metadata, Grid, Form, declared actions, and flat status transitions
+      // 2. Explicit auto-mapped routes for Metadata, Grid, Form, Agent RPCs, declared actions, and flat status transitions
       Assert.Contains("/api/metadata/get-data", patterns);
       Assert.Contains("/api/app/user/get-data", patterns);
       Assert.Contains("/api/app/user/deactivate", patterns);
@@ -57,6 +57,26 @@ public sealed class RoutingAndSecuritySealTests
       Assert.Contains("/api/ecom/customer-order/move-status-confirm", patterns);
       Assert.Contains("/api/ecom/customer-order-form/save", patterns);
       Assert.Contains("/api/ecom/customer-order-form/move-status-confirm", patterns);
+      Assert.Contains("/api/agent/get-status", patterns);
+      Assert.Contains("/api/agent/reset", patterns);
+      Assert.Contains("/api/agent/confirm-proposal", patterns);
+      Assert.Contains("/api/agent/confirm-batch", patterns);
+      Assert.Contains("/api/agent/confirm-memory", patterns);
+      Assert.Contains("/api/agent/undo-memory", patterns);
+      Assert.Contains("/api/agent/upload", patterns);
+      Assert.Contains("/api/agent/chat", patterns);
+      Assert.Contains("/api/agent/sync", patterns);
+      Assert.Contains("/api/agent/attachments/{id}", patterns);
+
+      // Zero legacy non-kebab or ad-hoc duplicate routes
+      Assert.DoesNotContain("/api/app/user/getdata", patterns);
+      Assert.DoesNotContain("/api/app/user/get-data-async", patterns);
+      Assert.DoesNotContain("/api/auth/getloginscreen", patterns);
+      Assert.DoesNotContain("/api/agent/status", patterns);
+      Assert.DoesNotContain("/api/agent/memory-confirm", patterns);
+      Assert.DoesNotContain("/api/agent/memory-undo", patterns);
+      Assert.DoesNotContain("/api/agent/proposals/{id}/confirm", patterns);
+      Assert.DoesNotContain("/api/agent/proposals/confirm-batch", patterns);
 
       // 3. Exact AllowAnonymous surface
       string[] expectedAnonymous =
@@ -195,4 +215,74 @@ public sealed class RoutingAndSecuritySealTests
       Assert.Equal("Updated By Co-Root", root.Name);
     }
   }
+
+  [Fact]
+  public void ContractExporter_EndpointTables_MatchReflectedEndpoints_Exactly()
+  {
+    var generated = ContractExporter.GenerateContracts(typeof(AgentEndpointsExtensions).Assembly);
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AirPlatform.slnx")))
+    {
+      dir = dir.Parent;
+    }
+
+    Assert.NotNull(dir);
+    var committedContracts = File.ReadAllText(Path.Combine(dir.FullName, "air-ui/src/core/generated/contracts.ts"));
+
+    (string InterfaceName, Type ServiceType)[] baseTables =
+    [
+      ("GridServiceEndpoints", typeof(GridService<,>)),
+      ("FileGridServiceEndpoints", typeof(FileGridService<>)),
+      ("ScreenServiceEndpoints", typeof(ScreenService)),
+      ("ReportServiceEndpoints", typeof(ReportService)),
+      ("FormServiceEndpoints", typeof(FormService<>))
+    ];
+
+    foreach (var (interfaceName, serviceType) in baseTables)
+    {
+      var block = ExtractInterfaceBlock(committedContracts, interfaceName);
+      var generatedBlock = ExtractInterfaceBlock(generated, interfaceName);
+      Assert.Equal(NormalizeWhitespace(generatedBlock), NormalizeWhitespace(block));
+
+      foreach (var ep in EndpointRegistry.DescribeServiceType(serviceType))
+      {
+        Assert.Contains(ep.ActionName, block, StringComparison.Ordinal);
+      }
+    }
+
+    Type[] platformServices =
+    [
+      typeof(PlatformAuthService),
+      typeof(PlatformLanguageService),
+      typeof(PlatformTenantService),
+      typeof(PlatformMetadataService),
+      typeof(PlatformAgentService)
+    ];
+
+    var platformBlock = ExtractInterfaceBlock(committedContracts, "PlatformEndpoints");
+    Assert.Equal(NormalizeWhitespace(ExtractInterfaceBlock(generated, "PlatformEndpoints")), NormalizeWhitespace(platformBlock));
+
+    foreach (var serviceType in platformServices)
+    {
+      var routeAttr = serviceType.GetCustomAttribute<ServiceRouteAttribute>();
+      Assert.NotNull(routeAttr);
+      foreach (var ep in EndpointRegistry.DescribeServiceType(serviceType))
+      {
+        Assert.Contains($"'{routeAttr.Route}/{ep.ActionName}':", platformBlock, StringComparison.Ordinal);
+      }
+    }
+  }
+
+  private static string ExtractInterfaceBlock(string source, string interfaceName)
+  {
+    var header = $"export interface {interfaceName} {{";
+    var start = source.IndexOf(header, StringComparison.Ordinal);
+    Assert.True(start >= 0, $"Missing interface '{interfaceName}' in contracts.ts.");
+    var end = source.IndexOf("\n}", start, StringComparison.Ordinal);
+    Assert.True(end > start, $"Unterminated interface '{interfaceName}' in contracts.ts.");
+    return source[start..(end + 2)];
+  }
+
+  private static string NormalizeWhitespace(string text) =>
+    Regex.Replace(text.Replace("\r\n", "\n"), @"\s+", " ").Trim();
 }

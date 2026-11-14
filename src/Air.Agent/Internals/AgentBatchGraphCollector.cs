@@ -24,10 +24,10 @@ internal static class AgentBatchGraphCollector
         continue;
       }
 
-      var prop = store.GetVerifiedProposal(currentId, owner) ?? throw new InvalidOperationException(L["AgentProposalNotFound"]);
+      var prop = store.GetVerifiedProposal(currentId, owner) ?? throw AgentRefusal.Create(L["AgentProposalNotFound"]);
       if (prop.Status == "superseded")
       {
-        throw new InvalidOperationException(L["AgentProposalSuperseded"]);
+        throw AgentRefusal.Create(L["AgentProposalSuperseded"]);
       }
 
       allProposalsById[prop.Id] = prop;
@@ -37,7 +37,7 @@ internal static class AgentBatchGraphCollector
       }
 
       var payload = prop.Payload.Deserialize<StagedProposalPayload>(WebJson)
-        ?? throw new InvalidOperationException(L["AgentErrorSave"]);
+        ?? throw AgentRefusal.Create(L["AgentErrorSave"]);
       payloadsById[prop.Id] = payload;
 
       var prereqIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -217,7 +217,7 @@ internal static class AgentBatchGraphCollector
           }
           catch (FormRefusedException refusedEx)
           {
-            throw new InvalidOperationException(FormatRefusedException(refusedEx, refEls, pendingRef.Name), refusedEx);
+            throw AgentRefusal.Create(FormatRefusedException(refusedEx, refEls, pendingRef.Name), refusedEx);
           }
         }
       }
@@ -296,7 +296,7 @@ internal static class AgentBatchGraphCollector
         if (attachRes.Outcome != MutationOutcome.Committed || attachRes.Id is not > 0)
         {
           var msg = attachRes.Messages?.FirstOrDefault()?.Detail ?? attachRes.Warnings?.FirstOrDefault()?.Detail ?? attachRes.Title ?? L["MutationRefused"];
-          throw new InvalidOperationException(msg);
+          throw AgentRefusal.Create(msg);
         }
       }
     }
@@ -353,6 +353,6 @@ internal static class AgentBatchGraphCollector
       return existing.CommittedRecordId.Value;
     }
 
-    throw new InvalidOperationException(L["AgentErrorSave"]);
+    throw AgentRefusal.Create(L["AgentErrorSave"]);
   }
 }

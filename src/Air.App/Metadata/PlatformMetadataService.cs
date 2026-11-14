@@ -3,13 +3,14 @@ namespace Platform.App.Metadata;
 /// <summary>
 /// Platform application metadata service mounted at <c>POST /api/metadata/get-data</c>.
 /// </summary>
+[ServiceRoute("metadata")]
 public sealed class PlatformMetadataService(PlatformAppService? app = null) : PlatformService(app)
 {
   private static readonly Feature MetadataFeature = new("Platform", "Metadata", typeof(PlatformMetadataService));
 
   public override Feature Feature => MetadataFeature;
 
-  [Endpoint(Auth = EndpointAuth.Custom)]
+  [Endpoint(Auth = EndpointAuth.Custom, ResponseType = typeof(AppMetadataDto))]
   public async Task<IResult> GetData(
     HttpContext httpContext,
     IAuthStore authStore,

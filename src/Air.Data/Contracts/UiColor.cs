@@ -1,4 +1,4 @@
-namespace Platform.App.Components.Contracts;
+namespace Platform.Data.Contracts;
 
 [UiContract]
 public static class UiColor

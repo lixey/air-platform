@@ -388,6 +388,7 @@
   "AgentProposalStageWarning": "Could not prepare proposal card: {0}",
   "PreviousMonth": "Previous month",
   "DownloadAllFiles": "Download all",
+  "AgentChildReplaceLimitExceeded": "Cannot replace more than {0} child rows in \u0027{1}\u0027 in a single proposal.",
   "ServerError": "An unexpected error occurred.",
   "ParentIdRequired": "Parent record ID is required.",
   "MutationSelectionCorrection": "Remove blocked or unavailable records from selection",

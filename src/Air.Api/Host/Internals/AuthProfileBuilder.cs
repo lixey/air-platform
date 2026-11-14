@@ -2,6 +2,31 @@ namespace Platform.Api.Host.Internals;
 
 internal static class AuthProfileBuilder
 {
+  private static readonly PlatformOptions DefaultOptions = new();
+
+  public static ICultureCatalog ResolveCultures(IServiceProvider services) =>
+    services.GetService<ICultureCatalog>() ?? CultureCatalog.DefaultInstance;
+
+  public static PlatformOptions ResolveOptions(IServiceProvider services) =>
+    services.GetService<PlatformOptions>() ?? DefaultOptions;
+
+  public static DateTimeOffset ResolveUtcNow(IServiceProvider services) =>
+    (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+
+  public static async Task<SecurityInfo> LoadScopedSecurityInfoAsync(
+    IAuthStore authStore,
+    BaseAppUser user,
+    long? tenantId,
+    CancellationToken ct)
+  {
+    using (tenantId is not null
+      ? AsyncLocalTenantContext.Use(tenantId, null, user.Id)
+      : AsyncLocalTenantContext.UseSystemScope(user.Id))
+    {
+      return await authStore.LoadSecurityInfoAsync(user.Id, ct);
+    }
+  }
+
   public static LoginScreenDto BuildLoginScreenDto(CultureInfo culture) =>
     new()
     {
@@ -71,4 +96,44 @@ internal static class AuthProfileBuilder
       User = await BuildUserProfileDtoAsync(user, securityInfo, culture, tenantId, authStore, ct),
       ExpiresIn = (int)Math.Max(1, accessTokenLifetime.TotalSeconds)
     };
+
+  public static async Task<BaseAppAuthSession> RotateOrCreatePasswordSessionAsync(
+    HttpContext httpContext,
+    BaseAppUser user,
+    SecurityInfo securityInfo,
+    BaseAppAuthSession? existingSession,
+    string nextRefreshHash,
+    DateTimeOffset now,
+    DateTimeOffset refreshExpiresAt,
+    string? remoteIp,
+    IAuthStore authStore,
+    IUserAuthCache? authCache,
+    CancellationToken ct)
+  {
+    if (existingSession is not null)
+    {
+      existingSession.RefreshTokenHash = nextRefreshHash;
+      existingSession.PreviousRefreshTokenHash = null;
+      existingSession.RotatedAt = now;
+      existingSession.ExpiresAt = refreshExpiresAt;
+      existingSession.LastUsedAt = now;
+      await authStore.SaveChangesAsync(ct);
+      if (authCache is not null)
+      {
+        await authCache.RemoveSessionAsync(existingSession.Id, ct);
+      }
+
+      return existingSession;
+    }
+
+    var created = authStore.CreateSession(
+      user.Id,
+      (user as IHasTenant)?.TenantId ?? securityInfo.HomeTenantId,
+      nextRefreshHash,
+      refreshExpiresAt,
+      httpContext.Request.Headers.UserAgent.ToString(),
+      remoteIp);
+    await authStore.SaveChangesAsync(ct);
+    return created;
+  }
 }

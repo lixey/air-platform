@@ -1447,4 +1447,7 @@
   <data name="ParentIdRequired" xml:space="preserve">
     <value>Ідентифікатор батьківського запису є обов'язковим.</value>
   </data>
+  <data name="AgentChildReplaceLimitExceeded" xml:space="preserve">
+    <value>Неможливо замінити понад {0} дочірніх рядків у «{1}» в межах однієї пропозиції.</value>
+  </data>
 </root>

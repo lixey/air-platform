@@ -1,3 +1,5 @@
+using Platform.Api.Host.Internals;
+
 namespace Platform.App.TypeScript;
 
 public static class ContractExporter
@@ -113,6 +115,7 @@ public static class ContractExporter
 
     // 1. Export Vocabularies, Enums, Polymorphic Unions & Endpoint Utility Types
     ExportVocabularies(sb, vocabularyTypes, enumTypes, polymorphicUnionTypes, knownNames);
+    ExportEndpointTables(sb, exportedTypes, knownNames);
 
     // 2. Export Slot Kind Interfaces & PlatformKind
     ExportSlotInterfaces(sb, interfaceTypes);
@@ -199,59 +202,149 @@ public static class ContractExporter
     sb.AppendLine("  topRows?: TRow[] | null;");
     sb.AppendLine("}");
     sb.AppendLine();
-    sb.AppendLine("export interface GridServiceEndpoints {");
-    sb.AppendLine("  delete: { request: GridRequest; answer: GridDeleteDto };");
-    sb.AppendLine("  export: { request: GridRequest | null; answer: Blob };");
-    sb.AppendLine("  'get-action-input': { request: GridActionInputRequest; answer: ActionInputDto };");
-    sb.AppendLine("  'get-count': { request: GridRequest | null; answer: GridCountDto };");
-    sb.AppendLine("  'get-data': { request: GridRequest | null; answer: ScreenDto };");
-    sb.AppendLine("  'get-one': { request: GridRequest; answer: RowDto | null };");
-    sb.AppendLine("  'save-cell': { request: GridCellRequest; answer: GridCellDto };");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface FileGridServiceEndpoints {");
-    sb.AppendLine("  delete: { request: GridRequest; answer: GridDeleteDto };");
-    sb.AppendLine("  'download-all': { request: GridRequest; answer: Blob };");
-    sb.AppendLine("  export: { request: GridRequest | null; answer: Blob };");
-    sb.AppendLine("  'file-metadata': { request: GridRequest; answer: FileMetadataDto | null };");
-    sb.AppendLine("  'get-action-input': { request: GridActionInputRequest; answer: ActionInputDto };");
-    sb.AppendLine("  'get-count': { request: GridRequest | null; answer: GridCountDto };");
-    sb.AppendLine("  'get-data': { request: GridRequest | null; answer: ScreenDto };");
-    sb.AppendLine("  'get-info': { request: GridRequest; answer: FileInfoDto };");
-    sb.AppendLine("  'get-one': { request: GridRequest; answer: RowDto | null };");
-    sb.AppendLine("  move: { request: FileMoveRequest; answer: GridActionDto };");
-    sb.AppendLine("  'save-cell': { request: GridCellRequest; answer: GridCellDto };");
-    sb.AppendLine("  'set-cover': { request: GridRequest; answer: GridActionDto };");
-    sb.AppendLine("  'set-info': { request: FileInfoRequest; answer: GridActionDto };");
-    sb.AppendLine("  upload: { request: FormData; answer: GridActionDto };");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface ScreenServiceEndpoints {");
-    sb.AppendLine("  'get-data': { request: void; answer: ScreenDto };");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface ReportServiceEndpoints {");
-    sb.AppendLine("  'get-data': { request: ReportRequest | null; answer: ScreenDto };");
-    sb.AppendLine("}");
-    sb.AppendLine();
-    sb.AppendLine("export interface FormServiceEndpoints {");
-    sb.AppendLine("  'get-action-input': { request: FormActionInputRequest; answer: ActionInputDto };");
-    sb.AppendLine("  'get-data': { request: FormRequest | null; answer: ScreenDto };");
-    sb.AppendLine("  save: { request: FormRequest; answer: FormDataDto };");
-    sb.AppendLine("}");
-    sb.AppendLine();
+  }
+
+  private static void ExportEndpointTables(StringBuilder sb, List<Type> exportedTypes, HashSet<string> knownNames)
+  {
+    var nullability = new NullabilityInfoContext();
+    ExportServiceEndpointsInterface(sb, "GridServiceEndpoints", typeof(GridService<,>), nullability, knownNames);
+    ExportServiceEndpointsInterface(sb, "FileGridServiceEndpoints", typeof(FileGridService<>), nullability, knownNames);
+    ExportServiceEndpointsInterface(sb, "ScreenServiceEndpoints", typeof(ScreenService), nullability, knownNames);
+    ExportServiceEndpointsInterface(sb, "ReportServiceEndpoints", typeof(ReportService), nullability, knownNames);
+    ExportServiceEndpointsInterface(sb, "FormServiceEndpoints", typeof(FormService<>), nullability, knownNames);
+
+    var catalog = new ModuleCatalog();
+    foreach (var serviceType in exportedTypes.Where(static t =>
+               t is { IsClass: true, IsAbstract: false } && typeof(IPlatformService).IsAssignableFrom(t)))
+    {
+      if (serviceType.GetCustomAttribute<ServiceRouteAttribute>() is { } routeAttr)
+      {
+        catalog.RegisterPlatformService(routeAttr.Route, serviceType);
+      }
+    }
+
+    var registry = EndpointRegistry.Build(catalog.Freeze());
     sb.AppendLine("export interface PlatformEndpoints {");
-    sb.AppendLine("  'auth/change-password': { request: ChangePasswordRequest | null; answer: SessionDto };");
-    sb.AppendLine("  'auth/get-login-screen': { request: void; answer: LoginScreenDto };");
-    sb.AppendLine("  'auth/get-profile': { request: void; answer: UserProfileDto };");
-    sb.AppendLine("  'auth/login': { request: LoginRequest | null; answer: SessionDto };");
-    sb.AppendLine("  'auth/refresh': { request: RefreshRequest | null; answer: SessionDto };");
-    sb.AppendLine("  'auth/logout': { request: void; answer: unknown };");
-    sb.AppendLine("  'metadata/get-data': { request: void; answer: AppMetadataDto };");
-    sb.AppendLine("  'platform-language/switch': { request: SwitchRequest; answer: UserProfileDto };");
-    sb.AppendLine("  'platform-tenant/switch': { request: SwitchRequest; answer: SessionDto };");
+    foreach (var desc in registry.All
+               .Where(static d => !d.IsDynamicAction && d.Method is not null)
+               .OrderBy(static d => $"{d.ServiceName}/{d.ActionName}", StringComparer.Ordinal))
+    {
+      var routeKey = FormatTsPropertyKey($"{desc.ServiceName}/{desc.ActionName}");
+      var reqTs = ResolveEndpointRequestTs(desc.Method!, desc.ExplicitRequestType, desc.UsesFormFiles, desc.Parameters, knownNames);
+      var ansTs = ResolveEndpointAnswerTs(desc.Method!, desc.ExplicitResponseType, desc.ExplicitResponseNullable, nullability, knownNames);
+      sb.AppendLine($"  {routeKey}: {{ request: {reqTs}; answer: {ansTs} }};");
+    }
+
     sb.AppendLine("}");
     sb.AppendLine();
+  }
+
+  private static void ExportServiceEndpointsInterface(
+    StringBuilder sb,
+    string interfaceName,
+    Type serviceType,
+    NullabilityInfoContext nullability,
+    HashSet<string> knownNames)
+  {
+    sb.AppendLine($"export interface {interfaceName} {{");
+    foreach (var ep in EndpointRegistry.DescribeServiceType(serviceType)
+               .OrderBy(static e => e.ActionName, StringComparer.Ordinal))
+    {
+      var key = FormatTsPropertyKey(ep.ActionName);
+      var reqTs = ResolveEndpointRequestTs(ep.Method, ep.ExplicitRequestType, ep.UsesFormFiles, ep.Parameters, knownNames);
+      var ansTs = ResolveEndpointAnswerTs(ep.Method, ep.ExplicitResponseType, ep.ExplicitResponseNullable, nullability, knownNames);
+      sb.AppendLine($"  {key}: {{ request: {reqTs}; answer: {ansTs} }};");
+    }
+
+    sb.AppendLine("}");
+    sb.AppendLine();
+  }
+
+  private static string FormatTsPropertyKey(string key) =>
+    key.All(static c => char.IsLetterOrDigit(c) || c == '_') ? key : $"'{key}'";
+
+  private static string ResolveEndpointRequestTs(
+    MethodInfo method,
+    Type? explicitRequestType,
+    bool usesFormFiles,
+    IReadOnlyList<EndpointParameter> parameters,
+    HashSet<string> knownNames)
+  {
+    var context = $"Endpoint '{method.DeclaringType?.FullName}.{method.Name}' request";
+    if (explicitRequestType is not null)
+    {
+      return MapType(explicitRequestType, context, knownNames);
+    }
+
+    if (usesFormFiles)
+    {
+      return "FormData";
+    }
+
+    foreach (var p in parameters)
+    {
+      if (EndpointRegistry.IsBodyParameterKind(p.Kind))
+      {
+        var mapped = MapType(p.ParameterType, context, knownNames);
+        return p.IsNullable ? $"{mapped} | null" : mapped;
+      }
+    }
+
+    return "void";
+  }
+
+  private static string ResolveEndpointAnswerTs(
+    MethodInfo method,
+    Type? explicitResponseType,
+    bool explicitResponseNullable,
+    NullabilityInfoContext nullability,
+    HashSet<string> knownNames)
+  {
+    var context = $"Endpoint '{method.DeclaringType?.FullName}.{method.Name}' response";
+    if (explicitResponseType is not null)
+    {
+      var ts = explicitResponseType == typeof(Stream)
+        ? "Blob"
+        : MapType(explicitResponseType, context, knownNames);
+      return explicitResponseNullable ? $"{ts} | null" : ts;
+    }
+
+    var returnType = method.ReturnType;
+    if (returnType == typeof(void) || returnType == typeof(Task) || returnType == typeof(ValueTask))
+    {
+      return nameof(MutationResultDto);
+    }
+
+    var retNullability = nullability.Create(method.ReturnParameter);
+    Type unwrapped;
+    bool isNullable;
+    if (returnType.IsGenericType &&
+        (returnType.GetGenericTypeDefinition() == typeof(Task<>) ||
+         returnType.GetGenericTypeDefinition() == typeof(ValueTask<>)))
+    {
+      unwrapped = returnType.GetGenericArguments()[0];
+      isNullable = Nullable.GetUnderlyingType(unwrapped) is not null ||
+                   retNullability.GenericTypeArguments is [{ ReadState: NullabilityState.Nullable }];
+    }
+    else
+    {
+      unwrapped = returnType;
+      isNullable = Nullable.GetUnderlyingType(unwrapped) is not null ||
+                   retNullability.ReadState == NullabilityState.Nullable;
+    }
+
+    if (typeof(IResult).IsAssignableFrom(unwrapped))
+    {
+      return "unknown";
+    }
+
+    if (unwrapped == typeof(Stream))
+    {
+      return isNullable ? "Blob | null" : "Blob";
+    }
+
+    var mapped = MapType(unwrapped, context, knownNames);
+    return isNullable ? $"{mapped} | null" : mapped;
   }
 
   private static void ExportUnionFromConsts(StringBuilder sb, Type type, string name)
@@ -488,11 +581,7 @@ public static class ContractExporter
       return "string | number";
     }
 
-    if (prop.DeclaringType == typeof(Reference) && prop.Name == nameof(Reference.Color))
-    {
-      return nameof(UiColor);
-    }
-
+    var memberContext = $"Contract property '{ownerType.FullName}.{prop.Name}'";
     var oneOf = prop.GetCustomAttribute<OneOfAttribute>();
     if (oneOf?.Vocabularies.Count > 0)
     {
@@ -501,7 +590,7 @@ public static class ContractExporter
         if (!knownNames.Contains(vocab.Name))
         {
           throw new InvalidOperationException(
-            $"Contract property '{ownerType.FullName}.{prop.Name}' [OneOf] references vocabulary '{vocab.FullName}' which is not marked with [UiContract].");
+            $"{memberContext} [OneOf] references vocabulary '{vocab.FullName}' which is not marked with [UiContract].");
         }
       }
 
@@ -519,7 +608,7 @@ public static class ContractExporter
             genericDef == typeof(IDictionary<,>) ||
             genericDef == typeof(IReadOnlyDictionary<,>))
         {
-          var keyType = MapType(underlying.GetGenericArguments()[0], ownerType, prop, knownNames);
+          var keyType = MapType(underlying.GetGenericArguments()[0], memberContext, knownNames);
           return $"Record<{keyType}, {unionTs}>";
         }
 
@@ -540,10 +629,10 @@ public static class ContractExporter
       return unionTs;
     }
 
-    return MapType(prop.PropertyType, ownerType, prop, knownNames);
+    return MapType(prop.PropertyType, memberContext, knownNames);
   }
 
-  private static string MapType(Type type, Type ownerType, PropertyInfo prop, HashSet<string> knownNames)
+  private static string MapType(Type type, string memberContext, HashSet<string> knownNames)
   {
     var underlying = Nullable.GetUnderlyingType(type) ?? type;
 
@@ -580,7 +669,7 @@ public static class ContractExporter
 
     if (underlying.IsArray)
     {
-      var elemTs = MapType(underlying.GetElementType()!, ownerType, prop, knownNames);
+      var elemTs = MapType(underlying.GetElementType()!, memberContext, knownNames);
       return elemTs.Contains(" | ", StringComparison.Ordinal) ? $"({elemTs})[]" : $"{elemTs}[]";
     }
 
@@ -591,8 +680,8 @@ public static class ContractExporter
           genericDef == typeof(IDictionary<,>) ||
           genericDef == typeof(IReadOnlyDictionary<,>))
       {
-        var keyType = MapType(underlying.GetGenericArguments()[0], ownerType, prop, knownNames);
-        var valType = MapType(underlying.GetGenericArguments()[1], ownerType, prop, knownNames);
+        var keyType = MapType(underlying.GetGenericArguments()[0], memberContext, knownNames);
+        var valType = MapType(underlying.GetGenericArguments()[1], memberContext, knownNames);
         return $"Record<{keyType}, {valType}>";
       }
 
@@ -606,7 +695,7 @@ public static class ContractExporter
           genericDef == typeof(ISet<>) ||
           genericDef == typeof(IReadOnlySet<>))
       {
-        var elemTs = MapType(underlying.GetGenericArguments()[0], ownerType, prop, knownNames);
+        var elemTs = MapType(underlying.GetGenericArguments()[0], memberContext, knownNames);
         return elemTs.Contains(" | ", StringComparison.Ordinal) ? $"({elemTs})[]" : $"{elemTs}[]";
       }
     }
@@ -617,6 +706,6 @@ public static class ContractExporter
     }
 
     throw new InvalidOperationException(
-      $"Contract property '{ownerType.FullName}.{prop.Name}' references unsupported or unmarked type '{underlying.FullName}'. Decorate contract types with [UiContract].");
+      $"{memberContext} references unsupported or unmarked type '{underlying.FullName}'. Decorate contract types with [UiContract].");
   }
 }

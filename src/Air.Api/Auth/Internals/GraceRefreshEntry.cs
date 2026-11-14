@@ -1,4 +1,4 @@
-namespace Platform.Api.Host.Internals;
+namespace Platform.Api.Auth.Internals;
 
 internal sealed record GraceRefreshEntry(
   string PrevHash,

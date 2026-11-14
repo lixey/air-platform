@@ -6,9 +6,12 @@ internal enum EndpointParameterKind
   HttpRequest = 1,
   HttpContext = 2,
   ServiceProvider = 3,
-  FormFiles = 4,
-  RawJsonBody = 5,
-  RouteOrBodyId = 6,
-  MultipartBody = 7,
-  JsonBodyOrService = 8
+  FromServices = 4,
+  FormFiles = 5,
+  RawJsonBody = 6,
+  RouteOrBodyId = 7,
+  MultipartBody = 8,
+  CustomScopedRequest = 9,
+  ScopedJsonBody = 10,
+  JsonBody = 11
 }

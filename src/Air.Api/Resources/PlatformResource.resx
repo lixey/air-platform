@@ -1447,4 +1447,7 @@
   <data name="ParentIdRequired" xml:space="preserve">
     <value>Parent record ID is required.</value>
   </data>
+  <data name="AgentChildReplaceLimitExceeded" xml:space="preserve">
+    <value>Cannot replace more than {0} child rows in '{1}' in a single proposal.</value>
+  </data>
 </root>

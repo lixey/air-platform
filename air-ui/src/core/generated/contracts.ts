@@ -288,12 +288,19 @@ export interface FormServiceEndpoints {
 }
 
 export interface PlatformEndpoints {
+  'agent/confirm-batch': { request: AgentBatchConfirmRequest; answer: AgentBatchCommitResultDto };
+  'agent/confirm-memory': { request: AgentMemoryConfirmRequest; answer: AgentSavedMemoryDto };
+  'agent/confirm-proposal': { request: ConfirmProposalRequest; answer: AgentCommitResultDto };
+  'agent/get-status': { request: void; answer: AgentStatusDto };
+  'agent/reset': { request: AgentResetRequest | null; answer: MutationResultDto };
+  'agent/undo-memory': { request: AgentMemoryUndoRequest; answer: MutationResultDto };
+  'agent/upload': { request: FormData; answer: AgentAttachmentDto };
   'auth/change-password': { request: ChangePasswordRequest | null; answer: SessionDto };
   'auth/get-login-screen': { request: void; answer: LoginScreenDto };
   'auth/get-profile': { request: void; answer: UserProfileDto };
   'auth/login': { request: LoginRequest | null; answer: SessionDto };
-  'auth/refresh': { request: RefreshRequest | null; answer: SessionDto };
   'auth/logout': { request: void; answer: unknown };
+  'auth/refresh': { request: RefreshRequest | null; answer: SessionDto };
   'metadata/get-data': { request: void; answer: AppMetadataDto };
   'platform-language/switch': { request: SwitchRequest; answer: UserProfileDto };
   'platform-tenant/switch': { request: SwitchRequest; answer: SessionDto };
@@ -639,6 +646,10 @@ export interface ColumnSummaryDto {
   kind: SummaryKind;
   unit?: string | null;
   excludeColor?: UiColor | null;
+}
+
+export interface ConfirmProposalRequest {
+  proposalId: string;
 }
 
 export interface FileInfoDto {

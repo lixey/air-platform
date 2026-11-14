@@ -1,12 +1,7 @@
-using Platform.Api.Host.Internals;
-
 namespace Platform.App.Host;
 
 public static class PlatformAppExtensions
 {
-  private static readonly ModuleCatalogSetup MetadataCatalogSetup =
-    new(static catalog => catalog.RegisterPlatformService<PlatformMetadataService>("metadata"));
-
   public static WebApplicationBuilder AddPlatformModule<TModule>(this WebApplicationBuilder builder)
     where TModule : class, IPlatformModule, new() =>
     builder.AddPlatformModule(new TModule());
@@ -14,17 +9,7 @@ public static class PlatformAppExtensions
   public static WebApplicationBuilder AddPlatformModule(this WebApplicationBuilder builder, IPlatformModule module)
   {
     builder.AddPlatformApiModule(module);
-    builder.Services.TryAddScoped<PlatformMetadataService>(sp =>
-    {
-      var svc = ActivatorUtilities.CreateInstance<PlatformMetadataService>(sp);
-      ((IPlatformService)svc).BindContext(sp.GetService<PlatformAppService>());
-      return svc;
-    });
-    if (builder.Services.All(d => !ReferenceEquals(d.ImplementationInstance, MetadataCatalogSetup)))
-    {
-      builder.Services.AddSingleton(MetadataCatalogSetup);
-    }
-
+    builder.AddPlatformService<PlatformMetadataService>();
     return builder;
   }
 

@@ -3,6 +3,7 @@ namespace Platform.Api.Auth.Internals;
 internal sealed class LoginRateLimiter(TimeProvider? time = null)
 {
   public const int MaxAccountFailuresPerIp = 20;
+  public const int MaxRefreshFailuresPerIp = 60;
   public const int MaxTotalFailuresPerIp = 100;
   private const int MaxEntries = 50_000;
   private static readonly TimeSpan Window = TimeSpan.FromMinutes(5);
@@ -28,6 +29,12 @@ internal sealed class LoginRateLimiter(TimeProvider? time = null)
     return IsBucketLimited(PairKey(normalizedIp, login), MaxAccountFailuresPerIp, now);
   }
 
+  public bool IsRefreshLimited(string? ipAddress)
+  {
+    var normalizedIp = NormalizeIp(ipAddress);
+    return normalizedIp != null && IsBucketLimited(RefreshIpKey(normalizedIp), MaxRefreshFailuresPerIp, _time.GetUtcNow());
+  }
+
   public void RecordFailure(string? ipAddress, string? login = null)
   {
     var normalizedIp = NormalizeIp(ipAddress);
@@ -41,6 +48,19 @@ internal sealed class LoginRateLimiter(TimeProvider? time = null)
 
     IncrementBucket(GlobalIpKey(normalizedIp), now);
     IncrementBucket(PairKey(normalizedIp, login), now);
+  }
+
+  public void RecordRefreshFailure(string? ipAddress)
+  {
+    var normalizedIp = NormalizeIp(ipAddress);
+    if (normalizedIp == null)
+    {
+      return;
+    }
+
+    var now = _time.GetUtcNow();
+    PruneIfNeeded(now);
+    IncrementBucket(RefreshIpKey(normalizedIp), now);
   }
 
   public void Reset(string? ipAddress, string? login = null)
@@ -104,6 +124,8 @@ internal sealed class LoginRateLimiter(TimeProvider? time = null)
     string.IsNullOrWhiteSpace(login) ? "_" : login.Trim().ToLowerInvariant();
 
   private static string GlobalIpKey(string normalizedIp) => $"ip:{normalizedIp}";
+
+  private static string RefreshIpKey(string normalizedIp) => $"refresh:{normalizedIp}";
 
   private static string PairKey(string normalizedIp, string? login) =>
     $"pair:{normalizedIp}:{NormalizeLogin(login)}";

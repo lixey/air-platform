@@ -120,7 +120,7 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     expect(text).toContain('Check the status change before confirming');
   });
 
-  it('handles SSE memory events, renders the memory pill, and posts /api/agent/memory-undo with Idempotency-Key', async () => {
+  it('handles SSE memory events, renders the memory pill, and posts /api/agent/undo-memory with Idempotency-Key', async () => {
     const sseFrames = [
       'data: {"type":"delta","text":"Noted."}\n\n',
       'data: {"type":"memory","memory":{"id":91,"category":"Preference","title":"Default currency","content":"Prefer EUR"}}\n\n',
@@ -159,11 +159,11 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     expect(undoneId).toBe(91);
 
     const undoPromise = agent.undoMemory(assistantMsg!.id, 91);
-    const req = http.expectOne('/api/agent/memory-undo');
+    const req = http.expectOne('/api/agent/undo-memory');
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ id: 91 });
     expect(req.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBeTruthy();
-    req.flush({ ok: true, id: 91 });
+    req.flush({ outcome: 'committed' });
     await undoPromise;
 
     const updatedMem = agent.messages().find(m => m.id === assistantMsg!.id)?.memories[0];
@@ -174,7 +174,7 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     expect((pillFixture.nativeElement as HTMLElement).textContent).toContain('Memory removed: Default currency');
   });
 
-  it('renders pending SSE memory items, confirms via /api/agent/memory-confirm with Idempotency-Key, and supports Dismiss', async () => {
+  it('renders pending SSE memory items, confirms via /api/agent/confirm-memory with Idempotency-Key, and supports Dismiss', async () => {
     const sseFrames = [
       'data: {"type":"delta","text":"Shall I save this?"}\n\n',
       'data: {"type":"memory","memory":{"id":0,"category":"Preference","title":"Date format","content":"Use ISO","status":"pending","pendingToken":"tok-mem-1"}}\n\n',
@@ -216,7 +216,7 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     expect(confirmedToken).toBe('tok-mem-1');
 
     const confirmPromise = agent.confirmMemory(assistantMsg.id, 'tok-mem-1');
-    const req = http.expectOne('/api/agent/memory-confirm');
+    const req = http.expectOne('/api/agent/confirm-memory');
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ pendingToken: 'tok-mem-1' });
     expect(req.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBeTruthy();
@@ -273,18 +273,29 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
       },
     ]);
 
-    // First attempt fails with network unknown (status 0) -> retains Idempotency-Key for retry
-    const firstTry = agent.confirmProposal('m-1', 'p-1');
-    const req1 = http.expectOne('/api/agent/proposals/p-1/confirm');
-    const firstKey = req1.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
-    expect(firstKey).toBeTruthy();
+    // First attempt on p-1 AND p-2 fails with network unknown (status 0) -> UncertainIdempotency retains BOTH keys concurrently
+    const firstTryP1 = agent.confirmProposal('m-1', 'p-1');
+    const req1 = http.expectOne('/api/agent/confirm-proposal');
+    expect(req1.request.body).toEqual({ proposalId: 'p-1' });
+    const firstKeyP1 = req1.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
+    expect(firstKeyP1).toBeTruthy();
     req1.error(new ProgressEvent('error'));
-    await firstTry;
+    await firstTryP1;
 
-    // Retry reuses the exact same Idempotency-Key
+    const firstTryP2 = agent.confirmProposal('m-1', 'p-2');
+    const reqP2 = http.expectOne('/api/agent/confirm-proposal');
+    expect(reqP2.request.body).toEqual({ proposalId: 'p-2' });
+    const firstKeyP2 = reqP2.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
+    expect(firstKeyP2).toBeTruthy();
+    expect(firstKeyP2).not.toBe(firstKeyP1);
+    reqP2.error(new ProgressEvent('error'));
+    await firstTryP2;
+
+    // Retrying p-1 still reuses firstKeyP1 (not evicted by p-2's failure)
     const secondTry = agent.confirmProposal('m-1', 'p-1');
-    const req2 = http.expectOne('/api/agent/proposals/p-1/confirm');
-    expect(req2.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBe(firstKey);
+    const req2 = http.expectOne('/api/agent/confirm-proposal');
+    expect(req2.request.body).toEqual({ proposalId: 'p-1' });
+    expect(req2.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBe(firstKeyP1);
     req2.flush({
       proposalId: 'p-1',
       recordId: 501,
@@ -294,9 +305,9 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     });
     await secondTry;
 
-    // confirmBatch also sends Idempotency-Key
+    // confirmBatch also sends Idempotency-Key via canonical /api/agent/confirm-batch
     const batchTry = agent.confirmBatch('m-1');
-    const batchReq = http.expectOne('/api/agent/proposals/confirm-batch');
+    const batchReq = http.expectOne('/api/agent/confirm-batch');
     expect(batchReq.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBeTruthy();
     expect(batchReq.request.body).toEqual({ proposalIds: ['p-2'] });
     batchReq.flush({
@@ -314,5 +325,42 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
         screen: expect.objectContaining({ service: 'ecom/order-form', params: { id: 501 } }),
       }),
     );
+  });
+
+  it('posts canonical /api/agent/get-status, /api/agent/reset, and /api/agent/upload via typed Api', async () => {
+    const agent = TestBed.inject(AgentService);
+
+    const statusPromise = agent.ensureStatusLoaded();
+    const statusReq = http.expectOne('/api/agent/get-status');
+    expect(statusReq.request.method).toBe('POST');
+    expect(statusReq.request.body).toEqual({});
+    statusReq.flush({
+      activeProvider: 'Agy',
+      defaultModel: 'agy-pro',
+      providers: [{ handle: 'Agy', name: 'Agy', isAvailable: true }],
+      models: [{ id: 'agy-pro', name: 'Agy Pro', provider: 'Agy', isDefault: true, isForPhotos: false }],
+      syncSources: [],
+    });
+    await statusPromise;
+    expect(agent.model()).toBe('agy-pro');
+
+    const prevSession = agent.sessionId();
+    const resetPromise = agent.reset();
+    const resetReq = http.expectOne('/api/agent/reset');
+    expect(resetReq.request.method).toBe('POST');
+    expect(resetReq.request.body).toEqual({ sessionId: prevSession });
+    resetReq.flush({ outcome: 'committed' });
+    await resetPromise;
+    expect(agent.sessionId()).not.toBe(prevSession);
+
+    const file = new File(['hello'], 'notes.txt', { type: 'text/plain' });
+    const uploadPromise = agent.uploadSingleFile(file);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const uploadReq = http.expectOne('/api/agent/upload');
+    expect(uploadReq.request.method).toBe('POST');
+    expect(uploadReq.request.body instanceof FormData).toBe(true);
+    uploadReq.flush({ id: 'att-1', fileName: 'notes.txt', contentType: 'text/plain', size: 5 });
+    const uploaded = await uploadPromise;
+    expect(uploaded?.id).toBe('att-1');
   });
 });

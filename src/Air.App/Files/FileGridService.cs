@@ -196,7 +196,7 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     }
   }
 
-  [Endpoint]
+  [Endpoint(ResponseType = typeof(Stream))]
   [RequireAction(Right.View)]
   public virtual async Task<IResult> DownloadAll(GridRequest request, CancellationToken cancellationToken = default)
   {

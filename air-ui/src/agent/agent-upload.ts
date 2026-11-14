@@ -1,7 +1,7 @@
-import type { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
+import type { Api } from '../core/api';
 import type { TextsService } from '../core/texts.service';
 import { optimizeImage } from '../file/file-optimize';
 import { imageFactsOf } from '../file/image-facts';
@@ -13,7 +13,7 @@ async function prepareAgentUploadFile(file: File): Promise<File> {
 }
 
 export async function uploadAgentFiles(
-  http: HttpClient,
+  api: Api,
   alert: AlertService,
   texts: TextsService,
   files: FileList | readonly File[],
@@ -30,7 +30,7 @@ export async function uploadAgentFiles(
       const prepared = await prepareAgentUploadFile(raw);
       const form = new FormData();
       form.append('file', prepared, prepared.name);
-      const saved = await firstValueFrom(http.post<AgentAttachment>('/api/agent/upload', form, shownByCaller()));
+      const saved = await firstValueFrom(api.post('agent/upload', form, shownByCaller()));
       onSaved(saved);
     }
   } catch (err) {
@@ -41,7 +41,7 @@ export async function uploadAgentFiles(
 }
 
 export async function uploadSingleAgentFile(
-  http: HttpClient,
+  api: Api,
   alert: AlertService,
   texts: TextsService,
   file: File,
@@ -52,7 +52,7 @@ export async function uploadSingleAgentFile(
     const prepared = await prepareAgentUploadFile(file);
     const form = new FormData();
     form.append('file', prepared, prepared.name);
-    return await firstValueFrom(http.post<AgentAttachment>('/api/agent/upload', form, shownByCaller()));
+    return await firstValueFrom(api.post('agent/upload', form, shownByCaller()));
   } catch (err) {
     alert.error(extractAgentErrorMessage(err, texts.of('AgentErrorUpload')));
     return null;

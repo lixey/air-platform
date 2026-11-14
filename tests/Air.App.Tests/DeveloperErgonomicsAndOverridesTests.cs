@@ -5,6 +5,7 @@ using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
 
+[Collection("ModuleCatalog")]
 public sealed class DeveloperErgonomicsAndOverridesTests : IDisposable
 {
   private readonly SqliteConnection _connection;

@@ -386,6 +386,14 @@ public sealed class ModuleCatalog
       : _servicesByPath.GetValueOrDefault(key);
   }
 
+  public void RegisterPlatformService<TService>() where TService : class, IPlatformService
+  {
+    var routeAttr = typeof(TService).GetCustomAttribute<ServiceRouteAttribute>()
+      ?? throw new InvalidOperationException(
+        $"Platform service '{typeof(TService).FullName}' is missing '[ServiceRoute(...)]'.");
+    RegisterPlatformService(routeAttr.Route, typeof(TService));
+  }
+
   public void RegisterPlatformService<TService>(string routePath) where TService : class, IPlatformService =>
     RegisterPlatformService(routePath, typeof(TService));
 
@@ -393,6 +401,14 @@ public sealed class ModuleCatalog
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(routePath);
     ArgumentNullException.ThrowIfNull(serviceType);
+    var key = routePath.Trim('/');
+    if (serviceType.GetCustomAttribute<ServiceRouteAttribute>() is { } routeAttr &&
+        !string.Equals(routeAttr.Route, key, StringComparison.OrdinalIgnoreCase))
+    {
+      throw new InvalidOperationException(
+        $"Platform service '{serviceType.FullName}' declares '[ServiceRoute(\"{routeAttr.Route}\")]' but was registered as '{key}'.");
+    }
+
     lock (_sync)
     {
       if (IsFrozen)
@@ -401,7 +417,6 @@ public sealed class ModuleCatalog
           $"ModuleCatalog is frozen and cannot register platform service '{serviceType.Name}' after host startup.");
       }
 
-      var key = routePath.Trim('/');
       _servicesByPath[key] = serviceType;
     }
   }

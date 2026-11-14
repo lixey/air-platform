@@ -166,7 +166,7 @@ public abstract partial class GridService<TEntity, TRow>
         db,
         actionPath,
         request.IdempotencyKey,
-        request.RawPayload ?? body?.GetRawText(),
+        ResolveIdempotentPayload(request.IdempotencyKey, request.RawPayload, body),
         async mutationCt =>
         {
           var lockEntities = !probeEntry.IsWithoutTransaction && db.Database.CurrentTransaction != null;
@@ -437,7 +437,7 @@ public abstract partial class GridService<TEntity, TRow>
             ParentId = ParentId,
             ParentService = ParentService ?? GetParent().BoundParentService,
             IdempotencyKey = request.IdempotencyKey,
-            RawPayload = request.RawPayload ?? body?.GetRawText()
+            RawPayload = ResolveIdempotentPayload(request.IdempotencyKey, request.RawPayload, body)
           };
 
           var formRes = await form.ExecuteDeclaredActionAsync(actionKey, formReq, body, ct);
@@ -481,7 +481,7 @@ public abstract partial class GridService<TEntity, TRow>
       db,
       actionPath,
       request.IdempotencyKey,
-      request.RawPayload ?? body?.GetRawText(),
+      ResolveIdempotentPayload(request.IdempotencyKey, request.RawPayload, body),
       async mutationCt =>
       {
         var (selectedIds, versions, versionCountMismatch) = NormalizeSelection(request);
@@ -631,4 +631,7 @@ public abstract partial class GridService<TEntity, TRow>
 
     return result;
   }
+
+  private static string? ResolveIdempotentPayload(string? idempotencyKey, string? rawPayload, JsonElement? body) =>
+    !string.IsNullOrWhiteSpace(idempotencyKey) ? rawPayload ?? body?.GetRawText() : null;
 }

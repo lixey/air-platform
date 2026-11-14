@@ -83,7 +83,7 @@ internal static class AgentFlowHelper
   {
     if (!AgentFeatureRegistry.CanViewFeature(feature, app) || formServiceType == null && gridServiceType == null)
     {
-      throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+      throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
     }
 
     var localizer = Localizer.Instance.For(feature.Module);
@@ -91,7 +91,7 @@ internal static class AgentFlowHelper
     if (formServiceType != null)
     {
       var formInst = ModuleCatalog.Instance.CreateServiceInstance(formServiceType, db, app) as IFormService
-        ?? throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+        ?? throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
       formInst.SetRequest(new FormRequest { Id = recordId });
       entity = await formInst.LoadParentRecordAsync(recordId, ct)
         ?? throw new KeyNotFoundException(localizer["FormNotFound"]);
@@ -101,7 +101,7 @@ internal static class AgentFlowHelper
     if (gridServiceType != null)
     {
       var gridInst = ModuleCatalog.Instance.CreateServiceInstance(gridServiceType, db, app) as IGridService
-        ?? throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+        ?? throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
       gridRow = await gridInst.ReadRowAsync(recordId, ct)
         ?? throw new KeyNotFoundException(localizer["FormNotFound"]);
     }
@@ -164,14 +164,14 @@ internal static class AgentFlowHelper
 
     if (result == null)
     {
-      throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+      throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
     }
 
     if (result.Outcome != MutationOutcome.Committed)
     {
       var first = result.Messages?.FirstOrDefault();
       var msg = first?.Detail ?? first?.Title ?? result.Title ?? Localizer.Instance["MutationRefused"];
-      throw new InvalidOperationException(msg);
+      throw AgentRefusal.Create(msg);
     }
   }
 

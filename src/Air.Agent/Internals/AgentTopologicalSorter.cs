@@ -211,7 +211,7 @@ internal static class AgentTopologicalSorter
 
     if (ordered.Count < n)
     {
-      throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+      throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
     }
 
     return ordered;

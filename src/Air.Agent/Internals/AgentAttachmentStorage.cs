@@ -87,12 +87,12 @@ internal static class AgentAttachmentStorage
     var rawExt = Path.GetExtension(fileName);
     if (!string.IsNullOrWhiteSpace(rawExt) && BlockedAttachmentExtensions.Contains(rawExt))
     {
-      throw new InvalidOperationException(Localizer.Instance["FileTypeRefused"]);
+      throw AgentRefusal.Create(Localizer.Instance["FileTypeRefused"]);
     }
 
     if (content.CanSeek && content.Length > MaxAttachmentSizeBytes)
     {
-      throw new InvalidOperationException(Localizer.Instance["FileTooLarge"]);
+      throw AgentRefusal.Create(Localizer.Instance["FileTooLarge"]);
     }
 
     var (clampedMime, safeExt) = AgentAttachmentValidator.ClampMimeAndExtension(contentType, fileName);
@@ -109,7 +109,7 @@ internal static class AgentAttachmentStorage
       {
         fs.Close();
         TryDeleteFile(localPath);
-        throw new InvalidOperationException(Localizer.Instance["FileTooLarge"]);
+        throw AgentRefusal.Create(Localizer.Instance["FileTooLarge"]);
       }
     }
 

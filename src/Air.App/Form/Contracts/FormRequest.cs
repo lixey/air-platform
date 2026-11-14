@@ -43,7 +43,10 @@ public class FormRequest : IScopedServiceRequest
 
     if (json.ValueKind == JsonValueKind.Object)
     {
-      req.RawPayload ??= json.GetRawText();
+      if (!string.IsNullOrWhiteSpace(req.IdempotencyKey))
+      {
+        req.RawPayload ??= json.GetRawText();
+      }
 
       if (!hasPresetValue && json.TryGetProperty("value", out var valProp))
       {

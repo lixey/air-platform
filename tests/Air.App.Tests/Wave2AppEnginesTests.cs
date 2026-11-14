@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Platform.Api.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
 
+[Collection("ModuleCatalog")]
 public sealed class Wave2AppEnginesTests : IDisposable
 {
   private readonly SqliteConnection _connection;
@@ -382,7 +384,7 @@ public sealed class Wave2AppEnginesTests : IDisposable
         ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(jsonBody));
         ctx.Response.Body = new MemoryStream();
         var instance = services.GetRequiredService(svcType);
-        var res = await ServiceEndpointsExtensions.DispatchEndpointAsync(svcType, instance, method, feat, ctx.Request, services, CancellationToken.None);
+        var res = await EndpointExecutor.DispatchAsync(svcType, instance, method, feat, ctx.Request, services, CancellationToken.None);
         await res.ExecuteAsync(ctx);
         ctx.Response.Body.Position = 0;
         using var reader = new StreamReader(ctx.Response.Body);

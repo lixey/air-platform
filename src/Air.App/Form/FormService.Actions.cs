@@ -80,7 +80,7 @@ public abstract partial class FormService<TEntity>
       db,
       actionPath,
       request.IdempotencyKey,
-      request.RawPayload ?? body?.GetRawText(),
+      ResolveIdempotentPayload(request.IdempotencyKey, request.RawPayload, body),
       async mutationCt =>
       {
         var entity = await LockAndLoadExistingAsync(request.Id.Value, parent, mutationCt);
@@ -274,7 +274,7 @@ public abstract partial class FormService<TEntity>
       db,
       actionPath,
       Request.IdempotencyKey,
-      Request.RawPayload ?? body?.GetRawText(),
+      ResolveIdempotentPayload(Request.IdempotencyKey, Request.RawPayload, body),
       async mutationCt =>
       {
         var requestedParentId = Request.ParentId;
@@ -491,4 +491,7 @@ public abstract partial class FormService<TEntity>
     var effectiveParentReadOnly = isParentReadOnly || (await ResolveParentChildBuilderAsync(ct: ct))?.IsReadOnly == true;
     return entry != null && entry.Permission.IsPermitted(Feature, User, entry.Handle, isGridReadOnly || IsReadOnly, entry.IsAllowedInReadOnly, effectiveParentReadOnly);
   }
+
+  private static string? ResolveIdempotentPayload(string? idempotencyKey, string? rawPayload, JsonElement? body) =>
+    !string.IsNullOrWhiteSpace(idempotencyKey) ? rawPayload ?? body?.GetRawText() : null;
 }

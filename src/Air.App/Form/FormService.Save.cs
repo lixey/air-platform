@@ -29,7 +29,7 @@ public abstract partial class FormService<TEntity>
         db,
         Service,
         req.IdempotencyKey,
-        req.RawPayload ?? json.GetRawText(),
+        !string.IsNullOrWhiteSpace(req.IdempotencyKey) ? req.RawPayload ?? json.GetRawText() : string.Empty,
         mutationCt => SaveCoreAsync(entityJson, input, id, clientVer, cellPatch: null, mutationCt),
         async (replayedId, reloadCt) =>
         {

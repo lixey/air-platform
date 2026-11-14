@@ -2,6 +2,8 @@ namespace Platform.Api.Host.Internals;
 
 internal static class EndpointExecutor
 {
+  private static readonly JsonElement EmptyJsonObject = JsonDocument.Parse("{}").RootElement.Clone();
+
   public static async Task<IResult> ExecuteAsync(
     EndpointDescriptor descriptor,
     HttpRequest httpRequest,
@@ -34,6 +36,7 @@ internal static class EndpointExecutor
       descriptor.CompiledInvoker!,
       descriptor.Auth,
       descriptor.IsAnonymous,
+      descriptor.RequireClientHeader,
       descriptor.UsesRawHttp,
       descriptor.UsesFormFiles,
       serviceInstance,
@@ -43,12 +46,72 @@ internal static class EndpointExecutor
       ct);
   }
 
+  internal static async Task<IResult> DispatchAsync(
+    Type serviceType,
+    object serviceInstance,
+    string actionName,
+    Feature? feat,
+    HttpRequest httpRequest,
+    IServiceProvider services,
+    CancellationToken ct)
+  {
+    (serviceInstance as IPlatformService)?.BindContext(services.GetService<PlatformAppService>());
+    if (EndpointRegistry.FindReflectedEndpoint(serviceType, actionName) is { CompiledInvoker: not null } reflected)
+    {
+      return await ExecuteReflectedAsync(
+        reflected.Method,
+        reflected.Parameters,
+        reflected.CompiledInvoker,
+        reflected.Auth,
+        reflected.IsAnonymous,
+        reflected.RequireClientHeader,
+        reflected.UsesRawHttp,
+        reflected.UsesFormFiles,
+        serviceInstance,
+        feat ?? (serviceInstance as IPlatformService)?.Feature,
+        httpRequest,
+        services,
+        ct);
+    }
+
+    if (serviceInstance is IPlatformService platformService)
+    {
+      var userContext = services.GetService<IUserContext>();
+      if (userContext is null or { IsAuthenticated: false })
+      {
+        return Results.Unauthorized();
+      }
+
+      var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
+      if (isMalformed)
+      {
+        return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
+      }
+
+      try
+      {
+        var dyn = await platformService.ExecuteDynamicEndpointAsync(actionName, httpRequest, body, services, ct);
+        if (dyn is not null)
+        {
+          return dyn;
+        }
+      }
+      catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
+      {
+        return mapped;
+      }
+    }
+
+    return Results.NotFound();
+  }
+
   public static async Task<IResult> ExecuteReflectedAsync(
     MethodInfo method,
     EndpointParameter[] parameters,
     Func<object, object?[], Task<IResult>> invoker,
     EndpointAuth auth,
     bool isAnonymous,
+    bool requireClientHeader,
     bool usesRawHttp,
     bool usesFormFiles,
     object serviceInstance,
@@ -57,6 +120,11 @@ internal static class EndpointExecutor
     IServiceProvider services,
     CancellationToken ct)
   {
+    if (requireClientHeader && !AuthCookieHelper.HasClientHeader(httpRequest))
+    {
+      return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
     var userContext = services.GetService<IUserContext>();
     if (!isAnonymous && userContext is null or { IsAuthenticated: false })
     {
@@ -105,11 +173,15 @@ internal static class EndpointExecutor
           EndpointParameterKind.HttpRequest => httpRequest,
           EndpointParameterKind.HttpContext => httpRequest.HttpContext,
           EndpointParameterKind.ServiceProvider => services,
+          EndpointParameterKind.FromServices => services.GetService(param.ParameterType)
+            ?? (param.HasDefaultValue ? param.DefaultValue : null),
           EndpointParameterKind.FormFiles => formCollection?.Files,
           EndpointParameterKind.RawJsonBody => rawBody,
           EndpointParameterKind.RouteOrBodyId => parsedId ?? (param.HasDefaultValue ? param.DefaultValue : 0L),
-          EndpointParameterKind.MultipartBody => BindMultipartRequest(param.ParameterType, httpRequest, formCollection),
-          _ => BindJsonOrService(param, rawBody, httpRequest, services)
+          EndpointParameterKind.MultipartBody => BindMultipartRequest(param, httpRequest, formCollection),
+          EndpointParameterKind.CustomScopedRequest => BindCustomScopedRequest(param, rawBody, httpRequest),
+          EndpointParameterKind.ScopedJsonBody => BindScopedJsonBody(param, rawBody, httpRequest),
+          _ => BindJsonBody(param, rawBody)
         };
       }
 
@@ -188,9 +260,9 @@ internal static class EndpointExecutor
         })
     };
 
-  private static object? BindMultipartRequest(Type parameterType, HttpRequest httpRequest, IFormCollection? form)
+  private static object? BindMultipartRequest(EndpointParameter param, HttpRequest httpRequest, IFormCollection? form)
   {
-    var instance = Activator.CreateInstance(parameterType)!;
+    var instance = param.Factory?.Invoke();
     if (instance is IMultipartServiceRequest bindable && form is not null)
     {
       bindable.BindMultipart(httpRequest, form);
@@ -199,61 +271,60 @@ internal static class EndpointExecutor
     return instance;
   }
 
-  private static object? BindJsonOrService(
-    EndpointParameter param,
-    JsonElement? rawBody,
-    HttpRequest httpRequest,
-    IServiceProvider services)
+  private static object? BindCustomScopedRequest(EndpointParameter param, JsonElement? rawBody, HttpRequest httpRequest)
   {
-    if (services.GetService(param.ParameterType) is { } resolvedService)
-    {
-      return resolvedService;
-    }
-
-    if (!param.ParameterType.IsClass ||
-        param.ParameterType == typeof(string) ||
-        IsUnregisteredFrameworkService(param.ParameterType))
+    if (param.Factory?.Invoke() is not IScopedServiceRequest scoped)
     {
       return param.HasDefaultValue ? param.DefaultValue : null;
     }
 
-    object? instance = null;
-    if (typeof(IScopedServiceRequest).IsAssignableFrom(param.ParameterType) &&
-        param.ParameterType.GetConstructor(Type.EmptyTypes) is not null)
+    if (rawBody.HasValue)
     {
-      var probe = (IScopedServiceRequest)Activator.CreateInstance(param.ParameterType)!;
-      if (probe.HandlesOwnJsonDeserialization)
-      {
-        instance = probe;
-      }
+      scoped.BindJsonBody(rawBody.Value);
     }
 
-    if (instance is null)
-    {
-      var json = rawBody.HasValue ? rawBody.Value.GetRawText() : "{}";
-      instance = JsonSerializer.Deserialize(json, param.ParameterType, PlatformJsonOptions.DefaultOptions)
-        ?? (param.ParameterType.GetConstructor(Type.EmptyTypes) is not null
-          ? Activator.CreateInstance(param.ParameterType)
-          : null);
-    }
+    ServiceRequestBinder.ApplyScopedHttpMetadata(httpRequest, scoped, rawBody);
+    return scoped;
+  }
+
+  private static object? BindScopedJsonBody(EndpointParameter param, JsonElement? rawBody, HttpRequest httpRequest)
+  {
+    var instance = rawBody is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null } rb
+      ? rb.Deserialize(param.ParameterType, PlatformJsonOptions.DefaultOptions) ?? param.Factory?.Invoke()
+      : param.Factory?.Invoke();
 
     if (instance is IScopedServiceRequest scoped)
     {
+      ServiceRequestBinder.ApplyScopedHttpMetadata(httpRequest, scoped, rawBody);
       if (rawBody.HasValue)
       {
         scoped.BindJsonBody(rawBody.Value);
       }
-
-      ServiceRequestBinder.ApplyScopedHttpMetadata(httpRequest, scoped, rawBody);
     }
 
     return instance;
   }
 
-  private static bool IsUnregisteredFrameworkService(Type parameterType) =>
-    parameterType.IsAbstract ||
-    parameterType == typeof(PlatformOptions) ||
-    typeof(IPlatformService).IsAssignableFrom(parameterType);
+  private static object? BindJsonBody(EndpointParameter param, JsonElement? rawBody)
+  {
+    if (rawBody is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null } rb)
+    {
+      return rb.Deserialize(param.ParameterType, PlatformJsonOptions.DefaultOptions);
+    }
+
+    if (rawBody is { ValueKind: JsonValueKind.Null } || param.HasDefaultValue)
+    {
+      return param.HasDefaultValue ? param.DefaultValue : null;
+    }
+
+    if (!param.ParameterType.IsClass || param.ParameterType == typeof(string))
+    {
+      return null;
+    }
+
+    return EmptyJsonObject.Deserialize(param.ParameterType, PlatformJsonOptions.DefaultOptions)
+      ?? param.Factory?.Invoke();
+  }
 
   private static long? ReadQueryOrBodyId(HttpRequest httpRequest, JsonElement? rawBody)
   {

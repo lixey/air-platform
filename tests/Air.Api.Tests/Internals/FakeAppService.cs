@@ -36,4 +36,13 @@ internal sealed class FakeAppService() : PlatformService()
   [Endpoint]
   public Task<string> ThrowConcurrencyConflictAsync() =>
     throw new DbUpdateConcurrencyException("Row version mismatch.");
+
+  [Endpoint]
+  public Task<IResult> EchoCustomScoped(CustomScopedPayload payload) =>
+    Task.FromResult(Results.Ok(new
+    {
+      id = payload.Id,
+      parentId = payload.ParentId,
+      hasRawPayload = payload.RawPayload is not null
+    }));
 }

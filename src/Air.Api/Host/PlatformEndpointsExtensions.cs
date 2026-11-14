@@ -18,7 +18,6 @@ public static class PlatformEndpointsExtensions
         ? await next(ctx)
         : Results.Unauthorized());
 
-    api.MapAuthEndpoints();
     api.MapFileEndpoints();
     api.MapServiceEndpoints();
     return api;

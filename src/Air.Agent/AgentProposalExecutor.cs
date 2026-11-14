@@ -14,7 +14,7 @@ public static class AgentProposalExecutor
     var batchResult = await CommitBatchAsync([proposal.Id], services, ct);
     var primary = batchResult.Committed.FirstOrDefault(c => string.Equals(c.ProposalId, proposal.Id, StringComparison.OrdinalIgnoreCase))
                   ?? batchResult.Committed.LastOrDefault()
-                  ?? throw new InvalidOperationException(Localizer.Instance["AgentErrorSave"]);
+                  ?? throw AgentRefusal.Create(Localizer.Instance["AgentErrorSave"]);
 
     var others = batchResult.Committed
       .Where(c => !string.Equals(c.ProposalId, primary.ProposalId, StringComparison.OrdinalIgnoreCase))
@@ -95,12 +95,12 @@ public static class AgentProposalExecutor
 
           if (prop.Status == "superseded")
           {
-            throw new InvalidOperationException(L["AgentProposalSuperseded"]);
+            throw AgentRefusal.Create(L["AgentProposalSuperseded"]);
           }
 
           if (prop.Status == "committing")
           {
-            throw new InvalidOperationException(L["MutationRefused"]);
+            throw AgentRefusal.Create(L["MutationRefused"]);
           }
 
           prop.Status = "committing";
@@ -223,14 +223,14 @@ public static class AgentProposalExecutor
 
     var isEdit = payload.RecordId is > 0;
     var formType = ModuleCatalog.Instance.FindServiceType(payload.Service)
-      ?? throw new InvalidOperationException($"Form service '{payload.Service}' not found.");
+      ?? throw AgentRefusal.Create(L["MutationRefused"]);
     var stepScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, formType, scopes[0]);
 
     if (ModuleCatalog.Instance.CreateServiceInstance(formType, stepScope.Db, stepScope.App) is not IFormService formInst ||
         !formInst.Feature.AllowsAgentWrite ||
         !AgentFeatureRegistry.CanEditFeature(formInst.Feature, stepScope.App))
     {
-      throw new InvalidOperationException(L["MutationRefused"]);
+      throw AgentRefusal.Create(L["MutationRefused"]);
     }
 
     formInst.SetRequest(new FormRequest { Id = isEdit ? payload.RecordId : null });
@@ -248,13 +248,13 @@ public static class AgentProposalExecutor
     }
     catch (FormRefusedException refusedEx)
     {
-      throw new InvalidOperationException(FormatRefusedException(refusedEx, formElements), refusedEx);
+      throw AgentRefusal.Create(FormatRefusedException(refusedEx, formElements), refusedEx);
     }
 
     if (!TryExtractSavedId(saveResult, out var recordId))
     {
       var refusedDto = saveResult as FormDataDto;
-      throw new InvalidOperationException(
+      throw AgentRefusal.Create(
         refusedDto?.Messages?.FirstOrDefault()?.Detail
         ?? refusedDto?.Warnings?.FirstOrDefault()?.Detail
         ?? L["AgentErrorSave"]);
@@ -292,14 +292,14 @@ public static class AgentProposalExecutor
         payload.RecordId is not > 0 ||
         string.IsNullOrWhiteSpace(payload.Transition))
     {
-      throw new InvalidOperationException(L["MutationRefused"]);
+      throw AgentRefusal.Create(L["MutationRefused"]);
     }
 
     var stepScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, formType ?? gridType ?? flowType, scopes[0]);
     var explicitRight = AgentFlowHelper.FindDeclaredTransitionRight(flowType, payload.Transition, stepScope.Db, stepScope.App);
     if (!AgentFlowHelper.CanMoveTransition(feature, stepScope.App.User, payload.Transition, explicitRight))
     {
-      throw new InvalidOperationException(L["MutationRefused"]);
+      throw AgentRefusal.Create(L["MutationRefused"]);
     }
 
     var (existing, _) = await AgentFlowHelper.EnsureRecordReachableAsync(

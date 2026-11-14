@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Platform.Api.Host.Internals;
 using Platform.App.Internals;
 using Platform.App.Tests.Internals;
 
@@ -251,7 +252,7 @@ public sealed class FormAndGridSecurityTests : IDisposable
     ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
     ctx.Request.ContentType = "application/json";
 
-    var result = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var result = await EndpointExecutor.DispatchAsync(
       typeof(TestInvoiceGridService),
       viewOnlyGrid,
       "save-cell",

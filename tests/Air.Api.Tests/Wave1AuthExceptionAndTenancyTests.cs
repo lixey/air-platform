@@ -22,14 +22,9 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     _connection = new SqliteConnection("DataSource=:memory:");
     _connection.Open();
     SessionTokenService.ConfigureSecret("wave1-unit-test-secret-with-more-than-32-characters");
-    AuthEndpointsExtensions.ClearGraceTokensForTesting();
   }
 
-  public void Dispose()
-  {
-    AuthEndpointsExtensions.ClearGraceTokensForTesting();
-    _connection.Dispose();
-  }
+  public void Dispose() => _connection.Dispose();
 
   [Fact]
   public async Task HttpTenantContext_IsFailClosed_WhenHttpContextNullOrUnauthenticated_AndAuthStoreUsesSystemScope()
@@ -229,7 +224,9 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     services.AddSingleton<IUserAuthCache>(sp =>
       new UserAuthCache(sp.GetRequiredService<ICacheProvider>(), sp.GetRequiredService<IServiceScopeFactory>()));
     services.AddSingleton<LoginRateLimiter>();
+    services.AddSingleton<SessionRefreshCoordinator>();
     services.AddSingleton<IPasswordHasher, PasswordHasher>();
+    services.AddScoped<PlatformAuthService>();
     services.AddScoped<ITenantContext, HttpTenantContext>();
     services.AddScoped(_ => new ApiTestDbContext(dbOptions, _.GetRequiredService<ITenantContext>()));
     services.AddScoped<IAuthStore, AuthStore<TestAuthUser, TestAuthSession, TestAuthRole, TestAuthGrant, TestAuthAssignment, TestAuthTenant, ApiTestDbContext>>();
@@ -259,15 +256,27 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
       }
     }
 
+    static void SetJsonBody<T>(HttpContext ctx, T payload)
+    {
+      var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, PlatformJsonOptions.DefaultOptions);
+      ctx.Request.ContentType = "application/json";
+      ctx.Request.ContentLength = bytes.Length;
+      ctx.Request.Body = new MemoryStream(bytes);
+    }
+
     // 1. /auth/login WITHOUT X-Platform-Client -> 403 Forbidden (Login CSRF protection)
     await using (var scope = provider.CreateAsyncScope())
     {
       var ctx = CreateHttpContext(scope.ServiceProvider, includeClientHeader: false);
-      var res = await AuthEndpointsExtensions.HandleLoginAsync(
-        new LoginRequest { Login = "alice", Password = "StrongPass#2026" },
-        ctx,
-        scope.ServiceProvider.GetRequiredService<IAuthStore>(),
-        scope.ServiceProvider.GetRequiredService<IPasswordHasher>(),
+      SetJsonBody(ctx, new LoginRequest { Login = "alice", Password = "StrongPass#2026" });
+      var authSvc = scope.ServiceProvider.GetRequiredService<PlatformAuthService>();
+      var res = await EndpointExecutor.DispatchAsync(
+        typeof(PlatformAuthService),
+        authSvc,
+        "login",
+        authSvc.Feature,
+        ctx.Request,
+        scope.ServiceProvider,
         CancellationToken.None);
       await res.ExecuteAsync(ctx);
       Assert.Equal(StatusCodes.Status403Forbidden, ctx.Response.StatusCode);
@@ -279,12 +288,16 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     await using (var scope = provider.CreateAsyncScope())
     {
       var ctx = CreateHttpContext(scope.ServiceProvider, includeClientHeader: true);
+      SetJsonBody(ctx, new LoginRequest { Login = "alice", Password = "StrongPass#2026" });
       var authStore = scope.ServiceProvider.GetRequiredService<IAuthStore>();
-      var res = await AuthEndpointsExtensions.HandleLoginAsync(
-        new LoginRequest { Login = "alice", Password = "StrongPass#2026" },
-        ctx,
-        authStore,
-        scope.ServiceProvider.GetRequiredService<IPasswordHasher>(),
+      var authSvc = scope.ServiceProvider.GetRequiredService<PlatformAuthService>();
+      var res = await EndpointExecutor.DispatchAsync(
+        typeof(PlatformAuthService),
+        authSvc,
+        "login",
+        authSvc.Feature,
+        ctx.Request,
+        scope.ServiceProvider,
         CancellationToken.None);
       await res.ExecuteAsync(ctx);
       Assert.Equal(StatusCodes.Status200OK, ctx.Response.StatusCode);
@@ -308,8 +321,16 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
       var ctx = CreateHttpContext(scope.ServiceProvider, includeClientHeader: true);
       ctx.Request.Headers.Cookie = $"{AuthClaims.RefreshCookie}={initialRefresh}";
       var authStore = scope.ServiceProvider.GetRequiredService<IAuthStore>();
+      var authSvc = scope.ServiceProvider.GetRequiredService<PlatformAuthService>();
 
-      var res = await AuthEndpointsExtensions.HandleRefreshAsync(ctx, authStore, CancellationToken.None);
+      var res = await EndpointExecutor.DispatchAsync(
+        typeof(PlatformAuthService),
+        authSvc,
+        "refresh",
+        authSvc.Feature,
+        ctx.Request,
+        scope.ServiceProvider,
+        CancellationToken.None);
       await res.ExecuteAsync(ctx);
       Assert.Equal(StatusCodes.Status200OK, ctx.Response.StatusCode);
 
@@ -328,9 +349,16 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     {
       var ctx = CreateHttpContext(scope.ServiceProvider, includeClientHeader: true);
       ctx.Request.Headers.Cookie = $"{AuthClaims.RefreshCookie}={initialRefresh}";
-      var authStore = scope.ServiceProvider.GetRequiredService<IAuthStore>();
+      var authSvc = scope.ServiceProvider.GetRequiredService<PlatformAuthService>();
 
-      var res = await AuthEndpointsExtensions.HandleRefreshAsync(ctx, authStore, CancellationToken.None);
+      var res = await EndpointExecutor.DispatchAsync(
+        typeof(PlatformAuthService),
+        authSvc,
+        "refresh",
+        authSvc.Feature,
+        ctx.Request,
+        scope.ServiceProvider,
+        CancellationToken.None);
       await res.ExecuteAsync(ctx);
       Assert.Equal(StatusCodes.Status200OK, ctx.Response.StatusCode);
 
@@ -348,8 +376,16 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
       var ctx = CreateHttpContext(scope.ServiceProvider, includeClientHeader: true);
       ctx.Request.Headers.Cookie = $"{AuthClaims.RefreshCookie}={initialRefresh}";
       var authStore = scope.ServiceProvider.GetRequiredService<IAuthStore>();
+      var authSvc = scope.ServiceProvider.GetRequiredService<PlatformAuthService>();
 
-      var res = await AuthEndpointsExtensions.HandleRefreshAsync(ctx, authStore, CancellationToken.None);
+      var res = await EndpointExecutor.DispatchAsync(
+        typeof(PlatformAuthService),
+        authSvc,
+        "refresh",
+        authSvc.Feature,
+        ctx.Request,
+        scope.ServiceProvider,
+        CancellationToken.None);
       await res.ExecuteAsync(ctx);
       Assert.Equal(StatusCodes.Status401Unauthorized, ctx.Response.StatusCode);
 
@@ -402,9 +438,11 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
 
     var service = new FakeAppService();
 
-    // 1. Async suffix normalization: CalculateSummaryAsync resolves via both 'calculate-summary' and 'calculate-summary-async'
+    // 1. Canonical kebab route normalization: CalculateSummaryAsync resolves ONLY via 'calculate-summary'
     Assert.NotNull(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculate-summary"));
-    Assert.NotNull(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculate-summary-async"));
+    Assert.Null(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculate-summary-async"));
+    Assert.Null(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculatesummary"));
+    Assert.Null(EndpointRegistry.FindReflectedEndpoint(typeof(FakeAppService), "calculatesummaryasync"));
 
     var validJson = """{"count":5,"total":10,"amount":25.5,"createdOn":"2026-05-10T00:00:00Z"}""";
     var (okStatus, okBody) = await InvokeCustomActionAsync(service, feat, services, "calculate-summary", validJson);
@@ -614,7 +652,7 @@ public sealed class Wave1AuthExceptionAndTenancyTests : IDisposable
     ctx.Request.Body = new MemoryStream(bytes);
     ctx.Response.Body = new MemoryStream();
 
-    var result = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var result = await EndpointExecutor.DispatchAsync(
       typeof(FakeAppService),
       service,
       method,

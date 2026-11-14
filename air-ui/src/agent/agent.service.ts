@@ -1,13 +1,14 @@
 import { Location } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
 import { effect, inject, Service, signal, untracked } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AlertService } from '../app/alert/alert.service';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { AuthService, identityOf } from '../app/auth/auth.service';
 import { LocaleService } from '../app/locale.service';
-import type { AgentModelDto, AgentStatusDto, AgentSyncSourceDto } from '../core/generated/contracts';
+import { Api } from '../core/api';
+import type { AgentModelDto, AgentSyncSourceDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import { UncertainIdempotency } from '../core/uncertain-idempotency';
 import { OverlayService } from '../overlay/overlay.service';
 import { AGENT_BLOCK_PLUGINS } from './agent-block-models';
 import {
@@ -50,7 +51,7 @@ export type {
 
 @Service()
 export class AgentService {
-  private readonly http = inject(HttpClient);
+  private readonly api = inject(Api);
   private readonly auth = inject(AuthService);
   private readonly location = inject(Location);
   private readonly overlay = inject(OverlayService);
@@ -63,7 +64,7 @@ export class AgentService {
   private nextId = 0;
   private statusLoaded = false;
   private lastIdentity = identityOf(this.auth.currentUser());
-  private readonly uncertainKeys = new Map<string, string>();
+  private readonly uncertainKeys = new UncertainIdempotency();
 
   readonly sessionId = signal<string>(createSessionId());
   readonly models = signal<readonly AgentModelDto[]>([]);
@@ -81,7 +82,7 @@ export class AgentService {
   readonly streamingDurationMs = signal(0);
 
   private readonly mutationHost: AgentMutationHost = {
-    http: this.http,
+    api: this.api,
     alert: this.alert,
     texts: this.texts,
     uncertainKeys: this.uncertainKeys,
@@ -122,7 +123,7 @@ export class AgentService {
     }
     this.statusLoaded = true;
     try {
-      const status = await firstValueFrom(this.http.get<AgentStatusDto>('/api/agent/status', shownByCaller()));
+      const status = await firstValueFrom(this.api.post('agent/get-status', undefined, shownByCaller()));
       if (status.models?.length) {
         this.models.set(status.models);
       }
@@ -150,7 +151,7 @@ export class AgentService {
 
   uploadFiles(files: FileList | readonly File[]): Promise<void> {
     return uploadAgentFiles(
-      this.http,
+      this.api,
       this.alert,
       this.texts,
       files,
@@ -160,7 +161,7 @@ export class AgentService {
   }
 
   uploadSingleFile(file: File): Promise<AgentAttachment | null> {
-    return uploadSingleAgentFile(this.http, this.alert, this.texts, file, v => this.isUploading.set(v));
+    return uploadSingleAgentFile(this.api, this.alert, this.texts, file, v => this.isUploading.set(v));
   }
 
   removePendingAttachment(id: string): void {
@@ -414,7 +415,7 @@ export class AgentService {
     this.pendingSyncSource.set(null);
     this.pendingSyncFile.set(null);
     this.sessionId.set(createSessionId());
-    await firstValueFrom(this.http.post('/api/agent/reset', { sessionId: oldSessionId }, shownByCaller())).catch(() => undefined);
+    await firstValueFrom(this.api.post('agent/reset', { sessionId: oldSessionId }, shownByCaller())).catch(() => undefined);
   }
 
   private patchAssistant(messageId: string, updater: (msg: AgentChatMessage) => AgentChatMessage): void {

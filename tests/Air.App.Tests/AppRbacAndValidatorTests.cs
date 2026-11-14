@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Platform.Api.Host.Internals;
 using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
@@ -124,7 +125,7 @@ public sealed class AppRbacAndValidatorTests : IDisposable
 
     var reportCtx = new DefaultHttpContext { RequestServices = services };
     reportCtx.Request.Path = "/api/test/summary-report/get-data";
-    var reportRes = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var reportRes = await EndpointExecutor.DispatchAsync(
       typeof(TestSummaryReportService),
       report,
       "get-data",
@@ -140,7 +141,7 @@ public sealed class AppRbacAndValidatorTests : IDisposable
 
     var screenCtx = new DefaultHttpContext { RequestServices = services };
     screenCtx.Request.Path = "/api/test/overview-screen/get-data";
-    var screenRes = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var screenRes = await EndpointExecutor.DispatchAsync(
       typeof(TestOverviewScreenService),
       screen,
       "get-data",

@@ -34,11 +34,10 @@ internal static class ServiceRequestBinder
     if (httpRequest.Headers.TryGetValue("Idempotency-Key", out var idemVals) && !string.IsNullOrWhiteSpace(idemVals))
     {
       req.IdempotencyKey = idemVals.ToString().Trim();
-    }
-
-    if (rawBody is { ValueKind: not JsonValueKind.Undefined })
-    {
-      req.RawPayload ??= rawBody.Value.GetRawText();
+      if (rawBody is { ValueKind: not JsonValueKind.Undefined })
+      {
+        req.RawPayload ??= rawBody.Value.GetRawText();
+      }
     }
   }
 
@@ -46,7 +45,9 @@ internal static class ServiceRequestBinder
     HttpRequest httpRequest,
     CancellationToken ct)
   {
-    if (!ServiceEndpointsExtensions.HasJsonBody(httpRequest) || httpRequest.HasFormContentType)
+    if (!ServiceEndpointsExtensions.HasJsonBody(httpRequest) ||
+        httpRequest.HasFormContentType ||
+        httpRequest.Body.CanSeek && httpRequest.Body.Length == 0)
     {
       return (null, false);
     }

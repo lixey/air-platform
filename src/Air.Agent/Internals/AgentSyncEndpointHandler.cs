@@ -14,7 +14,7 @@ internal static class AgentSyncEndpointHandler
     IAgentModelSynchronizer synchronizer,
     CancellationToken ct)
   {
-    var culture = AgentEndpointHandlers.ApplyTurnCulture(ctx.Request, body.Locale);
+    AgentEndpointHandlers.ApplyTurnCulture(ctx.Request, body.Locale, out var culture);
 
     if (string.IsNullOrWhiteSpace(body.SourceId) ||
         !string.IsNullOrWhiteSpace(body.SessionId) && !AgentStore.IsValidSessionId(body.SessionId))

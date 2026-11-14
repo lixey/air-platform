@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Platform.Api.Host.Internals;
 using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
@@ -210,7 +211,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
     saveHttp.Response.Body = new MemoryStream();
 
     var detailFormInstance = services.GetRequiredService<TestOrderDetailFormService>();
-    var saveResult = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var saveResult = await EndpointExecutor.DispatchAsync(
       typeof(TestOrderDetailFormService),
       detailFormInstance,
       "save",
@@ -301,7 +302,7 @@ public sealed class Wave4ActionsFlowAndMasterDetailTests : IDisposable
       ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(jsonBody));
       ctx.Response.Body = new MemoryStream();
       var gridInstance = services.GetRequiredService<TestOrderMasterGridService>();
-      var res = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+      var res = await EndpointExecutor.DispatchAsync(
         typeof(TestOrderMasterGridService),
         gridInstance,
         "stamp-note",

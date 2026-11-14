@@ -162,7 +162,7 @@ internal static class AgentBatchTransactionRunner
 
       if (contexts.Any(c => c.IsMutationRollbackOnly))
       {
-        throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+        throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
       }
 
       foreach (var ctx in contexts)

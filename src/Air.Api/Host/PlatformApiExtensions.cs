@@ -89,8 +89,12 @@ public static class PlatformApiExtensions
           sp.GetRequiredService<ICacheProvider>(),
           sp.GetRequiredService<IServiceScopeFactory>()));
       builder.Services.TryAddSingleton<Auth.Internals.LoginRateLimiter>();
+      builder.Services.TryAddSingleton<Auth.Internals.SessionRefreshCoordinator>();
       builder.Services.TryAddSingleton<Mutations.Internals.IdempotencyStore>();
       builder.Services.TryAddSingleton<FileLinks>();
+      builder.AddPlatformService<PlatformAuthService>();
+      builder.AddPlatformService<PlatformLanguageService>();
+      builder.AddPlatformService<PlatformTenantService>();
 
       var hasExplicitForwardedOption = builder.Services.Any(d =>
         d.ServiceType == typeof(PlatformOptions) &&
@@ -181,8 +185,53 @@ public static class PlatformApiExtensions
 
       return catalog.Freeze();
     });
-    builder.Services.TryAddSingleton(sp => EndpointRegistry.Build(sp.GetRequiredService<ModuleCatalog>()));
+    builder.Services.TryAddSingleton(sp =>
+      EndpointRegistry.Build(sp.GetRequiredService<ModuleCatalog>()));
 
+    return builder;
+  }
+
+  public static IServiceCollection AddPlatformService<TService>(this IServiceCollection services)
+    where TService : class, IPlatformService
+  {
+    var routeAttr = typeof(TService).GetCustomAttribute<ServiceRouteAttribute>()
+      ?? throw new InvalidOperationException(
+        $"Platform service '{typeof(TService).FullName}' is missing '[ServiceRoute(...)]'.");
+    return services.AddPlatformService<TService>(routeAttr.Route);
+  }
+
+  public static IServiceCollection AddPlatformService<TService>(this IServiceCollection services, string route)
+    where TService : class, IPlatformService
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(route);
+    services.TryAddScoped<TService>(sp =>
+    {
+      var svc = ActivatorUtilities.CreateInstance<TService>(sp);
+      svc.BindContext(sp.GetService<PlatformAppService>());
+      return svc;
+    });
+    var normalizedRoute = route.Trim('/');
+    if (services.All(d => d.ImplementationInstance is not ModuleCatalogSetup s || s.Key != normalizedRoute))
+    {
+      services.AddSingleton(new ModuleCatalogSetup(
+        catalog => catalog.RegisterPlatformService<TService>(normalizedRoute),
+        normalizedRoute));
+    }
+
+    return services;
+  }
+
+  public static WebApplicationBuilder AddPlatformService<TService>(this WebApplicationBuilder builder)
+    where TService : class, IPlatformService
+  {
+    builder.Services.AddPlatformService<TService>();
+    return builder;
+  }
+
+  public static WebApplicationBuilder AddPlatformService<TService>(this WebApplicationBuilder builder, string route)
+    where TService : class, IPlatformService
+  {
+    builder.Services.AddPlatformService<TService>(route);
     return builder;
   }
 
@@ -220,102 +269,7 @@ public static class PlatformApiExtensions
       app.UseMiddleware<SecurityHeadersMiddleware>();
     }
 
-    return app.Use(async (context, next) =>
-    {
-      if (context.RequestServices.GetService<ModuleCatalog>() is { } requestCatalog)
-      {
-        ServiceEndpointsExtensions.TryBindModuleDbScope(context.Request.Path, requestCatalog, context.RequestServices);
-      }
-
-      string? token = null;
-      var isCookie = false;
-
-      var accessCookieName = AuthClaims.GetAccessCookieName(context.Request.Host.Port);
-      if (context.Request.Cookies.TryGetValue(accessCookieName, out var cookieToken) &&
-          !string.IsNullOrWhiteSpace(cookieToken))
-      {
-        token = cookieToken;
-        isCookie = true;
-      }
-      else if (context.Request.Headers.TryGetValue("Authorization", out var authHeader) &&
-               authHeader.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-      {
-        token = authHeader.ToString()["Bearer ".Length..].Trim();
-      }
-
-      var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
-      if (!string.IsNullOrWhiteSpace(token) &&
-          SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _, out var tokenVersion, timeProvider) &&
-          context.RequestServices.GetService<IUserAuthCache>() is { } authCache &&
-          HasAuthStoreRegistered(context.RequestServices, authCache, out var fallbackStore))
-      {
-        var now = timeProvider.GetUtcNow();
-        var session = await authCache.GetSessionAsync(sessionId, fallbackStore, context.RequestAborted);
-        if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > now)
-        {
-          var user = await authCache.GetUserProfileAsync(userId, session.TenantId, fallbackStore, context.RequestAborted);
-          if (user != null && user.IsActive && user.TokenVersion == tokenVersion)
-          {
-            var claims = new List<Claim>(6)
-            {
-              new(AuthClaims.Sub, user.Id.ToString()),
-              new(AuthClaims.Login, user.Login),
-              new(AuthClaims.SessionId, session.Id.ToString()),
-              new(AuthClaims.Version, user.TokenVersion.ToString())
-            };
-
-            if (user.MustChangePassword)
-            {
-              claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
-            }
-
-            var tenantId = session.TenantId ?? user.HomeTenantId;
-            if (tenantId is > 0)
-            {
-              claims.Add(new Claim(AuthClaims.Tenant, tenantId.Value.ToString()));
-            }
-
-            context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "PlatformAuth"));
-            context.Items[AuthClaims.SnapshotItem] = user;
-
-            if (isCookie)
-            {
-              context.Items[AuthClaims.ViaCookieItem] = true;
-              if (!HttpMethods.IsGet(context.Request.Method) &&
-                  !HttpMethods.IsHead(context.Request.Method) &&
-                  !HttpMethods.IsOptions(context.Request.Method) &&
-                  !context.Request.Headers.ContainsKey(AuthClaims.ClientHeader))
-              {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return;
-              }
-            }
-
-            if (user.MustChangePassword)
-            {
-              var reqPath = context.Request.Path.Value ?? "";
-              if (reqPath.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) &&
-                  !reqPath.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase))
-              {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return;
-              }
-            }
-
-            using (AsyncLocalTenantContext.Use(tenantId, user.PermissionSet, user.Id, context.TraceIdentifier))
-            {
-              await next();
-              return;
-            }
-          }
-        }
-      }
-
-      using (AsyncLocalTenantContext.Use(null, null, null, context.TraceIdentifier))
-      {
-        await next();
-      }
-    });
+    return app.UseMiddleware<PlatformAuthMiddleware>();
   }
 
   public static RouteGroupBuilder MapPlatformApi(this WebApplication app)
@@ -361,20 +315,4 @@ public static class PlatformApiExtensions
   private static bool IsForwardedHeadersConfigured(IConfiguration configuration) =>
     configuration.GetValue<bool>("ForwardedHeaders:Enabled") ||
     string.Equals(configuration["ASPNETCORE_FORWARDEDHEADERS_ENABLED"], "true", StringComparison.OrdinalIgnoreCase);
-
-  private static bool HasAuthStoreRegistered(
-    IServiceProvider requestServices,
-    IUserAuthCache authCache,
-    out IAuthStore? fallbackStore)
-  {
-    if (authCache is Auth.Internals.UserAuthCache &&
-        requestServices.GetService<IServiceProviderIsService>() is { } serviceCheck)
-    {
-      fallbackStore = null;
-      return serviceCheck.IsService(typeof(IAuthStore));
-    }
-
-    fallbackStore = requestServices.GetService<IAuthStore>();
-    return fallbackStore != null;
-  }
 }

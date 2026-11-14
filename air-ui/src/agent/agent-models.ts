@@ -61,8 +61,11 @@ export function createSessionId(): string {
 }
 
 export function extractAgentErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof HttpErrorResponse && err.error?.title) {
-    return String(err.error.title);
+  if (err instanceof HttpErrorResponse) {
+    const detail = err.error?.messages?.[0]?.detail ?? err.error?.detail ?? err.error?.title;
+    if (typeof detail === 'string' && detail) {
+      return detail;
+    }
   }
   if (err instanceof Error && err.message) {
     return err.message;

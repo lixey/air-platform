@@ -10,7 +10,7 @@ public abstract class ReportService(PlatformAppService? app = null) : PlatformSe
 
   [Endpoint(Auth = EndpointAuth.View)]
   public virtual async Task<ScreenDto> GetData(
-    ReportRequest request,
+    ReportRequest? request,
     HttpRequest httpRequest,
     CancellationToken ct = default)
   {

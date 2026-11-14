@@ -8,9 +8,9 @@ public abstract partial class GridService<TEntity, TRow>
 {
   void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
 
-  [Endpoint(Auth = EndpointAuth.Custom)]
+  [Endpoint(Auth = EndpointAuth.Custom, ResponseType = typeof(ScreenDto))]
   public async Task<IResult> GetData(
-    GridRequest request,
+    GridRequest? request,
     HttpRequest httpRequest,
     IServiceProvider services,
     CancellationToken ct = default)
@@ -36,9 +36,9 @@ public abstract partial class GridService<TEntity, TRow>
     return Results.Ok(screen);
   }
 
-  [Endpoint(Auth = EndpointAuth.Custom)]
+  [Endpoint(Auth = EndpointAuth.Custom, ResponseType = typeof(GridCountDto))]
   public async Task<IResult> GetCount(
-    GridRequest request,
+    GridRequest? request,
     IServiceProvider services,
     CancellationToken ct = default)
   {
@@ -51,7 +51,7 @@ public abstract partial class GridService<TEntity, TRow>
     return Results.Ok(await GetCountAsync(req, ct));
   }
 
-  [Endpoint(Auth = EndpointAuth.Custom)]
+  [Endpoint(Auth = EndpointAuth.Custom, ResponseType = typeof(RowDto), ResponseNullable = true)]
   public async Task<IResult> GetOne(
     GridRequest request,
     CancellationToken ct = default)
@@ -82,7 +82,7 @@ public abstract partial class GridService<TEntity, TRow>
     CancellationToken ct = default) =>
     SaveCellAsync(request ?? new GridCellRequest(), services, ct);
 
-  [Endpoint(Auth = EndpointAuth.View)]
+  [Endpoint(Auth = EndpointAuth.View, RequestType = typeof(GridActionInputRequest))]
   public async Task<ActionInputDto> GetActionInput(
     GridRequest request,
     JsonElement? body,
@@ -93,8 +93,8 @@ public abstract partial class GridService<TEntity, TRow>
     return StatusMoveNavBuilder.ToActionInputDto(defaults);
   }
 
-  [Endpoint(Auth = EndpointAuth.Export)]
-  public Task<IResult> Export(GridRequest request, CancellationToken ct = default) =>
+  [Endpoint(Auth = EndpointAuth.Export, ResponseType = typeof(Stream))]
+  public Task<IResult> Export(GridRequest? request, CancellationToken ct = default) =>
     ExportAsync(request ?? new GridRequest(), ct);
 
   IEnumerable<string> IPlatformService.GetDynamicEndpointNames(ModuleCatalog catalog) =>

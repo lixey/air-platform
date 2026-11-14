@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Platform.Api.Host.Internals;
 using Platform.Api.Tests.Internals;
 
 namespace Platform.Api.Tests;
@@ -108,7 +109,7 @@ public sealed class ModuleRbacAndValidatorTests
     var emptyCtx = new DefaultHttpContext { RequestServices = services };
     emptyCtx.Request.QueryString = new QueryString("?id=77");
 
-    var resEmpty = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var resEmpty = await EndpointExecutor.DispatchAsync(
       typeof(FakeAppService),
       service,
       "echo-positional",
@@ -129,7 +130,7 @@ public sealed class ModuleRbacAndValidatorTests
     bodyCtx.Request.Body = new MemoryStream(jsonBytes);
     bodyCtx.Response.Body = new MemoryStream();
 
-    var resBody = await ServiceEndpointsExtensions.DispatchEndpointAsync(
+    var resBody = await EndpointExecutor.DispatchAsync(
       typeof(FakeAppService),
       service,
       "echo-positional",

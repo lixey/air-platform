@@ -126,4 +126,56 @@ internal static class AuthCookieHelper
       SameSite = SameSiteMode.Lax
     });
   }
+
+  public static (string? RawRefresh, bool UsedLegacyCookie) ReadRawRefreshToken(HttpRequest request, RefreshRequest? req)
+  {
+    if (!string.IsNullOrWhiteSpace(req?.RefreshToken))
+    {
+      return (req.RefreshToken, false);
+    }
+
+    var refreshCookieName = AuthClaims.GetRefreshCookieName(request.Host.Port);
+    if (request.Cookies.TryGetValue(refreshCookieName, out var refreshCookie) &&
+        !string.IsNullOrWhiteSpace(refreshCookie))
+    {
+      return (refreshCookie, false);
+    }
+
+    if (refreshCookieName != AuthClaims.RefreshCookie &&
+        request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var legacyRefresh) &&
+        !string.IsNullOrWhiteSpace(legacyRefresh))
+    {
+      return (legacyRefresh, true);
+    }
+
+    return (null, false);
+  }
+
+  public static async Task<BaseAppAuthSession?> FindLogoutSessionAsync(
+    HttpRequest request,
+    IUserContext userContext,
+    IAuthStore authStore,
+    CancellationToken ct)
+  {
+    if (userContext.SessionId is { } sid)
+    {
+      return await authStore.FindSessionAsync(sid, ct);
+    }
+
+    var refreshCookieName = AuthClaims.GetRefreshCookieName(request.Host.Port);
+    if (request.Cookies.TryGetValue(refreshCookieName, out var refreshCookie) &&
+        !string.IsNullOrWhiteSpace(refreshCookie))
+    {
+      return await authStore.FindSessionByHashAsync(SessionTokenService.HashRefreshToken(refreshCookie), ct);
+    }
+
+    if (refreshCookieName != AuthClaims.RefreshCookie &&
+        request.Cookies.TryGetValue(AuthClaims.RefreshCookie, out var legacyLogoutRefresh) &&
+        !string.IsNullOrWhiteSpace(legacyLogoutRefresh))
+    {
+      return await authStore.FindSessionByHashAsync(SessionTokenService.HashRefreshToken(legacyLogoutRefresh), ct);
+    }
+
+    return null;
+  }
 }

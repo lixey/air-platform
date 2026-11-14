@@ -287,7 +287,7 @@ public sealed class AgentStore
 
     if (!ProposalSeal.Verify(entry.Dto, owner, entry.Seal))
     {
-      throw new InvalidOperationException(Localizer.Instance["MutationRefused"]);
+      throw AgentRefusal.Create(Localizer.Instance["MutationRefused"]);
     }
 
     _proposals[proposalId] = entry with { LastAccessUtc = _time.GetUtcNow() };

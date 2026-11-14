@@ -30,7 +30,7 @@ internal static class AgentProposalChildExecutor
       }
 
       var childFormType = ModuleCatalog.Instance.FindServiceType(childGroup.ChildFormService)
-        ?? throw new InvalidOperationException(L["MutationRefused"]);
+        ?? throw AgentRefusal.Create(L["MutationRefused"]);
       var childScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, childFormType, parentScope);
 
       if (ModuleCatalog.Instance.CreateServiceInstance(childFormType, childScope.Db, childScope.App) is not IFormService metaChildForm ||
@@ -38,7 +38,7 @@ internal static class AgentProposalChildExecutor
           !AgentFeatureRegistry.IsChildAgentWriteAllowed(metaChildForm.Feature, parentForm.Feature) ||
           !AgentFeatureRegistry.CanEditFeature(metaChildForm.Feature, childScope.App))
       {
-        throw new InvalidOperationException(L["MutationRefused"]);
+        throw AgentRefusal.Create(L["MutationRefused"]);
       }
 
       metaChildForm.SetRequest(new FormRequest { ParentService = parentForm.Service, ParentId = recordId });
@@ -84,7 +84,7 @@ internal static class AgentProposalChildExecutor
 
         if (ModuleCatalog.Instance.CreateServiceInstance(childFormType, childScope.Db, childScope.App) is not IFormService childFormInst)
         {
-          throw new InvalidOperationException(L["MutationRefused"]);
+          throw AgentRefusal.Create(L["MutationRefused"]);
         }
 
         var lineJson = JsonSerializer.SerializeToElement(lineDict, WebJson);
@@ -108,7 +108,7 @@ internal static class AgentProposalChildExecutor
             var lineErr = lineDto?.Messages?.FirstOrDefault()?.Detail
               ?? lineDto?.Warnings?.FirstOrDefault()?.Detail
               ?? L["MutationRefused"];
-            throw new InvalidOperationException($"{lineName}: {lineErr}");
+            throw AgentRefusal.Create($"{lineName}: {lineErr}");
           }
 
           if (childFormInst.GetLastSaveWarnings() is { Count: > 0 } childWarnings)
@@ -119,7 +119,7 @@ internal static class AgentProposalChildExecutor
         catch (FormRefusedException refusedEx)
         {
           var lineName = FormatChildLineLabel(lineDict, childPrimaryTextKey, sortOrder);
-          throw new InvalidOperationException(FormatRefusedException(refusedEx, childElements, lineName), refusedEx);
+          throw AgentRefusal.Create(FormatRefusedException(refusedEx, childElements, lineName), refusedEx);
         }
       }
     }
@@ -155,7 +155,7 @@ internal static class AgentProposalChildExecutor
         !AgentFeatureRegistry.CanViewFeature(cg.Feature, gridScope.App) ||
         !AgentFeatureRegistry.CanEditFeature(cg.Feature, gridScope.App))
     {
-      throw new InvalidOperationException(L["MutationRefused"]);
+      throw AgentRefusal.Create(L["MutationRefused"]);
     }
 
     return cg;
@@ -189,8 +189,8 @@ internal static class AgentProposalChildExecutor
 
       if (!isAppend && existingPage.Total > MaxReplaceableChildRows)
       {
-        throw new InvalidOperationException(
-          $"Cannot replace {existingPage.Total} child rows in '{childKey}'; maximum supported in a single proposal is {MaxReplaceableChildRows}.");
+        throw AgentRefusal.Create(
+          Localizer.Instance["AgentChildReplaceLimitExceeded", MaxReplaceableChildRows, childKey]);
       }
 
       foreach (var rowObj in existingPage.Rows)
@@ -210,8 +210,8 @@ internal static class AgentProposalChildExecutor
 
       if (!isAppend && existingLineIds.Count > MaxReplaceableChildRows)
       {
-        throw new InvalidOperationException(
-          $"Cannot replace more than {MaxReplaceableChildRows} child rows in '{childKey}' in a single proposal.");
+        throw AgentRefusal.Create(
+          Localizer.Instance["AgentChildReplaceLimitExceeded", MaxReplaceableChildRows, childKey]);
       }
 
       if (existingPage.Rows.Count < PageBatchSize ||
@@ -256,7 +256,7 @@ internal static class AgentProposalChildExecutor
   {
     if (!childGrid.CanDelete())
     {
-      throw new InvalidOperationException(L["MutationRefused"]);
+      throw AgentRefusal.Create(L["MutationRefused"]);
     }
 
     if (childGrid.AllowsMultiDelete)
@@ -270,7 +270,7 @@ internal static class AgentProposalChildExecutor
         if (delRes.Outcome != MutationOutcome.Committed)
         {
           var msg = delRes.Messages?.FirstOrDefault()?.Detail ?? delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
-          throw new InvalidOperationException(msg);
+          throw AgentRefusal.Create(msg);
         }
       }
 
@@ -285,7 +285,7 @@ internal static class AgentProposalChildExecutor
       if (delRes.Outcome != MutationOutcome.Committed)
       {
         var msg = delRes.Messages?.FirstOrDefault()?.Detail ?? delRes.Warnings?.FirstOrDefault()?.Detail ?? delRes.Title ?? L["MutationRefused"];
-        throw new InvalidOperationException(msg);
+        throw AgentRefusal.Create(msg);
       }
     }
   }

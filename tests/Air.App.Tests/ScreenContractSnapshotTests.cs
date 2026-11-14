@@ -19,6 +19,7 @@ using Platform.App.Tests.Internals;
 
 namespace Platform.App.Tests;
 
+[Collection("ModuleCatalog")]
 public sealed class ScreenContractSnapshotTests
 {
   private static readonly DateTimeOffset FixedUtcNow = new(2026, 3, 15, 10, 0, 0, TimeSpan.Zero);

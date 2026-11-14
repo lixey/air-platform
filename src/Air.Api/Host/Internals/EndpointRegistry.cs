@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Platform.Api.Host.Internals;
 
@@ -34,36 +35,37 @@ internal sealed class EndpointRegistry
 
       foreach (var reflected in DescribeServiceType(serviceType))
       {
-        foreach (var actionName in reflected.ActionNames)
+        var pattern = $"/{serviceName}/{reflected.ActionName}";
+        if (byRoute.ContainsKey(pattern))
         {
-          var pattern = $"/{serviceName}/{actionName}";
-          if (byRoute.ContainsKey(pattern))
-          {
-            continue;
-          }
+          continue;
+        }
 
-          var desc = new EndpointDescriptor
-          {
-            RoutePattern = pattern,
-            ServiceName = serviceName,
-            ActionName = actionName,
-            ServiceType = serviceType,
-            DbContextType = dbContextType,
-            StaticFeature = feat,
-            Method = reflected.Method,
-            Auth = reflected.Auth,
-            IsAnonymous = reflected.IsAnonymous,
-            UsesRawHttp = reflected.UsesRawHttp,
-            UsesFormFiles = reflected.UsesFormFiles,
-            Parameters = reflected.Parameters,
-            CompiledInvoker = reflected.CompiledInvoker
-          };
-          descriptors.Add(desc);
-          byRoute[pattern] = desc;
-          if (dbContextType is not null)
-          {
-            dbContextByRoute[$"/api{pattern}"] = dbContextType;
-          }
+        var desc = new EndpointDescriptor
+        {
+          RoutePattern = pattern,
+          ServiceName = serviceName,
+          ActionName = reflected.ActionName,
+          ServiceType = serviceType,
+          DbContextType = dbContextType,
+          StaticFeature = feat,
+          Method = reflected.Method,
+          Auth = reflected.Auth,
+          IsAnonymous = reflected.IsAnonymous,
+          RequireClientHeader = reflected.RequireClientHeader,
+          UsesRawHttp = reflected.UsesRawHttp,
+          UsesFormFiles = reflected.UsesFormFiles,
+          ExplicitRequestType = reflected.ExplicitRequestType,
+          ExplicitResponseType = reflected.ExplicitResponseType,
+          ExplicitResponseNullable = reflected.ExplicitResponseNullable,
+          Parameters = reflected.Parameters,
+          CompiledInvoker = reflected.CompiledInvoker
+        };
+        descriptors.Add(desc);
+        byRoute[pattern] = desc;
+        if (dbContextType is not null)
+        {
+          dbContextByRoute[$"/api{pattern}"] = dbContextType;
         }
       }
 
@@ -109,6 +111,7 @@ internal sealed class EndpointRegistry
   public static IReadOnlyList<ReflectedEndpoint> DescribeServiceType(Type serviceType) =>
     ReflectedTypeCache.GetOrAdd(serviceType, static t =>
     {
+      var nullability = new NullabilityInfoContext();
       var list = new List<ReflectedEndpoint>();
       foreach (var method in t.GetMethods(BindingFlags.Public | BindingFlags.Instance))
       {
@@ -133,7 +136,7 @@ internal sealed class EndpointRegistry
         for (var i = 0; i < rawParams.Length; i++)
         {
           var p = rawParams[i];
-          var kind = ClassifyParameter(p.ParameterType);
+          var (kind, factory) = ClassifyParameter(p, method);
           if (kind is EndpointParameterKind.HttpRequest or EndpointParameterKind.HttpContext)
           {
             hasRawHttp = true;
@@ -142,45 +145,50 @@ internal sealed class EndpointRegistry
           {
             hasFormFiles = true;
           }
-          else if (kind is EndpointParameterKind.RawJsonBody or EndpointParameterKind.MultipartBody or EndpointParameterKind.JsonBodyOrService)
+          else if (IsBodyParameterKind(kind))
           {
             hasStructuredBody = true;
           }
+
+          var isNullable = Nullable.GetUnderlyingType(p.ParameterType) is not null ||
+                           nullability.Create(p).ReadState == NullabilityState.Nullable;
 
           parameters[i] = new EndpointParameter(
             p.Name ?? $"arg{i}",
             p.ParameterType,
             kind,
+            isNullable,
             p.HasDefaultValue,
-            p.HasDefaultValue ? p.DefaultValue : null);
+            p.HasDefaultValue ? p.DefaultValue : null,
+            factory);
         }
 
         list.Add(new ReflectedEndpoint
         {
           Method = method,
-          ActionNames = ResolveActionNames(method, endpointAttr),
+          ActionName = ResolveActionName(method, endpointAttr),
           Auth = directEndpointAttr?.Auth ?? (hasExplicitGuard ? EndpointAuth.Default : endpointAttr?.Auth ?? EndpointAuth.Default),
           IsAnonymous = isAnon,
+          RequireClientHeader = directEndpointAttr?.RequireClientHeader == true || endpointAttr?.RequireClientHeader == true,
           UsesRawHttp = hasRawHttp && !hasStructuredBody && !hasFormFiles,
           UsesFormFiles = hasFormFiles,
+          ExplicitRequestType = directEndpointAttr?.RequestType ?? endpointAttr?.RequestType,
+          ExplicitResponseType = directEndpointAttr?.ResponseType ?? endpointAttr?.ResponseType,
+          ExplicitResponseNullable = directEndpointAttr?.ResponseNullable ?? endpointAttr?.ResponseNullable ?? false,
           Parameters = parameters,
-          CompiledInvoker = EndpointInvokerCompiler.Compile(t, method)
+          CompiledInvoker = t.ContainsGenericParameters ? null : EndpointInvokerCompiler.Compile(t, method)
         });
       }
 
       return list;
     });
 
-  public static ReflectedEndpoint? FindReflectedEndpoint(Type serviceType, string method)
+  public static ReflectedEndpoint? FindReflectedEndpoint(Type serviceType, string actionName)
   {
-    var normalized = StripAsyncSuffix(method.Replace("-", "", StringComparison.Ordinal));
+    var trimmed = actionName.Trim('/');
     foreach (var ep in DescribeServiceType(serviceType))
     {
-      if (ep.ActionNames.Contains(method, StringComparer.OrdinalIgnoreCase) ||
-          string.Equals(ep.Method.Name, method, StringComparison.OrdinalIgnoreCase) ||
-          string.Equals(ep.Method.Name, normalized, StringComparison.OrdinalIgnoreCase) ||
-          string.Equals(StripAsyncSuffix(ep.Method.Name), method, StringComparison.OrdinalIgnoreCase) ||
-          string.Equals(StripAsyncSuffix(ep.Method.Name), normalized, StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(ep.ActionName, trimmed, StringComparison.OrdinalIgnoreCase))
       {
         return ep;
       }
@@ -189,74 +197,102 @@ internal sealed class EndpointRegistry
     return null;
   }
 
-  private static EndpointParameterKind ClassifyParameter(Type parameterType)
+  internal static bool IsBodyParameterKind(EndpointParameterKind kind) =>
+    kind is EndpointParameterKind.RawJsonBody
+      or EndpointParameterKind.MultipartBody
+      or EndpointParameterKind.CustomScopedRequest
+      or EndpointParameterKind.ScopedJsonBody
+      or EndpointParameterKind.JsonBody;
+
+  private static (EndpointParameterKind Kind, Func<object>? Factory) ClassifyParameter(ParameterInfo parameter, MethodInfo method)
   {
+    var parameterType = parameter.ParameterType;
     if (parameterType == typeof(CancellationToken))
     {
-      return EndpointParameterKind.CancellationToken;
+      return (EndpointParameterKind.CancellationToken, null);
     }
 
     if (parameterType == typeof(HttpRequest))
     {
-      return EndpointParameterKind.HttpRequest;
+      return (EndpointParameterKind.HttpRequest, null);
     }
 
     if (parameterType == typeof(HttpContext))
     {
-      return EndpointParameterKind.HttpContext;
+      return (EndpointParameterKind.HttpContext, null);
     }
 
     if (parameterType == typeof(IServiceProvider))
     {
-      return EndpointParameterKind.ServiceProvider;
+      return (EndpointParameterKind.ServiceProvider, null);
     }
 
     if (parameterType == typeof(IFormFileCollection))
     {
-      return EndpointParameterKind.FormFiles;
+      return (EndpointParameterKind.FormFiles, null);
     }
 
     if (parameterType == typeof(JsonElement?))
     {
-      return EndpointParameterKind.RawJsonBody;
+      return (EndpointParameterKind.RawJsonBody, null);
     }
 
-    if (parameterType == typeof(long))
+    if (parameterType == typeof(long) || parameterType == typeof(long?))
     {
-      return EndpointParameterKind.RouteOrBodyId;
+      return (EndpointParameterKind.RouteOrBodyId, null);
     }
 
     if (typeof(IMultipartServiceRequest).IsAssignableFrom(parameterType))
     {
-      return EndpointParameterKind.MultipartBody;
+      return (EndpointParameterKind.MultipartBody, CompileParameterlessFactory(parameterType));
     }
 
-    return EndpointParameterKind.JsonBodyOrService;
-  }
-
-  private static IReadOnlyList<string> ResolveActionNames(MethodInfo method, EndpointAttribute? endpointAttr)
-  {
-    if (!string.IsNullOrWhiteSpace(endpointAttr?.Name))
+    if (parameter.GetCustomAttribute<FromServicesAttribute>() is not null ||
+        parameterType.IsInterface ||
+        parameterType.IsAbstract ||
+        typeof(IPlatformService).IsAssignableFrom(parameterType) ||
+        parameterType == typeof(PlatformOptions) ||
+        parameterType == typeof(TimeProvider))
     {
-      return [endpointAttr.Name.Trim('/')];
+      return (EndpointParameterKind.FromServices, null);
     }
 
-    var stripped = StripAsyncSuffix(method.Name);
-    var names = new List<string>(4);
-    AddUnique(names, ServicePathResolver.ToKebabCase(stripped));
-    AddUnique(names, ServicePathResolver.ToKebabCase(method.Name));
-    AddUnique(names, stripped.ToLowerInvariant());
-    AddUnique(names, method.Name.ToLowerInvariant());
-    return names;
-  }
-
-  private static void AddUnique(List<string> list, string candidate)
-  {
-    if (!string.IsNullOrWhiteSpace(candidate) && !list.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+    if (!parameterType.IsClass ||
+        parameterType == typeof(string) ||
+        parameterType == typeof(object) ||
+        typeof(Delegate).IsAssignableFrom(parameterType))
     {
-      list.Add(candidate);
+      throw new InvalidOperationException(
+        $"Unsupported [Endpoint] parameter '{parameter.Name}' of type '{parameterType.FullName}' on '{method.DeclaringType?.FullName}.{method.Name}'. Endpoint parameters must be a request DTO class/record, 'long'/'long?' id, framework HTTP/CancellationToken type, interface, or marked with [FromServices].");
     }
+
+    var factory = CompileParameterlessFactory(parameterType);
+    if (typeof(IScopedServiceRequest).IsAssignableFrom(parameterType))
+    {
+      var handlesCustom = factory is not null && ((IScopedServiceRequest)factory()).HandlesOwnJsonDeserialization;
+      return (handlesCustom ? EndpointParameterKind.CustomScopedRequest : EndpointParameterKind.ScopedJsonBody, factory);
+    }
+
+    return (EndpointParameterKind.JsonBody, factory);
   }
+
+  private static Func<object>? CompileParameterlessFactory(Type type)
+  {
+    if (type.IsAbstract || type.IsInterface || type.ContainsGenericParameters)
+    {
+      return null;
+    }
+
+    var ctor = type.GetConstructor(Type.EmptyTypes);
+    return ctor is null
+      ? null
+      : Expression.Lambda<Func<object>>(Expression.Convert(Expression.New(ctor), typeof(object))).Compile();
+  }
+
+  private static string ResolveActionName(MethodInfo method, EndpointAttribute? endpointAttr) =>
+    !string.IsNullOrWhiteSpace(endpointAttr?.Name)
+      ? endpointAttr.Name.Trim('/')
+      : ServicePathResolver.ToKebabCase(StripAsyncSuffix(method.Name));
 
   private static string StripAsyncSuffix(string name) =>
     name.Length > "Async".Length && name.EndsWith("Async", StringComparison.OrdinalIgnoreCase)

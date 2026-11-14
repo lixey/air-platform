@@ -61,64 +61,6 @@ public static class ServiceEndpointsExtensions
     }
   }
 
-  public static async Task<IResult> DispatchEndpointAsync(
-    Type serviceType,
-    object serviceInstance,
-    string method,
-    Feature? feat,
-    HttpRequest httpRequest,
-    IServiceProvider services,
-    CancellationToken ct)
-  {
-    (serviceInstance as IPlatformService)?.BindContext(services.GetService<PlatformAppService>());
-    if (EndpointRegistry.FindReflectedEndpoint(serviceType, method) is { } reflected)
-    {
-      return await EndpointExecutor.ExecuteReflectedAsync(
-        reflected.Method,
-        reflected.Parameters,
-        reflected.CompiledInvoker,
-        reflected.Auth,
-        reflected.IsAnonymous,
-        reflected.UsesRawHttp,
-        reflected.UsesFormFiles,
-        serviceInstance,
-        feat ?? (serviceInstance as IPlatformService)?.Feature,
-        httpRequest,
-        services,
-        ct);
-    }
-
-    if (serviceInstance is IPlatformService platformService)
-    {
-      var userContext = services.GetService<IUserContext>();
-      if (userContext is null or { IsAuthenticated: false })
-      {
-        return Results.Unauthorized();
-      }
-
-      var (body, isMalformed) = await ServiceRequestBinder.TryReadJsonBodyAsync(httpRequest, ct);
-      if (isMalformed)
-      {
-        return Results.BadRequest(new { detail = Localizer.Instance["InvalidJsonRequest"] });
-      }
-
-      try
-      {
-        var dyn = await platformService.ExecuteDynamicEndpointAsync(method, httpRequest, body, services, ct);
-        if (dyn is not null)
-        {
-          return dyn;
-        }
-      }
-      catch (Exception ex) when (PlatformEndpointsExtensions.TryMapException(ex, out var mapped))
-      {
-        return mapped;
-      }
-    }
-
-    return Results.NotFound();
-  }
-
   public static bool HasJsonBody(HttpRequest httpRequest) =>
     httpRequest.ContentLength is > 0 ||
     httpRequest.ContentLength is null &&

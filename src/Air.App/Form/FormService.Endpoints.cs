@@ -9,7 +9,7 @@ public abstract partial class FormService<TEntity>
 
   [Endpoint(Auth = EndpointAuth.View)]
   public async Task<ScreenDto> GetData(
-    FormRequest request,
+    FormRequest? request,
     HttpRequest httpRequest,
     CancellationToken ct = default)
   {
@@ -21,7 +21,7 @@ public abstract partial class FormService<TEntity>
     return screen;
   }
 
-  [Endpoint(Auth = EndpointAuth.Custom)]
+  [Endpoint(Auth = EndpointAuth.Custom, RequestType = typeof(FormRequest), ResponseType = typeof(FormDataDto))]
   public async Task<IResult> Save(
     JsonElement? body,
     HttpRequest httpRequest,
@@ -37,7 +37,7 @@ public abstract partial class FormService<TEntity>
     return Results.Ok(await BuildFormDataAsync(entity, outcome: MutationOutcome.Committed, ct: ct));
   }
 
-  [Endpoint(Auth = EndpointAuth.View)]
+  [Endpoint(Auth = EndpointAuth.View, RequestType = typeof(FormActionInputRequest))]
   public async Task<ActionInputDto> GetActionInput(
     FormRequest request,
     JsonElement? body,
