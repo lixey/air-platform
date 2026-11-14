@@ -5,7 +5,7 @@ namespace Platform.App.Metadata;
 /// </summary>
 public sealed class PlatformMetadataService(PlatformAppService? app = null) : PlatformService(app)
 {
-  private static readonly Feature MetadataFeature = new(string.Empty, "Metadata", typeof(PlatformMetadataService));
+  private static readonly Feature MetadataFeature = new("Platform", "Metadata", typeof(PlatformMetadataService));
 
   public override Feature Feature => MetadataFeature;
 

@@ -86,10 +86,16 @@ public static class PlatformValidator
     using var scope = services?.CreateScope();
     var scopedServices = scope?.ServiceProvider;
     var seenServicePaths = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+    var validatedServiceTypes = new HashSet<Type>();
 
     var knownHandles = catalog.Modules.Select(m => m.Handle).ToArray();
     foreach (var module in catalog.Modules)
     {
+      if (string.Equals(module.Handle, "Platform", StringComparison.OrdinalIgnoreCase))
+      {
+        throw new InvalidOperationException("Module handle 'Platform' is reserved for built-in platform services.");
+      }
+
       var serviceTypes = ModuleCatalog.GetModuleServiceTypes(module, knownHandles);
 
       foreach (var serviceType in serviceTypes)
@@ -120,6 +126,7 @@ public static class PlatformValidator
         }
 
         seenServicePaths[routePath] = serviceType;
+        validatedServiceTypes.Add(serviceType);
 
         var instance = (scopedServices?.GetService(serviceType) ?? catalog.CreateServiceInstance(serviceType, scopedServices)) as IPlatformService
           ?? throw new InvalidOperationException(
@@ -137,6 +144,24 @@ public static class PlatformValidator
         ValidateServiceMethodAttributes(catalog, serviceType, feat);
         instance.ValidateConfiguration(catalog);
       }
+    }
+
+    foreach (var (routePath, serviceType) in catalog.ServiceRoutes)
+    {
+      if (!validatedServiceTypes.Add(serviceType))
+      {
+        continue;
+      }
+
+      var instance = (scopedServices?.GetService(serviceType) ?? catalog.CreateServiceInstance(serviceType, scopedServices)) as IPlatformService
+        ?? throw new InvalidOperationException(
+          $"Cannot instantiate platform service '{serviceType.FullName}' registered at '{routePath}' during startup validation.");
+
+      var feat = instance.Feature
+        ?? throw new InvalidOperationException($"Platform service '{serviceType.FullName}' returned a null Feature.");
+
+      ValidateServiceMethodAttributes(catalog, serviceType, feat);
+      instance.ValidateConfiguration(catalog);
     }
   }
 

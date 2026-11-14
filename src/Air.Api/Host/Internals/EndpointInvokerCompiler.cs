@@ -55,10 +55,16 @@ internal static class EndpointInvokerCompiler
     {
       return Expression.Block(
         callExpr,
-        Expression.Call(WrapSyncResultMethod, Expression.Constant(null, typeof(object))));
+        Expression.Call(
+          WrapSyncResultMethod,
+          Expression.Constant(null, typeof(object)),
+          Expression.Constant(true)));
     }
 
-    return Expression.Call(WrapSyncResultMethod, Expression.Convert(callExpr, typeof(object)));
+    return Expression.Call(
+      WrapSyncResultMethod,
+      Expression.Convert(callExpr, typeof(object)),
+      Expression.Constant(typeof(MutationResultDto).IsAssignableFrom(returnType)));
   }
 
   private static Expression ConvertArgument(Expression valueExpr, Type parameterType)
@@ -91,14 +97,31 @@ internal static class EndpointInvokerCompiler
       return httpResult;
     }
 
-    return PlatformEndpointsExtensions.ToMutationResult(
-      (object?)result ?? new MutationResultDto { Outcome = MutationOutcome.Committed });
+    if (result is null)
+    {
+      return typeof(MutationResultDto).IsAssignableFrom(typeof(T))
+        ? PlatformEndpointsExtensions.ToMutationResult(new MutationResultDto { Outcome = MutationOutcome.Committed })
+        : Results.Json<object?>(null);
+    }
+
+    return PlatformEndpointsExtensions.ToMutationResult(result);
   }
 
-  private static Task<IResult> WrapSyncResult(object? result) =>
-    Task.FromResult(
-      result is IResult httpResult
-        ? httpResult
-        : PlatformEndpointsExtensions.ToMutationResult(
-          result ?? new MutationResultDto { Outcome = MutationOutcome.Committed }));
+  private static Task<IResult> WrapSyncResult(object? result, bool defaultMutationWhenNull)
+  {
+    if (result is IResult httpResult)
+    {
+      return Task.FromResult(httpResult);
+    }
+
+    if (result is null)
+    {
+      var nullResult = defaultMutationWhenNull
+        ? PlatformEndpointsExtensions.ToMutationResult(new MutationResultDto { Outcome = MutationOutcome.Committed })
+        : Results.Json<object?>(null);
+      return Task.FromResult(nullResult);
+    }
+
+    return Task.FromResult(PlatformEndpointsExtensions.ToMutationResult(result));
+  }
 }
