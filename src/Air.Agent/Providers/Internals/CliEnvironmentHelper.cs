@@ -150,7 +150,6 @@ internal static class CliEnvironmentHelper
     try
     {
       var contextFilePath = AgentStore.GetContextFilePath(turnWorkspaceDir);
-      var recordsFilePath = AgentStore.GetRecordsFilePath(turnWorkspaceDir);
       var hasPhoto = effectiveRequest.Attachments.Any(a =>
         string.IsNullOrEmpty(a.ContentType) || a.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
       var ctxObj = await AgentContextQueryService.BuildContextAsync(
@@ -170,8 +169,6 @@ internal static class CliEnvironmentHelper
         }
       }
 
-      var extendedRecordsObj = await AgentContextQueryService.BuildExtendedWorkspaceRecordsAsync(effectiveRequest.Services, ct);
-      await File.WriteAllTextAsync(recordsFilePath, JsonSerializer.Serialize(extendedRecordsObj, PromptJsonOptions), Encoding.UTF8, ct);
       return contextJson;
     }
     catch

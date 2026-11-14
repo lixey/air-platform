@@ -145,7 +145,8 @@ internal static class AgentDuplicateDetector
 
     bool IsCompatible(AgentProposalDto p) =>
       string.IsNullOrWhiteSpace(referenceService) ||
-      AgentStepGraphHelper.AreServicesEntityCompatible(referenceService, p.Service);
+      AgentStepGraphHelper.AreServicesEntityCompatible(referenceService, p.Service) ||
+      !string.IsNullOrWhiteSpace(p.FormService) && AgentStepGraphHelper.AreServicesEntityCompatible(referenceService, p.FormService);
 
     if (!string.IsNullOrWhiteSpace(turnId))
     {

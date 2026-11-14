@@ -9,134 +9,93 @@ internal static class AgentProposalFlowBuilder
     ProposalBuildContext ctx,
     JsonElement args,
     string requestedTransition,
-    long recordId,
+    long? recordId,
+    string? targetRefKey,
     string? requestedService,
     CancellationToken ct)
   {
-    var valuesSource = args.TryGetProperty("values", out var vProp) && vProp.ValueKind == JsonValueKind.Object ? vProp : args;
+    var valuesSource = TryGetPropertyIgnoreCase(args, "values", out var vProp) && vProp.ValueKind == JsonValueKind.Object ? vProp : args;
     var stepKey = AgentStepGraphHelper.TryExtractStepKey(args);
 
     var (feature, formType, gridType) = ResolveMoveTargetFeature(requestedService);
-    if (feature is not { AgentAccess: AgentAccess.ReadWrite } || formType == null && gridType == null)
+    if (feature is not { AllowsAgentWrite: true } || formType == null && gridType == null)
     {
       throw new InvalidOperationException($"Status flow on '{requestedService}' is not available or not enabled for AI mutations.");
     }
 
-    var (_, transitions) = await AgentFlowHelper.DiscoverFeatureFlowAsync(feature, ctx.Services, ctx.Db, ctx.App, ct);
-    if (transitions.Count == 0)
+    await using var scope = AgentModuleScope.OpenForService(ctx.Services, formType ?? gridType, ctx.Db, ctx.App);
+    if (!AgentFeatureRegistry.CanViewFeature(feature, scope.App))
+    {
+      throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
+    }
+
+    var formInst = formType != null ? ModuleCatalog.Instance.CreateServiceInstance(formType, scope.Db, scope.App) as IFormService : null;
+    var gridInst = gridType != null ? ModuleCatalog.Instance.CreateServiceInstance(gridType, scope.Db, scope.App) as IGridService : null;
+
+    var flowDesc = (formInst != null ? await formInst.DescribeStatusFlowAsync(ct) : null)
+      ?? (gridInst != null ? await gridInst.DescribeStatusFlowAsync(ct) : null);
+
+    if (flowDesc == null || flowDesc.Transitions.Count == 0)
     {
       throw new InvalidOperationException($"No permitted status transitions are available on '{requestedService}'.");
     }
 
-    var matched = transitions.FirstOrDefault(t => string.Equals(t.Name, requestedTransition, StringComparison.OrdinalIgnoreCase))
-      ?? transitions.FirstOrDefault(t => string.Equals(t.Label, requestedTransition, StringComparison.OrdinalIgnoreCase))
+    var matched = flowDesc.Transitions.FirstOrDefault(t => string.Equals(t.Name, requestedTransition, StringComparison.OrdinalIgnoreCase))
+      ?? flowDesc.Transitions.FirstOrDefault(t => string.Equals(t.Label, requestedTransition, StringComparison.OrdinalIgnoreCase))
       ?? throw new InvalidOperationException($"Transition '{requestedTransition}' is not available or permitted.");
 
-    await using var scope = AgentModuleScope.OpenForService(ctx.Services, formType ?? gridType ?? matched.FlowServiceType, ctx.Db, ctx.App);
+    var formServicePath = formType != null ? ServicePathResolver.Resolve(formType) : null;
+    var primaryServicePath = formServicePath ?? ServicePathResolver.Resolve(gridType!);
 
-    var (reachableEntity, rowObj) = await AgentFlowHelper.EnsureRecordReachableAsync(
-      feature,
-      formType,
-      gridType,
-      recordId,
-      scope.Db,
-      scope.App,
-      ct);
-
-    var (_, currentStatusName, recordVer) = await AgentFlowHelper.ValidateRecordForTransitionAsync(
-      matched.FlowServiceType,
-      feature,
-      recordId,
-      reachableEntity,
-      matched,
-      scope.Db,
-      scope.App,
-      ct);
-
-    var recordCaption = rowObj != null ? GetRowDisplayName(CleanGridRow(rowObj)) : null;
-
-    var askSource = TryGetPropertyIgnoreCase(args, "ask", out var askEl) && askEl.ValueKind == JsonValueKind.Object
-      ? askEl
-      : valuesSource;
-
-    var askValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
     var newReferences = new List<PendingNewReference>();
-    var explicitAskFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var askEditable = matched.AskElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
+    var effectiveId = recordId;
+    string? pendingTargetName = null;
 
-    var refServices = askEditable
-      .Select(e => (e.Model as FormSelectModel)?.ReferenceService)
-      .Where(s => !string.IsNullOrEmpty(s))
-      .Cast<string>()
-      .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-    var (dictionaries, _) = await AgentContextQueryService.LoadSmartDictionariesAsync(
-      refServices,
-      ctx.Options.MaxFullDictionarySize,
-      [],
-      scope.Db,
-      scope.App,
-      ct);
-
-    foreach (var el in askEditable)
+    if (!string.IsNullOrWhiteSpace(targetRefKey))
     {
-      var hasProp = TryGetPropertyIgnoreCase(askSource, el.Path, out var rawProp) ||
-                    !askSource.Equals(args) && TryGetPropertyIgnoreCase(args, el.Path, out rawProp);
-      if (!hasProp || rawProp.ValueKind == JsonValueKind.Undefined)
+      var refTarget = ctx.FindReferencedProposal(targetRefKey, primaryServicePath)
+        ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
+      effectiveId = refTarget.RecordId is > 0 ? refTarget.RecordId.Value : null;
+      pendingTargetName = AgentStepGraphHelper.GetProposalShortLabel(refTarget);
+      newReferences.Add(new PendingNewReference
       {
-        continue;
-      }
-
-      explicitAskFields.Add(el.Path);
-      if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))
-      {
-        if (AgentStepGraphHelper.TryExtractRefKey(rawProp, out var refKey))
-        {
-          var refTarget = ctx.FindReferencedProposal(refKey, select.ReferenceService)
-            ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
-          askValues[el.Path] = refTarget.RecordId is > 0 ? refTarget.RecordId.Value : null;
-          newReferences.Add(new PendingNewReference
-          {
-            FieldPath = el.Path,
-            Name = AgentStepGraphHelper.GetProposalShortLabel(refTarget),
-            FormService = refTarget.Service,
-            ProposalId = refTarget.Id,
-            StepKey = refKey,
-            StepNumber = refTarget.StepNumber,
-            IsExistingRecordEdit = refTarget.RecordId is > 0
-          });
-          continue;
-        }
-
-        var (resolvedId, _, _) = await AgentReferenceResolver.ResolveReferenceValueAsync(
-          rawProp,
-          select.ReferenceService,
-          select.ReferenceFilter,
-          allowFuzzy: true,
-          allowWrongKindFallback: false,
-          dictionaries,
-          scope.Db,
-          scope.App,
-          ct,
-          select.ReferenceLabelPaths);
-        askValues[el.Path] = resolvedId;
-      }
-      else
-      {
-        askValues[el.Path] = ConvertJsonValue(rawProp, el.Type);
-      }
+        FieldPath = "__targetId",
+        Name = pendingTargetName,
+        FormService = refTarget.Service,
+        ProposalId = refTarget.Id,
+        StepKey = targetRefKey,
+        StepNumber = refTarget.StepNumber,
+        IsExistingRecordEdit = refTarget.RecordId is > 0
+      });
     }
 
-    if (matched.Ask != null && newReferences.All(r => r.IsExistingRecordEdit))
+    if (effectiveId is > 0 && gridInst != null && await gridInst.ReadRowAsync(effectiveId.Value, ct) == null)
     {
-      var askJson = JsonSerializer.SerializeToElement(askValues, WebJson);
-      var parsedAsk = matched.Ask.Read(askJson);
-      var moduleLocalizer = Localizer.Instance.For(feature.Module);
-      var askFailures = await matched.Ask.ValidateAsync(parsedAsk, scope.Db, scope.App, moduleLocalizer, ct);
-      if (askFailures.Count > 0)
+      throw new KeyNotFoundException(ctx.Localizer["FormNotFound"]);
+    }
+
+    var askEditable = matched.AskElements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
+    var (askValues, explicitAskFields, skipValidationPaths, dictionaries) = await AgentReferenceResolver.ParseAskInputsAsync(
+      ctx, args, valuesSource, askEditable, newReferences, scope.Db, scope.App, ct);
+
+    var askJson = JsonSerializer.SerializeToElement(askValues, WebJson);
+    StatusMovePreviewDto preview;
+    try
+    {
+      preview = formInst != null && await formInst.DescribeStatusFlowAsync(ct) != null
+        ? await formInst.PreviewMoveStatusAsync(effectiveId, matched.Name, askJson, skipValidationPaths, ct)
+        : await gridInst!.PreviewMoveStatusAsync(effectiveId, matched.Name, askJson, skipValidationPaths, ct);
+    }
+    catch (FormRefusedException refusedEx)
+    {
+      throw new InvalidOperationException(FormatRefusedException(refusedEx, matched.AskElements), refusedEx);
+    }
+
+    foreach (var (k, v) in preview.AskValues)
+    {
+      if (!explicitAskFields.Contains(k) && !skipValidationPaths.Contains(k) && v != null)
       {
-        var firstErr = askFailures[0];
-        throw new InvalidOperationException(firstErr.Detail ?? firstErr.Title ?? ctx.Localizer["MutationRefused"]);
+        askValues[k] = v;
       }
     }
 
@@ -153,47 +112,30 @@ internal static class AgentProposalFlowBuilder
       new()
       {
         Label = statusLabel,
-        Value = $"{currentStatusName} → {matched.ToStatusName}",
+        Value = $"{preview.CurrentStatusName} → {preview.TargetStatusName}",
         Badge = ctx.Localizer["AgentChangedBadge"],
-        Color = matched.ToStatusColor ?? UiColor.Blue
+        Color = preview.TargetStatusColor ?? UiColor.Blue
       }
     };
 
-    var askDisplayFields = AgentProposalDisplayBuilder.BuildDisplayFields(
-      askEditable,
-      [],
-      askValues,
-      newReferences,
-      explicitAskFields,
-      dictionaries,
-      isEdit: false,
-      ctx.Localizer);
-    fields.AddRange(askDisplayFields);
+    fields.AddRange(AgentProposalDisplayBuilder.BuildDisplayFields(
+      askEditable, [], askValues, newReferences, explicitAskFields, dictionaries, isEdit: false, ctx.Localizer));
 
-    var formServicePath = formType != null ? ServicePathResolver.Resolve(formType) : null;
-    var primaryServicePath = formServicePath
-      ?? (gridType != null ? ServicePathResolver.Resolve(gridType) : ServicePathResolver.Resolve(matched.FlowServiceType));
+    var overlay = formInst != null && formServicePath != null
+      ? await formInst.OverlayAsync(formServicePath, ct)
+      : null;
 
-    OverlayDto? overlay = null;
-    if (formType != null &&
-        formServicePath != null &&
-        ModuleCatalog.Instance.CreateServiceInstance(formType, scope.Db, scope.App) is IFormService formInst)
-    {
-      overlay = await formInst.OverlayAsync(formServicePath, ct);
-    }
-
-    var title = !string.IsNullOrWhiteSpace(recordCaption)
-      ? $"#{recordId} · {recordCaption}"
-      : $"#{recordId} · {matched.Label}";
+    var caption = preview.RecordCaption ?? pendingTargetName;
+    var title = BuildMoveTitle(effectiveId, caption, preview.TransitionLabel);
 
     var payload = JsonSerializer.SerializeToElement(
       new StagedProposalPayload
       {
         Operation = AgentProposalOperation.MoveStatus,
         Service = primaryServicePath,
-        Transition = matched.Name,
-        RecordId = recordId,
-        Ver = recordVer,
+        Transition = preview.TransitionName,
+        RecordId = effectiveId,
+        Ver = preview.Ver,
         StepKey = stepKey,
         Values = askValues,
         ExplicitFields = [.. explicitAskFields],
@@ -202,21 +144,29 @@ internal static class AgentProposalFlowBuilder
       },
       WebJson);
 
+    var warningTexts = preview.Warnings
+      .Select(w => w.Detail ?? w.Title)
+      .Where(d => !string.IsNullOrWhiteSpace(d))
+      .Select(d => d!)
+      .Distinct(StringComparer.Ordinal)
+      .ToList();
+
     var proposal = new AgentProposalDto
     {
       Id = Guid.NewGuid().ToString("N")[..12],
       SessionId = ctx.SessionId,
       Operation = AgentProposalOperation.MoveStatus,
       Service = primaryServicePath,
-      Transition = matched.Name,
-      RecordId = recordId,
+      Transition = preview.TransitionName,
+      RecordId = effectiveId,
       StepKey = stepKey,
       DependsOn = dependsOnIds.Count > 0 ? dependsOnIds : null,
       Title = title,
-      Subtitle = !string.IsNullOrWhiteSpace(recordCaption) ? matched.Label : null,
-      Badge = matched.Label,
-      BadgeColor = matched.ToStatusColor ?? UiColor.Blue,
+      Subtitle = effectiveId is > 0 && !string.IsNullOrWhiteSpace(caption) ? preview.TransitionLabel : null,
+      Badge = preview.TransitionLabel,
+      BadgeColor = preview.TargetStatusColor ?? UiColor.Blue,
       Fields = fields,
+      Warnings = warningTexts.Count > 0 ? warningTexts : null,
       Payload = payload,
       FormService = formServicePath,
       Overlay = overlay,
@@ -225,6 +175,95 @@ internal static class AgentProposalFlowBuilder
 
     ctx.Store.StageProposal(proposal, ctx.Owner);
     return proposal;
+  }
+
+  public static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)> ExecuteMoveStatusStepAsync(
+    AgentProposalDto proposal,
+    StagedProposalPayload payload,
+    HashSet<(Type EntityType, long RecordId)> preVerifiedEdits,
+    IReadOnlyList<AgentModuleScope> scopes,
+    IReadOnlyList<string> refreshServices,
+    Localizer L,
+    CancellationToken mutationCt)
+  {
+    var (feature, formType, gridType) = ResolveMoveTargetFeature(payload.Service);
+    if (feature is not { AllowsAgentWrite: true } ||
+        formType == null && gridType == null ||
+        payload.RecordId is not > 0 ||
+        string.IsNullOrWhiteSpace(payload.Transition))
+    {
+      throw AgentRefusal.Create(L["MutationRefused"]);
+    }
+
+    var stepScope = AgentModuleScope.SelectScopeForService(scopes, formType ?? gridType, scopes[0]);
+    if (!AgentFeatureRegistry.CanViewFeature(feature, stepScope.App))
+    {
+      throw AgentRefusal.Create(L["MutationRefused"]);
+    }
+
+    var formInst = formType != null ? ModuleCatalog.Instance.CreateServiceInstance(formType, stepScope.Db, stepScope.App) as IFormService : null;
+    var gridInst = gridType != null ? ModuleCatalog.Instance.CreateServiceInstance(gridType, stepScope.Db, stepScope.App) as IGridService : null;
+
+    if (gridInst != null && await gridInst.ReadRowAsync(payload.RecordId.Value, mutationCt) == null)
+    {
+      throw new KeyNotFoundException(L["FormNotFound"]);
+    }
+
+    JsonElement? askJson = payload.Values.Count > 0 ? JsonSerializer.SerializeToElement(payload.Values, WebJson) : null;
+    StatusMovePreviewDto livePreview;
+    try
+    {
+      livePreview = formInst != null && await formInst.DescribeStatusFlowAsync(mutationCt) != null
+        ? await formInst.PreviewMoveStatusAsync(payload.RecordId.Value, payload.Transition, askJson, ct: mutationCt)
+        : await gridInst!.PreviewMoveStatusAsync(payload.RecordId.Value, payload.Transition, askJson, ct: mutationCt);
+    }
+    catch (FormRefusedException refusedEx)
+    {
+      throw AgentRefusal.Create(refusedEx.Messages.FirstOrDefault()?.Detail ?? refusedEx.Message, refusedEx);
+    }
+
+    var ver = payload.Ver;
+    var entityType = ModuleCatalog.GetServiceEntityType(formType ?? gridType);
+    if (livePreview.Ver != null &&
+        entityType != null &&
+        preVerifiedEdits.Contains((entityType, payload.RecordId.Value)) &&
+        (ver == null || ver.Value != livePreview.Ver.Value))
+    {
+      ver = livePreview.Ver;
+    }
+
+    List<MessageDto>? warnings;
+    if (formInst != null && await formInst.DescribeStatusFlowAsync(mutationCt) != null)
+    {
+      var res = await formInst.MoveStatusAsync(payload.RecordId.Value, payload.Transition, askJson, ver, mutationCt);
+      if (res.Outcome != MutationOutcome.Committed)
+      {
+        var fallback = res.Outcome == MutationOutcome.Conflict ? L["FormChangedElsewhere"] : L["MutationRefused"];
+        throw AgentRefusal.Create(res.Messages?.FirstOrDefault()?.Detail ?? fallback);
+      }
+
+      warnings = res.Warnings;
+    }
+    else
+    {
+      var gridReq = new GridRequest
+      {
+        SelectedIds = [payload.RecordId.Value],
+        SelectedVersions = ver.HasValue ? [ver.Value] : null
+      };
+      var res = await gridInst!.MoveStatusAsync(gridReq, payload.Transition, askJson, mutationCt);
+      if (res.Outcome != MutationOutcome.Committed)
+      {
+        var fallback = res.Outcome == MutationOutcome.Conflict ? L["FormChangedElsewhere"] : L["MutationRefused"];
+        throw AgentRefusal.Create(res.Messages?.FirstOrDefault()?.Detail ?? fallback);
+      }
+
+      warnings = res.Warnings;
+    }
+
+    var formPath = formType != null ? ServicePathResolver.Resolve(formType) : payload.Service;
+    var label = !string.IsNullOrWhiteSpace(proposal.Title) ? proposal.Title : $"#{payload.RecordId.Value}";
+    return (payload.RecordId.Value, label, formPath, [.. refreshServices], warnings);
   }
 
   internal static (Feature? Feature, Type? FormServiceType, Type? GridServiceType) ResolveMoveTargetFeature(string? requestedService)
@@ -264,5 +303,17 @@ internal static class AgentProposalFlowBuilder
     }
 
     return (feature, formType, gridType);
+  }
+
+  private static string BuildMoveTitle(long? effectiveId, string? caption, string transitionLabel)
+  {
+    if (effectiveId is > 0)
+    {
+      return !string.IsNullOrWhiteSpace(caption)
+        ? $"#{effectiveId.Value} · {caption}"
+        : $"#{effectiveId.Value} · {transitionLabel}";
+    }
+
+    return !string.IsNullOrWhiteSpace(caption) ? $"{transitionLabel}: {caption}" : transitionLabel;
   }
 }

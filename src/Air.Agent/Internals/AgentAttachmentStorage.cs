@@ -17,7 +17,13 @@ internal static class AgentAttachmentStorage
 
   public static string GetSessionWorkspaceDirectory(string workspaceDirectory, AgentOwnerScope owner, string safeSessionId)
   {
-    var dir = Path.Combine(workspaceDirectory, FormatTenantSegment(owner.TenantId), FormatUserSegment(owner.UserId), safeSessionId);
+    var dir = Path.Combine(
+      workspaceDirectory,
+      FormatTenantSegment(owner.TenantId),
+      FormatUserSegment(owner.UserId),
+      "sessions",
+      safeSessionId,
+      "workspace");
     EnsurePrivateDirectory(dir);
     return dir;
   }

@@ -61,6 +61,12 @@ public class GridActionBuilder<TEntity>
     return this;
   }
 
+  public GridActionBuilder<TEntity> AllowAgent(bool allow = true)
+  {
+    Entry.IsAgentAllowed = allow;
+    return this;
+  }
+
   public GridActionBuilder<TEntity> Single(bool single = true)
   {
     Entry.IsSingle = single;

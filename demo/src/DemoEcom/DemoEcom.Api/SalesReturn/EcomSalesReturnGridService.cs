@@ -35,6 +35,7 @@ public sealed class EcomSalesReturnGridService(EcomDbContext db, EcomSalesReturn
       .Label("Create outgoing payment")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
         db,
         ctx,

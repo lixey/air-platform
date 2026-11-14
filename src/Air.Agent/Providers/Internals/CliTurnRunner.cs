@@ -68,7 +68,17 @@ internal static class CliTurnRunner
 
     var turnWorkspaceDir = store.CreateTurnWorkspaceDirectory(request.Owner, request.SessionId);
     var sessionAttachmentsDir = store.GetSessionAttachmentsDirectory(request.Owner, request.SessionId);
+    var sessionState = store.GetOrCreateSessionState(request.SessionId, request.Owner);
+    var currentFingerprint = AgentTurnDeltaTracker.ComputeSessionFingerprint(request.Services, request.Owner);
+
     var existingConvId = store.GetConversationId(request.SessionId, request.Owner, providerHandle);
+    if (!string.IsNullOrWhiteSpace(existingConvId) &&
+        (!sessionState.ContextFingerprints.TryGetValue(providerHandle, out var storedFp) ||
+         !string.Equals(storedFp, currentFingerprint, StringComparison.Ordinal)))
+    {
+      store.RemoveConversationId(request.SessionId, request.Owner, providerHandle);
+      existingConvId = null;
+    }
 
     var fullAssistantText = new StringBuilder();
     var emittedProposals = 0;
@@ -76,6 +86,7 @@ internal static class CliTurnRunner
     var timedOut = false;
     Task<string>? stderrTask = null;
     var effectiveRequest = request;
+    Dictionary<long, string>? latestMemorySnapshot = null;
 
     try
     {
@@ -85,169 +96,209 @@ internal static class CliTurnRunner
         effectiveRequest = request with { Attachments = stagedAttachments };
       }
 
-      var contextJson = await CliEnvironmentHelper.PrepareContextFilesAsync(effectiveRequest, turnWorkspaceDir, ct);
-      var prompt = await AgentPromptBuilder.BuildPromptAsync(effectiveRequest, contextJson, turnWorkspaceDir, ct);
       var utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-
-      var psi = new ProcessStartInfo
-      {
-        FileName = executablePath,
-        WorkingDirectory = turnWorkspaceDir,
-        RedirectStandardInput = true,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-        StandardInputEncoding = utf8NoBom,
-        StandardOutputEncoding = Encoding.UTF8,
-        StandardErrorEncoding = Encoding.UTF8
-      };
-
       var mcpTurnToken = effectiveRequest.Services?.GetService<McpExecutionBridge>()?.Active?.TurnToken;
       var mcpConfigPath = await CliEnvironmentHelper.WriteMcpConfigAsync(
         turnWorkspaceDir, request.McpServerUrl, mcpTurnToken, utf8NoBom, ct);
 
-      ScrubStartInfoEnvironment(psi, mcpTurnToken, request.SessionId, request.McpServerUrl);
-      var stdinPayload = configureStartInfoAndStdin(
-        psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest);
-
-      using var process = new Process { StartInfo = psi };
-      var pendingEvents = new List<AgentStreamEventDto>();
-      using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-      turnCts.CancelAfter(store.Options.TurnTimeout);
-
-      try
+      var hasImageAttachment = effectiveRequest.Attachments.Any(a => AgentAttachmentValidator.IsInlineSafeImage(a.ContentType));
+      yield return new AgentStreamEventDto
       {
-        process.Start();
-        stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        Type = AgentStreamEventType.Status,
+        Text = hasImageAttachment ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
+        ModelId = selectedModel,
+        ModelName = modelDisplayName
+      };
+
+      for (var attempt = 0; attempt < 2; attempt++)
+      {
+        var isResumeAttempt = !string.IsNullOrWhiteSpace(existingConvId);
+        string prompt;
+        if (isResumeAttempt)
+        {
+          sessionState.MemorySnapshots.TryGetValue(providerHandle, out var prevSnapshot);
+          var (changedMemoriesBlock, snapshot) = await AgentTurnDeltaTracker.CollectMemorySnapshotAsync(
+            effectiveRequest.Services, request.Owner, prevSnapshot, ct);
+          latestMemorySnapshot = snapshot;
+          var (today, mentionedRecords) = await AgentContextQueryService.BuildDeltaContextAsync(
+            effectiveRequest.Services, effectiveRequest.Message, ct);
+          prompt = await AgentPromptBuilder.BuildDeltaPromptAsync(
+            effectiveRequest, today, mentionedRecords, changedMemoriesBlock, turnWorkspaceDir, ct);
+        }
+        else
+        {
+          var (_, snapshot) = await AgentTurnDeltaTracker.CollectMemorySnapshotAsync(
+            effectiveRequest.Services, request.Owner, previousSnapshot: null, ct);
+          latestMemorySnapshot = snapshot;
+          var contextJson = await CliEnvironmentHelper.PrepareContextFilesAsync(effectiveRequest, turnWorkspaceDir, ct);
+          prompt = await AgentPromptBuilder.BuildPromptAsync(effectiveRequest, contextJson, turnWorkspaceDir, ct);
+        }
+
+        var psi = new ProcessStartInfo
+        {
+          FileName = executablePath,
+          WorkingDirectory = turnWorkspaceDir,
+          RedirectStandardInput = true,
+          RedirectStandardOutput = true,
+          RedirectStandardError = true,
+          UseShellExecute = false,
+          CreateNoWindow = true,
+          StandardInputEncoding = utf8NoBom,
+          StandardOutputEncoding = Encoding.UTF8,
+          StandardErrorEncoding = Encoding.UTF8
+        };
+
+        ScrubStartInfoEnvironment(psi, mcpTurnToken, request.SessionId, request.McpServerUrl);
+        var stdinPayload = configureStartInfoAndStdin(
+          psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest);
+
+        using var process = new Process { StartInfo = psi };
+        var pendingEvents = new List<AgentStreamEventDto>();
+        using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        turnCts.CancelAfter(store.Options.TurnTimeout);
+        var resumeFailedBeforeOutput = false;
 
         try
         {
-          if (!string.IsNullOrEmpty(stdinPayload))
+          process.Start();
+          stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+
+          try
           {
-            await process.StandardInput.WriteAsync(stdinPayload.AsMemory(), turnCts.Token);
-            await process.StandardInput.FlushAsync(turnCts.Token);
+            if (!string.IsNullOrEmpty(stdinPayload))
+            {
+              await process.StandardInput.WriteAsync(stdinPayload.AsMemory(), turnCts.Token);
+              await process.StandardInput.FlushAsync(turnCts.Token);
+            }
+
+            process.StandardInput.Close();
+          }
+          catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+          {
+            timedOut = true;
+          }
+          catch (IOException)
+          {
+            // Child CLI exited before draining stdin
           }
 
-          process.StandardInput.Close();
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-          timedOut = true;
-        }
-        catch (IOException)
-        {
-          // Child CLI exited before draining stdin
-        }
-
-        var hasImageAttachment = effectiveRequest.Attachments.Any(a => AgentAttachmentValidator.IsInlineSafeImage(a.ContentType));
-        yield return new AgentStreamEventDto
-        {
-          Type = AgentStreamEventType.Status,
-          Text = hasImageAttachment ? L["AgentStatusReadingPhoto"] : L["AgentStatusAnalyzing"],
-          ModelId = selectedModel,
-          ModelName = modelDisplayName
-        };
-
-        while (!ct.IsCancellationRequested)
-        {
-          string? line;
-          using (var idleCts = CancellationTokenSource.CreateLinkedTokenSource(turnCts.Token))
+          while (!ct.IsCancellationRequested)
           {
-            idleCts.CancelAfter(store.Options.IdleOutputTimeout);
+            string? line;
+            using (var idleCts = CancellationTokenSource.CreateLinkedTokenSource(turnCts.Token))
+            {
+              idleCts.CancelAfter(store.Options.IdleOutputTimeout);
+              try
+              {
+                line = await process.StandardOutput.ReadLineAsync(idleCts.Token);
+              }
+              catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+              {
+                timedOut = true;
+                break;
+              }
+            }
+
+            if (line is null)
+            {
+              break;
+            }
+
+            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith('{'))
+            {
+              continue;
+            }
+
+            JsonDocument? doc;
             try
             {
-              line = await process.StandardOutput.ReadLineAsync(idleCts.Token);
+              doc = JsonDocument.Parse(line);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch
             {
-              timedOut = true;
+              continue;
+            }
+
+            bool shouldBreak;
+            pendingEvents.Clear();
+            using (doc)
+            {
+              var outcome = handleJsonLine(doc.RootElement, fullAssistantText, pendingEvents);
+              shouldBreak = outcome.ShouldBreak;
+              if (outcome.EmittedError)
+              {
+                if (isResumeAttempt && attempt == 0 && fullAssistantText.Length == 0 && emittedProposals == 0)
+                {
+                  resumeFailedBeforeOutput = true;
+                  break;
+                }
+
+                emittedError = true;
+              }
+            }
+
+            foreach (var evt in pendingEvents)
+            {
+              yield return evt;
+            }
+
+            var midTurnSuperseded = store.DrainSupersededProposalIds(request.SessionId, request.Owner);
+            if (midTurnSuperseded.Count > 0)
+            {
+              yield return new AgentStreamEventDto
+              {
+                Type = AgentStreamEventType.Supersede,
+                SupersededProposalIds = [.. midTurnSuperseded]
+              };
+            }
+
+            foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
+            {
+              emittedProposals++;
+              yield return new AgentStreamEventDto
+              {
+                Type = AgentStreamEventType.Proposal,
+                Proposal = staged
+              };
+            }
+
+            if (shouldBreak)
+            {
               break;
             }
           }
-
-          if (line is null)
-          {
-            break;
-          }
-
-          if (string.IsNullOrWhiteSpace(line) || !line.StartsWith('{'))
-          {
-            continue;
-          }
-
-          JsonDocument? doc;
+        }
+        finally
+        {
           try
           {
-            doc = JsonDocument.Parse(line);
-          }
-          catch
-          {
-            continue;
-          }
-
-          bool shouldBreak;
-          pendingEvents.Clear();
-          using (doc)
-          {
-            var outcome = handleJsonLine(doc.RootElement, fullAssistantText, pendingEvents);
-            shouldBreak = outcome.ShouldBreak;
-            if (outcome.EmittedError)
+            if (!process.HasExited && !ct.IsCancellationRequested && !timedOut)
             {
-              emittedError = true;
+              await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
             }
           }
+          catch { }
 
-          foreach (var evt in pendingEvents)
+          try
           {
-            yield return evt;
-          }
-
-          var midTurnSuperseded = store.DrainSupersededProposalIds(request.SessionId, request.Owner);
-          if (midTurnSuperseded.Count > 0)
-          {
-            yield return new AgentStreamEventDto
+            if (!process.HasExited)
             {
-              Type = AgentStreamEventType.Supersede,
-              SupersededProposalIds = [.. midTurnSuperseded]
-            };
+              process.Kill(entireProcessTree: true);
+            }
           }
-
-          foreach (var staged in store.DrainPendingProposals(request.SessionId, request.Owner))
-          {
-            emittedProposals++;
-            yield return new AgentStreamEventDto
-            {
-              Type = AgentStreamEventType.Proposal,
-              Proposal = staged
-            };
-          }
-
-          if (shouldBreak)
-          {
-            break;
-          }
+          catch { }
         }
-      }
-      finally
-      {
-        try
+
+        var emptyResumeExit = isResumeAttempt && attempt == 0 && !timedOut && !ct.IsCancellationRequested &&
+                              fullAssistantText.Length == 0 && emittedProposals == 0 && !emittedError;
+        if (resumeFailedBeforeOutput || emptyResumeExit)
         {
-          if (!process.HasExited && !ct.IsCancellationRequested && !timedOut)
-          {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(1));
-          }
+          store.RemoveConversationId(request.SessionId, request.Owner, providerHandle);
+          existingConvId = null;
+          continue;
         }
-        catch { }
 
-        try
-        {
-          if (!process.HasExited)
-          {
-            process.Kill(entireProcessTree: true);
-          }
-        }
-        catch { }
+        break;
       }
     }
     finally
@@ -307,12 +358,21 @@ internal static class CliTurnRunner
       yield return new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = warningBlock };
     }
 
-    if (!ct.IsCancellationRequested && (emittedError || fullAssistantText.Length == 0 && emittedProposals == 0 && savedMemories.Count == 0))
+    var hasTurnOutput = fullAssistantText.Length > 0 || emittedProposals > 0 || savedMemories.Count > 0;
+    if (!ct.IsCancellationRequested && (emittedError || !hasTurnOutput))
     {
       store.RemoveConversationId(request.SessionId, request.Owner, providerHandle);
     }
+    else if (!emittedError && hasTurnOutput)
+    {
+      sessionState.ContextFingerprints[providerHandle] = currentFingerprint;
+      if (latestMemorySnapshot != null)
+      {
+        sessionState.MemorySnapshots[providerHandle] = latestMemorySnapshot;
+      }
+    }
 
-    if (!emittedError && fullAssistantText.Length == 0 && emittedProposals == 0 && savedMemories.Count == 0 && !ct.IsCancellationRequested)
+    if (!emittedError && !hasTurnOutput && !ct.IsCancellationRequested)
     {
       string? stderr = null;
       try
@@ -321,10 +381,18 @@ internal static class CliTurnRunner
       }
       catch { }
 
+      if (!string.IsNullOrWhiteSpace(stderr))
+      {
+        effectiveRequest.Services?
+          .GetService<ILoggerFactory>()?
+          .CreateLogger("Platform.Agent.CliTurnRunner")
+          .LogWarning("CLI provider {Provider} exited without output: {Stderr}", providerHandle, stderr);
+      }
+
       yield return new AgentStreamEventDto
       {
         Type = AgentStreamEventType.Error,
-        Text = !string.IsNullOrWhiteSpace(stderr) ? stderr : L["AgentErrorRequest"]
+        Text = L["AgentErrorRequest"]
       };
     }
 

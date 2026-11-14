@@ -150,6 +150,56 @@ internal sealed class AgentModuleScope : IAsyncDisposable, IDisposable
     return new AgentModuleScope(null, directDb, effectiveApp, prevCulture, prevUiCulture);
   }
 
+  public static AgentModuleScope SelectScopeForService(
+    IReadOnlyList<AgentModuleScope> scopes,
+    Type? serviceType,
+    AgentModuleScope fallbackScope)
+  {
+    var targetCtx = ResolveTargetContextType(serviceType);
+    if (targetCtx == null || scopes.Count == 0)
+    {
+      return fallbackScope;
+    }
+
+    return scopes.FirstOrDefault(s => s.Db.GetType() == targetCtx)
+      ?? scopes.FirstOrDefault(s => targetCtx.IsInstanceOfType(s.Db))
+      ?? fallbackScope;
+  }
+
+  public static async Task RunAtomicScopesAsync(
+    IServiceProvider rootServices,
+    IReadOnlyList<Type> requiredContextTypes,
+    PlatformDbContext fallbackDb,
+    PlatformAppService fallbackApp,
+    Func<IReadOnlyList<AgentModuleScope>, CancellationToken, Task> work,
+    CancellationToken ct)
+  {
+    var leafTypes = DbScope.GetLeafContextTypes(requiredContextTypes);
+    if (leafTypes.Count == 0)
+    {
+      leafTypes = [fallbackDb.GetType()];
+    }
+
+    var scopes = new List<AgentModuleScope>(leafTypes.Count);
+    try
+    {
+      foreach (var leafType in leafTypes)
+      {
+        scopes.Add(OpenForContextType(rootServices, leafType, fallbackDb, fallbackApp));
+      }
+
+      var contexts = scopes.Select(s => s.Db).Distinct().ToList();
+      await DbScope.RunAtomicAsync(contexts, mutationCt => work(scopes, mutationCt), ct);
+    }
+    finally
+    {
+      foreach (var scope in scopes)
+      {
+        await scope.DisposeAsync();
+      }
+    }
+  }
+
   public void Dispose()
   {
     if (_disposed)

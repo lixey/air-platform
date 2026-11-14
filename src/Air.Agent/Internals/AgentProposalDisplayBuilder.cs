@@ -327,4 +327,100 @@ internal static class AgentProposalDisplayBuilder
 
     return parts.Count > 0 ? string.Join(" · ", parts) : null;
   }
+
+  public static (List<AgentProposalChildGroupDto> DisplayGroups, List<StagedChildGroupPayload> StagedGroups) BuildChildGroupsFromDraft(
+    IReadOnlyList<FormChildDraftGroupDto> draftGroups,
+    IReadOnlyList<PendingNewReference> newReferences,
+    Dictionary<string, List<Dictionary<string, object?>>> dictionaries,
+    Localizer L)
+  {
+    var displayGroups = new List<AgentProposalChildGroupDto>(draftGroups.Count);
+    var stagedGroups = new List<StagedChildGroupPayload>(draftGroups.Count);
+
+    foreach (var group in draftGroups)
+    {
+      var editableEls = group.Elements.Where(AgentFeatureRegistry.IsEditableElement).ToList();
+      var rowCellsList = new List<(long? Id, Dictionary<string, string> Cells)>(group.Rows.Count);
+      var stagedRows = new List<Dictionary<string, object?>>(group.Rows.Count);
+      var populatedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+      for (var rowIdx = 0; rowIdx < group.Rows.Count; rowIdx++)
+      {
+        var row = group.Rows[rowIdx];
+        var cells = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var el in editableEls)
+        {
+          var rowRefs = newReferences
+            .Where(nr => nr.LineIndex == rowIdx &&
+                         string.Equals(nr.ChildKey, group.ChildKey, StringComparison.OrdinalIgnoreCase) &&
+                         string.Equals(nr.FieldPath, el.Path, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+          var formatted = rowRefs.Count == 0 &&
+                          row.ReferenceLabels.TryGetValue(el.Path, out var preResolvedLabel) &&
+                          !string.IsNullOrWhiteSpace(preResolvedLabel)
+            ? preResolvedLabel
+            : FormatFieldDisplayValue(el, row.Values, rowRefs, dictionaries, L, includeZeroMoney: false);
+
+          if (!string.IsNullOrWhiteSpace(formatted))
+          {
+            cells[el.Path] = formatted;
+            populatedPaths.Add(el.Path);
+          }
+        }
+
+        rowCellsList.Add((row.RecordId, cells));
+
+        var stagedRow = CloneFormValues(row.Values);
+        if (row.RecordId is > 0)
+        {
+          stagedRow["id"] = row.RecordId.Value;
+        }
+
+        if (row.Ver.HasValue)
+        {
+          stagedRow["ver"] = row.Ver.Value;
+        }
+
+        stagedRows.Add(stagedRow);
+      }
+
+      var selectedEls = editableEls.Where(e => populatedPaths.Contains(e.Path)).ToList();
+      if (selectedEls.Count == 0)
+      {
+        selectedEls = editableEls.Take(4).ToList();
+      }
+
+      displayGroups.Add(new AgentProposalChildGroupDto
+      {
+        ChildKey = group.ChildKey,
+        ChildService = group.ChildGridService,
+        Title = group.Title,
+        Mode = group.Mode,
+        Columns = selectedEls.Select(e => new AgentProposalChildColumnDto
+        {
+          Key = e.Path,
+          Label = e.Label ?? e.Path,
+          IsNumeric = e.Type == UiFieldType.Number || e.Model is FormMoneyModel or FormPercentModel
+        }).ToList(),
+        Rows = rowCellsList.Select(r => new AgentProposalChildRowDto
+        {
+          Id = r.Id,
+          Cells = r.Cells
+        }).ToList()
+      });
+
+      stagedGroups.Add(new StagedChildGroupPayload
+      {
+        ChildKey = group.ChildKey,
+        ChildGridService = group.ChildGridService,
+        ChildFormService = group.ChildFormService,
+        Mode = group.Mode,
+        HasUpdate = group.HasUpdate,
+        Rows = stagedRows
+      });
+    }
+
+    return (displayGroups, stagedGroups);
+  }
 }

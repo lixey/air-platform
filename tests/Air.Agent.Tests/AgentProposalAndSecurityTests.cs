@@ -280,8 +280,8 @@ public sealed class AgentProposalAndSecurityTests : IDisposable
     var dirB = store.GetSessionWorkspaceDirectory(ownerB, "sess-a");
     var dirAnon = store.GetSessionWorkspaceDirectory(new AgentOwnerScope(null, null), "sess-a");
     Assert.NotEqual(dirA, dirB);
-    Assert.Contains(Path.Combine("t_1", "u_10", "sess-a"), dirA, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains(Path.Combine("t_global", "u_anon", "sess-a"), dirAnon, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains(Path.Combine("t_1", "u_10", "sessions", "sess-a", "workspace"), dirA, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains(Path.Combine("t_global", "u_anon", "sessions", "sess-a", "workspace"), dirAnon, StringComparison.OrdinalIgnoreCase);
 
     // Per-session mutual exclusion prevents concurrent overlapping CLI turns in the same session.
     Assert.True(store.TryAcquireSessionTurn("sess-a", ownerA, out var lease1));

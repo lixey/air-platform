@@ -56,6 +56,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
       .Label("Create supplier invoice")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSupplierInvoiceFormService>(
         db,
         ctx,
@@ -70,6 +71,7 @@ public sealed class EcomPurchaseOrderGridService(EcomDbContext db, EcomPurchaseO
       .Label("Create outgoing payment")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
         db,
         ctx,

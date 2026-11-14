@@ -6,6 +6,8 @@ internal sealed class AgentSessionState(AgentOwnerScope owner)
   public DateTimeOffset LastAccessUtc { get; set; } = TimeProvider.System.GetUtcNow();
   public SemaphoreSlim TurnGate { get; } = new(1, 1);
   public ConcurrentDictionary<string, string> ConversationIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+  public ConcurrentDictionary<string, string> ContextFingerprints { get; } = new(StringComparer.OrdinalIgnoreCase);
+  public ConcurrentDictionary<string, IReadOnlyDictionary<long, string>> MemorySnapshots { get; } = new(StringComparer.OrdinalIgnoreCase);
   public List<AgentProposalDto> Proposals { get; } = [];
   public ConcurrentQueue<AgentProposalDto> PendingProposals { get; } = new();
   public ConcurrentQueue<string> SupersededProposalIds { get; } = new();

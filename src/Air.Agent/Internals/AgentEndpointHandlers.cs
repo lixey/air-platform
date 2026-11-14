@@ -204,6 +204,7 @@ internal static class AgentEndpointHandlers
       ProviderHandle = provider.Handle,
       Model = selectedModel,
       ModelName = selectedModelName,
+      CurrentPath = body.CurrentPath,
       McpServerUrl = ResolveLoopbackMcpUrl(ctx),
       Services = ctx.RequestServices
     };

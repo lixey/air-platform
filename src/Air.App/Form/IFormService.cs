@@ -18,9 +18,29 @@ public interface IFormService : IPlatformService
   Task<FormDataDto> BuildFormDataAsync(object? entity, ScreenDto? screen = null, string? outcome = null, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, CancellationToken ct = default);
   Task<object> SaveAsync(JsonElement json, FormRequest? request, CancellationToken ct = default);
+  Task<FormSaveRecordDto> SaveRecordAsync(FormRequest request, CancellationToken ct = default) =>
+    throw new NotSupportedException();
   Task<FormActionDto> MoveStatusAsync(long id, string transitionName, JsonElement? body, int? ver = null, CancellationToken ct = default);
+  Task<FlowDescriptionDto?> DescribeStatusFlowAsync(CancellationToken ct = default) => Task.FromResult<FlowDescriptionDto?>(null);
+  Task<StatusMovePreviewDto> PreviewMoveStatusAsync(
+    long? id,
+    string transitionName,
+    JsonElement? askInput = null,
+    IReadOnlySet<string>? skipValidationPaths = null,
+    CancellationToken ct = default) =>
+    throw new InvalidOperationException("Status flow is not configured.");
   internal Task<bool> HasStatusFlowAsync(CancellationToken ct = default) => Task.FromResult(false);
   Task<bool> HasActionAsync(string actionKey, CancellationToken ct = default) => Task.FromResult(false);
+  Task<IReadOnlyList<DeclaredActionDescriptorDto>> DescribeDeclaredActionsAsync(bool automationOnly = false, CancellationToken ct = default) =>
+    Task.FromResult<IReadOnlyList<DeclaredActionDescriptorDto>>([]);
+  Task<DeclaredActionPreviewDto?> PreviewDeclaredActionAsync(
+    string actionKey,
+    IReadOnlyList<long> selectedIds,
+    JsonElement? askInput = null,
+    IReadOnlySet<string>? skipValidationPaths = null,
+    bool requireAutomationOptIn = false,
+    CancellationToken ct = default) =>
+    Task.FromResult<DeclaredActionPreviewDto?>(null);
   Task<FormActionDto?> ExecuteDeclaredActionAsync(string actionKey, FormRequest request, JsonElement? body, CancellationToken ct = default) => Task.FromResult<FormActionDto?>(null);
   Task<GridCellDto> SaveCellAsync(
     long id,
@@ -43,6 +63,18 @@ public interface IFormService : IPlatformService
     string? parentService = null,
     string? triggerField = null,
     CancellationToken ct = default);
+  Task<FormCompositeDraftDto> PrepareCompositeDraftAsync(
+    FormCompositeDraftRequest request,
+    CancellationToken ct = default) =>
+    throw new NotSupportedException();
+  Task<FormChildBatchResultDto> ApplyChildRowsAsync(
+    long parentId,
+    bool isParentEdit,
+    IReadOnlyDictionary<string, object?>? parentValues,
+    IReadOnlyList<FormChildBatchGroupDto> groups,
+    Func<Feature, Feature, bool>? childPermissionFilter = null,
+    CancellationToken ct = default) =>
+    Task.FromResult(new FormChildBatchResultDto());
   bool HasCustomRecalculate => false;
   Task<bool> NeedsParentRecalculationAsync(CancellationToken ct = default) => Task.FromResult(HasCustomRecalculate);
   Task RecalculateParentAsync(IReadOnlyList<long> parentIds, CancellationToken ct = default) => Task.CompletedTask;

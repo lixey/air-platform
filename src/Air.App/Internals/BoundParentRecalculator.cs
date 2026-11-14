@@ -2,6 +2,15 @@ namespace Platform.App.Internals;
 
 internal static class BoundParentRecalculator
 {
+  private static readonly AsyncLocal<(string ParentService, long ParentId)?> DeferredTarget = new();
+
+  public static (string ParentService, long ParentId)? SetDeferredTarget((string ParentService, long ParentId)? target)
+  {
+    var previous = DeferredTarget.Value;
+    DeferredTarget.Value = target;
+    return previous;
+  }
+
   public static async Task<List<AffectedDto>?> RecalculateBoundParentsAsync(
     PlatformDbContext db,
     PlatformAppService? app,
@@ -12,8 +21,13 @@ internal static class BoundParentRecalculator
     CancellationToken ct,
     long? requestParentId = null)
   {
+    var deferred = DeferredTarget.Value;
+    var matchesDeferredService = deferred.HasValue &&
+      (string.Equals(requestParentService, deferred.Value.ParentService, StringComparison.OrdinalIgnoreCase) ||
+       string.Equals(boundParentService, deferred.Value.ParentService, StringComparison.OrdinalIgnoreCase));
+
     var distinctIds = parentIds
-      .Where(id => id is > 0)
+      .Where(id => id is > 0 && (!matchesDeferredService || id.Value != deferred!.Value.ParentId))
       .Select(id => id!.Value)
       .Distinct()
       .OrderBy(id => id)

@@ -62,6 +62,12 @@ public sealed class GridActionBuilder<TEntity, TInput> : GridActionBuilder<TEnti
     return this;
   }
 
+  public new GridActionBuilder<TEntity, TInput> AllowAgent(bool allow = true)
+  {
+    base.AllowAgent(allow);
+    return this;
+  }
+
   public new GridActionBuilder<TEntity, TInput> Single(bool single = true)
   {
     base.Single(single);

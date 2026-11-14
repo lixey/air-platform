@@ -62,6 +62,12 @@ public sealed class FormActionBuilder<TEntity, TInput> : FormActionBuilder<TEnti
     return this;
   }
 
+  public new FormActionBuilder<TEntity, TInput> AllowAgent(bool allow = true)
+  {
+    base.AllowAgent(allow);
+    return this;
+  }
+
   public new FormActionBuilder<TEntity, TInput> When(Expression<Func<TEntity, bool>> condition, string reason)
   {
     base.When(condition, reason);

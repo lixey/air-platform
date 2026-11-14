@@ -27,6 +27,7 @@ public abstract class RecordAsk
     PlatformDbContext db,
     PlatformAppService? app,
     Localizer localizer,
-    CancellationToken ct = default) =>
+    CancellationToken ct = default,
+    IReadOnlySet<string>? skipPaths = null) =>
     Task.FromResult(Validate(input, localizer));
 }

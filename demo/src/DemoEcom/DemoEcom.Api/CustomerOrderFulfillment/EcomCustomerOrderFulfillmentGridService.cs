@@ -50,6 +50,7 @@ public sealed class EcomCustomerOrderFulfillmentGridService(EcomDbContext db, Ec
       .Label("Create purchase order")
       .Icon(UiIcon.Plus)
       .AllowReadOnly()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.PurchaseAsync(
         db,
         ctx,

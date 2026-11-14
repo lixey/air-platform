@@ -2,7 +2,7 @@
 
 export type AgentProposalChildMode = 'append' | 'replace';
 
-export type AgentProposalOperation = 'create' | 'update' | 'move-status';
+export type AgentProposalOperation = 'create' | 'update' | 'move-status' | 'run-action';
 
 export type AgentProposalStatus = 'pending' | 'confirming' | 'committing' | 'committed' | 'superseded';
 
@@ -443,6 +443,7 @@ export interface AgentChatRequest {
   locale?: string | null;
   provider?: string | null;
   model?: string | null;
+  currentPath?: string | null;
 }
 
 export interface AgentCommitResultDto {
@@ -499,12 +500,14 @@ export interface AgentProposalDto {
   operation: AgentProposalOperation;
   service: string;
   transition?: string | null;
+  action?: string | null;
   title: string;
   subtitle?: string | null;
   badge?: string | null;
   badgeColor?: UiColor | null;
   fields: AgentProposalFieldDto[];
   children: AgentProposalChildGroupDto[];
+  warnings?: string[] | null;
   attachmentIds: string[];
   status: AgentProposalStatus;
   recordId?: number | null;

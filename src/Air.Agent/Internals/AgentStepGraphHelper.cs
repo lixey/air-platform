@@ -32,8 +32,15 @@ internal static class AgentStepGraphHelper
       return NormalizeStepKey(explicitStepKey);
     }
 
-    var hasNestedValues = args.TryGetProperty("values", out var vProp) && vProp.ValueKind == JsonValueKind.Object;
-    if (hasNestedValues && TryGetString(args, "key") is { } topKey)
+    var hasNestedValues = TryGetPropertyIgnoreCase(args, "values", out var vProp) && vProp.ValueKind == JsonValueKind.Object;
+    var isEnvelope = hasNestedValues
+      || TryGetPropertyIgnoreCase(args, "operation", out _)
+      || TryGetPropertyIgnoreCase(args, "transition", out _)
+      || TryGetPropertyIgnoreCase(args, "action", out _)
+      || TryGetPropertyIgnoreCase(args, "ask", out _)
+      || TryGetPropertyIgnoreCase(args, "children", out _)
+      || TryGetPropertyIgnoreCase(args, "lines", out _);
+    if (isEnvelope && TryGetString(args, "key") is { } topKey)
     {
       return NormalizeStepKey(topKey);
     }
@@ -88,6 +95,29 @@ internal static class AgentStepGraphHelper
 
     var vProp = TryGetPropertyIgnoreCase(args, "values", out var vp) && vp.ValueKind == JsonValueKind.Object ? vp : args;
     CollectFromObject(vProp, keys);
+    if (!vProp.Equals(args))
+    {
+      foreach (var topIdProp in new[] { "id", "recordId", "selectedIds" })
+      {
+        if (TryGetPropertyIgnoreCase(args, topIdProp, out var topEl))
+        {
+          if (TryExtractRefKey(topEl, out var topRk))
+          {
+            keys.Add(topRk);
+          }
+          else if (topEl.ValueKind == JsonValueKind.Array)
+          {
+            foreach (var item in topEl.EnumerateArray())
+            {
+              if (TryExtractRefKey(item, out var itemRk))
+              {
+                keys.Add(itemRk);
+              }
+            }
+          }
+        }
+      }
+    }
 
     if (TryGetPropertyIgnoreCase(args, "ask", out var askProp) && askProp.ValueKind == JsonValueKind.Object)
     {
@@ -192,6 +222,7 @@ internal static class AgentStepGraphHelper
           string.Equals(prop.Name, "service", StringComparison.OrdinalIgnoreCase) ||
           string.Equals(prop.Name, "operation", StringComparison.OrdinalIgnoreCase) ||
           string.Equals(prop.Name, "transition", StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(prop.Name, "action", StringComparison.OrdinalIgnoreCase) ||
           string.Equals(prop.Name, "kind", StringComparison.OrdinalIgnoreCase))
       {
         continue;

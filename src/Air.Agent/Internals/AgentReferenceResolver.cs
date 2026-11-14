@@ -136,4 +136,101 @@ internal static class AgentReferenceResolver
 
     return (null, null, null);
   }
+
+  public static async Task<(
+    Dictionary<string, object?> Values,
+    HashSet<string> ExplicitFields,
+    HashSet<string> SkipValidationPaths,
+    Dictionary<string, List<Dictionary<string, object?>>> Dictionaries)> ParseAskInputsAsync(
+    ProposalBuildContext ctx,
+    JsonElement args,
+    JsonElement valuesSource,
+    IReadOnlyList<FormElementDto> askEditable,
+    List<PendingNewReference> newReferences,
+    PlatformDbContext db,
+    PlatformAppService app,
+    CancellationToken ct)
+  {
+    var askSource = TryGetPropertyIgnoreCase(args, "ask", out var askEl) && askEl.ValueKind == JsonValueKind.Object
+      ? askEl
+      : valuesSource;
+
+    var refServices = askEditable
+      .Select(e => (e.Model as FormSelectModel)?.ReferenceService)
+      .Where(s => !string.IsNullOrEmpty(s))
+      .Cast<string>()
+      .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var (dictionaries, _) = await AgentContextQueryService.LoadSmartDictionariesAsync(
+      refServices, ctx.Options.MaxFullDictionarySize, [], db, app, ct);
+
+    var askValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+    var explicitAskFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var skipValidationPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var el in askEditable)
+    {
+      var hasProp = TryGetPropertyIgnoreCase(askSource, el.Path, out var rawProp) ||
+                    !askSource.Equals(args) && TryGetPropertyIgnoreCase(args, el.Path, out rawProp);
+      if (!hasProp || rawProp.ValueKind == JsonValueKind.Undefined)
+      {
+        continue;
+      }
+
+      explicitAskFields.Add(el.Path);
+      if (el.Model is FormSelectModel select && !string.IsNullOrEmpty(select.ReferenceService))
+      {
+        if (AgentStepGraphHelper.TryExtractRefKey(rawProp, out var refKey))
+        {
+          var refTarget = ctx.FindReferencedProposal(refKey, select.ReferenceService)
+            ?? throw new InvalidOperationException(ctx.Localizer["MutationRefused"]);
+          askValues[el.Path] = refTarget.RecordId is > 0 ? refTarget.RecordId.Value : null;
+          if (refTarget.RecordId is not > 0)
+          {
+            skipValidationPaths.Add(el.Path);
+          }
+
+          newReferences.Add(new PendingNewReference
+          {
+            FieldPath = el.Path,
+            Name = AgentStepGraphHelper.GetProposalShortLabel(refTarget),
+            FormService = refTarget.Service,
+            ProposalId = refTarget.Id,
+            StepKey = refKey,
+            StepNumber = refTarget.StepNumber,
+            IsExistingRecordEdit = refTarget.RecordId is > 0
+          });
+          continue;
+        }
+
+        var (resolvedId, unresolvedName, _) = await ResolveReferenceValueAsync(
+          rawProp, select.ReferenceService, select.ReferenceFilter,
+          allowFuzzy: true, allowWrongKindFallback: false,
+          dictionaries, db, app, ct, select.ReferenceLabelPaths);
+        if (resolvedId == null && !string.IsNullOrWhiteSpace(unresolvedName))
+        {
+          throw new InvalidOperationException(ctx.Localizer["ReferenceNotFound", unresolvedName, select.ReferenceService]);
+        }
+
+        var explicitBadId = rawProp.ValueKind switch
+        {
+          JsonValueKind.Number when rawProp.TryGetInt64(out var numId) => (long?)numId,
+          JsonValueKind.Object => TryGetLong(rawProp, "id"),
+          _ => null
+        };
+        if (resolvedId == null && explicitBadId is > 0)
+        {
+          throw new InvalidOperationException(ctx.Localizer["ReferenceNotFound", $"#{explicitBadId.Value}", select.ReferenceService]);
+        }
+
+        askValues[el.Path] = resolvedId;
+      }
+      else
+      {
+        askValues[el.Path] = ConvertJsonValue(rawProp, el.Type);
+      }
+    }
+
+    return (askValues, explicitAskFields, skipValidationPaths, dictionaries);
+  }
 }

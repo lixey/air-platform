@@ -103,9 +103,8 @@ internal static class AgentBatchGraphCollector
       AddService(payload.Service);
       if (string.Equals(payload.Operation, AgentProposalOperation.MoveStatus, StringComparison.OrdinalIgnoreCase))
       {
-        var (feat, formType, gridType) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(payload.Service);
-        var flowType = AgentFlowHelper.FindFlowServiceType(feat);
-        if (AgentModuleScope.ResolveTargetContextType(formType ?? gridType ?? flowType) is { } flowCtx)
+        var (_, formType, gridType) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(payload.Service);
+        if (AgentModuleScope.ResolveTargetContextType(formType ?? gridType) is { } flowCtx)
         {
           types.Add(flowCtx);
         }
@@ -136,94 +135,119 @@ internal static class AgentBatchGraphCollector
     foreach (var stepProp in sortedProposals)
     {
       var stepPayload = payloadsById[stepProp.Id];
-      if (stepPayload.RecordId is not > 0 || !stepPayload.Ver.HasValue)
-      {
-        continue;
-      }
-
-      var checkFormType = ModuleCatalog.Instance.FindServiceType(stepPayload.Service);
-      if (checkFormType == null || !typeof(IFormService).IsAssignableFrom(checkFormType))
+      var checkType = ModuleCatalog.Instance.FindServiceType(stepPayload.Service);
+      if (checkType == null || !typeof(IFormService).IsAssignableFrom(checkType))
       {
         var (_, resolvedForm, _) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(stepPayload.Service);
-        checkFormType = resolvedForm;
+        checkType = resolvedForm ?? checkType;
       }
 
-      if (checkFormType == null)
+      if (checkType == null)
       {
         continue;
       }
 
-      var checkScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, checkFormType, scopes[0]);
-      if (ModuleCatalog.Instance.CreateServiceInstance(checkFormType, checkScope.Db, checkScope.App) is not IFormService checkForm)
+      var checkScope = AgentModuleScope.SelectScopeForService(scopes, checkType, scopes[0]);
+      if (typeof(IFormService).IsAssignableFrom(checkType) &&
+          ModuleCatalog.Instance.CreateServiceInstance(checkType, checkScope.Db, checkScope.App) is IFormService checkForm)
       {
-        continue;
+        if (stepPayload.RecordId is > 0 && stepPayload.Ver.HasValue)
+        {
+          checkForm.SetRequest(new FormRequest { Id = stepPayload.RecordId });
+          var existing = await checkForm.LoadParentRecordAsync(stepPayload.RecordId.Value, mutationCt);
+          if (existing is IHasVersion versioned && versioned.Ver == stepPayload.Ver.Value)
+          {
+            preVerified.Add((existing.GetType(), stepPayload.RecordId.Value));
+          }
+        }
       }
 
-      checkForm.SetRequest(new FormRequest { Id = stepPayload.RecordId });
-      var existing = await checkForm.LoadParentRecordAsync(stepPayload.RecordId.Value, mutationCt);
-      if (existing is IHasVersion versioned && versioned.Ver == stepPayload.Ver.Value)
+      if (stepPayload.SelectedIds.Count > 0 &&
+          stepPayload.SelectedVersions != null &&
+          stepPayload.SelectedIds.Count == stepPayload.SelectedVersions.Count &&
+          typeof(IGridService).IsAssignableFrom(checkType) &&
+          ModuleCatalog.Instance.CreateServiceInstance(checkType, checkScope.Db, checkScope.App) is IGridService checkGrid &&
+          ModuleCatalog.GetServiceEntityType(checkType) is { } gridEntityType)
       {
-        preVerified.Add((existing.GetType(), stepPayload.RecordId.Value));
+        DeclaredActionPreviewDto? preview = null;
+        if (!string.IsNullOrEmpty(stepPayload.Action))
+        {
+          JsonElement? askJson = stepPayload.Values.Count > 0
+            ? JsonSerializer.SerializeToElement(stepPayload.Values, WebJson)
+            : null;
+          var skipPaths = stepPayload.NewReferences
+            .Where(r => !r.FieldPath.StartsWith("__", StringComparison.Ordinal))
+            .Select(r => r.FieldPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+          try
+          {
+            preview = await checkGrid.PreviewDeclaredActionAsync(
+              stepPayload.Action,
+              stepPayload.SelectedIds.Where(id => id > 0).ToList(),
+              askJson,
+              skipPaths.Count > 0 ? skipPaths : null,
+              ct: mutationCt);
+          }
+          catch (FormRefusedException)
+          {
+            preview = null;
+          }
+        }
+
+        if (preview?.TargetVersions != null && preview.TargetVersions.Count == stepPayload.SelectedVersions.Count)
+        {
+          for (var i = 0; i < stepPayload.SelectedIds.Count; i++)
+          {
+            if (stepPayload.SelectedIds[i] > 0 && preview.TargetVersions[i] == stepPayload.SelectedVersions[i])
+            {
+              preVerified.Add((gridEntityType, stepPayload.SelectedIds[i]));
+            }
+          }
+        }
       }
     }
 
     return preVerified;
   }
 
-  public static async Task<HashSet<string>> ApplyResolvedNewReferencesAsync(
+  public static HashSet<string> ApplyResolvedNewReferences(
     StagedProposalPayload payload,
     Dictionary<string, long> committedIdsByProposalId,
-    IReadOnlyList<AgentModuleScope> scopes,
     AgentStore store,
     AgentOwnerScope owner,
-    Localizer L,
-    CancellationToken mutationCt)
+    Localizer L)
   {
     var pendingTopLevelFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     foreach (var pendingRef in payload.NewReferences)
     {
-      long? committedRefId = null;
-      if (!string.IsNullOrEmpty(pendingRef.ProposalId))
+      if (string.IsNullOrEmpty(pendingRef.ProposalId))
       {
-        committedRefId = ResolveCommittedProposalRecordId(pendingRef.ProposalId, committedIdsByProposalId, store, owner, L);
+        throw AgentRefusal.Create(L["MutationRefused"]);
       }
-      else if (!string.IsNullOrEmpty(pendingRef.FormService))
+
+      var committedRefId = ResolveCommittedProposalRecordId(pendingRef.ProposalId, committedIdsByProposalId, store, owner, L);
+      if (committedRefId <= 0)
       {
-        var refFormType = ModuleCatalog.Instance.FindServiceType(pendingRef.FormService);
-        var refScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, refFormType, scopes[0]);
-        if (refFormType != null &&
-            ModuleCatalog.Instance.CreateServiceInstance(refFormType, refScope.Db, refScope.App) is IFormService refFormInst &&
-            refFormInst.Feature.AllowsAgentWrite &&
-            AgentFeatureRegistry.CanEditFeature(refFormInst.Feature, refScope.App))
+        throw AgentRefusal.Create(L["MutationRefused"]);
+      }
+
+      if (string.Equals(pendingRef.FieldPath, "__targetId", StringComparison.OrdinalIgnoreCase))
+      {
+        payload.RecordId = committedRefId;
+        if (payload.SelectedIds.Count == 1)
         {
-          refFormInst.SetRequest(new FormRequest());
-          var (refEls, _) = await refFormInst.GetElementsMetadataAsync(mutationCt);
-          var refDefaults = await AgentContextQueryService.GetDefaultFormValuesAsync(refFormInst, mutationCt);
-          foreach (var (k, v) in pendingRef.ExtraValues)
-          {
-            refDefaults[k] = v;
-          }
-
-          refDefaults[ResolvePrimaryTextFieldPath(refEls)] = pendingRef.Name;
-          var refJson = JsonSerializer.SerializeToElement(refDefaults, WebJson);
-          try
-          {
-            var refSaved = await refFormInst.SaveAsync(refJson, new FormRequest { Value = refJson }, mutationCt);
-            if (TryExtractSavedId(refSaved, out var refId))
-            {
-              committedRefId = refId;
-            }
-          }
-          catch (FormRefusedException refusedEx)
-          {
-            throw AgentRefusal.Create(FormatRefusedException(refusedEx, refEls, pendingRef.Name), refusedEx);
-          }
+          payload.SelectedIds[0] = committedRefId;
         }
+
+        continue;
       }
 
-      if (committedRefId is not > 0)
+      if (pendingRef.FieldPath.StartsWith("__selectedId:", StringComparison.OrdinalIgnoreCase) &&
+          int.TryParse(pendingRef.FieldPath["__selectedId:".Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var selIdx) &&
+          selIdx >= 0 && selIdx < payload.SelectedIds.Count)
       {
+        payload.SelectedIds[selIdx] = committedRefId;
         continue;
       }
 
@@ -237,7 +261,7 @@ internal static class AgentBatchGraphCollector
 
         if (targetChild != null && lineIdx < targetChild.Rows.Count)
         {
-          targetChild.Rows[lineIdx][pendingRef.FieldPath] = committedRefId.Value;
+          targetChild.Rows[lineIdx][pendingRef.FieldPath] = committedRefId;
         }
       }
       else
@@ -246,16 +270,16 @@ internal static class AgentBatchGraphCollector
         if (pendingRef.IsMultiple)
         {
           var idList = ExtractLongList(payload.Values.GetValueOrDefault(pendingRef.FieldPath));
-          if (!idList.Contains(committedRefId.Value))
+          if (!idList.Contains(committedRefId))
           {
-            idList.Add(committedRefId.Value);
+            idList.Add(committedRefId);
           }
 
           payload.Values[pendingRef.FieldPath] = idList;
         }
         else
         {
-          payload.Values[pendingRef.FieldPath] = committedRefId.Value;
+          payload.Values[pendingRef.FieldPath] = committedRefId;
         }
       }
     }
@@ -307,15 +331,18 @@ internal static class AgentBatchGraphCollector
     StagedProposalPayload payload,
     IFormService formInst,
     IReadOnlyList<FormElementDto> formElements,
-    object saveResult,
+    object? savedEntity,
     long recordId,
     Localizer L)
   {
-    var caption = formInst.GetRecordCaption(saveResult, recordId);
-    var genericCaption = L.For(formInst.Feature.Module)["FormRecord", formInst.GetTitle(), recordId];
-    if (!string.IsNullOrWhiteSpace(caption) && !string.Equals(caption, genericCaption, StringComparison.Ordinal))
+    if (savedEntity != null)
     {
-      return caption.Contains($"#{recordId}", StringComparison.Ordinal) ? caption : $"{caption} (#{recordId})";
+      var caption = formInst.GetRecordCaption(savedEntity, recordId);
+      var genericCaption = L.For(formInst.Feature.Module)["FormRecord", formInst.GetTitle(), recordId];
+      if (!string.IsNullOrWhiteSpace(caption) && !string.Equals(caption, genericCaption, StringComparison.Ordinal))
+      {
+        return caption.Contains($"#{recordId}", StringComparison.Ordinal) ? caption : $"{caption} (#{recordId})";
+      }
     }
 
     var primaryTextKey = ResolvePrimaryTextFieldPath(formElements);

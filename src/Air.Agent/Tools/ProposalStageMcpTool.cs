@@ -5,7 +5,7 @@ public sealed class ProposalStageMcpTool : IMcpTool
   public string Name => "platform_proposal_stage";
 
   public string Description =>
-    "Stages a create, update, or status-transition confirmation proposal card in the user's chat session without mutating database records directly.";
+    "Stages a create, update, status-transition, or declared business action confirmation proposal card in the user's chat session without mutating database records directly.";
 
   public object InputSchema => new
   {
@@ -18,10 +18,16 @@ public sealed class ProposalStageMcpTool : IMcpTool
       operation = new
       {
         type = "string",
-        @enum = new[] { "create", "update", "move-status" }
+        @enum = new[] { "create", "update", "move-status", "run-action" }
       },
       id = new { type = "integer" },
+      selectedIds = new
+      {
+        type = "array",
+        items = new { type = "integer" }
+      },
       transition = new { type = "string" },
+      action = new { type = "string" },
       key = new { type = "string" },
       values = new { type = "object" },
       ask = new { type = "object" },

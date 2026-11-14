@@ -120,6 +120,36 @@ describe('Wave 3 & Wave 4 Agent UI capabilities', () => {
     expect(text).toContain('Check the status change before confirming');
   });
 
+  it('renders run-action <ui_proposal> cards and non-blocking rule warnings', () => {
+    const proposal: AgentProposal = {
+      id: 'prop-act-1',
+      sessionId: 'sess-1',
+      operation: 'run-action',
+      service: 'ecom/customer-order-form',
+      action: 'CreateSupplierInvoice',
+      recordId: 77,
+      title: '#77 · Order AC-77',
+      subtitle: 'Create supplier invoice',
+      badge: 'Create supplier invoice',
+      badgeColor: 'blue',
+      fields: [{ label: 'Counterparty', value: 'Acme Corp' }],
+      children: [],
+      warnings: ['Receipt exceeds 50,000'],
+      attachmentIds: [],
+      status: 'pending',
+    };
+
+    const fixture = TestBed.createComponent(AgentProposalCardComponent);
+    fixture.componentRef.setInput('proposal', proposal);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('#77 · Order AC-77');
+    expect(text).toContain('Create supplier invoice');
+    expect(text).toContain('Receipt exceeds 50,000');
+    expect(text).toContain('Check the parameters before running the action');
+  });
+
   it('handles SSE memory events, renders the memory pill, and posts /api/agent/undo-memory with Idempotency-Key', async () => {
     const sseFrames = [
       'data: {"type":"delta","text":"Noted."}\n\n',

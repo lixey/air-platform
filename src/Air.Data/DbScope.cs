@@ -86,6 +86,71 @@ public sealed class DbScope : IDisposable, IAsyncDisposable
     return instance;
   }
 
+  public static List<Type> GetLeafContextTypes(IEnumerable<Type> contextTypes) =>
+    AtomicMutationCoordinator.GetLeafContextTypes(contextTypes);
+
+  public static Task RunAtomicAsync(
+    IReadOnlyList<PlatformDbContext> contexts,
+    Func<CancellationToken, Task> work,
+    CancellationToken ct = default) =>
+    AtomicMutationCoordinator.RunAsync(contexts, work, ct);
+
+  public static async Task RunAtomicAsync(
+    IServiceProvider services,
+    IEnumerable<Type> contextTypes,
+    Func<IReadOnlyDictionary<Type, PlatformDbContext>, CancellationToken, Task> work,
+    CancellationToken ct = default)
+  {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentNullException.ThrowIfNull(contextTypes);
+    ArgumentNullException.ThrowIfNull(work);
+
+    var leafTypes = GetLeafContextTypes(contextTypes);
+    if (leafTypes.Count == 0)
+    {
+      await work(new Dictionary<Type, PlatformDbContext>(), ct);
+      return;
+    }
+
+    var childScopes = new List<AsyncServiceScope>();
+    var contextsByType = new Dictionary<Type, PlatformDbContext>(leafTypes.Count);
+    var orderedContexts = new List<PlatformDbContext>(leafTypes.Count);
+    var hasDbScope = services.GetService<DbScope>() != null;
+
+    try
+    {
+      foreach (var leafType in leafTypes)
+      {
+        PlatformDbContext resolvedDb;
+        if (hasDbScope)
+        {
+          var childScope = services.CreateAsyncScope();
+          childScopes.Add(childScope);
+          childScope.ServiceProvider.GetRequiredService<DbScope>().Bind(leafType);
+          resolvedDb = (PlatformDbContext)childScope.ServiceProvider.GetRequiredService(leafType);
+        }
+        else
+        {
+          resolvedDb = services.GetService(leafType) as PlatformDbContext
+            ?? (services.GetService<PlatformDbContext>() is { } fallback && leafType.IsInstanceOfType(fallback) ? fallback : null)
+            ?? throw new InvalidOperationException($"DbContext '{leafType.Name}' is not registered.");
+        }
+
+        contextsByType[leafType] = resolvedDb;
+        orderedContexts.Add(resolvedDb);
+      }
+
+      await RunAtomicAsync(orderedContexts, token => work(contextsByType, token), ct);
+    }
+    finally
+    {
+      for (var i = childScopes.Count - 1; i >= 0; i--)
+      {
+        await childScopes[i].DisposeAsync();
+      }
+    }
+  }
+
   public void Dispose()
   {
     if (_disposed)

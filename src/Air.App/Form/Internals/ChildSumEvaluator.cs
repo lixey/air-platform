@@ -8,6 +8,38 @@ internal static class ChildSumEvaluator
   private static readonly MethodInfo ApplyChildSumsGenericMethod =
     typeof(ChildSumEvaluator).GetMethod(nameof(ApplyChildSumsForEntityAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
 
+  private static readonly MethodInfo ApplyCompositeDraftSumsGenericMethod =
+    typeof(ChildSumEvaluator).GetMethod(nameof(ApplyCompositeDraftSumsForEntityAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+  public static async Task ApplyCompositeDraftSumsAsync<TEntity>(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    long? parentRecordId,
+    ChildGridBuilder child,
+    bool isAppend,
+    IReadOnlyList<Dictionary<string, object?>> draftRows,
+    Dictionary<string, object?> parentValues,
+    ISet<string> explicitlyProvided,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+  {
+    if (child.IsFiles || child.SumMappings.Count == 0)
+    {
+      return;
+    }
+
+    var childEntityType = child.ChildEntityType ?? ParentScopeValidator.GetGridEntityType(child.ServiceType);
+    if (childEntityType == null || !typeof(IEntity).IsAssignableFrom(childEntityType))
+    {
+      return;
+    }
+
+    var task = (Task)ApplyCompositeDraftSumsGenericMethod
+      .MakeGenericMethod(typeof(TEntity), childEntityType)
+      .Invoke(null, [db, app, parentRecordId, child, isAppend, draftRows, parentValues, explicitlyProvided, ct])!;
+    await task;
+  }
+
   public static async Task ApplySumsAsync<TEntity>(
     PlatformDbContext db,
     PlatformAppService? app,
@@ -119,6 +151,76 @@ internal static class ChildSumEvaluator
       if (computedValue != null && TryConvertNumeric(computedValue, parentProp.PropertyType, out var targetVal))
       {
         parentProp.SetValue(parentEntity, targetVal);
+      }
+    }
+  }
+
+  private static async Task ApplyCompositeDraftSumsForEntityAsync<TEntity, TChildEntity>(
+    PlatformDbContext db,
+    PlatformAppService? app,
+    long? parentRecordId,
+    ChildGridBuilder child,
+    bool isAppend,
+    IReadOnlyList<Dictionary<string, object?>> draftRows,
+    Dictionary<string, object?> parentValues,
+    ISet<string> explicitlyProvided,
+    CancellationToken ct)
+    where TEntity : class, IEntity, new()
+    where TChildEntity : class, IEntity, new()
+  {
+    var draftEntities = new List<TChildEntity>(draftRows.Count);
+    foreach (var rowDict in draftRows)
+    {
+      var childEntity = new TChildEntity();
+      FormDraftEngine.ApplyMergedValuesToDraftEntity(rowDict, childEntity);
+      draftEntities.Add(childEntity);
+    }
+
+    TEntity? persistedHolder = null;
+    if (isAppend && parentRecordId is > 0)
+    {
+      persistedHolder = new TEntity { Id = parentRecordId.Value };
+      await ApplyChildSumsForEntityAsync<TEntity, TChildEntity>(db, app, persistedHolder, child, ct);
+    }
+
+    var rowParam = Expression.Parameter(typeof(TChildEntity), "c");
+    foreach (var mapping in child.SumMappings)
+    {
+      var parentProp = mapping.ParentProperty ?? PropertyAccessorCache.GetProperty(typeof(TEntity), mapping.ParentFieldPath);
+      if (parentProp is not { CanWrite: true })
+      {
+        continue;
+      }
+
+      var (valueExpr, valueType) = ResolveChildExpression(mapping, typeof(TChildEntity), rowParam);
+      if (valueExpr == null || valueType == null)
+      {
+        continue;
+      }
+
+      var decBody = valueType == typeof(decimal?) ? valueExpr : Expression.Convert(valueExpr, typeof(decimal?));
+      var compiledSelector = Expression.Lambda<Func<TChildEntity, decimal?>>(decBody, rowParam).Compile();
+
+      var newSum = 0m;
+      foreach (var item in draftEntities)
+      {
+        newSum += compiledSelector(item) ?? 0m;
+      }
+
+      var baseSum = 0m;
+      if (persistedHolder != null &&
+          parentProp.GetValue(persistedHolder) is { } persistedVal &&
+          FilterNodeEvaluator.TryConvertToDecimal(persistedVal, out var persistedDec))
+      {
+        baseSum = persistedDec;
+      }
+
+      var total = baseSum + newSum;
+      var parentPath = Elements.ToCamelPath(parentProp.Name);
+      if (TryConvertNumeric(total, parentProp.PropertyType, out var targetVal))
+      {
+        parentValues[parentPath] = targetVal;
+        explicitlyProvided.Add(parentPath);
       }
     }
   }

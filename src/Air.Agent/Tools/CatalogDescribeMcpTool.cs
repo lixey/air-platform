@@ -7,7 +7,7 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
   public string Name => "platform_catalog_describe";
 
   public string Description =>
-    "Describes the editable field schema, child grid schemas, status flow transitions, and defaults of an agent-enabled form/flow, or reads summary KPIs/table of an agent-enabled report.";
+    "Describes the editable field schema, child grid schemas, status flow transitions, declared business actions, and defaults of an agent-enabled form/grid/flow, or reads summary KPIs/table of an agent-enabled report.";
 
   public object InputSchema => new
   {
@@ -18,7 +18,7 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
       service = new
       {
         type = "string",
-        description = "Form, grid/flow, or report service path from platform_catalog_list."
+        description = "Form, grid/flow/action, or report service path from platform_catalog_list."
       }
     }
   };
@@ -73,8 +73,10 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
           });
         }
 
-        var (statuses, transitions) = await AgentFlowHelper.DiscoverFeatureFlowAsync(
+        var flowDesc = await AgentCatalogInspector.DescribeFeatureFlowAsync(
           formInst.Feature, services, formScope.Db, formScope.App, ct);
+        var actions = await AgentCatalogInspector.DescribeFeatureActionsAsync(
+          formInst.Feature, formDesc.FormServiceType, services, formScope.Db, formScope.App, ct);
 
         return new
         {
@@ -85,8 +87,9 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
           fields,
           children = childSchemas.Count > 0 ? childSchemas : null,
           lines = childSchemas.FirstOrDefault(),
-          statuses = statuses.Count > 0 ? statuses.Select(s => new { id = s.Id, name = s.Name }).ToList() : null,
-          transitions = transitions.Count > 0 ? AgentContextQueryService.MapTransitionsSchema(transitions) : null
+          statuses = flowDesc is { Statuses.Count: > 0 } ? flowDesc.Statuses.Select(s => new { id = s.Id, name = s.Name }).ToList() : null,
+          transitions = flowDesc is { Transitions.Count: > 0 } ? AgentCatalogInspector.MapTransitionsSchema(flowDesc) : null,
+          actions = actions.Count > 0 ? AgentCatalogInspector.MapActionsSchema(actions) : null
         };
       }
     }
@@ -111,23 +114,31 @@ public sealed class CatalogDescribeMcpTool : IMcpTool
       }
     }
 
-    var (flowFeature, flowFormType, flowGridType) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(requested);
-    if (flowFeature is { AllowsAgent: true } && AgentFlowHelper.FindFlowServiceType(flowFeature) is { } flowSvcType)
+    var (targetFeature, targetFormType, targetGridType) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(requested);
+    var anchorType = directType ?? targetFormType ?? targetGridType;
+    if (targetFeature is { AllowsAgent: true } && anchorType != null)
     {
-      var anchorType = flowFormType ?? flowGridType ?? flowSvcType;
-      await using var flowScope = AgentModuleScope.OpenForService(services, anchorType, defaultScope.Db, defaultScope.App);
-      if (AgentFeatureRegistry.CanViewFeature(flowFeature, flowScope.App))
+      await using var svcScope = AgentModuleScope.OpenForService(services, anchorType, defaultScope.Db, defaultScope.App);
+      if (AgentFeatureRegistry.CanViewFeature(targetFeature, svcScope.App))
       {
-        var (statuses, transitions) = await AgentFlowHelper.DiscoverFeatureFlowAsync(
-          flowFeature, services, flowScope.Db, flowScope.App, ct);
-        return new
+        var flowDesc = await AgentCatalogInspector.DescribeFeatureFlowAsync(
+          targetFeature, services, svcScope.Db, svcScope.App, ct);
+        var actions = await AgentCatalogInspector.DescribeFeatureActionsAsync(
+          targetFeature, anchorType, services, svcScope.Db, svcScope.App, ct);
+
+        if (flowDesc != null || actions.Count > 0 || targetGridType != null)
         {
-          kind = "flow",
-          service = ServicePathResolver.Resolve(flowFormType ?? flowGridType ?? flowSvcType),
-          title = Localizer.Instance.For(flowFeature.Module)[flowFeature.Name],
-          statuses = statuses.Select(s => new { id = s.Id, name = s.Name }).ToList(),
-          transitions = AgentContextQueryService.MapTransitionsSchema(transitions)
-        };
+          var kind = flowDesc != null && actions.Count == 0 ? "flow" : "service";
+          return new
+          {
+            kind,
+            service = ServicePathResolver.Resolve(anchorType),
+            title = Localizer.Instance.For(targetFeature.Module)[targetFeature.Name],
+            statuses = flowDesc is { Statuses.Count: > 0 } ? flowDesc.Statuses.Select(s => new { id = s.Id, name = s.Name }).ToList() : null,
+            transitions = flowDesc is { Transitions.Count: > 0 } ? AgentCatalogInspector.MapTransitionsSchema(flowDesc) : null,
+            actions = actions.Count > 0 ? AgentCatalogInspector.MapActionsSchema(actions) : null
+          };
+        }
       }
     }
 

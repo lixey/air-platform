@@ -454,14 +454,18 @@ public abstract partial class FormService<TEntity>
           await PreloadParentRecordAsync(parent, ct);
         }
 
+        var skippedPaths = pendingReferencePaths is { Count: > 0 }
+          ? new HashSet<string>(pendingReferencePaths, StringComparer.OrdinalIgnoreCase)
+          : null;
         var (saveCtx, ruleCtx) = await RunValidationPipelineAsync(
           elements,
           hooks,
           draftEntity,
           originalValues,
           explicitlyProvided,
-          ct);
-        return (saveCtx.ToErrorMessages(), ruleCtx.Failures);
+          ct,
+          disabledElementPaths: skippedPaths);
+        return (saveCtx.ToErrorMessages(), ruleCtx.Failures, saveCtx.ToWarningMessages());
       },
       ct);
   }

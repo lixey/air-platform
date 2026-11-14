@@ -26,6 +26,7 @@ public sealed class GridActionItem<TEntity>
   public string? ConfirmMessage { get; set; }
   public bool IsInMenu { get; set; }
   public bool IsAllowedInReadOnly { get; set; }
+  public bool IsAgentAllowed { get; set; }
   public bool NeedsSelection { get; set; } = true;
   public bool IgnoresSelection { get; set; }
   public bool IsSingle { get; set; }

@@ -8,4 +8,8 @@ internal sealed class AgentTestReceipt : IEntity, IHasTenant, IHasVersion
   public string Title { get; set; } = string.Empty;
   public decimal Amount { get; set; }
   public long? CategoryId { get; set; }
+  public long? ReadOnlyCategoryId { get; set; }
+  [Sensitive]
+  public string? SecretToken { get; set; }
+  public int RecalcCount { get; set; }
 }

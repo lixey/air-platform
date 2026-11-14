@@ -13,5 +13,6 @@ global using Microsoft.AspNetCore.Routing;
 global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.DependencyInjection.Extensions;
+global using Microsoft.Extensions.Logging;
 global using Platform.Agent.Contracts;
 global using Platform.Agent.Providers;

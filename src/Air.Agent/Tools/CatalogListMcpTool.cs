@@ -7,7 +7,7 @@ public sealed class CatalogListMcpTool : IMcpTool
   public string Name => "platform_catalog_list";
 
   public string Description =>
-    "Lists agent-enabled forms (read-write), grids (read), status flows, and analytical reports (read) permitted for the current user.";
+    "Lists agent-enabled forms (read-write), grids (read), status flows, declared business actions, and analytical reports (read) permitted for the current user.";
 
   public object InputSchema => new
   {
@@ -50,13 +50,17 @@ public sealed class CatalogListMcpTool : IMcpTool
 
         if (typeof(IGridService).IsAssignableFrom(svcType))
         {
-          var hasFlow = AgentFlowHelper.FindFlowServiceType(feat) != null;
+          var flow = await AgentCatalogInspector.DescribeFeatureFlowAsync(feat, services, featScope.Db, featScope.App, ct);
+          var actions = await AgentCatalogInspector.DescribeFeatureActionsAsync(feat, svcType, services, featScope.Db, featScope.App, ct);
+          var hasFlow = flow is { Statuses.Count: > 0 } || flow is { Transitions.Count: > 0 };
           grids.Add(new
           {
             service = path,
             title,
             canWrite = feat.AllowsAgentWrite && AgentFeatureRegistry.CanEditFeature(feat, featScope.App),
-            hasStatusFlow = hasFlow ? true : (bool?)null
+            hasStatusFlow = hasFlow ? true : (bool?)null,
+            hasActions = actions.Count > 0 ? true : (bool?)null,
+            actions = actions.Count > 0 ? actions.Select(a => a.Handle).ToList() : null
           });
         }
         else if (typeof(IReportService).IsAssignableFrom(svcType))
@@ -68,7 +72,7 @@ public sealed class CatalogListMcpTool : IMcpTool
           });
         }
       }
-      catch
+      catch (Exception ex) when (ex is not OperationCanceledException)
       {
         // Skip features belonging to unregistered module DbContexts
       }

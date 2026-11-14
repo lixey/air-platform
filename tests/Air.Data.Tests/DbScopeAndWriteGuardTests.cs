@@ -213,4 +213,149 @@ public sealed class DbScopeAndWriteGuardTests : IDisposable
     Assert.False(AsyncLocalTenantContext.Instance.IsSystemScope);
     Assert.Empty(await ambientDb.Orders.AsNoTracking().ToListAsync());
   }
+
+  [Fact]
+  public async Task DbScope_RunAtomicAsync_SharesTransactionAcrossParallelLeaves_RollsBackAtomically_AndGuardsMismatchedConnections()
+  {
+    var tempDir = Path.Combine(Path.GetTempPath(), $"air-dbscope-atomic-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDir);
+    var dbPathA = Path.Combine(tempDir, "shared-a.db");
+    var dbPathB = Path.Combine(tempDir, "other-b.db");
+    var connStrA = $"Data Source={dbPathA};Pooling=False";
+    var connStrB = $"Data Source={dbPathB};Pooling=False";
+
+    try
+    {
+      var services = new ServiceCollection();
+      services.AddDbContext<ParallelCrmDbContext>(o =>
+        o.UseSqlite(connStrA, sq => sq.ExecutionStrategy(deps => new TestRetryingExecutionStrategy(deps))));
+      services.RegisterPlatformDbContextHierarchy<ParallelCrmDbContext>();
+      services.AddDbContext<ParallelOrgDbContext>(o =>
+        o.UseSqlite(connStrA, sq => sq.ExecutionStrategy(deps => new TestRetryingExecutionStrategy(deps))));
+      services.RegisterPlatformDbContextHierarchy<ParallelOrgDbContext>();
+      services.AddDbContext<ParallelAppDbContext>(o =>
+        o.UseSqlite(connStrA, sq => sq.ExecutionStrategy(deps => new TestRetryingExecutionStrategy(deps))));
+      services.RegisterPlatformDbContextHierarchy<ParallelAppDbContext>();
+      services.AddDbContext<ParallelEcomDbContext>(o =>
+        o.UseSqlite(connStrA, sq => sq.ExecutionStrategy(deps => new TestRetryingExecutionStrategy(deps))));
+      services.RegisterPlatformDbContextHierarchy<ParallelEcomDbContext>();
+
+      await using var provider = services.BuildServiceProvider();
+
+      await using (var initScope = provider.CreateAsyncScope())
+      {
+        var initDb = initScope.ServiceProvider.GetRequiredService<ParallelCrmDbContext>();
+        await initDb.Database.EnsureCreatedAsync();
+      }
+
+      using (AsyncLocalTenantContext.UseSystemScope(userId: 42, correlationId: "atomic-commit"))
+      {
+        await DbScope.RunAtomicAsync(
+          provider,
+          [typeof(ParallelAppDbContext), typeof(ParallelCrmDbContext), typeof(ParallelEcomDbContext)],
+          async (contextsByType, ct) =>
+          {
+            // Base ParallelAppDbContext deduplicates to the two active leaf contexts
+            Assert.Equal(2, contextsByType.Count);
+            var crmDb = Assert.IsType<ParallelCrmDbContext>(contextsByType[typeof(ParallelCrmDbContext)]);
+            var ecomDb = Assert.IsType<ParallelEcomDbContext>(contextsByType[typeof(ParallelEcomDbContext)]);
+            Assert.NotSame(crmDb, ecomDb);
+
+            crmDb.AppLanguage.Add(new AppLanguage { Id = 1, Handle = "Fr", Code = "fr-FR", Name = "Francais", IsActive = true });
+            await crmDb.SaveChangesAsync(ct);
+
+            ecomDb.AppAgentModel.Add(new AppAgentModel { ProviderHandle = "Agy", ModelId = "m-ok", Name = "Model Ok", SortOrder = 1, IsActive = true });
+            await ecomDb.SaveChangesAsync(ct);
+          });
+      }
+
+      // Failed second step inside RunAtomicAsync must roll back the already-saved first leaf step AND audit rows
+      using (AsyncLocalTenantContext.UseSystemScope(userId: 42, correlationId: "atomic-rollback"))
+      {
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+          DbScope.RunAtomicAsync(
+            provider,
+            [typeof(ParallelCrmDbContext), typeof(ParallelEcomDbContext)],
+            async (contextsByType, ct) =>
+            {
+              var crmDb = (ParallelCrmDbContext)contextsByType[typeof(ParallelCrmDbContext)];
+              var ecomDb = (ParallelEcomDbContext)contextsByType[typeof(ParallelEcomDbContext)];
+
+              crmDb.AppLanguage.Add(new AppLanguage { Id = 2, Handle = "Es", Code = "es-ES", Name = "Espanol", IsActive = true });
+              await crmDb.SaveChangesAsync(ct);
+
+              ecomDb.AppAgentModel.Add(new AppAgentModel { ProviderHandle = "Agy", ModelId = "m-fail", Name = "Model Fail", SortOrder = 2, IsActive = true });
+              await ecomDb.SaveChangesAsync(ct);
+
+              throw new InvalidOperationException("Simulated batch failure after saving across both leaves.");
+            }));
+      }
+
+      // Rollback-only flag MUST throw InvalidOperationException and roll back (never silently succeed!)
+      using (AsyncLocalTenantContext.UseSystemScope(userId: 42, correlationId: "atomic-rollback-only"))
+      {
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+          DbScope.RunAtomicAsync(
+            provider,
+            [typeof(ParallelCrmDbContext), typeof(ParallelEcomDbContext)],
+            async (contextsByType, ct) =>
+            {
+              var crmDb = (ParallelCrmDbContext)contextsByType[typeof(ParallelCrmDbContext)];
+              crmDb.AppLanguage.Add(new AppLanguage { Id = 3, Handle = "De", Code = "de-DE", Name = "Deutsch", IsActive = true });
+              await crmDb.SaveChangesAsync(ct);
+              crmDb.MarkMutationRollbackOnly();
+            }));
+      }
+
+      // Transient exceptions MUST NOT retry the stateful work lambda even when provider has a retrying ExecutionStrategy
+      var transientAttempts = 0;
+      using (AsyncLocalTenantContext.UseSystemScope(userId: 42, correlationId: "atomic-no-retry"))
+      {
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+          DbScope.RunAtomicAsync(
+            provider,
+            [typeof(ParallelCrmDbContext)],
+            (_, _) =>
+            {
+              transientAttempts++;
+              throw new TimeoutException("Simulated transient deadlock.");
+            }));
+      }
+
+      Assert.Equal(1, transientAttempts);
+
+      using (AsyncLocalTenantContext.UseSystemScope())
+      {
+        await using var verifyScope = provider.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ParallelCrmDbContext>();
+        Assert.Equal(["Fr"], await verifyDb.AppLanguage.AsNoTracking().Select(x => x.Handle).ToArrayAsync());
+        Assert.Equal(["m-ok"], await verifyDb.AppAgentModel.AsNoTracking().Select(x => x.ModelId).ToArrayAsync());
+        var changes = await verifyDb.AppPlatformChange.AsNoTracking().ToListAsync();
+        Assert.Equal(2, changes.Count);
+      }
+
+      // Mismatched connection strings across parallel leaves must fail closed
+      var mismatchedServices = new ServiceCollection();
+      mismatchedServices.AddDbContext<ParallelCrmDbContext>(o => o.UseSqlite(connStrA));
+      mismatchedServices.RegisterPlatformDbContextHierarchy<ParallelCrmDbContext>();
+      mismatchedServices.AddDbContext<ParallelEcomDbContext>(o => o.UseSqlite(connStrB));
+      mismatchedServices.RegisterPlatformDbContextHierarchy<ParallelEcomDbContext>();
+
+      await using var mismatchedProvider = mismatchedServices.BuildServiceProvider();
+      var mismatchEx = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        DbScope.RunAtomicAsync(
+          mismatchedProvider,
+          [typeof(ParallelCrmDbContext), typeof(ParallelEcomDbContext)],
+          (_, _) => Task.CompletedTask));
+      Assert.Contains("different connections", mismatchEx.Message, StringComparison.OrdinalIgnoreCase);
+    }
+    finally
+    {
+      try
+      {
+        Directory.Delete(tempDir, recursive: true);
+      }
+      catch { }
+    }
+  }
 }

@@ -27,6 +27,7 @@ public sealed class FormActionItem<TEntity>
   internal Func<TEntity, CancellationToken, Task<string?>>? ConfirmProvider { get; set; }
   public bool IsInMenu { get; set; }
   public bool IsAllowedInReadOnly { get; set; }
+  public bool IsAgentAllowed { get; set; }
   internal RecordAsk? Ask { get; set; }
   internal Func<TEntity?, CancellationToken, Task<object?>>? DefaultProvider { get; set; }
   internal List<RecordAvailability> Offers { get; } = [];

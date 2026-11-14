@@ -14,65 +14,13 @@ public static class AgentPromptBuilder
     CancellationToken ct = default)
   {
     var sb = new StringBuilder();
-    var uiCulture = CultureInfo.CurrentUICulture;
-    var langDisplay = string.Equals(uiCulture.EnglishName, uiCulture.NativeName, StringComparison.OrdinalIgnoreCase)
-      ? uiCulture.EnglishName
-      : $"{uiCulture.EnglishName} ({uiCulture.NativeName})";
+    var langDisplay = FormatLanguageDisplay();
 
-    var recordsFile = !string.IsNullOrWhiteSpace(turnWorkspaceDir)
-      ? AgentStore.GetRecordsFilePath(turnWorkspaceDir)
-      : null;
-    var hasRecordsFile = recordsFile != null && File.Exists(recordsFile);
-
-    AppendSystemInstructions(sb, request.SessionId, langDisplay);
-
-    if (request.Attachments.Count > 0)
-    {
-      sb.AppendLine();
-      sb.AppendLine("[ATTACHED FILES — USE read_file TO INSPECT]");
-      foreach (var att in request.Attachments)
-      {
-        sb.AppendLine($"- AttachmentId: \"{att.Id}\", FileName: \"{att.FileName}\", AbsolutePath: \"{att.LocalPath}\"");
-      }
-    }
-
-    if (hasRecordsFile)
-    {
-      sb.AppendLine();
-      sb.AppendLine("[EXTENDED WORKSPACE RECORDS — USE read_file ONLY IF OLDER RECENT RECORDS (>25, UP TO 150) ARE NEEDED]");
-      sb.AppendLine($"- ExtendedRecordsPath: \"{recordsFile}\"");
-    }
-
+    AppendSystemInstructions(sb, request.SessionId, langDisplay, request.CurrentPath);
+    AppendAttachedFiles(sb, request.Attachments);
     AppendUnconfirmedSessionProposals(sb, request);
-
-    if (!string.IsNullOrWhiteSpace(request.SyncContext))
-    {
-      var syncBytes = Encoding.UTF8.GetByteCount(request.SyncContext);
-      var currentSyncPrefixBytes = Encoding.UTF8.GetByteCount(sb.ToString());
-      if (currentSyncPrefixBytes + syncBytes + 8192 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(turnWorkspaceDir))
-      {
-        sb.AppendLine();
-        sb.AppendLine("[SYNC CONTEXT JSON]");
-        sb.AppendLine(request.SyncContext);
-      }
-      else
-      {
-        var syncPath = AgentStore.GetSyncContextFilePath(turnWorkspaceDir);
-        await File.WriteAllTextAsync(syncPath, request.SyncContext, Encoding.UTF8, ct);
-        sb.AppendLine();
-        sb.AppendLine($"[SYNC CONTEXT JSON — FULL CONTEXT SAVED IN \"{syncPath}\" (USE read_file IF NEEDED)]");
-        var syncBudgetBytes = Math.Min(24_000, Math.Max(4096, MaxInlinePromptBytes - currentSyncPrefixBytes - 8192));
-        sb.AppendLine(TruncateUtf8(request.SyncContext, syncBudgetBytes));
-      }
-    }
-
-    sb.AppendLine();
-    sb.AppendLine("[USER MESSAGE]");
-    sb.AppendLine(
-      string.IsNullOrWhiteSpace(request.Message)
-        ? Localizer.Instance["AgentDefaultPhotoPrompt"]
-        : request.Message);
-
+    await AppendSyncContextAsync(sb, request.SyncContext, turnWorkspaceDir, ct);
+    AppendUserMessage(sb, request.Message);
     await AgentMemoryService.AppendDatabaseMemoryAndDomainKnowledgeAsync(sb, request, ct);
 
     if (!string.IsNullOrWhiteSpace(contextJson))
@@ -87,8 +35,8 @@ public static class AgentPromptBuilder
       {
         sb.AppendLine();
         sb.AppendLine(fullContextFile != null && File.Exists(fullContextFile)
-          ? $"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON — FULL CONTEXT SAVED IN \"{fullContextFile}\"]"
-          : "[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT JSON]");
+          ? $"[AVAILABLE FORMS, GRIDS, ACTIONS, AND DICTIONARIES CONTEXT JSON — FULL CONTEXT SAVED IN \"{fullContextFile}\"]"
+          : "[AVAILABLE FORMS, GRIDS, ACTIONS, AND DICTIONARIES CONTEXT JSON]");
         sb.AppendLine(contextJson);
       }
       else
@@ -100,11 +48,51 @@ public static class AgentPromptBuilder
         }
 
         sb.AppendLine();
-        sb.AppendLine($"[AVAILABLE FORMS, DICTIONARIES, AND RECENT RECORDS CONTEXT — FULL CONTEXT SAVED IN \"{contextPath}\" (USE read_file IF NEEDED)]");
+        sb.AppendLine($"[AVAILABLE FORMS, GRIDS, ACTIONS, AND DICTIONARIES CONTEXT — FULL CONTEXT SAVED IN \"{contextPath}\" (USE read_file IF NEEDED)]");
         var budgetBytes = Math.Max(4096, MaxInlinePromptBytes - currentBytes - 256);
         sb.AppendLine(TruncateUtf8(contextJson, budgetBytes));
       }
     }
+
+    return sb.ToString();
+  }
+
+  public static async Task<string> BuildDeltaPromptAsync(
+    AgentTurnRequest request,
+    string today,
+    Dictionary<string, List<Dictionary<string, object?>>> mentionedRecords,
+    string? changedMemoriesBlock = null,
+    string? turnWorkspaceDir = null,
+    CancellationToken ct = default)
+  {
+    var sb = new StringBuilder();
+    sb.AppendLine("[TURN DELTA CONTEXT]");
+    sb.AppendLine($"SessionId: {request.SessionId}");
+    sb.AppendLine($"Today: {today}");
+    sb.AppendLine($"Preferred Language: {FormatLanguageDisplay()}");
+    if (SanitizeCurrentPath(request.CurrentPath) is { } safeDeltaPath)
+    {
+      sb.AppendLine($"CurrentScreen: {safeDeltaPath}");
+    }
+
+    AppendAttachedFiles(sb, request.Attachments);
+
+    if (mentionedRecords.Count > 0)
+    {
+      sb.AppendLine();
+      sb.AppendLine("[MENTIONED RECORDS JSON]");
+      sb.AppendLine(JsonSerializer.Serialize(mentionedRecords, WebJson));
+    }
+
+    if (!string.IsNullOrWhiteSpace(changedMemoriesBlock))
+    {
+      sb.AppendLine();
+      sb.AppendLine(changedMemoriesBlock);
+    }
+
+    AppendUnconfirmedSessionProposals(sb, request);
+    await AppendSyncContextAsync(sb, request.SyncContext, turnWorkspaceDir, ct);
+    AppendUserMessage(sb, request.Message);
 
     return sb.ToString();
   }
@@ -230,25 +218,93 @@ public static class AgentPromptBuilder
     CancellationToken ct) =>
     AgentMemoryService.SaveInlineMemoriesAsync(text, request, ct);
 
-  private static void AppendSystemInstructions(StringBuilder sb, string sessionId, string langDisplay)
+  private static string FormatLanguageDisplay()
+  {
+    var uiCulture = CultureInfo.CurrentUICulture;
+    return string.Equals(uiCulture.EnglishName, uiCulture.NativeName, StringComparison.OrdinalIgnoreCase)
+      ? uiCulture.EnglishName
+      : $"{uiCulture.EnglishName} ({uiCulture.NativeName})";
+  }
+
+  private static void AppendAttachedFiles(StringBuilder sb, IReadOnlyList<AgentAttachmentDto> attachments)
+  {
+    if (attachments.Count == 0)
+    {
+      return;
+    }
+
+    sb.AppendLine();
+    sb.AppendLine("[ATTACHED FILES — USE read_file TO INSPECT]");
+    foreach (var att in attachments)
+    {
+      sb.AppendLine($"- AttachmentId: \"{att.Id}\", FileName: \"{att.FileName}\", AbsolutePath: \"{att.LocalPath}\"");
+    }
+  }
+
+  private static async Task AppendSyncContextAsync(
+    StringBuilder sb,
+    string? syncContext,
+    string? turnWorkspaceDir,
+    CancellationToken ct)
+  {
+    if (string.IsNullOrWhiteSpace(syncContext))
+    {
+      return;
+    }
+
+    var syncBytes = Encoding.UTF8.GetByteCount(syncContext);
+    var currentSyncPrefixBytes = Encoding.UTF8.GetByteCount(sb.ToString());
+    if (currentSyncPrefixBytes + syncBytes + 8192 <= MaxInlinePromptBytes || string.IsNullOrWhiteSpace(turnWorkspaceDir))
+    {
+      sb.AppendLine();
+      sb.AppendLine("[SYNC CONTEXT JSON]");
+      sb.AppendLine(syncContext);
+    }
+    else
+    {
+      var syncPath = AgentStore.GetSyncContextFilePath(turnWorkspaceDir);
+      await File.WriteAllTextAsync(syncPath, syncContext, Encoding.UTF8, ct);
+      sb.AppendLine();
+      sb.AppendLine($"[SYNC CONTEXT JSON — FULL CONTEXT SAVED IN \"{syncPath}\" (USE read_file IF NEEDED)]");
+      var syncBudgetBytes = Math.Min(24_000, Math.Max(4096, MaxInlinePromptBytes - currentSyncPrefixBytes - 8192));
+      sb.AppendLine(TruncateUtf8(syncContext, syncBudgetBytes));
+    }
+  }
+
+  private static void AppendUserMessage(StringBuilder sb, string? message)
+  {
+    sb.AppendLine();
+    sb.AppendLine("[USER MESSAGE]");
+    sb.AppendLine(
+      string.IsNullOrWhiteSpace(message)
+        ? Localizer.Instance["AgentDefaultPhotoPrompt"]
+        : message);
+  }
+
+  private static void AppendSystemInstructions(StringBuilder sb, string sessionId, string langDisplay, string? currentPath)
   {
     sb.AppendLine("[SYSTEM INSTRUCTIONS FOR PLATFORM AI ASSISTANT]");
     sb.AppendLine($"SessionId: {sessionId}");
     sb.AppendLine($"Preferred Language: {langDisplay}");
+    if (SanitizeCurrentPath(currentPath) is { } safePath)
+    {
+      sb.AppendLine($"CurrentScreen: {safePath}");
+    }
+
     sb.AppendLine("You are the built-in AI assistant of the platform application.");
-    sb.AppendLine("Your job is to help the user query analytics/records and stage confirmation proposals using the available `forms`, `dictionaries`, `largeDictionaries`, and `recentRecords` in the Context JSON below.");
+    sb.AppendLine("Your job is to help the user query analytics/records on demand and stage confirmation proposals using the available `forms`, `grids`, `actionServices`, and `dictionaries` in the Context JSON below.");
     sb.AppendLine("IMPORTANT RULES:");
     sb.AppendLine("1. NEVER save records directly without user confirmation. Stage proposal card(s) by outputting `<ui_proposal>` JSON block(s) (or calling `platform_proposal_stage`).");
     sb.AppendLine("2. CRITICAL TOOL RESTRICTION: NEVER call `run_command`, `bash`, `grep_search`, `find_by_name`, `list_dir`, or browser tools! You may ONLY call `read_file` / `Read` on exact paths listed below and the `platform_*` MCP tools (`platform_catalog_list`, `platform_catalog_describe`, `platform_records_query`, `platform_proposal_stage`).");
-    sb.AppendLine("3. If files are listed in `[ATTACHED FILES]`, inspect each `AbsolutePath` via `read_file` / `Read` and cross-reference `recentRecords` before proposing changes.");
-    sb.AppendLine("4. CREATING, EDITING & MOVING STATUS:");
-    sb.AppendLine("   - To CREATE: omit `id` and populate `values`.");
-    sb.AppendLine("   - To EDIT: check `recentRecords` first! Include `\"id\": <recordId>` and pass ONLY modified fields in `values`.");
-    sb.AppendLine("   - CHILD GRIDS (`children`): For forms with one or more `children` schemas, pass `\"children\": [{ \"childKey\": \"<child.key>\", \"mode\": \"replace\", \"rows\": [{ \"<field.path>\": \"<value>\" }] }]` (`mode`: `\"replace\"` or `\"append\"`; single-child forms also accept `\"lines\"` + `\"linesMode\"`).");
-    sb.AppendLine("   - STATUS TRANSITIONS (`transitions`): When a form/grid exposes `transitions`, move a record's status via `\"operation\": \"move-status\"`, `\"service\": \"<service>\"`, `\"id\": <recordId>`, `\"transition\": \"<transition.handle>\"`, and optional `\"ask\": { \"<askField.path>\": \"<value>\" }`.");
-    sb.AppendLine("5. REFERENCE FIELDS (`referenceService`): Use numeric `id` from `dictionaries`, exact name for `largeDictionaries`, or stage a prerequisite `<ui_proposal>` with `\"key\": \"<stepKey>\"` and link via `\"$ref:<stepKey>\"` (in `values`, `children[].rows`, or `ask`).");
-    sb.AppendLine("6. MULTI-STEP BUNDLES & REVISIONS: Emit dependent `<ui_proposal>` blocks in topological order with `\"key\"` / `\"$ref:<key>\"` (and optional `\"dependsOn\": [\"<stepKey>\"]`). When revising `[CURRENT UNCONFIRMED PROPOSALS]`, output the complete updated bundle.");
-    sb.AppendLine("7. `<ui_proposal>` SCHEMA (output directly without markdown code fences):");
+    sb.AppendLine("3. ON-DEMAND QUERYING: Only small dictionaries (<=50 rows) and `#ID`-mentioned records are preloaded. Use `platform_records_query` on any `grids` / `largeDictionaries` service to search or inspect records before proposing edits.");
+    sb.AppendLine("4. CREATING, EDITING, MOVING STATUS & RUNNING BUSINESS ACTIONS:");
+    sb.AppendLine("   - CREATE: `\"operation\": \"create\"`, omit `id`, populate `values`.");
+    sb.AppendLine("   - EDIT: `\"operation\": \"update\"`, include `\"id\": <recordId>`, pass ONLY modified fields in `values`.");
+    sb.AppendLine("   - CHILD GRIDS (`children`): pass `\"children\": [{ \"childKey\": \"<child.key>\", \"mode\": \"replace\", \"rows\": [{ \"<field.path>\": \"<value>\" }] }]` (`mode`: `\"replace\"` or `\"append\"`).");
+    sb.AppendLine("   - STATUS TRANSITIONS (`transitions`): `\"operation\": \"move-status\"`, `\"service\": \"<service>\"`, `\"id\": <recordId>`, `\"transition\": \"<transition.handle>\"`, optional `\"ask\": { ... }`.");
+    sb.AppendLine("   - BUSINESS ACTIONS (`actions` on forms or `actionServices`): `\"operation\": \"run-action\"`, `\"service\": \"<action.service>\"`, `\"action\": \"<action.handle>\"`, `\"id\": <recordId>` (or `\"selectedIds\": [...]` for `multi`, omit for `none`), optional `\"ask\": { ... }`.");
+    sb.AppendLine("5. REFERENCE FIELDS & `$ref`: Use numeric `id` from `dictionaries`, exact name/code for `largeDictionaries`, or stage a prerequisite `<ui_proposal>` with `\"key\": \"<stepKey>\"` and link via `\"$ref:<stepKey>\"` (in `values`, `children[].rows`, `id`, `selectedIds`, or `ask`).");
+    sb.AppendLine("6. `<ui_proposal>` SCHEMA (output directly without markdown code fences):");
     sb.AppendLine(
       """
       <ui_proposal>
@@ -256,28 +312,23 @@ public static class AgentPromptBuilder
         "sessionId": "<SessionId>",
         "key": "<optional stepKey>",
         "operation": "create",
-        "service": "<form.service>",
+        "service": "<service>",
         "id": 123,
-        "transition": "<optional transition.handle when operation is move-status>",
+        "selectedIds": [123],
+        "transition": "<optional transition.handle>",
+        "action": "<optional action.handle>",
         "values": { "<field.path>": "<value or \"$ref:<stepKey>\">" },
         "ask": { "<askField.path>": "<value>" },
         "children": [
           { "childKey": "<child.key>", "mode": "replace", "rows": [{ "<childField.path>": "<value>" }] }
         ],
-        "multiSelectMode": "replace",
         "dependsOn": ["<optional stepKey>"],
         "attachmentIds": ["<attachmentId>"]
       }
       </ui_proposal>
       """);
-    sb.AppendLine("8. RICH VISUAL BLOCKS (emit without code fences when appropriate):");
-    sb.AppendLine("   - `<ui_kpi>[{\"label\": \"...\", \"value\": 125000, \"color\": \"emerald\", \"subtitle\": \"...\"}]</ui_kpi>`");
-    sb.AppendLine("   - `<ui_chart>{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"donut\", \"slices\": [{\"name\": \"...\", \"value\": 1000, \"color\": \"blue\"}]}</ui_chart>` or `bar`/`line`/`area` with `categories` + `series`.");
-    sb.AppendLine("   - `<ui_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}], \"rows\": [{\"name\": \"...\"}]}</ui_table>` or `<ui_html>...</ui_html>`.");
-    sb.AppendLine("   - Allowed `color`: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
-    sb.AppendLine("9. MEMORY & RULES (`<agent_memory>` vs `<ui_proposal>`):");
-    sb.AppendLine("   - For personal user preferences or facts ONLY, emit `<agent_memory>{\"kind\": \"Preference\", \"title\": \"Short title\", \"content\": \"Clear preference or fact\"}</agent_memory>` (`kind`: `\"Preference\"` or `\"Fact\"`). This stages a confirmation pill for the user — tell them they can click Save to remember it, and do not claim it is already saved.");
-    sb.AppendLine("   - NEVER emit `<agent_memory>` with `kind: \"Rule\"` or for tenant-wide rules (silent rule writes are rejected). To create or edit a tenant-wide `Rule`, stage a standard `<ui_proposal>` targeting the `AgentMemory` form service when available in `forms`.");
+    sb.AppendLine("7. RICH VISUAL BLOCKS (emit without code fences when appropriate): `<ui_kpi>[...]</ui_kpi>`, `<ui_chart>{...}</ui_chart>`, `<ui_table>{...}</ui_table>`, `<ui_html>...</ui_html>`. Allowed `color`: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
+    sb.AppendLine("8. MEMORY & RULES (`<agent_memory>` vs `<ui_proposal>`): For personal user preferences or facts ONLY, emit `<agent_memory>{\"kind\": \"Preference\", \"title\": \"Short title\", \"content\": \"Clear preference or fact\"}</agent_memory>` (`kind`: `\"Preference\"` or `\"Fact\"`). Never emit `kind: \"Rule\"` in `<agent_memory>`; stage a `<ui_proposal>` for `AgentMemory` instead.");
   }
 
   private static void AppendUnconfirmedSessionProposals(StringBuilder sb, AgentTurnRequest request)
@@ -320,6 +371,7 @@ public static class AgentPromptBuilder
         operation = prop.Operation,
         service = prop.Service,
         transition = prop.Transition,
+        action = prop.Action,
         id = prop.RecordId,
         title = prop.Title,
         values
@@ -329,6 +381,33 @@ public static class AgentPromptBuilder
     sb.AppendLine();
     sb.AppendLine("[CURRENT UNCONFIRMED PROPOSALS IN THIS SESSION — IF USER ASKS TO REVISE/ADJUST THEM, EMIT THE COMPLETE UPDATED BUNDLE]");
     sb.AppendLine(JsonSerializer.Serialize(summaryItems, WebJson));
+  }
+
+  public static string? SanitizeCurrentPath(string? rawPath)
+  {
+    if (string.IsNullOrWhiteSpace(rawPath))
+    {
+      return null;
+    }
+
+    var trimmed = rawPath.Trim();
+    var cutIdx = trimmed.IndexOfAny(['?', '#', '\r', '\n']);
+    var pathOnly = cutIdx >= 0 ? trimmed[..cutIdx].Trim() : trimmed;
+    if (pathOnly.Length is 0 or > 128 || pathOnly[0] != '/')
+    {
+      return null;
+    }
+
+    foreach (var ch in pathOnly)
+    {
+      var allowed = char.IsAsciiLetterOrDigit(ch) || ch is '/' or '_' or '-' or '.' or '~';
+      if (!allowed)
+      {
+        return null;
+      }
+    }
+
+    return pathOnly;
   }
 
   private static string TruncateUtf8(string text, int maxBytes)

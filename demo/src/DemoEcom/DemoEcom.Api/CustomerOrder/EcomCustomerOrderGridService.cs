@@ -61,6 +61,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
       .Label("Create sales invoice")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSalesInvoiceFormService>(
         db,
         ctx,
@@ -75,6 +76,7 @@ public sealed class EcomCustomerOrderGridService(EcomDbContext db, EcomService? 
       .Label("Create incoming payment")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
         db,
         ctx,

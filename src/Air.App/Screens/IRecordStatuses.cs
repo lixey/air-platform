@@ -10,4 +10,14 @@ public interface IRecordStatuses
   PropertyInfo? FindParentKeyProperty(Type childEntityType) => null;
   void RegisterMetadata() { }
   Task FollowMovesAsync(IMutationContext context, IReadOnlySet<long> movedRecordIds, CancellationToken cancellationToken);
+  Task<FlowDescriptionDto> DescribeFlowAsync(CancellationToken cancellationToken = default) =>
+    Task.FromResult(new FlowDescriptionDto());
+
+  Task<StatusMovePreviewDto> PreviewMoveAsync(
+    object record,
+    string transitionName,
+    JsonElement? askInput = null,
+    IReadOnlySet<string>? skipValidationPaths = null,
+    CancellationToken cancellationToken = default) =>
+    throw new InvalidOperationException("Status flow is not configured.");
 }

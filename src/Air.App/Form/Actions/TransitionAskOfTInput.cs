@@ -85,13 +85,14 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
     PlatformDbContext db,
     PlatformAppService? app,
     Localizer localizer,
-    CancellationToken ct = default)
+    CancellationToken ct = default,
+    IReadOnlySet<string>? skipPaths = null)
   {
     var target = input as TInput ?? new TInput();
     var elements = CreateElements();
     var saveCtx = new FormSaveContext<TInput>(db) { Entity = target, IsNew = true };
     var ruleCtx = new RuleContext<TInput> { SaveContext = saveCtx, Localizer = localizer };
-    FormValidator.ValidateElementConstraints(db, localizer, elements.List, target, ruleCtx, onlyAcceptingInput: true);
+    FormValidator.ValidateElementConstraints(db, localizer, elements.List, target, ruleCtx, onlyAcceptingInput: true, skipPaths);
     await FormValidator.ValidateReferenceElementsAsync(
       db,
       app,
@@ -101,7 +102,8 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
       isNew: true,
       originalValues: null,
       ruleCtx,
-      ct);
+      ct,
+      skipPaths);
     return ruleCtx.Failures;
   }
 }

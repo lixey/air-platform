@@ -176,8 +176,10 @@ public sealed class CodexCliAgentProvider(
     string effort,
     string? existingConvId,
     string sessionAttachmentsDir,
-    IReadOnlyList<AgentAttachmentDto> attachments)
+    IReadOnlyList<AgentAttachmentDto> attachments,
+    string? mcpConfigPath = null)
   {
+    var mcpUrl = ResolveMcpUrl(psi, mcpConfigPath);
     psi.ArgumentList.Add("exec");
 
     if (!string.IsNullOrWhiteSpace(existingConvId))
@@ -198,6 +200,7 @@ public sealed class CodexCliAgentProvider(
       psi.ArgumentList.Add("sandbox_mode=\"read-only\"");
       psi.ArgumentList.Add("-c");
       psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
+      AppendCodexMcpArgs(psi, mcpUrl);
 
       foreach (var att in attachments)
       {
@@ -237,6 +240,7 @@ public sealed class CodexCliAgentProvider(
 
     psi.ArgumentList.Add("-c");
     psi.ArgumentList.Add($"model_reasoning_effort=\"{effort}\"");
+    AppendCodexMcpArgs(psi, mcpUrl);
 
     foreach (var att in attachments)
     {
@@ -251,6 +255,43 @@ public sealed class CodexCliAgentProvider(
 
     psi.ArgumentList.Add("-");
     return prompt;
+  }
+
+  private static void AppendCodexMcpArgs(ProcessStartInfo psi, string? mcpUrl)
+  {
+    if (string.IsNullOrWhiteSpace(mcpUrl))
+    {
+      return;
+    }
+
+    psi.ArgumentList.Add("-c");
+    psi.ArgumentList.Add($"mcp_servers.platform.url=\"{mcpUrl}\"");
+    psi.ArgumentList.Add("-c");
+    psi.ArgumentList.Add("mcp_servers.platform.bearer_token_env_var=\"PLATFORM_MCP_TOKEN\"");
+  }
+
+  private static string? ResolveMcpUrl(ProcessStartInfo psi, string? mcpConfigPath)
+  {
+    if (!string.IsNullOrWhiteSpace(mcpConfigPath) && File.Exists(mcpConfigPath))
+    {
+      try
+      {
+        using var doc = JsonDocument.Parse(File.ReadAllText(mcpConfigPath));
+        if (doc.RootElement.TryGetProperty("mcpServers", out var servers) &&
+            servers.TryGetProperty("platform", out var platform) &&
+            platform.TryGetProperty("url", out var urlProp) &&
+            urlProp.ValueKind == JsonValueKind.String &&
+            urlProp.GetString() is { Length: > 0 } parsedUrl)
+        {
+          return parsedUrl;
+        }
+      }
+      catch { }
+    }
+
+    return psi.Environment.TryGetValue("PLATFORM_MCP_URL", out var envUrl) && !string.IsNullOrWhiteSpace(envUrl)
+      ? envUrl
+      : null;
   }
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
@@ -272,8 +313,8 @@ public sealed class CodexCliAgentProvider(
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, _, sessionAttachmentsDir, effectiveRequest) =>
-        ConfigureTurnStartInfo(psi, prompt, cliModel, effort, existingConvId, sessionAttachmentsDir, effectiveRequest.Attachments),
+      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest) =>
+        ConfigureTurnStartInfo(psi, prompt, cliModel, effort, existingConvId, sessionAttachmentsDir, effectiveRequest.Attachments, mcpConfigPath),
       (root, fullAssistantText, pendingEvents) =>
       {
         var type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;

@@ -16,7 +16,8 @@ internal sealed class InspectionFlowService(AgentTestDbContext db)
 
   public Transition Approve => From(1)
     .To(2)
-    .When(x => x.Code != "BLOCKED", "Blocked inspection cannot be approved.");
+    .When(x => x.Code != "BLOCKED", "Blocked inspection cannot be approved.")
+    .Check((Move m, CancellationToken _) => Task.FromResult(m.Record.Code != "GUARD-FAIL"), "Inspection failed async quality guard.");
 
   public Transition Reject => From(1, 2)
     .To(3)

@@ -1,6 +1,5 @@
 using Platform.Agent.Internals;
 using static Platform.Agent.Internals.AgentRowValueHelpers;
-using static Platform.Agent.Internals.AgentValueHelpers;
 
 namespace Platform.Agent;
 
@@ -20,6 +19,7 @@ public static class AgentContextQueryService
       {
         today = ResolveTodayString(services, app: null),
         forms = Array.Empty<object>(),
+        grids = Array.Empty<object>(),
         dictionaries = new Dictionary<string, object>(),
         largeDictionaries = new Dictionary<string, object>(),
         recentRecords = new Dictionary<string, object>()
@@ -30,6 +30,7 @@ public static class AgentContextQueryService
     var today = ResolveTodayString(services, defaultScope.App);
     var descriptors = AgentFeatureRegistry.DiscoverForms(services, defaultScope.Db, defaultScope.App);
     var refServices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var coveredFeatures = new HashSet<Feature>();
     var forms = new List<object>();
 
     foreach (var desc in descriptors)
@@ -42,13 +43,16 @@ public static class AgentContextQueryService
         continue;
       }
 
+      coveredFeatures.Add(formInst.Feature);
       var defaultValues = await GetDefaultFormValuesAsync(formInst, ct);
       var (elements, children) = await formInst.GetElementsMetadataAsync(ct);
       var editableFields = BuildFieldSchemaList(elements, defaultValues, refServices);
       var childSchemas = await BuildChildSchemasAsync(
         children, formInst.Feature, desc.ServicePath, refServices, services, formScope.Db, formScope.App, ct);
-      var (statuses, transitions) = await AgentFlowHelper.DiscoverFeatureFlowAsync(
+      var flowDesc = await AgentCatalogInspector.DescribeFeatureFlowAsync(
         formInst.Feature, services, formScope.Db, formScope.App, ct);
+      var actions = await AgentCatalogInspector.DescribeFeatureActionsAsync(
+        formInst.Feature, desc.FormServiceType, services, formScope.Db, formScope.App, ct);
 
       forms.Add(new
       {
@@ -59,18 +63,63 @@ public static class AgentContextQueryService
         fields = editableFields,
         children = childSchemas.Count > 0 ? childSchemas : null,
         lines = childSchemas.FirstOrDefault(),
-        statuses = statuses.Count > 0 ? statuses.Select(s => new { id = s.Id, name = s.Name }).ToList() : null,
-        transitions = transitions.Count > 0 ? MapTransitionsSchema(transitions) : null
+        statuses = flowDesc is { Statuses.Count: > 0 } ? flowDesc.Statuses.Select(s => new { id = s.Id, name = s.Name }).ToList() : null,
+        transitions = flowDesc is { Transitions.Count: > 0 } ? AgentCatalogInspector.MapTransitionsSchema(flowDesc, refServices) : null,
+        actions = actions.Count > 0 ? AgentCatalogInspector.MapActionsSchema(actions, refServices) : null
       });
+    }
+
+    var grids = new List<object>();
+    var actionServices = new List<object>();
+    foreach (var feat in ModuleCatalog.Instance.AllFeatures)
+    {
+      if (!feat.AllowsAgent || feat.ServiceType is not { } svcType)
+      {
+        continue;
+      }
+
+      try
+      {
+        await using var featScope = AgentModuleScope.OpenForService(services, svcType, defaultScope.Db, defaultScope.App);
+        if (!AgentFeatureRegistry.CanViewFeature(feat, featScope.App))
+        {
+          continue;
+        }
+
+        if (typeof(IGridService).IsAssignableFrom(svcType))
+        {
+          grids.Add(new
+          {
+            service = ServicePathResolver.Resolve(svcType),
+            title = Localizer.Instance.For(feat.Module)[feat.Name]
+          });
+        }
+
+        if (!coveredFeatures.Contains(feat))
+        {
+          var featActions = await AgentCatalogInspector.DescribeFeatureActionsAsync(
+            feat, svcType, services, featScope.Db, featScope.App, ct);
+          if (featActions.Count > 0)
+          {
+            actionServices.Add(new
+            {
+              service = featActions[0].Service,
+              title = Localizer.Instance.For(feat.Module)[feat.Name],
+              actions = AgentCatalogInspector.MapActionsSchema(featActions, refServices)
+            });
+          }
+        }
+      }
+      catch { }
     }
 
     var searchTokens = ExtractSearchTokens(userMessage);
     var (dictionaries, largeDictionaries) = await AgentContextDictionaryLoader.LoadSmartDictionariesAsync(
       refServices, options.MaxFullDictionarySize, searchTokens, services, defaultScope.Db, defaultScope.App, ct);
 
-    var recentRecords = includeRecentRecords
-      ? await AgentContextDictionaryLoader.LoadRecentRecordsAsync(
-        dictionaries.Keys, ExtractMentionedIds(userMessage), searchTokens, services, defaultScope.Db, defaultScope.App, ct)
+    var mentionedRecords = includeRecentRecords
+      ? await AgentContextDictionaryLoader.LoadMentionedRecordsAsync(
+        dictionaries.Keys, ExtractMentionedIds(userMessage), services, defaultScope.Db, defaultScope.App, ct)
       : [];
     var reports = includeReports
       ? await AgentContextDictionaryLoader.LoadReportsSummaryAsync(services, defaultScope.Db, defaultScope.App, ct)
@@ -80,16 +129,22 @@ public static class AgentContextQueryService
     {
       ["today"] = today,
       ["forms"] = forms,
+      ["grids"] = grids,
       ["dictionaries"] = dictionaries
     };
+    if (actionServices.Count > 0)
+    {
+      contextResult["actionServices"] = actionServices;
+    }
+
     if (largeDictionaries.Count > 0)
     {
       contextResult["largeDictionaries"] = largeDictionaries;
     }
 
-    if (recentRecords.Count > 0)
+    if (mentionedRecords.Count > 0)
     {
-      contextResult["recentRecords"] = recentRecords;
+      contextResult["recentRecords"] = mentionedRecords;
     }
 
     if (reports.Count > 0)
@@ -100,69 +155,28 @@ public static class AgentContextQueryService
     return contextResult;
   }
 
-  public static async Task<object> BuildExtendedWorkspaceRecordsAsync(
-    IServiceProvider services,
+  public static async Task<(string Today, Dictionary<string, List<Dictionary<string, object?>>> MentionedRecords)> BuildDeltaContextAsync(
+    IServiceProvider? services,
+    string? userMessage = null,
     CancellationToken ct = default)
   {
-    var options = services.GetService<AgentOptions>() ?? new AgentOptions();
-    if (!HasDatabaseRegistered(services))
+    if (services == null || !HasDatabaseRegistered(services))
     {
-      return new
-      {
-        today = ResolveTodayString(services, app: null),
-        recentRecords = new Dictionary<string, object>()
-      };
+      var fallbackToday = services != null
+        ? ResolveTodayString(services, app: null)
+        : DateOnly.FromDateTime(TimeProvider.System.GetUtcNow().UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+      return (fallbackToday, new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase));
     }
 
     await using var defaultScope = AgentModuleScope.OpenDefault(services);
     var today = ResolveTodayString(services, defaultScope.App);
-    var recentRecords = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+    var mentionedIds = ExtractMentionedIds(userMessage);
+    var mentioned = mentionedIds.Count > 0
+      ? await AgentContextDictionaryLoader.LoadMentionedRecordsAsync(
+        [], mentionedIds, services, defaultScope.Db, defaultScope.App, ct)
+      : new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var feat in ModuleCatalog.Instance.AllFeatures)
-    {
-      if (!feat.AllowsAgent ||
-          feat.ServiceType is not { } svcType ||
-          !typeof(IGridService).IsAssignableFrom(svcType))
-      {
-        continue;
-      }
-
-      var gridPath = ServicePathResolver.Resolve(svcType);
-      if (recentRecords.ContainsKey(gridPath))
-      {
-        continue;
-      }
-
-      try
-      {
-        await using var scope = AgentModuleScope.OpenForService(services, svcType, defaultScope.Db, defaultScope.App);
-        if (!AgentFeatureRegistry.CanViewFeature(feat, scope.App) ||
-            ModuleCatalog.Instance.CreateServiceInstance(svcType, scope.Db, scope.App) is not IGridService grid)
-        {
-          continue;
-        }
-
-        var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 150 }, ct);
-        if (page.Total <= options.MaxFullDictionarySize && page.Rows.Count <= options.MaxFullDictionarySize)
-        {
-          continue;
-        }
-
-        var rows = new List<Dictionary<string, object?>>(page.Rows.Count);
-        foreach (var rawRow in page.Rows)
-        {
-          if (CleanGridRow(rawRow, stripZeroDecimals: true) is { } clean)
-          {
-            rows.Add(clean);
-          }
-        }
-
-        recentRecords[gridPath] = rows;
-      }
-      catch { }
-    }
-
-    return new { today, recentRecords };
+    return (today, mentioned);
   }
 
   public static Task<(
@@ -251,28 +265,6 @@ public static class AgentContextQueryService
 
     return DateOnly.FromDateTime(utcNow.UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
   }
-
-  internal static List<object> MapTransitionsSchema(IReadOnlyList<AgentFlowTransitionDescriptor> transitions) =>
-    transitions.Select(t => (object)new
-    {
-      handle = t.Name,
-      title = t.Label,
-      fromStatuses = t.FromStatuses,
-      fromStatusNames = t.FromStatusNames,
-      toStatus = t.ToStatus,
-      toStatusName = t.ToStatusName,
-      right = t.RequiredRight,
-      askFields = t.AskElements.Count > 0
-        ? t.AskElements.Where(AgentFeatureRegistry.IsEditableElement).Select(el => new
-        {
-          path = el.Path,
-          label = el.Label,
-          type = el.Type,
-          required = el.IsRequired ? true : (bool?)null,
-          referenceService = (el.Model as FormSelectModel)?.ReferenceService
-        }).ToList()
-        : null
-    }).ToList();
 
   private static bool HasDatabaseRegistered(IServiceProvider services) =>
     services.GetService<DbScope>() != null || services.GetService<PlatformDbContext>() != null;

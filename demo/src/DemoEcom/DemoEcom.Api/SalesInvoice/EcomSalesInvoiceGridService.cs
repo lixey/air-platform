@@ -35,6 +35,7 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
       .Label("Create sales return")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSalesReturnFormService>(
         db,
         ctx,
@@ -49,6 +50,7 @@ public sealed class EcomSalesInvoiceGridService(EcomDbContext db, EcomSalesInvoi
       .Label("Create incoming payment")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomIncomingPaymentFormService>(
         db,
         ctx,

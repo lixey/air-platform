@@ -37,6 +37,7 @@ public sealed class EcomSupplierInvoiceGridService(
       .Label("Create supplier return")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.EnterAsync<EcomSupplierReturnFormService>(
         db,
         ctx,
@@ -51,6 +52,7 @@ public sealed class EcomSupplierInvoiceGridService(
       .Label("Create outgoing payment")
       .Icon(UiIcon.Plus)
       .InMenu()
+      .AllowAgent()
       .Do((ctx, ct) => EcomDocActions.PayAsync<EcomOutgoingPaymentFormService>(
         db,
         ctx,

@@ -10,4 +10,18 @@ internal sealed class ReadOnlyAgentCategoryGridService(AgentTestDbContext db, Pl
     Columns.UseForm<ReadOnlyAgentCategoryFormService>();
     Columns.Add(c => c.Name);
   }
+
+  protected override void SetActions()
+  {
+    Actions.Add("AuditPing")
+      .AllowView()
+      .WithoutSelection()
+      .WithoutTransaction()
+      .AllowAgent()
+      .Do((ctx, _) =>
+      {
+        ctx.ShowNotice("AuditReady", [new MessageDto { Detail = "Checked" }]);
+        return Task.CompletedTask;
+      });
+  }
 }

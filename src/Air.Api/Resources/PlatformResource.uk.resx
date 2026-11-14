@@ -1450,4 +1450,22 @@
   <data name="AgentChildReplaceLimitExceeded" xml:space="preserve">
     <value>Неможливо замінити понад {0} дочірніх рядків у «{1}» в межах однієї пропозиції.</value>
   </data>
+  <data name="AgentCheckBeforeAction" xml:space="preserve">
+    <value>Перевірте параметри перед виконанням дії</value>
+  </data>
+  <data name="ReferenceNotFound" xml:space="preserve">
+    <value>Посилання «{0}» не знайдено у «{1}».</value>
+  </data>
+  <data name="ChildGridReadOnly" xml:space="preserve">
+    <value>Підлегла таблиця доступна лише для читання або редагування заборонено.</value>
+  </data>
+  <data name="ChildKeyRequired" xml:space="preserve">
+    <value>Вкажіть «childKey» під час редагування підлеглих рядків у формі з кількома таблицями.</value>
+  </data>
+  <data name="ChildGridNamedReadOnly" xml:space="preserve">
+    <value>Підлегла таблиця «{0}» доступна лише для читання або редагування заборонено.</value>
+  </data>
+  <data name="ChildGridUnknown" xml:space="preserve">
+    <value>Невідома підлегла таблиця «{0}».</value>
+  </data>
 </root>

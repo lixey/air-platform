@@ -39,9 +39,11 @@ internal static class ProposalSeal
     AppendSegment(sb, proposal.Service);
     AppendSegment(sb, proposal.RecordId?.ToString(CultureInfo.InvariantCulture));
     AppendSegment(sb, proposal.Transition);
+    AppendSegment(sb, proposal.Action);
     AppendSegment(sb, proposal.StepKey);
     AppendSegment(sb, string.Join('|', proposal.DependsOn ?? []));
     AppendSegment(sb, string.Join('|', proposal.AttachmentIds ?? []));
+    AppendSegment(sb, string.Join('|', proposal.Warnings ?? []));
     var rawPayload = proposal.Payload.ValueKind == JsonValueKind.Undefined
       ? string.Empty
       : proposal.Payload.GetRawText();

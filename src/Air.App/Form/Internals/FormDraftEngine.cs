@@ -20,7 +20,7 @@ internal static class FormDraftEngine
     ISet<string>? pendingReferencePaths,
     string? triggerField,
     bool hasComputeHooks,
-    Func<TEntity, IReadOnlyDictionary<string, object?>, IReadOnlySet<string>, Task<(IReadOnlyList<MessageDto> SaveErrors, IReadOnlyList<MessageDto> RuleFailures)>> runValidationAsync,
+    Func<TEntity, IReadOnlyDictionary<string, object?>, IReadOnlySet<string>, Task<(IReadOnlyList<MessageDto> SaveErrors, IReadOnlyList<MessageDto> RuleFailures, IReadOnlyList<MessageDto> SaveWarnings)>> runValidationAsync,
     CancellationToken ct)
     where TEntity : class, IEntity, new()
   {
@@ -40,8 +40,13 @@ internal static class FormDraftEngine
       : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
     var values = CloneDraftValues(baseValues);
 
-    if (overrides is not { Count: > 0 } && pendingReferencePaths is not { Count: > 0 })
+    if (overrides is null && pendingReferencePaths is not { Count: > 0 })
     {
+      if (!isEdit)
+      {
+        ApplyDefaultRequiredSelectOptions(editableElements, [], null, values);
+      }
+
       StripSensitiveKeys(sensitiveKeys, originalValues);
       StripSensitiveKeys(sensitiveKeys, values);
       return new FormDraftResultDto
@@ -98,7 +103,7 @@ internal static class FormDraftEngine
     List<MessageDto> messages = [];
     try
     {
-      var (saveErrors, ruleFailures) = await runValidationAsync(draftEntity, originalValues, explicitlyProvided);
+      var (saveErrors, ruleFailures, saveWarnings) = await runValidationAsync(draftEntity, originalValues, explicitlyProvided);
       if (saveErrors.Count > 0)
       {
         messages.AddRange(saveErrors);
@@ -107,6 +112,11 @@ internal static class FormDraftEngine
       if (ruleFailures.Count > 0)
       {
         messages.AddRange(ruleFailures);
+      }
+
+      if (saveWarnings.Count > 0)
+      {
+        messages.AddRange(saveWarnings);
       }
     }
     catch

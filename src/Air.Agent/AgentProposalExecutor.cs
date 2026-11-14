@@ -128,13 +128,14 @@ public static class AgentProposalExecutor
 
       using var correlationScope = AsyncLocalTenantContext.UseCorrelation(agentCorrelationId);
 
-      await AgentBatchTransactionRunner.RunAtomicAsync(
+      await AgentModuleScope.RunAtomicScopesAsync(
         services,
         requiredContextTypes,
         defaultScope.Db,
         defaultScope.App,
         async (scopes, mutationCt) =>
         {
+          stepOutcomes.Clear();
           committedRunId = scopes[0].Db.CurrentMutationRunId?.ToString();
           var preVerifiedEdits = await AgentBatchGraphCollector.PreVerifyInitialVersionsAsync(sortedProposals, payloadsById, scopes, mutationCt);
 
@@ -145,6 +146,16 @@ public static class AgentProposalExecutor
               stepProposal, stepPayload, committedIdsByProposalId, preVerifiedEdits, scopes, store, owner, L, mutationCt);
 
             committedIdsByProposalId[stepProposal.Id] = outcome.RecordId;
+            if (outcome.RecordId > 0)
+            {
+              var stepSvcType = ModuleCatalog.Instance.FindServiceType(outcome.FormServicePath)
+                ?? ModuleCatalog.Instance.FindServiceType(stepPayload.Service);
+              if (ModuleCatalog.GetServiceEntityType(stepSvcType) is { } stepEntityType)
+              {
+                preVerifiedEdits.Add((stepEntityType, outcome.RecordId));
+              }
+            }
+
             stepOutcomes.Add((stepProposal, outcome.RecordId, outcome.RecordLabel, outcome.FormServicePath, outcome.RefreshServices, outcome.Warnings));
           }
 
@@ -163,7 +174,7 @@ public static class AgentProposalExecutor
           outcome.Proposal.Status = "committed";
           outcome.Proposal.CommittedRecordId = outcome.RecordId;
           outcome.Proposal.CommittedLabel = outcome.RecordLabel;
-          outcome.Proposal.FormService = outcome.FormServicePath;
+          outcome.Proposal.FormService = !string.IsNullOrWhiteSpace(outcome.FormServicePath) ? outcome.FormServicePath : null;
         }
 
         committedResults.Add(new AgentCommitResultDto
@@ -213,18 +224,29 @@ public static class AgentProposalExecutor
     Localizer L,
     CancellationToken mutationCt)
   {
-    var pendingTopLevelFields = await AgentBatchGraphCollector.ApplyResolvedNewReferencesAsync(
-      payload, committedIdsByProposalId, scopes, store, owner, L, mutationCt);
+    var pendingTopLevelFields = AgentBatchGraphCollector.ApplyResolvedNewReferences(
+      payload, committedIdsByProposalId, store, owner, L);
 
     if (string.Equals(payload.Operation, AgentProposalOperation.MoveStatus, StringComparison.OrdinalIgnoreCase))
     {
-      return await ExecuteMoveStatusStepAsync(proposal, payload, preVerifiedEdits, scopes, L, mutationCt);
+      var (feat, _, _) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(payload.Service);
+      var refresh = feat != null ? CollectModuleGridServices(feat.Module) : [];
+      return await AgentProposalFlowBuilder.ExecuteMoveStatusStepAsync(
+        proposal, payload, preVerifiedEdits, scopes, refresh, L, mutationCt);
+    }
+
+    if (string.Equals(payload.Operation, AgentProposalOperation.RunAction, StringComparison.OrdinalIgnoreCase))
+    {
+      var (feat, _, _) = AgentProposalActionBuilder.ResolveActionTargetService(payload.Service);
+      var refresh = feat != null ? CollectModuleGridServices(feat.Module) : [];
+      return await AgentProposalActionExecutor.ExecuteRunActionStepAsync(
+        proposal, payload, preVerifiedEdits, scopes, refresh, L, mutationCt);
     }
 
     var isEdit = payload.RecordId is > 0;
     var formType = ModuleCatalog.Instance.FindServiceType(payload.Service)
       ?? throw AgentRefusal.Create(L["MutationRefused"]);
-    var stepScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, formType, scopes[0]);
+    var stepScope = AgentModuleScope.SelectScopeForService(scopes, formType, scopes[0]);
 
     if (ModuleCatalog.Instance.CreateServiceInstance(formType, stepScope.Db, stepScope.App) is not IFormService formInst ||
         !formInst.Feature.AllowsAgentWrite ||
@@ -238,11 +260,10 @@ public static class AgentProposalExecutor
     var (formElements, children) = await formInst.GetElementsMetadataAsync(mutationCt);
 
     var valueJson = JsonSerializer.SerializeToElement(payload.Values, WebJson);
-    object saveResult;
+    FormSaveRecordDto savedRecord;
     try
     {
-      saveResult = await formInst.SaveAsync(
-        valueJson,
+      savedRecord = await formInst.SaveRecordAsync(
         new FormRequest { Id = payload.RecordId, Ver = ver, Value = valueJson },
         mutationCt);
     }
@@ -251,82 +272,59 @@ public static class AgentProposalExecutor
       throw AgentRefusal.Create(FormatRefusedException(refusedEx, formElements), refusedEx);
     }
 
-    if (!TryExtractSavedId(saveResult, out var recordId))
+    if (savedRecord.Outcome != MutationOutcome.Committed || savedRecord.Id <= 0)
     {
-      var refusedDto = saveResult as FormDataDto;
       throw AgentRefusal.Create(
-        refusedDto?.Messages?.FirstOrDefault()?.Detail
-        ?? refusedDto?.Warnings?.FirstOrDefault()?.Detail
+        savedRecord.Messages.FirstOrDefault()?.Detail
+        ?? savedRecord.Warnings.FirstOrDefault()?.Detail
         ?? L["AgentErrorSave"]);
     }
 
-    var collectedWarnings = new List<MessageDto>();
-    if (formInst.GetLastSaveWarnings() is { Count: > 0 } parentWarnings)
+    var collectedWarnings = new List<MessageDto>(savedRecord.Warnings);
+
+    if (payload.Children.Count > 0)
     {
-      collectedWarnings.AddRange(parentWarnings);
+      var batchGroups = payload.Children.Select(cg => new FormChildBatchGroupDto
+      {
+        ChildKey = cg.ChildKey,
+        ChildGridService = cg.ChildGridService,
+        ChildFormService = cg.ChildFormService,
+        Mode = cg.Mode,
+        HasUpdate = cg.HasUpdate,
+        Rows = cg.Rows
+      }).ToList();
+
+      try
+      {
+        var childBatchResult = await formInst.ApplyChildRowsAsync(
+          savedRecord.Id,
+          isEdit,
+          payload.Values,
+          batchGroups,
+          (childFeat, parentFeat) =>
+            !childFeat.IsReadOnly &&
+            AgentFeatureRegistry.IsChildAgentWriteAllowed(childFeat, parentFeat) &&
+            AgentFeatureRegistry.CanViewFeature(childFeat, stepScope.App) &&
+            AgentFeatureRegistry.CanEditFeature(childFeat, stepScope.App),
+          mutationCt);
+        if (childBatchResult.Warnings.Count > 0)
+        {
+          collectedWarnings.AddRange(childBatchResult.Warnings);
+        }
+      }
+      catch (FormRefusedException refusedEx)
+      {
+        throw AgentRefusal.Create(refusedEx.Messages.FirstOrDefault()?.Detail ?? refusedEx.Message, refusedEx);
+      }
     }
 
-    await AgentProposalChildExecutor.ExecuteChildGroupsAsync(
-      formInst, recordId, isEdit, payload.Values, children, payload.Children, scopes, stepScope, collectedWarnings, L, mutationCt);
+    await AgentBatchGraphCollector.AttachStagedFilesAsync(
+      proposal, children, savedRecord.Id, formInst.Service, stepScope, store, owner, L, mutationCt);
 
-    await AgentBatchGraphCollector.AttachStagedFilesAsync(proposal, children, recordId, formInst.Service, stepScope, store, owner, L, mutationCt);
-
-    var recordLabel = AgentBatchGraphCollector.BuildCommittedRecordLabel(proposal, payload, formInst, formElements, saveResult, recordId, L);
+    var recordLabel = AgentBatchGraphCollector.BuildCommittedRecordLabel(
+      proposal, payload, formInst, formElements, savedRecord.Entity, savedRecord.Id, L);
     var refreshServices = CollectModuleGridServices(formInst.Feature.Module);
-    return (recordId, recordLabel, formInst.Service, refreshServices, collectedWarnings.Count > 0 ? collectedWarnings : null);
-  }
-
-  private static async Task<(long RecordId, string RecordLabel, string FormServicePath, List<string> RefreshServices, List<MessageDto>? Warnings)> ExecuteMoveStatusStepAsync(
-    AgentProposalDto proposal,
-    StagedProposalPayload payload,
-    HashSet<(Type EntityType, long RecordId)> preVerifiedEdits,
-    IReadOnlyList<AgentModuleScope> scopes,
-    Localizer L,
-    CancellationToken mutationCt)
-  {
-    var (feature, formType, gridType) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(payload.Service);
-    var flowType = AgentFlowHelper.FindFlowServiceType(feature);
-    if (feature is not { AgentAccess: AgentAccess.ReadWrite } ||
-        flowType == null ||
-        formType == null && gridType == null ||
-        payload.RecordId is not > 0 ||
-        string.IsNullOrWhiteSpace(payload.Transition))
-    {
-      throw AgentRefusal.Create(L["MutationRefused"]);
-    }
-
-    var stepScope = AgentBatchTransactionRunner.SelectScopeForService(scopes, formType ?? gridType ?? flowType, scopes[0]);
-    var explicitRight = AgentFlowHelper.FindDeclaredTransitionRight(flowType, payload.Transition, stepScope.Db, stepScope.App);
-    if (!AgentFlowHelper.CanMoveTransition(feature, stepScope.App.User, payload.Transition, explicitRight))
-    {
-      throw AgentRefusal.Create(L["MutationRefused"]);
-    }
-
-    var (existing, _) = await AgentFlowHelper.EnsureRecordReachableAsync(
-      feature,
-      formType,
-      gridType,
-      payload.RecordId.Value,
-      stepScope.Db,
-      stepScope.App,
-      mutationCt);
-
-    var ver = payload.Ver;
-    if (existing is IHasVersion versioned &&
-        ver != null &&
-        versioned.Ver != ver.Value &&
-        preVerifiedEdits.Contains((existing.GetType(), payload.RecordId.Value)))
-    {
-      ver = versioned.Ver;
-    }
-
-    JsonElement? askJson = payload.Values.Count > 0 ? JsonSerializer.SerializeToElement(payload.Values, WebJson) : null;
-    await AgentFlowHelper.ExecuteMoveStatusAsync(
-      formType, gridType, payload.RecordId.Value, payload.Transition, askJson, ver, stepScope.Db, stepScope.App, mutationCt);
-
-    var formPath = formType != null ? ServicePathResolver.Resolve(formType) : payload.Service;
-    var label = !string.IsNullOrWhiteSpace(proposal.Title) ? proposal.Title : $"#{payload.RecordId.Value}";
-    return (payload.RecordId.Value, label, formPath, CollectModuleGridServices(feature.Module), null);
+    return (savedRecord.Id, recordLabel, formInst.Service, refreshServices, collectedWarnings.Count > 0 ? collectedWarnings : null);
   }
 
   private static async Task<int?> RefreshIntraBatchVersionAsync(
@@ -384,7 +382,9 @@ public static class AgentProposalExecutor
       ProposalId = prop.Id,
       RecordId = prop.CommittedRecordId!.Value,
       RecordLabel = prop.CommittedLabel ?? $"#{prop.CommittedRecordId.Value}",
-      FormService = prop.FormService ?? prop.Service,
+      FormService = string.Equals(prop.Operation, AgentProposalOperation.RunAction, StringComparison.OrdinalIgnoreCase)
+        ? prop.FormService ?? string.Empty
+        : prop.FormService ?? prop.Service,
       RefreshServices = []
     };
 }

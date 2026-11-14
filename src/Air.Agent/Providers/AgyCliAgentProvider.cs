@@ -128,8 +128,18 @@ public sealed class AgyCliAgentProvider(
     string prompt,
     string? selectedModel,
     string? existingConvId,
-    string sessionAttachmentsDir)
+    string sessionAttachmentsDir,
+    string? mcpConfigPath = null)
   {
+    if (!string.IsNullOrWhiteSpace(mcpConfigPath) &&
+        !string.IsNullOrWhiteSpace(psi.WorkingDirectory) &&
+        File.Exists(mcpConfigPath))
+    {
+      var agentsDir = Path.Combine(psi.WorkingDirectory, ".agents");
+      AgentStore.EnsurePrivateDirectory(agentsDir);
+      File.Copy(mcpConfigPath, Path.Combine(agentsDir, "mcp_config.json"), overwrite: true);
+    }
+
     psi.ArgumentList.Add("--input-format");
     psi.ArgumentList.Add("stream-json");
     psi.ArgumentList.Add("--output-format");
@@ -179,8 +189,8 @@ public sealed class AgyCliAgentProvider(
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, _, sessionAttachmentsDir, _) =>
-        ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir),
+      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, _) =>
+        ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir, mcpConfigPath),
       (root, fullAssistantText, pendingEvents) =>
       {
         var evtType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;

@@ -76,6 +76,12 @@ public class FormActionBuilder<TEntity>
     return this;
   }
 
+  public FormActionBuilder<TEntity> AllowAgent(bool allow = true)
+  {
+    Entry.IsAgentAllowed = allow;
+    return this;
+  }
+
   public FormActionBuilder<TEntity> When(Expression<Func<TEntity, bool>> condition, string reason)
   {
     ArgumentNullException.ThrowIfNull(condition);

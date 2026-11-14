@@ -356,7 +356,17 @@ public sealed class AgentStore
     {
       session.LastAccessUtc = _time.GetUtcNow();
       session.ConversationIds.TryRemove(providerHandle, out _);
+      session.ContextFingerprints.TryRemove(providerHandle, out _);
+      session.MemorySnapshots.TryRemove(providerHandle, out _);
     }
+  }
+
+  internal AgentSessionState GetOrCreateSessionState(string sessionId, AgentOwnerScope owner)
+  {
+    var sKey = SessionKey(owner, NormalizeSessionId(sessionId));
+    var session = _sessions.GetOrAdd(sKey, _ => new AgentSessionState(owner));
+    session.LastAccessUtc = _time.GetUtcNow();
+    return session;
   }
 
   public void ResetSession(string sessionId, AgentOwnerScope owner)
@@ -386,9 +396,6 @@ public sealed class AgentStore
 
   public static string GetContextFilePath(string turnOrSessionDirectory) =>
     Path.Combine(turnOrSessionDirectory, "context.json");
-
-  public static string GetRecordsFilePath(string turnOrSessionDirectory) =>
-    Path.Combine(turnOrSessionDirectory, "records.json");
 
   public static string GetSyncContextFilePath(string turnOrSessionDirectory) =>
     Path.Combine(turnOrSessionDirectory, "sync-context.json");

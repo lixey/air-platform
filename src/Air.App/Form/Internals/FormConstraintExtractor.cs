@@ -65,6 +65,11 @@ internal static class FormConstraintExtractor
       }
 
       var entityProp = PropertyAccessorCache.GetProperty(rootEntityType, el.Path);
+      if (entityProp != null && Attribute.IsDefined(entityProp, typeof(SensitiveAttribute)))
+      {
+        el.IsSecret = true;
+      }
+
       var propType = entityProp?.PropertyType;
       var efProp = efEntityType != null && entityProp != null && !el.IsInputOnly
         ? efEntityType.FindProperty(entityProp.Name)

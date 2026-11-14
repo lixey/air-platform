@@ -14,6 +14,9 @@ public sealed class AgentProposalDto
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Transition { get; set; }
 
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? Action { get; set; }
+
   public string Title { get; set; } = string.Empty;
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -28,6 +31,9 @@ public sealed class AgentProposalDto
 
   public List<AgentProposalFieldDto> Fields { get; set; } = [];
   public List<AgentProposalChildGroupDto> Children { get; set; } = [];
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public List<string>? Warnings { get; set; }
 
   public List<string> AttachmentIds { get; set; } = [];
 

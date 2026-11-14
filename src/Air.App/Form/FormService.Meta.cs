@@ -409,6 +409,12 @@ public abstract partial class FormService<TEntity>
       inheritTimeZoneLabel: inheritTz,
       includeCreateOverlays: false,
       ct: ct);
+    var sensitiveKeys = FormDraftEngine.GetSensitiveKeys(typeof(TEntity));
+    if (sensitiveKeys.Count > 0)
+    {
+      projected = projected.Where(e => string.IsNullOrEmpty(e.Path) || !sensitiveKeys.Contains(e.Path)).ToList();
+    }
+
     return (projected, elements.Children);
   }
 

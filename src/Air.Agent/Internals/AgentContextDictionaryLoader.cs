@@ -72,23 +72,17 @@ internal static class AgentContextDictionaryLoader
             }
           }
 
-          foreach (var rawRow in probePage.Rows.Take(25))
+          if (matchedRows.Count > 0)
           {
-            if (CleanGridRow(rawRow) is { } clean &&
-                TryGetRowId(clean, out var rid) &&
-                seenIds.Add(rid))
-            {
-              matchedRows.Add(clean);
-            }
+            dictionaries[refSvc] = matchedRows;
           }
 
-          dictionaries[refSvc] = matchedRows;
           largeDictionaries[refSvc] = new
           {
             total = probePage.Total,
             loadedMatches = matchedRows.Count,
             note =
-              "Large dictionary (>50 records): pass the exact name in <ui_proposal> and the server will automatically find the existing record in DB or propose creating it if not found."
+              "Large dictionary (>50 records): query via platform_records_query or pass the exact name/code in <ui_proposal> and the server will resolve it."
           };
         }
       }
@@ -212,17 +206,21 @@ internal static class AgentContextDictionaryLoader
     return null;
   }
 
-  public static async Task<Dictionary<string, List<Dictionary<string, object?>>>> LoadRecentRecordsAsync(
+  public static async Task<Dictionary<string, List<Dictionary<string, object?>>>> LoadMentionedRecordsAsync(
     IEnumerable<string> existingDictionaryKeys,
     IReadOnlyList<long> mentionedIds,
-    IReadOnlyList<string> searchTokens,
     IServiceProvider rootServices,
     PlatformDbContext? fallbackDb,
     PlatformAppService? fallbackApp,
     CancellationToken ct)
   {
-    var dictSet = new HashSet<string>(existingDictionaryKeys, StringComparer.OrdinalIgnoreCase);
     var result = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+    if (mentionedIds.Count == 0)
+    {
+      return result;
+    }
+
+    var dictSet = new HashSet<string>(existingDictionaryKeys, StringComparer.OrdinalIgnoreCase);
 
     foreach (var feat in ModuleCatalog.Instance.AllFeatures)
     {
@@ -266,37 +264,10 @@ internal static class AgentContextDictionaryLoader
           catch { }
         }
 
-        var page = await grid.GetDataAsync(new ListRequest { Page = 0, PageSize = 25 }, ct);
-        foreach (var rawRow in page.Rows)
+        if (rows.Count > 0)
         {
-          if (CleanGridRow(rawRow, stripZeroDecimals: true) is { } clean &&
-              (!TryGetRowId(clean, out var rid) || seenIds.Add(rid)))
-          {
-            rows.Add(clean);
-          }
+          result[gridPath] = rows;
         }
-
-        if (page.Total > 25 && searchTokens.Count > 0)
-        {
-          foreach (var token in searchTokens.Take(3))
-          {
-            var searchPage = await grid.GetDataAsync(
-              new ListRequest { Page = 0, PageSize = 10, Search = token },
-              ct);
-
-            foreach (var rawRow in searchPage.Rows)
-            {
-              if (CleanGridRow(rawRow, stripZeroDecimals: true) is { } clean &&
-                  TryGetRowId(clean, out var rid) &&
-                  seenIds.Add(rid))
-              {
-                rows.Add(clean);
-              }
-            }
-          }
-        }
-
-        result[gridPath] = rows;
       }
       catch { }
     }

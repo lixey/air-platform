@@ -21,4 +21,7 @@ public sealed class AgentChatRequest
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public string? Model { get; set; }
+
+  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+  public string? CurrentPath { get; set; }
 }

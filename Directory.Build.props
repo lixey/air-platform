@@ -60,6 +60,7 @@
       <Using Include="Platform.App.Files" />
       <Using Include="Platform.App.Files.Contracts" />
       <Using Include="Platform.App.Flow" />
+      <Using Include="Platform.App.Flow.Contracts" />
       <Using Include="Platform.App.Form" />
       <Using Include="Platform.App.Form.Actions" />
       <Using Include="Platform.App.Form.Contracts" />

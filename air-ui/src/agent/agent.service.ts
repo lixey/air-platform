@@ -309,7 +309,17 @@ export class AgentService {
       locale: this.locale.current(),
       provider: activeModelObj?.provider || this.activeProvider(),
       model: activeModelObj?.id || this.model(),
+      currentPath: this.cleanScreenPath(),
     });
+  }
+
+  private cleanScreenPath(): string | null {
+    const raw = this.location.path();
+    if (!raw) {
+      return null;
+    }
+    const clean = raw.split(/[?#]/, 1)[0]?.trim();
+    return clean || null;
   }
 
   private async streamSseEndpoint(endpoint: string, assistantMsgId: string, requestBody: unknown): Promise<void> {

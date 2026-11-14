@@ -51,6 +51,19 @@ import { asAgentUiColor } from './agent-ui-helpers';
         </div>
       }
 
+      @if ((p.warnings?.length ?? 0) > 0 && p.status !== 'committed' && p.status !== 'superseded') {
+        <div
+          class="hue-amber divide-y divide-(--btn-edge)/40 border-b border-(--btn-edge) bg-(--btn-ground) px-3 py-1.5 text-xs text-(--btn-ink)"
+        >
+          @for (warn of p.warnings ?? []; track $index) {
+            <div class="flex min-w-0 items-start gap-1.5 py-0.5">
+              <i class="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center" [icon]="'alert'"></i>
+              <span class="font-medium break-words">{{ warn }}</span>
+            </div>
+          }
+        </div>
+      }
+
       @if (p.fields.length > 0) {
         <div class="divide-y divide-line/60 px-3 py-1.5 text-xs">
           @for (field of p.fields; track field.label) {
@@ -129,7 +142,9 @@ import { asAgentUiColor } from './agent-ui-helpers';
             <i class="flex h-4 w-4 items-center justify-center" [icon]="'checkmark'"></i>
             <span>{{ texts.of('AgentSaved', p.committedLabel ?? '') }}</span>
           </div>
-          <ui-btn size="small" variant="ghost" color="blue" icon="external" [label]="texts.of('Open')" (click)="openCommitted.emit(p)" />
+          @if (canOpenCommitted(p)) {
+            <ui-btn size="small" variant="ghost" color="blue" icon="external" [label]="texts.of('Open')" (click)="openCommitted.emit(p)" />
+          }
         } @else if (p.status === 'superseded') {
           <div class="flex items-center gap-1.5 text-xs text-muted">
             <i class="flex h-3.5 w-3.5 items-center justify-center" [icon]="'refresh'"></i>
@@ -137,7 +152,7 @@ import { asAgentUiColor } from './agent-ui-helpers';
           </div>
         } @else {
           <span class="text-xs text-muted">
-            {{ p.operation === 'move-status' ? texts.of('AgentCheckBeforeMove') : texts.of('AgentCheckBeforeSave') }}
+            {{ pendingHint(p) }}
           </span>
           <ui-btn
             size="small"
@@ -171,5 +186,20 @@ export class AgentProposalCardComponent {
 
   protected groupTitle(group: AgentProposalChildGroup): string {
     return group.title ? `${group.title} (${group.rows.length})` : this.texts.of('AgentLinesTitle', group.rows.length);
+  }
+
+  protected pendingHint(p: AgentProposal): string {
+    if (p.operation === 'move-status') {
+      return this.texts.of('AgentCheckBeforeMove');
+    }
+    if (p.operation === 'run-action') {
+      return this.texts.of('AgentCheckBeforeAction');
+    }
+    return this.texts.of('AgentCheckBeforeSave');
+  }
+
+  protected canOpenCommitted(p: AgentProposal): boolean {
+    const id = p.committedRecordId ?? p.recordId;
+    return !!id && id > 0 && !!(p.formService || p.operation !== 'run-action');
   }
 }
