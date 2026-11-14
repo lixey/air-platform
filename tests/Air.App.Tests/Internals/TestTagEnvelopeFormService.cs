@@ -11,5 +11,6 @@ internal sealed class TestTagEnvelopeFormService(AppTestDbContext db, PlatformAp
     Elements.Add(t => t.Entity);
     Elements.Add(t => t.Value);
     Elements.Add(t => t.DefaultPrice);
+    Elements.Add(t => t.CategoryId).AsSelect([new OptionDto { Id = 1, Name = "Yes" }]);
   }
 }

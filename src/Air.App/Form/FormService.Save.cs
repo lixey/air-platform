@@ -58,49 +58,67 @@ public abstract partial class FormService<TEntity>
     JsonElement value,
     FormRequest request,
     Func<CancellationToken, Task<RowDto?>> readRow,
+    Func<CancellationToken, Task<bool>>? authorizeRow = null,
     CancellationToken ct = default)
   {
     request.Id ??= id;
     SetRequest(request);
     IsNew = false;
     State.ResetSaveOutcome();
+    var rawPayload = request.RawPayload ?? $"{request.ParentService}|{request.ParentId}|{id}|{request.Ver}|{path}|{value.GetRawText()}";
 
-    var result = await db.RunMutationAsync(async mutationCt =>
-    {
-      try
+    var result = await MutationRunner.RunIdempotentMutationAsync<GridCellDto>(
+      db,
+      $"{Service}/save-cell",
+      request.IdempotencyKey,
+      rawPayload,
+      async mutationCt =>
       {
-        await SaveCoreAsync(default, new TEntity(), id, request.Ver, (path, value), mutationCt);
-      }
-      catch (FormRefusedException ex)
-      {
-        db.MarkMutationRollbackOnly();
+        if (authorizeRow != null && !await authorizeRow(mutationCt))
+        {
+          return new GridCellDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Messages = [new MessageDto { Detail = L["MutationRefused"], Path = path, Type = MessageType.Error }]
+          };
+        }
+
+        try
+        {
+          await SaveCoreAsync(default, new TEntity(), id, request.Ver, (path, value), mutationCt);
+        }
+        catch (FormRefusedException ex)
+        {
+          db.MarkMutationRollbackOnly();
+          return new GridCellDto
+          {
+            Outcome = ex.Outcome,
+            Messages = ex.Messages.Select(m => m.Path == null
+              ? new MessageDto { Detail = m.Detail, Path = path, Code = m.Code, Type = m.Type }
+              : m).ToList()
+          };
+        }
+        catch (JsonException)
+        {
+          db.MarkMutationRollbackOnly();
+          return new GridCellDto
+          {
+            Outcome = MutationOutcome.Refused,
+            Messages = [new MessageDto { Detail = L["FormInvalid"], Path = path, Type = MessageType.Error }]
+          };
+        }
+
+        var row = await readRow(mutationCt);
         return new GridCellDto
         {
-          Outcome = ex.Outcome,
-          Messages = ex.Messages.Select(m => m.Path == null
-            ? new MessageDto { Detail = m.Detail, Path = path, Code = m.Code, Type = m.Type }
-            : m).ToList()
+          Row = row,
+          Outcome = MutationOutcome.Committed,
+          Warnings = State.LastSaveWarnings?.ToList(),
+          Affected = State.LastAffectedParents
         };
-      }
-      catch (JsonException)
-      {
-        db.MarkMutationRollbackOnly();
-        return new GridCellDto
-        {
-          Outcome = MutationOutcome.Refused,
-          Messages = [new MessageDto { Detail = L["FormInvalid"], Path = path, Type = MessageType.Error }]
-        };
-      }
-
-      var row = await readRow(mutationCt);
-      return new GridCellDto
-      {
-        Row = row,
-        Outcome = MutationOutcome.Committed,
-        Warnings = State.LastSaveWarnings?.ToList(),
-        Affected = State.LastAffectedParents
-      };
-    }, ct: ct);
+      },
+      ct,
+      PlatformApp?.Services);
 
     if (result.Outcome == MutationOutcome.Committed && PlatformApp != null && State.LastSavedEntity != null)
     {
@@ -496,7 +514,8 @@ public abstract partial class FormService<TEntity>
 
     var ruleCtx = new RuleContext<TEntity>
     {
-      SaveContext = saveCtx
+      SaveContext = saveCtx,
+      Localizer = L
     };
 
     FormValidator.ValidateElementConstraints(db, L, elements.List, entity, ruleCtx, onlyAcceptingInput: true, disabledElementPaths);

@@ -189,9 +189,15 @@ public abstract partial class GridService<TEntity, TRow>
     }
 
     var actionElements = new List<NavElementModel>();
-    if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow && (!isGridReadOnly || columns.StatusFlowAllowsReadOnly))
+    if (columns.StatusFlow is IRecordStatuses<TEntity> statusFlow)
     {
-      var statusButton = await BuildStatusNavElementAsync(servicePath, statusFlow, ct);
+      var statusButton = await BuildStatusNavElementAsync(
+        servicePath,
+        statusFlow,
+        IsServiceLockedReadOnly,
+        columns.StatusFlowAllowsReadOnly,
+        isParentReadOnly,
+        ct);
       if (statusButton != null)
       {
         actionElements.Add(statusButton);
@@ -315,7 +321,11 @@ public abstract partial class GridService<TEntity, TRow>
                 {
                   var id = Convert.ToInt64(v, CultureInfo.InvariantCulture);
                   var opt = opts.FirstOrDefault(o => o.Id == id);
-                  return new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) };
+                  return new PickedValue
+                  {
+                    Id = id,
+                    Label = opt is { Name.Length: > 0 } ? L[opt.Name] : id.ToString(CultureInfo.InvariantCulture)
+                  };
                 })
                 .ToList();
             }
@@ -323,7 +333,14 @@ public abstract partial class GridService<TEntity, TRow>
             {
               var id = Convert.ToInt64(rule.Value, CultureInfo.InvariantCulture);
               var opt = opts.FirstOrDefault(o => o.Id == id);
-              rule.Picked = [new PickedValue { Id = id, Label = opt?.Name ?? id.ToString(CultureInfo.InvariantCulture) }];
+              rule.Picked =
+              [
+                new PickedValue
+                {
+                  Id = id,
+                  Label = opt is { Name.Length: > 0 } ? L[opt.Name] : id.ToString(CultureInfo.InvariantCulture)
+                }
+              ];
             }
           }
         }
@@ -512,16 +529,27 @@ public abstract partial class GridService<TEntity, TRow>
   private async Task<GridNavStatusModel?> BuildStatusNavElementAsync(
     string servicePath,
     IRecordStatuses<TEntity> statusFlow,
+    bool isGridReadOnly,
+    bool allowReadOnly,
+    bool isParentReadOnly,
     CancellationToken ct)
   {
     (statusFlow as IPlatformService)?.BindContext(PlatformApp);
 
+    var isReadOnlyEntity = typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity));
     var statusPath = StatusMoveNavBuilder.ResolveStatusPath(statusFlow.StatusMember);
     var statusMoves = new List<GridNavStatusMoveDto>();
 
     foreach (var t in statusFlow.Transitions)
     {
-      if (!StatusMoveNavBuilder.CanMove(Feature, User, t.Name))
+      if (!StatusMoveNavBuilder.CanMoveOnScreen(
+            Feature,
+            User,
+            t,
+            isGridReadOnly,
+            allowReadOnly,
+            isParentReadOnly,
+            isReadOnlyEntity))
       {
         continue;
       }

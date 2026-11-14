@@ -90,13 +90,25 @@ public static partial class CodeRows
           {
 #pragma warning disable EF1002, RS0030 // Sanctioned delimited identifier IDENTITY_INSERT toggle
             await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} ON", cancellationToken);
+            Exception? primaryException = null;
             try
             {
               await db.SaveChangesAsync(cancellationToken);
             }
+            catch (Exception ex)
+            {
+              primaryException = ex;
+              throw;
+            }
             finally
             {
-              await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} OFF", CancellationToken.None);
+              try
+              {
+                await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {qualifiedTable} OFF", CancellationToken.None);
+              }
+              catch when (primaryException is not null)
+              {
+              }
             }
 #pragma warning restore EF1002, RS0030
 

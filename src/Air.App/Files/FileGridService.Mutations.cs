@@ -652,10 +652,10 @@ public abstract partial class FileGridService<TFile>
         }
 
         var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
-          ?? throw new InvalidOperationException("File ID required.");
+          ?? throw new InvalidOperationException(L["FileIdRequired"]);
 
         var file = await RestrictedQuery().AsTracking().FirstOrDefaultAsync(f => f.Id == id, mutationCt)
-          ?? throw new KeyNotFoundException("File not found.");
+          ?? throw new KeyNotFoundException(L["FileNotFound"]);
 
         var ext = Path.GetExtension(file.Name);
         var candidateName = stem.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? stem : stem + ext;

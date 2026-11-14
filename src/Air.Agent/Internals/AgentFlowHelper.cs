@@ -31,25 +31,8 @@ internal static class AgentFlowHelper
     return null;
   }
 
-  public static bool CanMoveTransition(Feature feature, IUserContext user, string transitionName, Right? explicitRight = null)
-  {
-    if (user is not { IsAuthenticated: true } || string.IsNullOrEmpty(feature.Module))
-    {
-      return false;
-    }
-
-    if (explicitRight != null)
-    {
-      return user.Can(explicitRight) ||
-             explicitRight.Feature != null && user.Can(explicitRight.Feature.All) ||
-             user.Can("*");
-    }
-
-    return feature.TryGetRight(transitionName, out var right) && user.Can(right) ||
-           !feature.IsReadOnly && user.Can(feature.Edit) ||
-           user.Can(feature.All) ||
-           user.Can("*");
-  }
+  public static bool CanMoveTransition(Feature feature, IUserContext user, string transitionName, Right? explicitRight = null) =>
+    Feature.CanMove(feature, user, transitionName, explicitRight);
 
   public static Right? FindDeclaredTransitionRight(Type flowServiceType, string transitionName, PlatformDbContext db, PlatformAppService app)
   {
@@ -221,7 +204,7 @@ internal static class AgentFlowHelper
       .ToList();
 
     var list = new List<AgentFlowTransitionDescriptor>();
-    if (!feature.AllowsAgentWrite)
+    if (feature.AgentAccess != AgentAccess.ReadWrite)
     {
       return (statuses, list);
     }

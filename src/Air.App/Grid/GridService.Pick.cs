@@ -65,9 +65,9 @@ public abstract partial class GridService<TEntity, TRow>
     ExecutePickedCoreAsync(
       request,
       actionName,
-      (parent, _) =>
+      (_, _, ct) =>
       {
-        var target = InitializeAttachedEntity(factory(), parent);
+        var target = InitializeAttachedEntity(factory(), GetParent());
         bindPicked(target, request.PickedId);
         db.Set<TEntity>().Add(target);
         return Task.FromResult<(TEntity?, GridActionDto?, IReadOnlyList<long>)>((target, null, [request.PickedId]));
@@ -83,7 +83,7 @@ public abstract partial class GridService<TEntity, TRow>
     ExecutePickedCoreAsync(
       request,
       actionName,
-      async (_, ct) =>
+      async (_, _, ct) =>
       {
         var (target, refusal) = await LoadPickedReplaceTargetAsync(request, ct);
         return (target, refusal, [request.PickedId]);
@@ -91,75 +91,55 @@ public abstract partial class GridService<TEntity, TRow>
       (ctx, _, ct) => handler(ctx, ct),
       cancellationToken);
 
-  private async Task<bool> ValidatePickedRecordAsync(
+  private async Task<(bool IsValid, object? PickedEntity)> ResolvePickedRecordAsync(
     long pickedId,
     string? actionName,
     CancellationToken ct)
   {
-    if (pickedId <= 0)
+    if (pickedId <= 0 || string.IsNullOrWhiteSpace(actionName))
     {
-      return false;
+      return (false, null);
     }
 
     var nav = await GetNavAsync(ct: ct);
     var cols = await CreateColumnsAsync(ct);
-    var kebabAction = !string.IsNullOrEmpty(actionName) ? ServicePathResolver.ToKebabCase(actionName) : null;
+    var kebabAction = ServicePathResolver.ToKebabCase(actionName);
 
-    var matchedNavPicker = nav.Pickers
-      .FirstOrDefault(p =>
-        !string.IsNullOrEmpty(actionName) &&
-        (string.Equals(p.Method, actionName, StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(ServicePathResolver.ToKebabCase(p.Method ?? ""), kebabAction, StringComparison.OrdinalIgnoreCase)));
+    var matchedNavPicker = nav.Pickers.FirstOrDefault(p =>
+      string.Equals(p.Method, actionName, StringComparison.OrdinalIgnoreCase) ||
+      string.Equals(ServicePathResolver.ToKebabCase(p.Method ?? string.Empty), kebabAction, StringComparison.OrdinalIgnoreCase));
 
     var pickerServicePath = matchedNavPicker?.ReferenceService;
     var readsParent = matchedNavPicker?.ReadsParent ?? false;
 
-    var matchedCellPicker = cols.List
-      .Select(c => c.Cell)
-      .OfType<GridCellPickerModel>()
-      .FirstOrDefault(p =>
-        !string.IsNullOrEmpty(actionName) &&
-        (string.Equals(p.Method, actionName, StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(p.Method, kebabAction, StringComparison.OrdinalIgnoreCase)));
-
-    if (string.IsNullOrEmpty(pickerServicePath) && matchedCellPicker != null)
-    {
-      pickerServicePath = matchedCellPicker.ReferenceService;
-      readsParent = matchedCellPicker.ReadsParent;
-    }
-
     if (string.IsNullOrEmpty(pickerServicePath))
     {
-      var allPickerServices = nav.Pickers.Select(p => p.ReferenceService)
-        .Concat(cols.List.Select(c => c.Cell).OfType<GridCellPickerModel>().Select(p => p.ReferenceService))
-        .Where(s => !string.IsNullOrEmpty(s))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
-      if (allPickerServices.Count == 1)
+      var matchedCellPicker = cols.List
+        .Select(c => c.Cell)
+        .OfType<GridCellPickerModel>()
+        .FirstOrDefault(p =>
+          string.Equals(p.Method, actionName, StringComparison.OrdinalIgnoreCase) ||
+          string.Equals(p.Method, kebabAction, StringComparison.OrdinalIgnoreCase));
+
+      if (matchedCellPicker != null)
       {
-        pickerServicePath = allPickerServices[0];
-        readsParent = nav.Pickers
-          .FirstOrDefault(p => string.Equals(p.ReferenceService, pickerServicePath, StringComparison.OrdinalIgnoreCase))
-          ?.ReadsParent
-          ?? cols.List
-            .Select(c => c.Cell)
-            .OfType<GridCellPickerModel>()
-            .FirstOrDefault(p => string.Equals(p.ReferenceService, pickerServicePath, StringComparison.OrdinalIgnoreCase))
-            ?.ReadsParent
-          ?? false;
+        pickerServicePath = matchedCellPicker.ReferenceService;
+        readsParent = matchedCellPicker.ReadsParent;
       }
     }
 
     if (string.IsNullOrEmpty(pickerServicePath))
     {
-      return true;
+      return (false, null);
     }
 
-    var pickerType = ModuleCatalog.Instance.FindServiceType(pickerServicePath);
+    var fromCatalog = Catalog.FindServiceType(pickerServicePath);
+    var pickerType = fromCatalog ?? ModuleCatalog.Instance.FindServiceType(pickerServicePath);
+    var catalogForInstance = fromCatalog != null ? Catalog : ModuleCatalog.Instance;
     if (pickerType == null ||
-        ModuleCatalog.Instance.CreateServiceInstance(pickerType, db, PlatformApp) is not IGridService pickerGrid)
+        catalogForInstance.CreateServiceInstance(pickerType, db, PlatformApp) is not IGridService pickerGrid)
     {
-      return false;
+      return (false, null);
     }
 
     if (!readsParent)
@@ -167,15 +147,17 @@ public abstract partial class GridService<TEntity, TRow>
       readsParent = ParentScopeValidator.DeclaresParentScope(pickerType);
     }
 
-    var countDto = await pickerGrid.GetCountAsync(new GridRequest
-    {
-      ParentService = readsParent ? ParentService : null,
-      ParentId = readsParent ? ParentId : null,
-      IsReferencePicker = true,
-      Filter = FilterNode.Rule("id", FilterOperator.Equals, pickedId)
-    }, ct);
+    var picked = await pickerGrid.LoadPickedEntityAsync(
+      new GridRequest
+      {
+        ParentService = readsParent ? ParentService : null,
+        ParentId = readsParent ? ParentId : null,
+        IsReferencePicker = true
+      },
+      pickedId,
+      ct);
 
-    return countDto.Total > 0;
+    return (picked != null, picked);
   }
 
   private Task<GridActionDto> ExecutePickedAsync<TPicked>(
@@ -184,14 +166,17 @@ public abstract partial class GridService<TEntity, TRow>
     Func<GridBatchContext<TEntity>, TPicked, TEntity, CancellationToken, Task> handler,
     CancellationToken cancellationToken,
     string? actionName = null)
-    where TPicked : class, IEntity =>
-    ExecutePickedCoreAsync(
+    where TPicked : class, IEntity
+  {
+    TPicked? loadedPicked = null;
+    return ExecutePickedCoreAsync(
       request,
       actionName,
-      async (parent, ct) =>
+      async (parent, resolvedPicked, ct) =>
       {
-        var picked = await db.Set<TPicked>().FirstOrDefaultAsync(e => e.Id == request.PickedId, ct);
-        if (picked == null)
+        loadedPicked = resolvedPicked as TPicked
+          ?? await db.Set<TPicked>().FirstOrDefaultAsync(e => e.Id == request.PickedId, ct);
+        if (loadedPicked == null)
         {
           return (null, RefusedFormNotFound(), []);
         }
@@ -207,8 +192,7 @@ public abstract partial class GridService<TEntity, TRow>
       },
       async (ctx, target, ct) =>
       {
-        var picked = (await db.Set<TPicked>().FirstAsync(e => e.Id == request.PickedId, ct))!;
-        await handler(ctx, picked, target, ct);
+        await handler(ctx, loadedPicked!, target, ct);
         if (ctx.Errors.Count == 0)
         {
           if (isAttach)
@@ -222,9 +206,15 @@ public abstract partial class GridService<TEntity, TRow>
         }
       },
       cancellationToken);
+  }
 
   private TEntity InitializeAttachedEntity(TEntity target, GridParent<TEntity> parent)
   {
+    if (target is IHasTimestamps timestamps && timestamps.CreatedAt == default)
+    {
+      timestamps.CreatedAt = Time.GetUtcNow();
+    }
+
     if (target is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
     {
       tenantEntity.TenantId = tid;
@@ -264,7 +254,7 @@ public abstract partial class GridService<TEntity, TRow>
   private async Task<GridActionDto> ExecutePickedCoreAsync(
     GridPickRequest request,
     string? actionName,
-    Func<GridParent<TEntity>, CancellationToken, Task<(TEntity? Target, GridActionDto? Refusal, IReadOnlyList<long> ContextIds)>> prepareTarget,
+    Func<GridParent<TEntity>, object?, CancellationToken, Task<(TEntity? Target, GridActionDto? Refusal, IReadOnlyList<long> ContextIds)>> prepareTarget,
     Func<GridBatchContext<TEntity>, TEntity, CancellationToken, Task> runHandler,
     CancellationToken cancellationToken)
   {
@@ -291,7 +281,8 @@ public abstract partial class GridService<TEntity, TRow>
           };
         }
 
-        if (!await ValidatePickedRecordAsync(request.PickedId, actionName, mutationCt))
+        var (isValidPicked, pickedEntity) = await ResolvePickedRecordAsync(request.PickedId, actionName, mutationCt);
+        if (!isValidPicked)
         {
           return new GridActionDto
           {
@@ -300,7 +291,7 @@ public abstract partial class GridService<TEntity, TRow>
           };
         }
 
-        var (target, refusal, contextIds) = await prepareTarget(GetParent(), mutationCt);
+        var (target, refusal, contextIds) = await prepareTarget(GetParent(), pickedEntity, mutationCt);
         if (refusal != null || target == null)
         {
           return refusal!;

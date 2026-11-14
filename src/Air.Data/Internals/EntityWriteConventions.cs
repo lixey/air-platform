@@ -4,20 +4,28 @@ namespace Platform.Data.Internals;
 
 internal static class EntityWriteConventions
 {
-  public static void Apply(
+  public static async Task ApplyAsync(
+    PlatformDbContext? platformDb,
     ChangeTracker changeTracker,
     ITenantContext tenantContext,
-    MutationRunScope? activeMutationRun)
+    MutationRunScope? activeMutationRun,
+    CancellationToken cancellationToken = default)
   {
-    var now = TimeProvider.System.GetUtcNow();
+    var now = (platformDb?.Time ?? TimeProvider.System).GetUtcNow();
     var tenantId = tenantContext.TenantId;
     var isSystemScope = tenantContext.IsSystemScope;
 
-    foreach (var entry in changeTracker.Entries())
+    foreach (var entry in changeTracker.Entries().ToList())
     {
       if (entry.Entity is AppPlatformChange && entry.State is EntityState.Modified or EntityState.Deleted)
       {
         throw new InvalidOperationException("AppPlatformChange rows are immutable and cannot be modified or deleted.");
+      }
+
+      if (entry.Entity is IReadOnlyEntity && !isSystemScope &&
+          entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      {
+        throw new InvalidOperationException($"{entry.Metadata.ClrType.Name} is read-only.");
       }
 
       if (entry.Entity is BaseAppUser addedUser && entry.State == EntityState.Added && addedUser.IsRoot && !isSystemScope)
@@ -45,12 +53,12 @@ internal static class EntityWriteConventions
             throw new InvalidOperationException("The root user flag cannot be cleared.");
           }
 
-          if (!isSystemScope && tenantContext.UserId is { } actorUserId && actorUserId != baseUser.Id)
+          if (!isSystemScope && tenantContext.UserId != baseUser.Id)
           {
-            var actorIsRoot = actorUserId == 1 ||
-                              changeTracker.Context is PlatformDbContext pDb &&
-                              pDb.SetOfBase<BaseAppUser>()?.IgnoreQueryFilters().AsNoTracking()
-                                .Any(u => u.Id == actorUserId && u.IsRoot) == true;
+            var actorIsRoot = tenantContext.UserId is { } actorId &&
+                              platformDb?.SetOfBase<BaseAppUser>() is { } users &&
+                              await users.IgnoreQueryFilters().AsNoTracking()
+                                .AnyAsync(u => u.Id == actorId && u.IsRoot, cancellationToken);
             if (!actorIsRoot)
             {
               throw new InvalidOperationException("The root user cannot be modified by another user.");
@@ -60,6 +68,19 @@ internal static class EntityWriteConventions
         else if (entry.State == EntityState.Modified && baseUser.IsRoot && !isSystemScope)
         {
           throw new InvalidOperationException("Only system scope may set the root user flag.");
+        }
+      }
+
+      if (entry.Entity is AppAgentMemory memory && !isSystemScope &&
+          entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+      {
+        var origKind = entry.State == EntityState.Added
+          ? null
+          : entry.Property(nameof(AppAgentMemory.Kind)).OriginalValue as string;
+        if (string.Equals(memory.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(origKind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase))
+        {
+          throw new InvalidOperationException("Seed AppAgentMemory rows can only be written in system scope.");
         }
       }
 
@@ -99,12 +120,26 @@ internal static class EntityWriteConventions
           }
         }
 
-        if (entry.Entity is AppAgentMemory && !isSystemScope)
+        if (entry.Entity is AppAgentMemory existingMemory && !isSystemScope)
         {
           var origUserId = entry.Property(nameof(AppAgentMemory.UserId)).OriginalValue as long?;
           if (origUserId.HasValue && origUserId != tenantContext.UserId)
           {
             throw new InvalidOperationException("Cannot modify or delete another user's AppAgentMemory.");
+          }
+
+          if (entry.State == EntityState.Modified)
+          {
+            var isSharedKind = string.Equals(existingMemory.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase);
+            if (!isSharedKind && existingMemory.UserId is null or 0)
+            {
+              existingMemory.UserId = tenantContext.UserId ?? throw new InvalidOperationException(
+                "Cannot save personal AppAgentMemory without an active user.");
+            }
+            else if (existingMemory.UserId.HasValue && existingMemory.UserId != tenantContext.UserId)
+            {
+              throw new InvalidOperationException("Cannot assign AppAgentMemory to another user.");
+            }
           }
         }
       }
@@ -178,9 +213,10 @@ internal static class EntityWriteConventions
         {
           if (addedMemory.UserId is null or 0)
           {
-            var isSharedKind = string.Equals(addedMemory.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase) ||
-                               string.Equals(addedMemory.Kind, AgentMemoryKinds.Seed, StringComparison.OrdinalIgnoreCase);
-            addedMemory.UserId = isSharedKind ? null : tenantContext.UserId;
+            var isSharedKind = string.Equals(addedMemory.Kind, AgentMemoryKinds.Rule, StringComparison.OrdinalIgnoreCase);
+            addedMemory.UserId = isSharedKind
+              ? null
+              : tenantContext.UserId ?? throw new InvalidOperationException("Cannot insert personal AppAgentMemory without an active user.");
           }
           else if (addedMemory.UserId != tenantContext.UserId)
           {
@@ -328,7 +364,7 @@ internal static class EntityWriteConventions
     var hasModified = false;
     foreach (var p in entry.Properties)
     {
-      if (p.IsModified && !Equals(p.OriginalValue, p.CurrentValue))
+      if (p.IsModified && !ChangeJournalRecorder.PropertyValuesEqual(p.Metadata, p.OriginalValue, p.CurrentValue))
       {
         hasModified = true;
         if (!noAuditProps.Contains(p.Metadata.Name))

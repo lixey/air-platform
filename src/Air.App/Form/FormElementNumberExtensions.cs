@@ -4,15 +4,15 @@ public static class FormElementNumberExtensions
 {
   public static FormElement<TEntity, TProp> Range<TEntity, TProp>(
     this FormElement<TEntity, TProp> element,
-    double min,
-    double max)
+    decimal min,
+    decimal max)
     where TProp : struct, INumber<TProp> =>
     ApplyRange(element, min, max);
 
   public static FormElement<TEntity, TProp?> Range<TEntity, TProp>(
     this FormElement<TEntity, TProp?> element,
-    double min,
-    double max)
+    decimal min,
+    decimal max)
     where TProp : struct, INumber<TProp> =>
     ApplyRange(element, min, max);
 
@@ -108,30 +108,30 @@ public static class FormElementNumberExtensions
     where TProp : struct, INumber<TProp> =>
     ApplyGrouped(element, isGrouped);
 
-  private static FormElement<TEntity, T> ApplyRange<TEntity, T>(FormElement<TEntity, T> element, double min, double max)
+  private static FormElement<TEntity, T> ApplyRange<TEntity, T>(FormElement<TEntity, T> element, decimal min, decimal max)
   {
-    element.Dto.Constraints.Min = JsonSerializer.SerializeToElement(min);
+    element.Dto.Constraints.Min = min;
     element.Dto.Constraints.ExclusiveMin = null;
-    element.Dto.Constraints.Max = JsonSerializer.SerializeToElement(max);
+    element.Dto.Constraints.Max = max;
     return element;
   }
 
   private static FormElement<TEntity, T> ApplyMin<TEntity, T>(FormElement<TEntity, T> element, decimal min)
   {
-    element.Dto.Constraints.Min = JsonSerializer.SerializeToElement(min);
+    element.Dto.Constraints.Min = min;
     element.Dto.Constraints.ExclusiveMin = null;
     return element;
   }
 
   private static FormElement<TEntity, T> ApplyMax<TEntity, T>(FormElement<TEntity, T> element, decimal max)
   {
-    element.Dto.Constraints.Max = JsonSerializer.SerializeToElement(max);
+    element.Dto.Constraints.Max = max;
     return element;
   }
 
   private static FormElement<TEntity, T> ApplyGreaterThan<TEntity, T>(FormElement<TEntity, T> element, decimal value)
   {
-    element.Dto.Constraints.Min = JsonSerializer.SerializeToElement(value);
+    element.Dto.Constraints.Min = value;
     element.Dto.Constraints.ExclusiveMin = true;
     return element;
   }

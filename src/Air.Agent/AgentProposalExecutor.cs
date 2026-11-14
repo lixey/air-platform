@@ -286,7 +286,7 @@ public static class AgentProposalExecutor
   {
     var (feature, formType, gridType) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(payload.Service);
     var flowType = AgentFlowHelper.FindFlowServiceType(feature);
-    if (feature is not { AllowsAgentWrite: true } ||
+    if (feature is not { AgentAccess: AgentAccess.ReadWrite } ||
         flowType == null ||
         formType == null && gridType == null ||
         payload.RecordId is not > 0 ||

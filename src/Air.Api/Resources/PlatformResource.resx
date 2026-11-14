@@ -866,7 +866,7 @@
     <value>Too many requests.</value>
   </data>
   <data name="IdempotencyKeyInvalid" xml:space="preserve">
-    <value>The idempotency key must be 1 to 64 letters, digits, hyphens or underscores.</value>
+    <value>Idempotency-Key header exceeds the maximum length of 128 characters.</value>
   </data>
   <data name="IdempotencyKeyReused" xml:space="preserve">
     <value>The idempotency key was already used for another request.</value>
@@ -1425,5 +1425,26 @@
   </data>
   <data name="AgentErrorCliDisabledInProduction" xml:space="preserve">
     <value>Local CLI AI providers are disabled in production.</value>
+  </data>
+  <data name="FormValidationInvalid" xml:space="preserve">
+    <value>This value is invalid.</value>
+  </data>
+  <data name="StatusFlowNotConfigured" xml:space="preserve">
+    <value>No status flow is configured for this grid.</value>
+  </data>
+  <data name="StatusTransitionUnknown" xml:space="preserve">
+    <value>Unknown status transition '{0}'.</value>
+  </data>
+  <data name="NoRecordsSelected" xml:space="preserve">
+    <value>No records selected.</value>
+  </data>
+  <data name="FileIdRequired" xml:space="preserve">
+    <value>File ID is required.</value>
+  </data>
+  <data name="FileNotFound" xml:space="preserve">
+    <value>File not found.</value>
+  </data>
+  <data name="ParentIdRequired" xml:space="preserve">
+    <value>Parent record ID is required.</value>
   </data>
 </root>

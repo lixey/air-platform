@@ -4,7 +4,8 @@ namespace Platform.Data.Internals;
 
 internal sealed class MutationRunEntryState
 {
-  public required EntityEntry Entry { get; init; }
+  public required EntityEntry Entry { get; set; }
+  public MutationRunScope? Run { get; init; }
   public required Type ClrType { get; init; }
   public required string Table { get; init; }
   public long? TenantId { get; set; }

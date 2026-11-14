@@ -7,7 +7,7 @@ public abstract class BaseEntity : IEntity, IHasTimestamps, IHasVersion
 {
   public virtual long Id { get; set; }
 
-  public DateTimeOffset CreatedAt { get; set; } = TimeProvider.System.GetUtcNow();
+  public DateTimeOffset CreatedAt { get; set; }
 
   public DateTimeOffset? UpdatedAt { get; set; }
 

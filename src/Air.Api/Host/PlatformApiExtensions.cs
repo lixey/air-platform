@@ -243,12 +243,13 @@ public static class PlatformApiExtensions
         token = authHeader.ToString()["Bearer ".Length..].Trim();
       }
 
+      var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
       if (!string.IsNullOrWhiteSpace(token) &&
-          SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _, out var tokenVersion) &&
+          SessionTokenService.TryValidateAccessToken(token, out var sessionId, out var userId, out _, out var tokenVersion, timeProvider) &&
           context.RequestServices.GetService<IUserAuthCache>() is { } authCache &&
           HasAuthStoreRegistered(context.RequestServices, authCache, out var fallbackStore))
       {
-        var now = (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         var session = await authCache.GetSessionAsync(sessionId, fallbackStore, context.RequestAborted);
         if (session != null && session.UserId == userId && session.RevokedAt == null && session.ExpiresAt > now)
         {

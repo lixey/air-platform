@@ -78,7 +78,7 @@ internal sealed class IdempotencyStore(TimeProvider? time = null)
     if (!string.Equals(entry.ServiceKey, serviceKey, StringComparison.OrdinalIgnoreCase) ||
         !string.Equals(entry.PayloadHash, payloadHash, StringComparison.Ordinal))
     {
-      throw new IdempotencyConflictException("Idempotency-Key has already been used for a different request.");
+      throw new IdempotencyConflictException(Localizer.Instance["IdempotencyKeyReused"]);
     }
 
     recordId = entry.RecordId;
@@ -124,7 +124,7 @@ internal sealed class IdempotencyStore(TimeProvider? time = null)
   {
     if (key.Length > MaxKeyLength)
     {
-      throw new IdempotencyConflictException($"Idempotency-Key must not exceed {MaxKeyLength} characters.");
+      throw new IdempotencyConflictException(Localizer.Instance["IdempotencyKeyInvalid"]);
     }
   }
 

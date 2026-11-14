@@ -498,34 +498,32 @@ public abstract partial class GridService<TEntity, TRow>
         var cols = await CreateColumnsAsync(mutationCt);
         if (cols.StatusFlow is not IRecordStatuses<TEntity> statusFlow)
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = "No status flow configured for this grid.", Type = MessageType.Error }] };
-        }
-
-        if (IsReadOnly && !cols.StatusFlowAllowsReadOnly)
-        {
-          return new GridActionDto
-          {
-            Outcome = MutationOutcome.Refused,
-            Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }]
-          };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = L["StatusFlowNotConfigured"], Type = MessageType.Error }] };
         }
 
         (statusFlow as IPlatformService)?.BindContext(PlatformApp);
 
-        var transition = statusFlow.Transitions.FirstOrDefault(t => StatusMoveNavBuilder.MatchesTransition(t.Name, transitionName));
+        var transition = statusFlow.AllTransitions.FirstOrDefault(t => StatusMoveNavBuilder.MatchesTransition(t.Name, transitionName));
         if (transition is null)
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = $"Unknown status transition '{transitionName}'.", Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = L["StatusTransitionUnknown", transitionName], Type = MessageType.Error }] };
         }
 
-        if (!StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
+        if (!StatusMoveNavBuilder.CanMoveOnScreen(
+              Feature,
+              User,
+              transition,
+              IsServiceLockedReadOnly,
+              cols.StatusFlowAllowsReadOnly,
+              ResolveParentChildBuilder()?.IsReadOnly == true,
+              typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity))))
         {
           return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = L["MutationRefused"], Type = MessageType.Error }] };
         }
 
         if (selectedIds.Count == 0)
         {
-          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = "No records selected.", Type = MessageType.Error }] };
+          return new GridActionDto { Outcome = MutationOutcome.Refused, Messages = [new MessageDto { Detail = L["NoRecordsSelected"], Type = MessageType.Error }] };
         }
 
         var input = transition.Ask?.Read(body);

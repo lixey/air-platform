@@ -1,6 +1,6 @@
 namespace Platform.Data.Tests.Internals;
 
-internal sealed class FixedTenantContext(long tenantId, long userId) : ITenantContext
+internal sealed class FixedTenantContext(long tenantId, long? userId) : ITenantContext
 {
   public long? TenantId => tenantId;
   public long? UserId => userId;

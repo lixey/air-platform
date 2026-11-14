@@ -210,6 +210,7 @@ public sealed class SerializationAndAuthSecurityTests : IDisposable
         runsA++;
         return Task.FromResult(new TestSlotModel { Label = "CreatedOnce" });
       },
+      (_, _) => Task.FromResult<TestSlotModel?>(null),
       services: servicesA);
 
     var r2 = await MutationRunner.RunIdempotentCreateAsync(
@@ -222,6 +223,7 @@ public sealed class SerializationAndAuthSecurityTests : IDisposable
         runsA++;
         return Task.FromResult(new TestSlotModel { Label = "CreatedTwice" });
       },
+      (_, _) => Task.FromResult<TestSlotModel?>(null),
       services: servicesA);
 
     Assert.Equal("CreatedOnce", r1.Label);
@@ -239,6 +241,7 @@ public sealed class SerializationAndAuthSecurityTests : IDisposable
         runsB++;
         return Task.FromResult(new TestSlotModel { Label = "ContainerB" });
       },
+      (_, _) => Task.FromResult<TestSlotModel?>(null),
       services: servicesB);
 
     Assert.Equal(1, runsB);

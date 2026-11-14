@@ -65,7 +65,7 @@ public abstract partial class FormService<TEntity>
     {
       if (req.Id is null)
       {
-        return Results.BadRequest(new { detail = Localizer.Instance["RecordIdRequired"] });
+        return Results.BadRequest(new { detail = L["RecordIdRequired"] });
       }
 
       var moved = await MoveStatusAsync(req.Id.Value, transitionName, body, req.Ver, ct);

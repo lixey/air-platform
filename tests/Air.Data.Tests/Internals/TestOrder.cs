@@ -9,4 +9,6 @@ internal sealed class TestOrder : IEntity, IHasTenant, IHasVersion
   public decimal Amount { get; set; }
   public DateTime? DeliveryDate { get; set; }
   public bool IsArchived { get; set; }
+  public TestUnsignedTier Tier { get; set; }
+  public byte[]? PayloadHash { get; set; }
 }

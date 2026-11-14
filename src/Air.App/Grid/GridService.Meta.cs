@@ -398,6 +398,12 @@ public abstract partial class GridService<TEntity, TRow>
   void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
   {
     var gridType = GetType();
+    if (typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)) && !Feature.IsReadOnly)
+    {
+      throw new InvalidOperationException(
+        $"Grid '{gridType.FullName}' over IReadOnlyEntity '{typeof(TEntity).Name}' requires feature '{Feature.Key}' to be declared .ReadOnly().");
+    }
+
     ServiceOverrideValidator.EnsureSingleSyncOrAsyncOverride(
       gridType,
       typeof(GridService<,>),

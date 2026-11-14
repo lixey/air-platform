@@ -11,8 +11,8 @@ internal static class CascadeLoader
   private static readonly MethodInfo LoadReferencingAsyncMethod =
     typeof(CascadeLoader).GetMethod(nameof(LoadReferencingCoreAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
 
-  private static readonly MethodInfo LoadReferencingSyncMethod =
-    typeof(CascadeLoader).GetMethod(nameof(LoadReferencingCore), BindingFlags.NonPublic | BindingFlags.Static)!;
+  private static readonly ConcurrentDictionary<(Type EntityType, Type KeyType), Func<DbContext, string, List<object>, int, CancellationToken, Task<int>>> CompiledLoaders =
+    new();
 
   public static async Task LoadDependentsAsync(DbContext db, CancellationToken cancellationToken)
   {
@@ -45,61 +45,12 @@ internal static class CascadeLoader
         }
 
         var member = foreignKey.Properties[propIndex];
-        var task = (Task<int>)LoadReferencingAsyncMethod
-          .MakeGenericMethod(foreignKey.DeclaringEntityType.ClrType, member.ClrType)
-          .Invoke(null, [db, member.Name, keys, remaining, cancellationToken])!;
-        loadedCount += await task;
-      }
-
-      if (loadedCount == 0)
-      {
-        return;
-      }
-
-      totalLoaded += loadedCount;
-      if (totalLoaded > MaxCascadeRows)
-      {
-        throw new InvalidOperationException($"Cascade delete exceeded the maximum audited dependent limit ({MaxCascadeRows}).");
-      }
-
-      db.ChangeTracker.CascadeChanges();
-    }
-  }
-
-  public static void LoadDependents(DbContext db)
-  {
-    if (!db.ChangeTracker.Entries().Any(e => e.State == EntityState.Deleted))
-    {
-      return;
-    }
-
-    var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-    var totalLoaded = 0;
-    while (totalLoaded < MaxCascadeRows)
-    {
-      var principals = db.ChangeTracker.Entries()
-        .Where(e => e.State == EntityState.Deleted && EntityAuditMetadata.For(e.Metadata.ClrType).IsEntityAudited)
-        .Where(e => visited.Add(e.Entity))
-        .ToList();
-
-      if (principals.Count == 0)
-      {
-        return;
-      }
-
-      var loadedCount = 0;
-      foreach (var (foreignKey, propIndex, keys) in CollectReferencingKeys(principals))
-      {
-        var remaining = MaxCascadeRows + 1 - totalLoaded - loadedCount;
-        if (remaining <= 0)
-        {
-          break;
-        }
-
-        var member = foreignKey.Properties[propIndex];
-        loadedCount += (int)LoadReferencingSyncMethod
-          .MakeGenericMethod(foreignKey.DeclaringEntityType.ClrType, member.ClrType)
-          .Invoke(null, [db, member.Name, keys, remaining])!;
+        var loader = CompiledLoaders.GetOrAdd(
+          (foreignKey.DeclaringEntityType.ClrType, member.ClrType),
+          static key => LoadReferencingAsyncMethod
+            .MakeGenericMethod(key.EntityType, key.KeyType)
+            .CreateDelegate<Func<DbContext, string, List<object>, int, CancellationToken, Task<int>>>());
+        loadedCount += await loader(db, member.Name, keys, remaining, cancellationToken);
       }
 
       if (loadedCount == 0)
@@ -181,33 +132,6 @@ internal static class CascadeLoader
         .Where(e => values.Contains(EF.Property<TKey>(e, property)))
         .Take(take)
         .ToListAsync(cancellationToken);
-      count += rows.Count;
-    }
-
-    return count;
-  }
-
-  private static int LoadReferencingCore<TEntity, TKey>(
-    DbContext db,
-    string property,
-    List<object> keys,
-    int maxRows)
-    where TEntity : class
-  {
-    var count = 0;
-    foreach (var chunk in keys.Distinct().Chunk(KeysPerQuery))
-    {
-      var take = maxRows - count;
-      if (take <= 0)
-      {
-        break;
-      }
-
-      var values = chunk.Select(k => (TKey)k).ToList();
-      var rows = db.Set<TEntity>().AsTracking()
-        .Where(e => values.Contains(EF.Property<TKey>(e, property)))
-        .Take(take)
-        .ToList();
       count += rows.Count;
     }
 

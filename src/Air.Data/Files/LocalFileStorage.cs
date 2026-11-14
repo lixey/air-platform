@@ -91,7 +91,7 @@ public sealed class LocalFileStorage : IFileStorage
         var info = new FileInfo(file);
         if (file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
         {
-          if (info.CreationTimeUtc < moment.UtcDateTime)
+          if (info.LastWriteTimeUtc < moment.UtcDateTime)
           {
             try
             {
@@ -103,7 +103,7 @@ public sealed class LocalFileStorage : IFileStorage
           continue;
         }
 
-        if (info.CreationTimeUtc < moment.UtcDateTime)
+        if (info.LastWriteTimeUtc < moment.UtcDateTime)
         {
           list.Add(Path.GetFileName(file));
         }

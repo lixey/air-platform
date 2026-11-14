@@ -150,9 +150,9 @@ public sealed class FormElement<TEntity, TProp>(FormElementDto dto, bool hasSpan
       Options = options.Select(o => new OptionDto
       {
         Id = o.Id,
-        Name = Localizer.Instance[o.Name],
+        Name = o.Name,
         Color = o.Color,
-        Title = o.Title != null ? Localizer.Instance[o.Title] : null
+        Title = o.Title
       }).ToList()
     };
     return this;

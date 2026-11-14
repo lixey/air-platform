@@ -37,4 +37,12 @@ internal sealed class TestInvoiceLineGridService(AppTestDbContext db, PlatformAp
       line.Title = tag.Name;
       line.Amount = 10m;
     }, ct);
+
+  [RequireAction(Right.Edit)]
+  public Task<GridActionDto> AttachUnregisteredTag(GridPickRequest req, CancellationToken ct = default) =>
+    AttachPickedAsync<TestTag>(req, (tag, line) =>
+    {
+      line.Title = tag.Name;
+      line.Amount = 10m;
+    }, ct);
 }

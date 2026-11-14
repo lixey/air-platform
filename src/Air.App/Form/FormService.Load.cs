@@ -183,7 +183,7 @@ public abstract partial class FormService<TEntity>
       var nameStr = nameObj is JsonElement je && je.ValueKind == JsonValueKind.String ? je.GetString() : nameObj.ToString();
       if (!string.IsNullOrEmpty(nameStr))
       {
-        dict["name"] = Localizer.Instance[nameStr];
+        dict["name"] = L[nameStr];
       }
     }
 
@@ -320,6 +320,11 @@ public abstract partial class FormService<TEntity>
   private TEntity CreateBlankEntity(FormParent<TEntity> parent, long? parentId)
   {
     var entity = new TEntity();
+    if (entity is IHasTimestamps timestamps && timestamps.CreatedAt == default)
+    {
+      timestamps.CreatedAt = Time.GetUtcNow();
+    }
+
     if (entity is IHasTenant tenantEntity && tenantEntity.TenantId == 0 && db.TenantContext.TenantId is { } tid)
     {
       tenantEntity.TenantId = tid;

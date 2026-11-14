@@ -434,7 +434,7 @@ public abstract partial class GridService<TEntity, TRow>
     ParentId = request.ParentId;
     if (request.Id is not > 0)
     {
-      throw new KeyNotFoundException(Localizer.Instance["FormNotFound"]);
+      throw new KeyNotFoundException(L["FormNotFound"]);
     }
 
     await InferBoundParentIdFromIdsAsync([request.Id.Value], ct);
@@ -455,8 +455,7 @@ public abstract partial class GridService<TEntity, TRow>
         col == null ||
         !col.IsEditable ||
         string.IsNullOrEmpty(col.Path) ||
-        col.Path.Contains('.') ||
-        !await RestrictedQuery().AsNoTracking().AnyAsync(e => e.Id == request.Id.Value, ct))
+        col.Path.Contains('.'))
     {
       return new GridCellDto
       {
@@ -476,11 +475,20 @@ public abstract partial class GridService<TEntity, TRow>
         Id = request.Id,
         Ver = request.Ver,
         ParentId = ParentId,
-        ParentService = ParentService ?? GetParent().BoundParentService
+        ParentService = ParentService ?? GetParent().BoundParentService,
+        IdempotencyKey = request.IdempotencyKey,
+        RawPayload = request.RawPayload
       };
       try
       {
-        return await form.SaveCellAsync(request.Id.Value, request.Path, request.Value, formReq, token => ReadRowAsync(request.Id.Value, token), ct);
+        return await form.SaveCellAsync(
+          request.Id.Value,
+          request.Path,
+          request.Value,
+          formReq,
+          token => ReadRowAsync(request.Id.Value, token),
+          token => RestrictedQuery().AsNoTracking().AnyAsync(e => e.Id == request.Id.Value, token),
+          ct);
       }
       catch (JsonException)
       {

@@ -129,15 +129,15 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
     var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
-      ?? throw new InvalidOperationException("File ID required.");
+      ?? throw new InvalidOperationException(L["FileIdRequired"]);
 
     if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken))
     {
-      throw new KeyNotFoundException("File not found.");
+      throw new KeyNotFoundException(L["FileNotFound"]);
     }
 
     var file = await RestrictedQuery().AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken)
-      ?? throw new KeyNotFoundException("File not found.");
+      ?? throw new KeyNotFoundException(L["FileNotFound"]);
 
     string? uploadedBy = null;
     if (file.UploadedById is > 0 and var uid)
@@ -169,15 +169,15 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
     ParentService = request.ParentService ?? ParentService;
     ParentId = request.ParentId ?? ParentId;
     var id = request.Id ?? request.SelectedIds?.FirstOrDefault()
-      ?? throw new InvalidOperationException("File ID required.");
+      ?? throw new InvalidOperationException(L["FileIdRequired"]);
 
     if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken))
     {
-      throw new KeyNotFoundException("File not found.");
+      throw new KeyNotFoundException(L["FileNotFound"]);
     }
 
     var file = await RestrictedQuery().AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken)
-      ?? throw new KeyNotFoundException("File not found.");
+      ?? throw new KeyNotFoundException(L["FileNotFound"]);
 
     if (string.IsNullOrWhiteSpace(file.Metadata))
     {
@@ -208,12 +208,12 @@ public abstract partial class FileGridService<TFile>(PlatformDbContext db, Platf
 
     if (parent.BoundProperty != null && (!parentId.HasValue || parentId.Value <= 0))
     {
-      throw new InvalidOperationException("Parent ID required.");
+      throw new InvalidOperationException(L["ParentIdRequired"]);
     }
 
     if (!await EnsureParentScopeAsync(lockParent: false, cancellationToken))
     {
-      throw new KeyNotFoundException("File not found.");
+      throw new KeyNotFoundException(L["FileNotFound"]);
     }
 
     var query = RestrictedQuery();

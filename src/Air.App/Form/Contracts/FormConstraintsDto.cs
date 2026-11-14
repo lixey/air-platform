@@ -26,13 +26,11 @@ public sealed class FormConstraintsDto
   public int? Scale { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [WireNumber]
-  public JsonElement? Min { get; set; }
+  public decimal? Min { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
   public bool? ExclusiveMin { get; set; }
 
   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-  [WireNumber]
-  public JsonElement? Max { get; set; }
+  public decimal? Max { get; set; }
 }

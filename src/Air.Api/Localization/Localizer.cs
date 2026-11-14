@@ -242,75 +242,18 @@ public sealed class Localizer : ILocalizer
 
   private bool TryFormatSourceTitle(string key, out string formatted)
   {
-    if (!string.Equals(key, "LegacyTitleFormat", StringComparison.OrdinalIgnoreCase) &&
-        _managersSnapshot is [var rm, ..])
+    if (key.Length >= 2 && key[0] == '\u001f')
     {
-      var cultures = (_root ?? this)._cultures;
-      if (TryParseSourceTitle(rm, cultures, key, out var uiSource, out var dbSource) &&
-          TryGetString("LegacyTitleFormat", out var template))
+      var sep = key.IndexOf('\u001f', 1);
+      if (sep >= 1 && TryGetString("LegacyTitleFormat", out var template))
       {
-        formatted = string.Format(System.Globalization.CultureInfo.CurrentUICulture, template, uiSource, dbSource);
+        formatted = string.Format(CultureInfo.CurrentUICulture, template, key[1..sep], key[(sep + 1)..]);
         return true;
       }
     }
 
     formatted = string.Empty;
     return false;
-  }
-
-  private static bool TryParseSourceTitle(System.Resources.ResourceManager rm, ICultureCatalog cultures, string key, out string uiSource, out string dbSource)
-  {
-    if (TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", System.Globalization.CultureInfo.InvariantCulture), out uiSource, out dbSource))
-    {
-      return true;
-    }
-
-    foreach (var registered in cultures.Cultures)
-    {
-      if (TryParseByTemplate(key, rm.GetString("LegacyTitleFormat", registered.CultureInfo), out uiSource, out dbSource))
-      {
-        return true;
-      }
-    }
-
-    uiSource = string.Empty;
-    dbSource = string.Empty;
-    return false;
-  }
-
-  private static bool TryParseByTemplate(string key, string? template, out string uiSource, out string dbSource)
-  {
-    uiSource = string.Empty;
-    dbSource = string.Empty;
-    if (string.IsNullOrEmpty(template))
-    {
-      return false;
-    }
-
-    var p0 = template.IndexOf("{0}", StringComparison.Ordinal);
-    var p1 = template.IndexOf("{1}", StringComparison.Ordinal);
-    if (p0 < 0 || p1 <= p0 + 3)
-    {
-      return false;
-    }
-
-    var prefix = template[..p0];
-    var sep = template[(p0 + 3)..p1];
-    var suffix = template[(p1 + 3)..];
-    if (!key.StartsWith(prefix, StringComparison.Ordinal) || !key.EndsWith(suffix, StringComparison.Ordinal))
-    {
-      return false;
-    }
-
-    var sepIdx = key.IndexOf(sep, prefix.Length, StringComparison.Ordinal);
-    if (sepIdx < 0 || sepIdx + sep.Length > key.Length - suffix.Length)
-    {
-      return false;
-    }
-
-    uiSource = key[prefix.Length..sepIdx];
-    dbSource = key[(sepIdx + sep.Length)..(key.Length - suffix.Length)];
-    return true;
   }
 
   public string TextOr(string key, string fallback)

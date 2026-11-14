@@ -123,7 +123,8 @@ public sealed class MutationAndServiceSecurityTests : IDisposable
         "demo.items-form",
         "idem-key-1",
         "{\"name\":\"Beta\"}",
-        _ => Task.FromResult(new ApiTestItem())));
+        _ => Task.FromResult(new ApiTestItem()),
+        async (replayedId, ct) => await db.Items.AsNoTracking().FirstOrDefaultAsync(e => e.Id == replayedId, ct)));
   }
 
   [Fact]

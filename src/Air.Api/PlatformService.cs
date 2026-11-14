@@ -11,7 +11,7 @@ public abstract class PlatformService(PlatformAppService? app = null) : IPlatfor
   protected ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
   protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
   protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
-  protected ILocalizer L => Localizer.Instance.For(Feature?.Module);
+  protected ILocalizer L => (PlatformApp?.L ?? Localizer.Instance).For(Feature?.Module);
 
   public abstract Feature Feature { get; }
   void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;

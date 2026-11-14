@@ -493,11 +493,6 @@ public static class ContractExporter
       return nameof(UiColor);
     }
 
-    if (prop.GetCustomAttribute<WireNumberAttribute>() != null)
-    {
-      return "number";
-    }
-
     var oneOf = prop.GetCustomAttribute<OneOfAttribute>();
     if (oneOf?.Vocabularies.Count > 0)
     {

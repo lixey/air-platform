@@ -1,4 +1,4 @@
-import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Injector } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formElement } from '../../tests/form-model';
 import { errorAlertInterceptor } from '../app/alert/error-alert.interceptor';
 import { credentialsInterceptor, PLATFORM_IDEMPOTENCY_KEY_HEADER } from '../app/auth/credentials.interceptor';
+import { Api } from '../core/api';
 import type { FormAskModel, MessageDto } from '../core/generated/contracts';
 import type { AskService } from '../overlay/ask.service';
 import type { ConfirmationService } from '../overlay/confirmation.service';
@@ -20,7 +21,7 @@ describe('ActionRunner', () => {
       providers: [provideHttpClient(withInterceptors([credentialsInterceptor, errorAlertInterceptor])), provideHttpClientTesting()],
     });
     http = TestBed.inject(HttpTestingController);
-    runner = new ActionRunner(TestBed.inject(HttpClient));
+    runner = new ActionRunner(TestBed.inject(Api));
   });
 
   afterEach(() => {
@@ -29,19 +30,21 @@ describe('ActionRunner', () => {
   });
 
   it('attaches Idempotency-Key, reuses it on retry after an unknown failure, and rotates it after commit, refusal, or payload change', async () => {
+    const service = 'ecom/customer-order';
+    const method = 'confirm-order';
     const url = '/api/ecom/customer-order/confirm-order';
     const body = { id: 10, ver: 1 };
 
     // 1. First attempt fails with 503 Service Unavailable ('unknown' outcome)
-    const firstAttempt = runner.post(url, body).catch(err => err);
+    const firstAttempt = runner.post(service, method, body).catch(err => err);
     const req1 = http.expectOne(url);
     const key1 = req1.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     expect(key1).toBeTruthy();
     req1.flush('Gateway timeout', { status: 503, statusText: 'Service Unavailable' });
     await firstAttempt;
 
-    // 2. Retry with identical URL and body reuses key1
-    const secondAttempt = runner.post<{ outcome: string }>(url, body);
+    // 2. Retry with identical route and body reuses key1
+    const secondAttempt = runner.post<{ outcome: string }>(service, method, body);
     const req2 = http.expectOne(url);
     const key2 = req2.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     expect(key2).toBe(key1);
@@ -49,7 +52,7 @@ describe('ActionRunner', () => {
     expect(await secondAttempt).toEqual({ outcome: 'committed' });
 
     // 3. Next invocation after commit generates a fresh key
-    const thirdAttempt = runner.post<{ outcome: string }>(url, body);
+    const thirdAttempt = runner.post<{ outcome: string }>(service, method, body);
     const req3 = http.expectOne(url);
     const key3 = req3.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     expect(key3).toBeTruthy();
@@ -58,32 +61,74 @@ describe('ActionRunner', () => {
     await thirdAttempt;
 
     // 4. Deterministic 422 refusal rotates key on next attempt
-    const fourthAttempt = runner.post(url, body).catch(err => err);
+    const fourthAttempt = runner.post(service, method, body).catch(err => err);
     const req4 = http.expectOne(url);
     const key4 = req4.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     req4.flush({ title: 'Refused', status: 422 }, { status: 422, statusText: 'Unprocessable Entity' });
     await fourthAttempt;
 
-    const fifthAttempt = runner.post<{ outcome: string }>(url, body);
+    const fifthAttempt = runner.post<{ outcome: string }>(service, method, body);
     const req5 = http.expectOne(url);
     const key5 = req5.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     expect(key5).not.toBe(key4);
     req5.flush({ outcome: 'committed' });
     await fifthAttempt;
 
-    // 5. Unknown failure followed by a modified payload generates a fresh key (preventing 422 payload mismatch)
-    const sixthAttempt = runner.post(url, { id: 10, ver: 1, qty: 1 }).catch(err => err);
+    // 5. Unknown failure followed by a modified payload generates a fresh key without wiping the earlier key
+    const sixthAttempt = runner.post(service, method, { id: 10, ver: 1, qty: 1 }).catch(err => err);
     const req6 = http.expectOne(url);
     const key6 = req6.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     req6.flush('Network error', { status: 503, statusText: 'Service Unavailable' });
     await sixthAttempt;
 
-    const seventhAttempt = runner.post<{ outcome: string }>(url, { id: 10, ver: 1, qty: 2 });
+    const seventhAttempt = runner.post<{ outcome: string }>(service, method, { id: 10, ver: 1, qty: 2 });
     const req7 = http.expectOne(url);
     const key7 = req7.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER);
     expect(key7).not.toBe(key6);
     req7.flush({ outcome: 'committed' });
     await seventhAttempt;
+
+    // 6. Retrying the original { qty: 1 } request still reuses key6 from the multi-slot UncertainIdempotency map!
+    const eighthAttempt = runner.post<{ outcome: string }>(service, method, { id: 10, ver: 1, qty: 1 });
+    const req8 = http.expectOne(url);
+    expect(req8.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBe(key6);
+    req8.flush({ outcome: 'committed' });
+    await eighthAttempt;
+  });
+
+  it('retains up to 16 uncertain keys independently and drops the oldest entry on overflow', async () => {
+    const service = 'ecom/customer-order';
+    const method = 'confirm-order';
+    const url = '/api/ecom/customer-order/confirm-order';
+    const captured: string[] = [];
+
+    for (let i = 1; i <= 17; i++) {
+      const attempt = runner.post(service, method, { id: i, ver: 1 }).catch(err => err);
+      const req = http.expectOne(url);
+      captured.push(req.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)!);
+      req.flush('Gateway timeout', { status: 503, statusText: 'Service Unavailable' });
+      await attempt;
+    }
+
+    // Slot 1 (oldest) was dropped when slot 17 arrived, so retrying id=1 gets a brand-new key
+    const retry1 = runner.post<{ outcome: string }>(service, method, { id: 1, ver: 1 });
+    const retryReq1 = http.expectOne(url);
+    expect(retryReq1.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).not.toBe(captured[0]);
+    retryReq1.flush({ outcome: 'committed' });
+    await retry1;
+
+    // Slots 2..17 remain intact
+    const retry2 = runner.post<{ outcome: string }>(service, method, { id: 2, ver: 1 });
+    const retryReq2 = http.expectOne(url);
+    expect(retryReq2.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBe(captured[1]);
+    retryReq2.flush({ outcome: 'committed' });
+    await retry2;
+
+    const retry17 = runner.post<{ outcome: string }>(service, method, { id: 17, ver: 1 });
+    const retryReq17 = http.expectOne(url);
+    expect(retryReq17.request.headers.get(PLATFORM_IDEMPOTENCY_KEY_HEADER)).toBe(captured[16]);
+    retryReq17.flush({ outcome: 'committed' });
+    await retry17;
   });
 
   it('fetches get-action-input defaults when ask.hasDefaults is true and aborts opening dialog on error', async () => {

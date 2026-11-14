@@ -110,12 +110,13 @@ public static class MutationRunner
     string? idempotencyKey,
     string rawPayload,
     Func<CancellationToken, Task<TResult>> executeCreate,
-    Func<long, CancellationToken, Task<TResult?>>? reloadById = null,
+    Func<long, CancellationToken, Task<TResult?>> reloadById,
     Func<TResult, long?>? extractId = null,
     CancellationToken ct = default,
     IServiceProvider? services = null)
     where TResult : class
   {
+    ArgumentNullException.ThrowIfNull(reloadById);
     if (string.IsNullOrWhiteSpace(idempotencyKey))
     {
       return await RunAsync(db, executeCreate, ct);
@@ -130,7 +131,7 @@ public static class MutationRunner
     using var keyLock = await store.AcquireLockAsync(tenantId, userId, trimmedKey, ct);
     if (store.TryGetCommitted(tenantId, userId, serviceKey, trimmedKey, payloadHash, out var recordId, out var cachedResult))
     {
-      if (recordId > 0 && reloadById != null)
+      if (recordId > 0)
       {
         var reloaded = await reloadById(recordId, ct);
         if (reloaded != null)

@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { DestroyRef, inject, Injector, Service, signal } from '@angular/core';
 import { AlertService } from '../../app/alert/alert.service';
 import { shownByCaller } from '../../app/alert/error-alert.interceptor';
-import { serviceUrl } from '../../core/api';
+import { Api } from '../../core/api';
 import { fetchFile, SAVE_FILE } from '../../core/download';
 import type {
   FormAskModel,
@@ -73,6 +73,7 @@ interface ActionExchange<T> {
 @Service({ autoProvided: false })
 export class GridActionsService {
   private readonly grid = inject(GridService);
+  private readonly api = inject(Api);
   private readonly http = inject(HttpClient);
   private readonly confirmation = inject(ConfirmationService);
   private readonly asks = inject(AskService);
@@ -82,7 +83,7 @@ export class GridActionsService {
   private readonly texts = inject(TextsService);
   private readonly saveFile = inject(SAVE_FILE);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly runner = new ActionRunner(this.http);
+  private readonly runner = new ActionRunner(this.api);
 
   /** The methods of the actions under way. */
   private readonly running = signal<ReadonlySet<string>>(new Set());
@@ -112,7 +113,7 @@ export class GridActionsService {
           action: { service, method: picker.method },
           isCurrent: mutation.isCurrent,
           input: { pickedId },
-          send: call => this.runner.post<GridActionDto | null>(call.url, call.body),
+          send: call => this.runner.post<GridActionDto | null>(call.service, call.method, call.body),
           apply: (answer, call) => {
             isCommitted = true;
             this.adopt(answer, call, mutation);
@@ -185,7 +186,7 @@ export class GridActionsService {
       action,
       isCurrent: mutation.isCurrent,
       input,
-      send: call => this.runner.post<GridActionDto | null>(call.url, call.body),
+      send: call => this.runner.post<GridActionDto | null>(call.service, call.method, call.body),
       apply: (answer, call) => this.adopt(answer, call, mutation, action.label ?? undefined),
       fail: error => {
         own = action.ask ? ownMessages(action.ask, classifyMutationFailure(error).messages) : [];
@@ -225,7 +226,7 @@ export class GridActionsService {
         this.perform<GridDeleteDto>({
           action,
           isCurrent: mutation.isCurrent,
-          send: call => this.runner.post<GridDeleteDto>(serviceUrl<GridServiceEndpoints>(action.service, GRID_DELETE), call.body),
+          send: call => this.runner.post<GridDeleteDto>(action.service, GRID_DELETE, call.body),
           apply: (answer, call) =>
             this.deleted(answer, { attempt, ids: idsOf(call), operation: mutation.operation, service: action.service }),
           fail: (error, call) => this.grid.deletion.fail(attempt, idsOf(call), classifyMutationFailure(error)),

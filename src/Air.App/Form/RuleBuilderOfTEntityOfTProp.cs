@@ -11,9 +11,9 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
     public bool IsWarning { get; set; }
   }
 
-  private void Emit(RuleContext<TEntity> ctx, ValidatorEntry entry, string defaultMessage)
+  private void Emit(RuleContext<TEntity> ctx, ValidatorEntry entry, string defaultMessageKey)
   {
-    var message = entry.Message ?? defaultMessage;
+    var message = entry.Message != null ? ctx.Localizer[entry.Message] : ctx.Localizer[defaultMessageKey];
     if (entry.IsWarning)
     {
       ctx.Warn(message, path, entry.Code);
@@ -56,7 +56,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!predicate(val))
         {
-          Emit(ctx, entry, "Invalid value.");
+          Emit(ctx, entry, "FormValidationInvalid");
         }
 
         return Task.CompletedTask;
@@ -73,7 +73,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!predicate(ctx.SaveContext.Entity, val))
         {
-          Emit(ctx, entry, "Invalid value.");
+          Emit(ctx, entry, "FormValidationInvalid");
         }
 
         return Task.CompletedTask;
@@ -90,7 +90,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!await predicate(val, ct))
         {
-          Emit(ctx, entry, "Invalid value.");
+          Emit(ctx, entry, "FormValidationInvalid");
         }
       }
     });
@@ -105,7 +105,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (!await predicate(ctx.SaveContext.Entity, val, ct))
         {
-          Emit(ctx, entry, "Invalid value.");
+          Emit(ctx, entry, "FormValidationInvalid");
         }
       }
     });
@@ -121,7 +121,7 @@ public class RuleBuilder<TEntity, TProp>(Func<FormSaveContext<TEntity>, TProp> g
       {
         if (val is string str && !string.IsNullOrEmpty(str) && !regex.IsMatch(str))
         {
-          Emit(ctx, entry, "Value does not match required pattern.");
+          Emit(ctx, entry, "FormValidationPattern");
         }
 
         return Task.CompletedTask;

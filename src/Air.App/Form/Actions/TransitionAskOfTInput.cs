@@ -72,9 +72,9 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
   {
     var target = input as TInput ?? new TInput();
     var elements = CreateElements();
-    var saveCtx = new FormSaveContext<TInput> { Entity = target, IsNew = true };
-    var ruleCtx = new RuleContext<TInput> { SaveContext = saveCtx };
     var loc = localizer as Localizer ?? Localizer.Instance;
+    var saveCtx = new FormSaveContext<TInput> { Entity = target, IsNew = true };
+    var ruleCtx = new RuleContext<TInput> { SaveContext = saveCtx, Localizer = loc };
     FormValidator.ValidateElementConstraints(db: null, loc, elements.List, target, ruleCtx, onlyAcceptingInput: true);
     return ruleCtx.Failures;
   }
@@ -89,7 +89,7 @@ public sealed class TransitionAsk<TInput>(Action<Elements<TInput>> configure) : 
     var target = input as TInput ?? new TInput();
     var elements = CreateElements();
     var saveCtx = new FormSaveContext<TInput> { Entity = target, IsNew = true, Db = db };
-    var ruleCtx = new RuleContext<TInput> { SaveContext = saveCtx };
+    var ruleCtx = new RuleContext<TInput> { SaveContext = saveCtx, Localizer = localizer };
     FormValidator.ValidateElementConstraints(db, localizer, elements.List, target, ruleCtx, onlyAcceptingInput: true);
     await FormValidator.ValidateReferenceElementsAsync(
       db,

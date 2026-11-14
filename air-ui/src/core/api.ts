@@ -63,4 +63,12 @@ export class Api {
   ): Observable<AnswerOf<M, K>> {
     return this.http.post<AnswerOf<M, K>>(serviceUrl<M>(service, method), body ?? {}, options);
   }
+
+  /**
+   * Posts to a dynamic action `method` of `service` named by the server at runtime: the caller supplies the expected
+   * answer type `A` (`call<FormActionDto | null>(action.service, action.method, body, options)`).
+   */
+  call<A>(service: string, method: string, body?: unknown, options?: { context?: HttpContext }): Observable<A> {
+    return this.http.post<A>(serviceUrl(service, method), body ?? {}, options);
+  }
 }

@@ -1,5 +1,6 @@
 using System.Text.Encodings.Web;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Platform.Data.Internals;
 
@@ -9,6 +10,38 @@ internal static class ChangeJournalRecorder
   {
     Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
   };
+
+  internal static bool PropertyValuesEqual(IProperty? property, object? left, object? right)
+  {
+    if (ReferenceEquals(left, right))
+    {
+      return true;
+    }
+
+    if (left is null || right is null)
+    {
+      return false;
+    }
+
+    if (property?.GetValueComparer() is { } comparer &&
+        left.GetType() == right.GetType() &&
+        comparer.Type.IsAssignableFrom(left.GetType()))
+    {
+      return comparer.Equals(left, right);
+    }
+
+    if (left is byte[] leftBytes && right is byte[] rightBytes)
+    {
+      return leftBytes.AsSpan().SequenceEqual(rightBytes);
+    }
+
+    if (left is Array && right is Array && left.GetType() == right.GetType())
+    {
+      return StructuralComparisons.StructuralEqualityComparer.Equals(left, right);
+    }
+
+    return Equals(left, right);
+  }
 
   public static bool IsJournaled(EntityEntry entry, bool suppressAllAudit, bool suppressDerivedAudit)
   {
@@ -25,7 +58,7 @@ internal static class ChangeJournalRecorder
 
     return entry.State != EntityState.Modified ||
            entry.Properties.Any(p => p.IsModified &&
-                                     !Equals(p.OriginalValue, p.CurrentValue) &&
+                                     !PropertyValuesEqual(p.Metadata, p.OriginalValue, p.CurrentValue) &&
                                      p.Metadata.Name != nameof(IHasVersion.Ver) &&
                                      !auditMeta.ExcludedProperties.Contains(p.Metadata.Name));
   }
@@ -52,35 +85,47 @@ internal static class ChangeJournalRecorder
 
     foreach (var entry in pendingEntries)
     {
-      var table = entry.Metadata.GetTableName() ?? entry.Metadata.ClrType.Name;
+      var clrType = entry.Metadata.ClrType;
+      var entityId = (entry.Entity as IEntity)?.Id ?? 0;
+      var table = entry.Metadata.GetTableName() ?? clrType.Name;
       var rowTenantId = entry.Entity switch
       {
         IHasTenant t when t.TenantId > 0 => (long?)t.TenantId,
         IHasOptionalTenant ot => ot.TenantId is > 0 ? ot.TenantId : null,
         _ => contextTenantId
       };
-      var excluded = EntityAuditMetadata.For(entry.Metadata.ClrType).ExcludedProperties;
+      var excluded = EntityAuditMetadata.For(clrType).ExcludedProperties;
 
-      run.JournalEntries.TryGetValue(entry.Entity, out var state);
+      MutationRunEntryState? state = null;
+      if (entityId > 0)
+      {
+        run.JournalEntriesByKey.TryGetValue((clrType, entityId), out state);
+      }
+
+      state ??= run.JournalEntriesByRef.GetValueOrDefault(entry.Entity);
 
       if (entry.State == EntityState.Added)
       {
         state = new MutationRunEntryState
         {
           Entry = entry,
-          ClrType = entry.Metadata.ClrType,
+          Run = run,
+          ClrType = clrType,
           Table = table,
           TenantId = rowTenantId,
+          RowId = entityId,
           IsAdded = true,
           Operation = ChangeOperations.Added
         };
-        run.JournalEntries[entry.Entity] = state;
+        RegisterState(run, entry.Entity, entityId, state);
         toCompleteAfterFlush.Add(state);
       }
       else if (entry.State == EntityState.Modified)
       {
         if (state is { IsAdded: true })
         {
+          state.Entry = entry;
+          run.JournalEntriesByRef[entry.Entity] = state;
           toCompleteAfterFlush.Add(state);
           continue;
         }
@@ -90,13 +135,19 @@ internal static class ChangeJournalRecorder
           state = new MutationRunEntryState
           {
             Entry = entry,
-            ClrType = entry.Metadata.ClrType,
+            Run = run,
+            ClrType = clrType,
             Table = table,
             TenantId = rowTenantId,
-            RowId = ((IEntity)entry.Entity).Id,
+            RowId = entityId,
             Operation = ChangeOperations.Modified
           };
-          run.JournalEntries[entry.Entity] = state;
+          RegisterState(run, entry.Entity, entityId, state);
+        }
+        else
+        {
+          state.Entry = entry;
+          run.JournalEntriesByRef[entry.Entity] = state;
         }
 
         foreach (var p in entry.Properties)
@@ -106,7 +157,7 @@ internal static class ChangeJournalRecorder
             continue;
           }
 
-          if (Equals(p.OriginalValue, p.CurrentValue))
+          if (PropertyValuesEqual(p.Metadata, p.OriginalValue, p.CurrentValue))
           {
             if (state.TouchedProperties.Contains(p.Metadata.Name))
             {
@@ -138,7 +189,7 @@ internal static class ChangeJournalRecorder
         if (state is { IsAdded: true })
         {
           state.IsDeleted = true;
-          run.JournalEntries.Remove(entry.Entity);
+          RemoveState(run, entry.Entity, entityId, state);
           continue;
         }
 
@@ -147,19 +198,22 @@ internal static class ChangeJournalRecorder
           state = new MutationRunEntryState
           {
             Entry = entry,
-            ClrType = entry.Metadata.ClrType,
+            Run = run,
+            ClrType = clrType,
             Table = table,
             TenantId = rowTenantId,
-            RowId = ((IEntity)entry.Entity).Id,
+            RowId = entityId,
             Operation = ChangeOperations.Deleted,
             IsDeleted = true
           };
-          run.JournalEntries[entry.Entity] = state;
+          RegisterState(run, entry.Entity, entityId, state);
         }
         else
         {
+          state.Entry = entry;
           state.Operation = ChangeOperations.Deleted;
           state.IsDeleted = true;
+          run.JournalEntriesByRef[entry.Entity] = state;
         }
 
         foreach (var p in entry.Properties)
@@ -194,6 +248,11 @@ internal static class ChangeJournalRecorder
       if (state.IsAdded)
       {
         state.RowId = ((IEntity)state.Entry.Entity).Id;
+        if (state.RowId > 0 && state.Run != null)
+        {
+          state.Run.JournalEntriesByKey[(state.ClrType, state.RowId)] = state;
+        }
+
         var excluded = EntityAuditMetadata.For(state.ClrType).ExcludedProperties;
         state.LatestAfter.Clear();
         foreach (var p in state.Entry.Properties)
@@ -209,19 +268,20 @@ internal static class ChangeJournalRecorder
 
   public static List<AppPlatformChange> BuildConsolidatedJournalRows(
     MutationRunScope run,
-    ITenantContext tenantContext)
+    ITenantContext tenantContext,
+    TimeProvider? timeProvider = null)
   {
     if (run.JournalEntries.Count == 0)
     {
       return [];
     }
 
-    var now = TimeProvider.System.GetUtcNow();
+    var now = (timeProvider ?? TimeProvider.System).GetUtcNow();
     var userId = tenantContext.UserId;
     var correlationId = tenantContext.CorrelationId;
     var rows = new List<AppPlatformChange>(run.JournalEntries.Count);
 
-    foreach (var state in run.JournalEntries.Values)
+    foreach (var state in run.JournalEntries)
     {
       var row = new AppPlatformChange
       {
@@ -261,7 +321,11 @@ internal static class ChangeJournalRecorder
       else
       {
         var changedProps = state.TouchedProperties
-          .Where(prop => !Equals(state.FirstBefore.GetValueOrDefault(prop), state.LatestAfter.GetValueOrDefault(prop)))
+          .Where(prop =>
+          {
+            var propMeta = state.Entry.Metadata.FindProperty(prop);
+            return !PropertyValuesEqual(propMeta, state.FirstBefore.GetValueOrDefault(prop), state.LatestAfter.GetValueOrDefault(prop));
+          })
           .ToList();
         if (!changedProps.Any(prop =>
               prop is not (nameof(IHasTimestamps.UpdatedAt) or nameof(IHasTimestamps.CreatedAt) or nameof(IHasVersion.Ver))))
@@ -284,5 +348,31 @@ internal static class ChangeJournalRecorder
     }
 
     return rows;
+  }
+
+  private static void RegisterState(MutationRunScope run, object entity, long entityId, MutationRunEntryState state)
+  {
+    run.JournalEntries.Add(state);
+    run.JournalEntriesByRef[entity] = state;
+    if (entityId > 0)
+    {
+      run.JournalEntriesByKey[(state.ClrType, entityId)] = state;
+    }
+  }
+
+  private static void RemoveState(MutationRunScope run, object entity, long entityId, MutationRunEntryState state)
+  {
+    run.JournalEntries.Remove(state);
+    run.JournalEntriesByRef.Remove(state.Entry.Entity);
+    run.JournalEntriesByRef.Remove(entity);
+    if (state.RowId > 0)
+    {
+      run.JournalEntriesByKey.Remove((state.ClrType, state.RowId));
+    }
+
+    if (entityId > 0)
+    {
+      run.JournalEntriesByKey.Remove((state.ClrType, entityId));
+    }
   }
 }

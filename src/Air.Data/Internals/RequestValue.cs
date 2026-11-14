@@ -63,7 +63,19 @@ internal static class RequestValue
       return true;
     }
 
-    if (!long.TryParse(text, NumberStyles.Integer, Invariant, out var number))
+    var underlying = Enum.GetUnderlyingType(type);
+    if (underlying == typeof(ulong))
+    {
+      if (!ulong.TryParse(text, NumberStyles.Integer, Invariant, out var u64))
+      {
+        return false;
+      }
+
+      value = Enum.ToObject(type, u64);
+      return Enum.IsDefined(type, value);
+    }
+
+    if (!long.TryParse(text, NumberStyles.Integer, Invariant, out var number) || !FitsEnumUnderlying(underlying, number))
     {
       return false;
     }
@@ -71,6 +83,19 @@ internal static class RequestValue
     value = Enum.ToObject(type, number);
     return Enum.IsDefined(type, value);
   }
+
+  private static bool FitsEnumUnderlying(Type underlying, long number) =>
+    Type.GetTypeCode(underlying) switch
+    {
+      TypeCode.SByte => number is >= sbyte.MinValue and <= sbyte.MaxValue,
+      TypeCode.Byte => number is >= byte.MinValue and <= byte.MaxValue,
+      TypeCode.Int16 => number is >= short.MinValue and <= short.MaxValue,
+      TypeCode.UInt16 => number is >= ushort.MinValue and <= ushort.MaxValue,
+      TypeCode.Int32 => number is >= int.MinValue and <= int.MaxValue,
+      TypeCode.UInt32 => number is >= uint.MinValue and <= uint.MaxValue,
+      TypeCode.Int64 => true,
+      _ => false
+    };
 
   private static string? TextOf(object? raw) => raw switch
   {

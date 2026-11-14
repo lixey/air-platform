@@ -14,8 +14,8 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected internal IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected internal ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
   protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
-  protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
-  protected internal Localizer L => Localizer.Instance.For(Feature.Module);
+  protected TimeProvider Time => PlatformApp?.Time ?? db.Time;
+  protected internal Localizer L => (PlatformApp?.L as Localizer ?? Localizer.Instance).For(Feature.Module);
   public abstract Feature Feature { get; }
 
   protected internal Columns<TEntity, TRow> Columns { get; private set; } = new();
@@ -26,11 +26,31 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
   protected internal GridParent<TEntity> Parent { get; private set; } = new();
   protected internal GridRestrictions<TEntity> Restrictions { get; private set; } = new();
 
+  private bool _probingServiceLock;
+
+  internal bool IsServiceLockedReadOnly
+  {
+    get
+    {
+      _probingServiceLock = true;
+      try
+      {
+        return IsReadOnly;
+      }
+      finally
+      {
+        _probingServiceLock = false;
+      }
+    }
+  }
+
   protected virtual bool IsReadOnly =>
-    Feature.IsReadOnly ||
-    ResolveParentChildBuilder()?.IsReadOnly == true ||
+    typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)) ||
     User is not { IsAuthenticated: true } ||
-    !ServiceEndpointsExtensions.CanEdit(Feature, User);
+    !_probingServiceLock && (
+      Feature.IsReadOnly ||
+      ResolveParentChildBuilder()?.IsReadOnly == true ||
+      !ServiceEndpointsExtensions.CanEdit(Feature, User));
 
   protected virtual string FiltersWidth => PanelSize.Px(720);
   protected virtual string? FormServicePath => null;
@@ -367,7 +387,9 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual IReadOnlyList<GridCreateDescriptor> GetCreateForms()
   {
-    if (Feature.IsReadOnly || IsReadOnly && (State.PreloadedParentId.HasValue || GetParent().BoundProperty == null))
+    if (Feature.IsReadOnly ||
+        typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)) ||
+        IsReadOnly && (State.PreloadedParentId.HasValue || GetParent().BoundProperty == null))
     {
       return [];
     }
@@ -378,7 +400,9 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual async Task<IReadOnlyList<GridCreateDescriptor>> GetCreateFormsAsync(CancellationToken ct = default)
   {
-    if (Feature.IsReadOnly || IsReadOnly && (State.PreloadedParentId.HasValue || GetParent().BoundProperty == null))
+    if (Feature.IsReadOnly ||
+        typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)) ||
+        IsReadOnly && (State.PreloadedParentId.HasValue || GetParent().BoundProperty == null))
     {
       return [];
     }
@@ -389,7 +413,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual IReadOnlyList<GridCreateDescriptor> GetAgentForms()
   {
-    if (Feature.IsReadOnly)
+    if (Feature.IsReadOnly || typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)))
     {
       return [];
     }
@@ -400,7 +424,7 @@ public abstract partial class GridService<TEntity, TRow>(PlatformDbContext db, P
 
   public virtual async Task<IReadOnlyList<GridCreateDescriptor>> GetDeclaredFormsAsync(CancellationToken ct = default)
   {
-    if (Feature.IsReadOnly)
+    if (Feature.IsReadOnly || typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)))
     {
       return [];
     }

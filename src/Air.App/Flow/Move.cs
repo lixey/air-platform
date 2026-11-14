@@ -8,7 +8,7 @@ public class Move<TEntity>
   public required string Transition { get; init; }
   public string? Note { get; init; }
   public long? UserId { get; init; }
-  public DateTimeOffset At { get; init; } = TimeProvider.System.GetUtcNow();
+  public DateTimeOffset At { get; init; }
   public required IMutationContext Context { get; init; }
   public object? Input { get; init; }
 

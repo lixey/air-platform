@@ -17,7 +17,7 @@ internal static class AgentProposalFlowBuilder
     var stepKey = AgentStepGraphHelper.TryExtractStepKey(args);
 
     var (feature, formType, gridType) = ResolveMoveTargetFeature(requestedService);
-    if (feature == null || !feature.AllowsAgentWrite || formType == null && gridType == null)
+    if (feature is not { AgentAccess: AgentAccess.ReadWrite } || formType == null && gridType == null)
     {
       throw new InvalidOperationException($"Status flow on '{requestedService}' is not available or not enabled for AI mutations.");
     }

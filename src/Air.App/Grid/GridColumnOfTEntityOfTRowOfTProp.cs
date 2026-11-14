@@ -188,9 +188,9 @@ public sealed class GridColumn<TEntity, TRow, TProp>(GridColumnDto dto, Columns 
     dto.Options = options.Select(o => new OptionDto
     {
       Id = o.Id,
-      Name = Localizer.Instance[o.Name],
+      Name = o.Name,
       Color = o.Color,
-      Title = o.Title != null ? Localizer.Instance[o.Title] : null
+      Title = o.Title
     }).ToList();
     ReapplyColorPathIfConfigured();
     return this;

@@ -60,10 +60,9 @@ public sealed class SecurityAndCultureInvariantsTests
     string[] expected =
     [
       "src/Air.Api/Mutations/MutationContext.cs",
-      "src/Air.Data.Postgres/PlatformMigrator.cs",
-      "src/Air.Data.SqlServer/PlatformMigrator.cs",
       "src/Air.Data/CodeRows.cs",
       "src/Air.Data/Schema/ModuleSchema.cs",
+      "src/Air.Data/Schema/PlatformMigrationRunner.cs",
       "tests/Air.Agent.Tests/AgentWave3CapabilitiesTests.cs"
     ];
     Array.Sort(expected, StringComparer.Ordinal);
@@ -155,6 +154,50 @@ public sealed class SecurityAndCultureInvariantsTests
     {
       ModuleCatalog.Instance = prevCatalog;
     }
+  }
+
+  [Fact]
+  public void ReadOnlyEntities_RequireReadOnlyFeatures()
+  {
+    Assert.False(typeof(IReadOnlyEntity).IsAssignableFrom(typeof(BaseAppTenant)));
+
+    var catalog = new ModuleCatalog();
+    catalog.Register(new AppModule());
+    catalog.Register(new OrgModule());
+    catalog.Register(new EcomModule());
+    catalog.Freeze();
+
+    PlatformValidator.Validate(catalog);
+
+    foreach (var serviceType in catalog.AllServiceTypes)
+    {
+      var entityType = FindServiceEntityType(serviceType);
+      if (entityType is not null && typeof(IReadOnlyEntity).IsAssignableFrom(entityType))
+      {
+        var feat = catalog.FindFeature(serviceType);
+        Assert.NotNull(feat);
+        Assert.True(
+          feat!.IsReadOnly,
+          $"Service '{serviceType.FullName}' over IReadOnlyEntity '{entityType.Name}' must bind a .ReadOnly() Feature ('{feat.Key}').");
+      }
+    }
+  }
+
+  private static Type? FindServiceEntityType(Type? type)
+  {
+    for (var current = type; current is not null && current != typeof(object); current = current.BaseType)
+    {
+      if (current.IsGenericType)
+      {
+        var def = current.GetGenericTypeDefinition();
+        if (def == typeof(GridService<,>) || def == typeof(FormService<>))
+        {
+          return current.GetGenericArguments()[0];
+        }
+      }
+    }
+
+    return null;
   }
 
   private static string FindRepoRoot()

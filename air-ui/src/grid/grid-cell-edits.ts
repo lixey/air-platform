@@ -16,7 +16,7 @@ import type {
 import type { IsCurrent } from '../core/lifetime';
 import { classifyMutationFailure, type MutationFailure, refusalDetailOf, refusalOf } from '../core/mutation-failure';
 import { TextsService } from '../core/texts.service';
-import { newUuid } from '../core/uuid';
+import { UncertainIdempotency } from '../core/uncertain-idempotency';
 import { stableJson } from '../form/form-value';
 import { ConfirmationService } from '../overlay/confirmation.service';
 import { ScreenMutations, type ScreenOperation } from '../screen/screen-mutations';
@@ -130,8 +130,8 @@ export class GridCellEdits {
   /** A cell edit queued behind an in-flight commit on the same row or a confirmation dialog. */
   private pendingStart: { readonly key: GridRowKey; readonly column: GridColumnDto; readonly typed?: string } | null = null;
 
-  /** The idempotency key of an unanswered cell save, reused only when the exact same request is retried. */
-  private uncertain: { readonly fingerprint: string; readonly key: string } | null = null;
+  /** Bounded 16-slot FIFO cache of unanswered cell-save idempotency keys, reused only when the exact same request is retried. */
+  private readonly uncertain = new UncertainIdempotency();
 
   /** Whether a confirmation dialog for an edited cell is currently open. */
   get isConfirming(): boolean {
@@ -297,7 +297,6 @@ export class GridCellEdits {
   /** Ends the edit with nothing posted. */
   cancel(): void {
     this.pendingStart = null;
-    this.uncertain = null;
     this.edit.set(null);
   }
 
@@ -348,8 +347,7 @@ export class GridCellEdits {
     const ver = row.ver;
     const body: GridCellRequest = { ...untracked(this.options.params), id, path, value, ...(typeof ver === 'number' ? { ver } : {}) };
     const fingerprint = `${service}\n${stableJson(body)}`;
-    const idempotencyKey = this.uncertain?.fingerprint === fingerprint ? this.uncertain.key : newUuid();
-    this.uncertain = null;
+    const idempotencyKey = this.uncertain.take(fingerprint);
     const isCurrent = this.options.capture();
     const operation = this.options.beginMutation();
     this.saving.update(keys => new Set(keys).add(id));
@@ -365,7 +363,7 @@ export class GridCellEdits {
     } catch (error: unknown) {
       const failure = classifyMutationFailure(error);
       if (failure.outcome === 'unknown') {
-        this.uncertain = { fingerprint, key: idempotencyKey };
+        this.uncertain.keep(fingerprint, idempotencyKey);
       }
       return isCurrent() ? this.fail(failure, keepsRefusal ? path : null) : { kind: 'failed' };
     } finally {

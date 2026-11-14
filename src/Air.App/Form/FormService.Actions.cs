@@ -309,21 +309,20 @@ public abstract partial class FormService<TEntity>
           throw new InvalidOperationException($"Form '{GetType().Name}' does not use a status flow.");
         }
 
-        if (IsReadOnly && !elements.StatusFlowAllowsReadOnly)
-        {
-          return new FormActionDto
-          {
-            Outcome = MutationOutcome.Refused,
-            Messages = [new MessageDto { Detail = L["FormReadOnly"], Type = MessageType.Error }]
-          };
-        }
-
         (statusFlow as IPlatformService)?.BindContext(PlatformApp);
 
-        var transition = statusFlow.Transitions.FirstOrDefault(t =>
+        var transition = statusFlow.AllTransitions.FirstOrDefault(t =>
           StatusMoveNavBuilder.MatchesTransition(t.Name, transitionName));
 
-        if (transition == null || !StatusMoveNavBuilder.CanMove(Feature, User, transition.Name))
+        if (transition == null ||
+            !StatusMoveNavBuilder.CanMoveOnScreen(
+              Feature,
+              User,
+              transition,
+              IsServiceLockedReadOnly,
+              elements.StatusFlowAllowsReadOnly,
+              ResolveParentChildBuilder()?.IsReadOnly == true,
+              typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity))))
         {
           return new FormActionDto
           {

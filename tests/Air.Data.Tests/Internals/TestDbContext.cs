@@ -8,6 +8,8 @@ internal sealed class TestDbContext(DbContextOptions<TestDbContext> options, ITe
   public DbSet<TestOrderLine> OrderLines => Set<TestOrderLine>();
   public DbSet<TestOrderNote> OrderNotes => Set<TestOrderNote>();
   public DbSet<TestRole> Roles => Set<TestRole>();
+  public DbSet<TestDataUser> Users => Set<TestDataUser>();
+  public DbSet<TestDataTenant> Tenants => Set<TestDataTenant>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {

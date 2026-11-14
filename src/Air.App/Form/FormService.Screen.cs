@@ -511,12 +511,23 @@ public abstract partial class FormService<TEntity>
   {
     (statusFlow as IPlatformService)?.BindContext(PlatformApp);
 
-    if (entity != null && id is > 0 && (!IsReadOnly || allowReadOnly))
+    if (entity != null && id is > 0)
     {
+      var isServiceLocked = IsServiceLockedReadOnly;
+      var isParentReadOnly = ResolveParentChildBuilder()?.IsReadOnly == true;
+      var isReadOnlyEntity = typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity));
       var currentStatus = statusFlow.StatusMember.Compile()(entity);
       foreach (var transition in statusFlow.Transitions)
       {
-        if (!StatusMoveNavBuilder.CanMove(Feature, User, transition.Name) || !transition.From.Contains(currentStatus))
+        if (!StatusMoveNavBuilder.CanMoveOnScreen(
+              Feature,
+              User,
+              transition,
+              isServiceLocked,
+              allowReadOnly,
+              isParentReadOnly,
+              isReadOnlyEntity) ||
+            !transition.From.Contains(currentStatus))
         {
           continue;
         }

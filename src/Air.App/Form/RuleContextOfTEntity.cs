@@ -7,6 +7,7 @@ public class RuleContext<TEntity>
   public bool IsNew => SaveContext.IsNew;
   public List<MessageDto> Failures { get; } = [];
   internal string? CurrentPath { get; set; }
+  internal ILocalizer Localizer { get; init; } = Platform.Api.Localization.Localizer.Instance;
 
   public void AddFailure(string message, string? path = null, string? code = null) =>
     Failures.Add(new MessageDto

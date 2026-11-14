@@ -53,8 +53,11 @@ public sealed class ScreenContractSnapshotTests
         new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options,
         tenant);
       await appDb.GetService<IRelationalDatabaseCreator>().CreateTablesAsync();
-      appDb.AppColor.Add(new AppColor { Id = 1, Handle = "Sky", Name = "Sky", SortOrder = 1 });
-      await appDb.SaveChangesAsync();
+      using (AsyncLocalTenantContext.UseSystemScope())
+      {
+        appDb.AppColor.Add(new AppColor { Id = 1, Handle = "Sky", Name = "Sky", SortOrder = 1 });
+        await appDb.SaveChangesAsync();
+      }
 
       await using var orgDb = new OrgDbContext(
         new DbContextOptionsBuilder<OrgDbContext>().UseSqlite(connection).Options,
@@ -65,8 +68,11 @@ public sealed class ScreenContractSnapshotTests
         new DbContextOptionsBuilder<EcomDbContext>().UseSqlite(connection).Options,
         tenant);
       await ecomDb.GetService<IRelationalDatabaseCreator>().CreateTablesAsync();
-      SeedCustomerOrderMetadata(ecomDb);
-      await ecomDb.SaveChangesAsync();
+      using (AsyncLocalTenantContext.UseSystemScope())
+      {
+        SeedCustomerOrderMetadata(ecomDb);
+        await ecomDb.SaveChangesAsync();
+      }
 
       var orgApp = new OrgService(user, services, tenant, Localizer.Instance);
       var ecomApp = new EcomService(user, services, tenant, Localizer.Instance);

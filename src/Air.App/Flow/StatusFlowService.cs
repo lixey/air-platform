@@ -8,7 +8,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
   protected PlatformDbContext Db => db;
   protected PlatformAppService? PlatformApp { get; private set; } = app;
   protected IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
-  protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
+  protected TimeProvider Time => PlatformApp?.Time ?? db.Time;
 
   void IPlatformService.BindContext(PlatformAppService? service) => PlatformApp ??= service;
 
@@ -99,7 +99,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     }
   }
 
-  protected Localizer L => Localizer.Instance.For(Feature.Module);
+  protected Localizer L => (PlatformApp?.L as Localizer ?? Localizer.Instance).For(Feature.Module);
 
   public IReadOnlyList<Type> Followers
   {
@@ -347,22 +347,8 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
       })
       .ToList();
 
-  private bool IsTransitionPermitted(Transition<TEntity> transition)
-  {
-    if (transition.RequiredRight is not { } reqRight)
-    {
-      return true;
-    }
-
-    if (User is not { IsAuthenticated: true })
-    {
-      return false;
-    }
-
-    return User.Can(reqRight) ||
-           reqRight.Feature != null && User.Can(reqRight.Feature.All) ||
-           User.Can("*");
-  }
+  private bool IsTransitionPermitted(Transition<TEntity> transition) =>
+    Db.TenantContext.IsSystemScope || Feature.CanMove(Feature, User, transition.Name, transition.RequiredRight);
 
   public string NameOf(long status) =>
     Statuses.FirstOrDefault(option => option.Id == status) is { } opt
@@ -561,6 +547,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
     }
 
     var userId = Db.TenantContext.UserId;
+    var now = Time.GetUtcNow();
     var moves = new List<(Move Move, long CurrentStatus)>(records.Count);
 
     foreach (var record in records)
@@ -574,6 +561,7 @@ public abstract partial class StatusFlowService<TEntity>(PlatformDbContext db, P
         Transition = transition.Name,
         Note = note,
         UserId = userId,
+        At = now,
         Context = context,
         Input = input
       };

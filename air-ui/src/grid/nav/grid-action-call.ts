@@ -3,8 +3,10 @@ import type { GridNavActionModel, GridRequest } from '../../core/generated/contr
 import { withSelection } from '../grid-request';
 import type { GridRow } from '../grid-row';
 
-/** What a `GridNavAction` posts: the route of the method and the grid's parameters with the selection. */
+/** What a `GridNavAction` posts: the service and method segments, the route URL, and the grid's parameters with the selection. */
 export interface GridActionCall {
+  readonly service: string;
+  readonly method: string;
   readonly url: string;
   readonly body: GridRequest;
 }
@@ -21,6 +23,8 @@ export function buildActionCall(
   input: Readonly<Record<string, unknown>> = {},
 ): GridActionCall {
   return {
+    service: action.service,
+    method: action.method,
     url: serviceUrl(action.service, action.method),
     body: { ...input, ...withSelection(params, selected) },
   };

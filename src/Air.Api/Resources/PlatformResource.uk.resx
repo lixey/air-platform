@@ -866,7 +866,7 @@
     <value>Забагато запитів. Спробуйте пізніше.</value>
   </data>
   <data name="IdempotencyKeyInvalid" xml:space="preserve">
-    <value>Ключ ідемпотентності має містити від 1 до 64 літер, цифр, дефісів або підкреслень.</value>
+    <value>Заголовок Idempotency-Key перевищує максимальну довжину у 128 символів.</value>
   </data>
   <data name="IdempotencyKeyReused" xml:space="preserve">
     <value>Ключ ідемпотентності вже використано для іншого запиту.</value>
@@ -1425,5 +1425,26 @@
   </data>
   <data name="AgentErrorCliDisabledInProduction" xml:space="preserve">
     <value>Локальні CLI-провайдери ШІ вимкнені у промисловому середовищі.</value>
+  </data>
+  <data name="FormValidationInvalid" xml:space="preserve">
+    <value>Некоректне значення.</value>
+  </data>
+  <data name="StatusFlowNotConfigured" xml:space="preserve">
+    <value>Для цієї таблиці не налаштовано переходи статусів.</value>
+  </data>
+  <data name="StatusTransitionUnknown" xml:space="preserve">
+    <value>Невідомий перехід статусу «{0}».</value>
+  </data>
+  <data name="NoRecordsSelected" xml:space="preserve">
+    <value>Не вибрано жодного запису.</value>
+  </data>
+  <data name="FileIdRequired" xml:space="preserve">
+    <value>Ідентифікатор файлу є обов'язковим.</value>
+  </data>
+  <data name="FileNotFound" xml:space="preserve">
+    <value>Файл не знайдено.</value>
+  </data>
+  <data name="ParentIdRequired" xml:space="preserve">
+    <value>Ідентифікатор батьківського запису є обов'язковим.</value>
   </data>
 </root>

@@ -13,9 +13,9 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
   protected internal IUserContext User => PlatformApp?.User ?? new UserContext(new HttpContextAccessor());
   protected internal ModuleCatalog Catalog => PlatformApp?.Catalog ?? ModuleCatalog.Instance;
   protected ICultureCatalog Cultures => PlatformApp?.Cultures ?? CultureCatalog.DefaultInstance;
-  protected TimeProvider Time => PlatformApp?.Time ?? PlatformAppService.UtcTime;
+  protected TimeProvider Time => PlatformApp?.Time ?? db.Time;
   protected TEntity? CurrentEntity { get; private set; }
-  protected internal Localizer L => Localizer.Instance.For(Feature.Module);
+  protected internal Localizer L => (PlatformApp?.L as Localizer ?? Localizer.Instance).For(Feature.Module);
   public abstract Feature Feature { get; }
 
   protected internal FormElements<TEntity> Elements { get; private set; } = new();
@@ -33,11 +33,31 @@ public abstract partial class FormService<TEntity>(PlatformDbContext db, Platfor
 
   protected bool IsNew { get; set; }
 
+  private bool _probingServiceLock;
+
+  internal bool IsServiceLockedReadOnly
+  {
+    get
+    {
+      _probingServiceLock = true;
+      try
+      {
+        return IsReadOnly;
+      }
+      finally
+      {
+        _probingServiceLock = false;
+      }
+    }
+  }
+
   protected virtual bool IsReadOnly =>
-    Feature.IsReadOnly ||
-    ResolveParentChildBuilder()?.IsReadOnly == true ||
+    typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)) ||
     User is not { IsAuthenticated: true } ||
-    !ServiceEndpointsExtensions.CanEdit(Feature, User);
+    !_probingServiceLock && (
+      Feature.IsReadOnly ||
+      ResolveParentChildBuilder()?.IsReadOnly == true ||
+      !ServiceEndpointsExtensions.CanEdit(Feature, User));
 
   protected FormRequest Request { get; set; } = new();
   protected long? ParentId => Request.ParentId;

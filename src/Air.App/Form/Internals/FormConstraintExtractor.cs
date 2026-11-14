@@ -139,12 +139,12 @@ internal static class FormConstraintExtractor
           case RangeAttribute rangeAttr:
             if (el.Constraints.Min == null && FilterNodeEvaluator.TryConvertToDecimal(rangeAttr.Minimum, out var rangeMin))
             {
-              el.Constraints.Min = JsonSerializer.SerializeToElement(rangeMin);
+              el.Constraints.Min = rangeMin;
             }
 
             if (el.Constraints.Max == null && FilterNodeEvaluator.TryConvertToDecimal(rangeAttr.Maximum, out var rangeMax))
             {
-              el.Constraints.Max = JsonSerializer.SerializeToElement(rangeMax);
+              el.Constraints.Max = rangeMax;
             }
 
             break;

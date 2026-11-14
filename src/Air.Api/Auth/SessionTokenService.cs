@@ -108,10 +108,21 @@ public static class SessionTokenService
     return Convert.ToBase64String(Encoding.UTF8.GetBytes($"{payload}:{signature}"));
   }
 
-  public static bool TryValidateAccessToken(string token, out long sessionId, out long userId, out DateTimeOffset expiresAt) =>
-    TryValidateAccessToken(token, out sessionId, out userId, out expiresAt, out _);
+  public static bool TryValidateAccessToken(
+    string token,
+    out long sessionId,
+    out long userId,
+    out DateTimeOffset expiresAt,
+    TimeProvider? timeProvider = null) =>
+    TryValidateAccessToken(token, out sessionId, out userId, out expiresAt, out _, timeProvider);
 
-  public static bool TryValidateAccessToken(string token, out long sessionId, out long userId, out DateTimeOffset expiresAt, out int tokenVersion)
+  public static bool TryValidateAccessToken(
+    string token,
+    out long sessionId,
+    out long userId,
+    out DateTimeOffset expiresAt,
+    out int tokenVersion,
+    TimeProvider? timeProvider = null)
   {
     sessionId = 0;
     userId = 0;
@@ -159,7 +170,7 @@ public static class SessionTokenService
       }
 
       expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixExp);
-      if (expiresAt <= TimeProvider.System.GetUtcNow())
+      if (expiresAt <= (timeProvider ?? TimeProvider.System).GetUtcNow())
       {
         return false;
       }

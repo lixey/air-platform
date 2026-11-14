@@ -133,6 +133,32 @@ public class Feature
   public bool TryGetRight(string action, [NotNullWhen(true)] out Right? right) =>
     _rights.TryGetValue(action, out right);
 
+  public static bool CanMove(Feature? feature, IUserContext? user, string transitionName, Right? explicitRight = null)
+  {
+    if (user is not { IsAuthenticated: true } || feature is null || string.IsNullOrEmpty(feature.Module))
+    {
+      return false;
+    }
+
+    if (explicitRight is not null)
+    {
+      return HasRight(user, explicitRight);
+    }
+
+    if (!Right.StandardActions.Contains(transitionName) &&
+        feature.TryGetRight(transitionName, out var actionRight))
+    {
+      return !feature.IsReadOnly && HasRight(user, actionRight);
+    }
+
+    return !feature.IsReadOnly && HasRight(user, feature.Edit);
+  }
+
+  private static bool HasRight(IUserContext user, Right right) =>
+    user.Can(right) ||
+    right.Feature is { } rightFeature && user.Can(rightFeature.All) ||
+    user.Can(Right.All);
+
   public Right Action(string action)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(action);
@@ -196,7 +222,7 @@ public class Feature
     AllowAgent(allow ? AgentAccess.ReadWrite : AgentAccess.None);
 
   public static string FormatSourceTitle(string uiSource, string dbSource) =>
-    Localizer.Instance["LegacyTitleFormat", uiSource, dbSource];
+    $"\u001f{uiSource}\u001f{dbSource}";
 
   public Feature WithTitle(string title)
   {

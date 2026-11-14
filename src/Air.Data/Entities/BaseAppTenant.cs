@@ -1,9 +1,9 @@
 namespace Platform.Data.Entities;
 
 /// <summary>
-/// A tenant: a row the code declares, read only in every screen, in a tree of any depth.
+/// A tenant in a hierarchy of any depth, editable via the application's tenant form service.
 /// </summary>
-public abstract class BaseAppTenant : BaseDictionaryEntity, IReadOnlyEntity
+public abstract class BaseAppTenant : BaseDictionaryEntity
 {
   [Comment("Parent tenant; null for a root")]
   public long? ParentId { get; set; }

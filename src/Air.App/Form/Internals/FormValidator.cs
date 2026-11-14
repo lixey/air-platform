@@ -143,14 +143,13 @@ internal static class FormValidator
           !(isHiddenNow && decVal == 0m && !isRequiredNow))
       {
         var outOfRange = false;
-        if (el.Constraints.Min is { ValueKind: JsonValueKind.Number } minEl &&
-            minEl.TryGetDecimal(out var minDec) &&
+        if (el.Constraints.Min is { } minDec &&
             (el.Constraints.ExclusiveMin == true ? decVal <= minDec : decVal < minDec))
         {
           outOfRange = true;
         }
 
-        if (el.Constraints.Max is { ValueKind: JsonValueKind.Number } maxEl && maxEl.TryGetDecimal(out var maxDec) && decVal > maxDec)
+        if (el.Constraints.Max is { } maxDec && decVal > maxDec)
         {
           outOfRange = true;
         }

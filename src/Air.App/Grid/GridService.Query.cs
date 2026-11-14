@@ -394,4 +394,18 @@ public abstract partial class GridService<TEntity, TRow>
 
     return new GridCountDto { Total = total };
   }
+
+  async Task<object?> IGridService.LoadPickedEntityAsync(GridRequest request, long id, CancellationToken ct)
+  {
+    ParentService = request.ParentService;
+    ParentId = request.ParentId;
+    if (!await EnsureParentScopeAsync(lockParent: false, ct))
+    {
+      return null;
+    }
+
+    var baseEntityQuery = BuildBaseEntityQuery(request, out _, out var queryDeclaration);
+    var query = ApplyActiveNamedFilters(baseEntityQuery, request, queryDeclaration);
+    return await query.FirstOrDefaultAsync(e => e.Id == id, ct);
+  }
 }

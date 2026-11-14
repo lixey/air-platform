@@ -387,7 +387,7 @@ public abstract partial class FormService<TEntity>
   public async Task<(IReadOnlyList<FormElementDto> Elements, IReadOnlyList<ChildGridBuilder> Children)> GetElementsMetadataAsync(CancellationToken ct = default)
   {
     var elements = await EnsureElementsAsync(ct, reload: true);
-    if (Feature.IsReadOnly)
+    if (Feature.IsReadOnly || typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)))
     {
       foreach (var child in elements.Children)
       {
@@ -427,6 +427,12 @@ public abstract partial class FormService<TEntity>
   void IPlatformService.ValidateConfiguration(ModuleCatalog catalog)
   {
     var formType = GetType();
+    if (typeof(IReadOnlyEntity).IsAssignableFrom(typeof(TEntity)) && !Feature.IsReadOnly)
+    {
+      throw new InvalidOperationException(
+        $"Form '{formType.FullName}' over IReadOnlyEntity '{typeof(TEntity).Name}' requires feature '{Feature.Key}' to be declared .ReadOnly().");
+    }
+
     ServiceOverrideValidator.EnsureSingleSyncOrAsyncOverride(
       formType,
       typeof(FormService<>),

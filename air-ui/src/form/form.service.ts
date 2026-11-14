@@ -1,4 +1,3 @@
-import { HttpClient } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injector, Service, type Signal, signal } from '@angular/core';
 import type { FieldTree } from '@angular/forms/signals';
 import { AlertService } from '../app/alert/alert.service';
@@ -40,7 +39,6 @@ export class FormService {
   private static next = 0;
 
   private readonly api = inject(Api);
-  private readonly http = inject(HttpClient);
   private readonly alert = inject(AlertService);
   private readonly texts = inject(TextsService);
   private readonly zone = inject(LocaleService).zone;
@@ -145,7 +143,7 @@ export class FormService {
   readonly isStale: Signal<boolean> = this.reader.isStale;
 
   private readonly actions: FormActions = new FormActions({
-    http: this.http,
+    api: this.api,
     alert: this.alert,
     asks: this.asks,
     confirmation: this.confirmation,

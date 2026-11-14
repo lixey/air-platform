@@ -17,13 +17,25 @@ internal static class StatusMoveNavBuilder
       ? char.ToLowerInvariant(name[0]) + name[1..]
       : "docStatusId";
 
-  public static bool CanMove(Feature feature, IUserContext? user, string transitionName) =>
-    user is { IsAuthenticated: true } &&
-    !string.IsNullOrEmpty(feature.Module) &&
-    (feature.TryGetRight(transitionName, out var right) && user.Can(right) ||
-     !feature.IsReadOnly && user.Can(feature.Edit) ||
-     user.Can(feature.All) ||
-     user.Can("*"));
+  public static bool CanMove(Feature? feature, IUserContext? user, string transitionName, Right? explicitRight = null) =>
+    Feature.CanMove(feature, user, transitionName, explicitRight);
+
+  public static bool CanMoveOnScreen(
+    Feature? feature,
+    IUserContext? user,
+    RecordTransition transition,
+    bool isServiceLockedReadOnly,
+    bool allowReadOnly,
+    bool isParentReadOnly,
+    bool isReadOnlyEntity)
+  {
+    if (isReadOnlyEntity || (isServiceLockedReadOnly || isParentReadOnly) && !allowReadOnly)
+    {
+      return false;
+    }
+
+    return Feature.CanMove(feature, user, transition.Name, transition.RequiredRight);
+  }
 
   public static List<FormElementDto> LocalizeElements(IReadOnlyList<FormElementDto> elements, Localizer l) =>
     [.. elements.Select(e =>

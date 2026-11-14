@@ -1,7 +1,6 @@
-import type { HttpClient } from '@angular/common/http';
 import { computed, type Injector, signal } from '@angular/core';
 import type { AlertService } from '../app/alert/alert.service';
-import { serviceUrl } from '../core/api';
+import type { Api } from '../core/api';
 import type { FormActionDto, FormDataDto, FormModel, FormNavActionModel, MessageDto, OverlayDto } from '../core/generated/contracts';
 import { classifyMutationFailure } from '../core/mutation-failure';
 import { type AskService, ownMessages } from '../overlay/ask.service';
@@ -41,7 +40,7 @@ interface KeptMessages {
 }
 
 export interface FormActionsContext {
-  readonly http: HttpClient;
+  readonly api: Api;
   readonly alert: AlertService;
   readonly asks: AskService;
   readonly confirmation: ConfirmationService;
@@ -95,7 +94,7 @@ export class FormActions {
   private readonly runner: ActionRunner;
 
   constructor(private readonly ctx: FormActionsContext) {
-    this.runner = new ActionRunner(ctx.http);
+    this.runner = new ActionRunner(ctx.api);
   }
 
   setReading(method: string | null): void {
@@ -218,7 +217,8 @@ export class FormActions {
     let refusal: unknown;
     try {
       const answer = await this.runner.post<FormActionDto | null>(
-        serviceUrl(action.service, action.method),
+        action.service,
+        action.method,
         // The record's members last, so no value of the dialog replaces one.
         { ...value, ...parentParams(this.ctx.address(), service), id, ver: this.ctx.ver() },
       );

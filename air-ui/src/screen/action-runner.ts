@@ -1,24 +1,18 @@
-import type { HttpClient } from '@angular/common/http';
 import type { Injector } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { withIdempotencyKey } from '../app/auth/credentials.interceptor';
-import { serviceUrl } from '../core/api';
-import type { ActionInputDto, FormAskModel, MessageDto, OverlayConfirmModel } from '../core/generated/contracts';
+import type { Api } from '../core/api';
+import type { ActionInputDto, FormAskModel, FormServiceEndpoints, MessageDto, OverlayConfirmModel } from '../core/generated/contracts';
 import { isRecord } from '../core/json';
 import { classifyMutationFailure } from '../core/mutation-failure';
-import { newUuid } from '../core/uuid';
+import { UncertainIdempotency } from '../core/uncertain-idempotency';
 import { stableJson } from '../form/form-value';
 import type { AskService } from '../overlay/ask.service';
 import type { ConfirmationService } from '../overlay/confirmation.service';
 
 /** The route segment that resolves server-computed default values for an action's `Ask` dialog. */
-export const ACTION_INPUT_ENDPOINT = 'get-action-input';
-
-interface KeptActionKey {
-  readonly fingerprint: string;
-  readonly key: string;
-}
+export const ACTION_INPUT_ENDPOINT = 'get-action-input' satisfies keyof FormServiceEndpoints;
 
 export interface ActionPromptOptions {
   readonly service: string;
@@ -38,38 +32,37 @@ export interface ActionPromptOptions {
 
 /**
  * Shared client execution engine for declared Form and Grid actions (including status transitions, pickers, and
- * deletions): manages `Idempotency-Key` headers (reusing a key on retry after an `'unknown'` network failure for the
- * identical URL and payload, and rotating keys after commit, refusal, conflict, or payload change) and resolves
- * `get-action-input` defaults before opening an `Ask` dialog.
+ * deletions): manages bounded 16-slot `Idempotency-Key` headers via `Api` (reusing a key on retry after an `'unknown'`
+ * network failure for the identical route and payload, and rotating keys after commit, refusal, conflict, or payload
+ * change) and resolves `get-action-input` defaults before opening an `Ask` dialog.
  */
 export class ActionRunner {
-  private uncertain: KeptActionKey | null = null;
+  private readonly uncertain = new UncertainIdempotency();
 
-  constructor(private readonly http: HttpClient) {}
+  constructor(private readonly api: Api) {}
 
-  /** Clears any retained uncertain idempotency key (e.g. when a form resets). */
+  /** Clears any retained uncertain idempotency keys (e.g. when a form resets). */
   reset(): void {
-    this.uncertain = null;
+    this.uncertain.clear();
   }
 
   /**
-   * Posts an action mutation with an `Idempotency-Key` header. If the previous post of the exact same `url` and `body`
-   * ended with an `'unknown'` outcome, reuses its key so the server can safely replay a committed response; any other
-   * outcome drops the key so a subsequent invocation receives a fresh `newUuid()`.
+   * Posts an action mutation via `Api` with an `Idempotency-Key` header. If a previous post of the exact same
+   * `service`, `method`, and `body` ended with an `'unknown'` outcome, reuses its key so the server can safely replay a
+   * committed response; any other outcome drops the key so a subsequent invocation receives a fresh UUID.
    */
-  async post<T>(url: string, body: unknown): Promise<T> {
-    const fingerprint = `${url}\n${stableJson(body)}`;
-    const key = this.uncertain?.fingerprint === fingerprint ? this.uncertain.key : newUuid();
-    this.uncertain = null;
+  async post<T>(service: string, method: string, body?: unknown): Promise<T> {
+    const fingerprint = `${service}/${method}\n${stableJson(body)}`;
+    const key = this.uncertain.take(fingerprint);
     try {
-      const answer = await firstValueFrom(this.http.post<T>(url, body, withIdempotencyKey(key)));
+      const answer = await firstValueFrom(this.api.call<T>(service, method, body, withIdempotencyKey(key)));
       if (isRecord(answer) && answer['outcome'] === 'unknown') {
-        this.uncertain = { fingerprint, key };
+        this.uncertain.keep(fingerprint, key);
       }
       return answer;
     } catch (error: unknown) {
       if (classifyMutationFailure(error).outcome === 'unknown') {
-        this.uncertain = { fingerprint, key };
+        this.uncertain.keep(fingerprint, key);
       }
       throw error;
     }
@@ -78,7 +71,7 @@ export class ActionRunner {
   /** Fetches initial field defaults for an action's `Ask` dialog from `<service>/get-action-input`. */
   async fetchDefaults(service: string, method: string, params: object): Promise<Readonly<Record<string, unknown>>> {
     const answer = await firstValueFrom(
-      this.http.post<ActionInputDto | null>(serviceUrl(service, ACTION_INPUT_ENDPOINT), { ...params, method }, shownByCaller()),
+      this.api.call<ActionInputDto | null>(service, ACTION_INPUT_ENDPOINT, { ...params, method }, shownByCaller()),
     );
     return answer?.value ?? {};
   }

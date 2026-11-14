@@ -13,8 +13,9 @@ internal static class AuthCookieHelper
     }
 
     var accessCookieName = AuthClaims.GetAccessCookieName(request.Host.Port);
+    var timeProvider = request.HttpContext.RequestServices.GetService<TimeProvider>();
     if (request.Cookies.TryGetValue(accessCookieName, out var cookieToken) &&
-        SessionTokenService.TryValidateAccessToken(cookieToken, out var parsedSid, out _, out _))
+        SessionTokenService.TryValidateAccessToken(cookieToken, out var parsedSid, out _, out _, timeProvider))
     {
       return parsedSid;
     }

@@ -8,7 +8,16 @@ internal sealed class MutationRunScope(Action onDispose) : IDisposable
   public HashSet<object> VersionIncrementedEntities { get; } = new(ReferenceEqualityComparer.Instance);
   public HashSet<(Type EntityType, long Id)> VersionIncrementedKeys { get; } = [];
   public Dictionary<(Type EntityType, long Id), int> InitialVersions { get; } = [];
-  public Dictionary<object, MutationRunEntryState> JournalEntries { get; } = new(ReferenceEqualityComparer.Instance);
+  public List<MutationRunEntryState> JournalEntries { get; } = [];
+  public Dictionary<(Type EntityType, long Id), MutationRunEntryState> JournalEntriesByKey { get; } = [];
+  public Dictionary<object, MutationRunEntryState> JournalEntriesByRef { get; } = new(ReferenceEqualityComparer.Instance);
+
+  public void ClearJournal()
+  {
+    JournalEntries.Clear();
+    JournalEntriesByKey.Clear();
+    JournalEntriesByRef.Clear();
+  }
 
   public void Dispose() => onDispose();
 }

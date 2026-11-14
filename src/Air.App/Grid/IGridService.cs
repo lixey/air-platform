@@ -6,6 +6,7 @@ public interface IGridService : IPlatformService
   Task<ScreenDto> BuildScreenAsync(string servicePath, GridRequest? request, CancellationToken ct = default) => BuildScreenAsync(servicePath, ct);
   Task<GridPageDto<RowDto>> GetDataAsync(ListRequest request, CancellationToken ct = default);
   Task<GridCountDto> GetCountAsync(GridRequest request, CancellationToken ct = default);
+  internal Task<object?> LoadPickedEntityAsync(GridRequest request, long id, CancellationToken ct = default) => Task.FromResult<object?>(null);
   Task<IResult> ExportAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> DeleteAsync(GridRequest request, CancellationToken ct = default);
   Task<GridDeleteDto> Delete(GridRequest request, CancellationToken cancellationToken = default) => DeleteAsync(request, cancellationToken);
