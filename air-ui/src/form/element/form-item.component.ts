@@ -5,11 +5,12 @@ import { FormService } from '../form.service';
 import { fieldIdOf } from './form-element-field';
 
 /**
- * What stands above the field: `above` the label with the required mark; `spacer` an invisible
- * line that keeps the rhythm of a neighbouring label, for an element that draws its own label
- * beside the field, as the checkbox does; `none` nothing.
+ * What stands above the field: `above` the label with the required mark associated to a single labelable control;
+ * `group` a non-label heading with the required mark for multi-input groups (`checkbox-set`, `checkbox-tree`, or
+ * plain-text fallbacks) so no dangling `for` attribute is emitted; `spacer` an invisible line that keeps the rhythm of
+ * a neighbouring label, for an element that draws its own label beside the field, as the checkbox does; `none` nothing.
  */
-export type FormItemLabelMode = 'above' | 'none' | 'spacer';
+export type FormItemLabelMode = 'above' | 'group' | 'none' | 'spacer';
 
 /**
  * What every element shares: the label above with the required mark, the field, the help below, and the messages that
@@ -30,6 +31,13 @@ export type FormItemLabelMode = 'above' | 'none' | 'spacer';
           <span class="hue-red text-(--hue-ink)" aria-hidden="true">*</span>
         }
       </label>
+    } @else if (labelMode() === 'group') {
+      <div class="block mb-1 text-sm font-medium text-muted truncate" [attr.title]="element().title || element().label || null">
+        {{ element().label }}
+        @if (element().isRequired) {
+          <span class="hue-red text-(--hue-ink)" aria-hidden="true">*</span>
+        }
+      </div>
     } @else if (labelMode() === 'spacer') {
       <div class="block mb-1 text-sm font-medium text-muted invisible select-none" aria-hidden="true">&nbsp;</div>
     }

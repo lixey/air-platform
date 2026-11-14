@@ -1,26 +1,13 @@
 import { Component, computed, inject, input, untracked, viewChild } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
-import type { GridColumnDto, OverlayDto } from '../../core/generated/contracts';
+import type { GridColumnDto } from '../../core/generated/contracts';
 import { TextsService } from '../../core/texts.service';
 import { NavComponent } from '../../nav/nav.component';
 import { OverlayRef } from '../../overlay/overlay-ref';
-import { singlePanelLayout } from '../../panels/single-panel-layout';
 import type { GridColumnFilterOverlayModel } from '../../ui-components';
 import { columnLabelOf } from '../column/grid-column-label';
 import { GridService } from '../grid.service';
 import { FilterTreeComponent } from './filter-tree.component';
-
-/** The key of the column filter's layout, and the stem of its overlay's key. */
-const GRID_FILTER_OVERLAY = 'grid.columnFilter';
-
-/** A menu hanging from the header's button, whose one panel is the column's filter overlay. */
-export function gridColumnFilterOverlay(column: GridColumnDto): OverlayDto {
-  return {
-    key: `${GRID_FILTER_OVERLAY}.${column.path ?? ''}`,
-    presentation: 'menu',
-    layout: singlePanelLayout(GRID_FILTER_OVERLAY, { kind: 'GridColumnFilterOverlay', column }),
-  };
-}
 
 /**
  * One column's filter, opened as a menu from its header: the bar — `Apply`, the column's label, the close control —

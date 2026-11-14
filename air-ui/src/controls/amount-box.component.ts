@@ -89,6 +89,7 @@ export class AmountBoxComponent implements FormValueControl<number | null>, UiCo
     },
     format: (amount: number | null) => this.textOf(amount),
   });
+  readonly parseErrors = this.rawValue.parseErrors;
 
   protected showPlain(): void {
     this.isGrouped.set(false);

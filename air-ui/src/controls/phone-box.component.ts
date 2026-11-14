@@ -1,6 +1,7 @@
-import { Component, input, model } from '@angular/core';
+import { Component, inject, input, model } from '@angular/core';
 import { type FormValueControl, transformedValue } from '@angular/forms/signals';
 import { fieldClasses } from '../theme/css-classes';
+import { FIELD_LOOK } from './field-look';
 import { caretAfterDigits, phoneDigits, phoneText, phoneValue } from './phone-mask';
 import { RECORD_AUTOCOMPLETE, RECORD_NAME } from './record-autocomplete';
 import { UiControlDirective } from './ui-control.directive';
@@ -19,13 +20,16 @@ import { UiControlDirective } from './ui-control.directive';
       type="tel"
       autocomplete="${RECORD_AUTOCOMPLETE}"
       name="${RECORD_NAME}"
-      [class]="fieldClasses(invalid())"
+      [class]="fieldClasses(invalid(), look)"
       [placeholder]="placeholder()"
       (input)="onInput($event)"
     />
   `,
+  host: { '[class.h-full]': 'look === "cell"', class: 'block' },
 })
 export class PhoneBoxComponent implements FormValueControl<string | null> {
+  protected readonly look = inject(FIELD_LOOK, { optional: true }) ?? 'box';
+
   readonly value = model<string | null>(null);
 
   readonly id = input('');

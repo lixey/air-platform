@@ -31,7 +31,9 @@ const FORMATS = {
   selector: 'ui-form-info',
   template: `
     <dl class="m-0 min-w-0">
-      <dt class="block mb-1 text-sm font-medium text-muted truncate">{{ element().label }}</dt>
+      <dt class="block mb-1 text-sm font-medium text-muted truncate" [attr.title]="element().title || element().label || null">
+        {{ element().label }}
+      </dt>
       <dd class="m-0 min-h-8 flex items-center text-sm text-ink break-words" [id]="id()" data-info-value>{{ text() }}</dd>
     </dl>
     @if (element().help; as help) {

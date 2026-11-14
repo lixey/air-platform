@@ -115,7 +115,18 @@ export function parseAgentBlocks(rawText: string, plugins: readonly AgentBlockPl
     }
 
     const parsedBlocks = span.plugin.parse(span.inner, `${messageId}-b${++seq}`);
-    blocks.push(...parsedBlocks);
+    for (const block of parsedBlocks) {
+      if (block.kind === 'custom') {
+        blocks.push({
+          ...block,
+          customKind: block.customKind ?? span.plugin.kind,
+          tagName: block.tagName ?? span.plugin.tag,
+          component: block.component ?? span.plugin.component,
+        });
+      } else {
+        blocks.push(block);
+      }
+    }
     cursor = span.end;
   }
 

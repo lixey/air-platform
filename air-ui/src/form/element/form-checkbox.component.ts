@@ -11,7 +11,7 @@ import { FormItemComponent } from './form-item.component';
   imports: [FormItemComponent, CheckboxComponent, FormField],
   template: `
     <ui-form-item [element]="element()" labelMode="spacer">
-      <ui-checkbox [id]="id()" [formField]="field()" (checkedChange)="onChanged()">
+      <ui-checkbox [id]="id()" [formField]="field()" (checkedChange)="saveOnChange()">
         <span class="truncate" [attr.title]="element().title || element().label || null">{{ element().label }}</span>
         @if (element().isRequired) {
           <span class="hue-red text-(--hue-ink)" aria-hidden="true">*</span>
@@ -20,10 +20,4 @@ import { FormItemComponent } from './form-item.component';
     </ui-form-item>
   `,
 })
-export class FormCheckboxComponent extends FormElementBase<boolean, FormCheckboxModel> {
-  protected onChanged(): void {
-    if (this.element().savesOnChange && this.form.id() !== null && this.form.canSave()) {
-      void this.form.save();
-    }
-  }
-}
+export class FormCheckboxComponent extends FormElementBase<boolean, FormCheckboxModel> {}

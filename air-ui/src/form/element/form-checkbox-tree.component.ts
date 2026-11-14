@@ -10,8 +10,8 @@ import { FormItemComponent } from './form-item.component';
   selector: 'ui-form-checkbox-tree',
   imports: [FormItemComponent, CheckboxTreeComponent, FormField],
   template: `
-    <ui-form-item [element]="element()">
-      <ui-checkbox-tree [nodes]="nodes()" [label]="element().label ?? null" [formField]="field()" />
+    <ui-form-item [element]="element()" labelMode="group">
+      <ui-checkbox-tree [nodes]="nodes()" [label]="element().label ?? null" [formField]="field()" (valueChange)="saveOnChange()" />
     </ui-form-item>
   `,
 })

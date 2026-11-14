@@ -2,17 +2,19 @@ import { afterRenderEffect, Component, DestroyRef, ElementRef, inject, Injector,
 import { BtnComponent } from '../btn/btn.component';
 import type { AgentSyncSourceDto, UiIcon } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
+import { FileZoneDirective } from '../file/file-zone.directive';
 import { ICON_SET } from '../icon/icon-set';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import type { SelectOption } from '../select/select-option';
 import { SelectService } from '../select/select.service';
 import { fieldClasses } from '../theme/css-classes';
 import { fitPromptToText } from './agent-ui-helpers';
+import { AGENT_UPLOAD_ACCEPT } from './agent-upload';
 import { AgentService } from './agent.service';
 
 @Component({
   selector: 'ui-agent-composer',
-  imports: [BtnComponent, UiIconDirective],
+  imports: [BtnComponent, FileZoneDirective, UiIconDirective],
   providers: [SelectService],
   template: `
     @if (agent.pendingSyncSource() || agent.pendingAttachments().length > 0) {
@@ -26,15 +28,14 @@ import { AgentService } from './agent.service';
             @if (agent.pendingSyncFile(); as syncFile) {
               <span class="max-w-36 truncate text-muted" [title]="syncFile.fileName">· {{ syncFile.fileName }}</span>
             }
-            <button
-              type="button"
-              class="hue-red ml-0.5 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors hover:bg-(--hue) hover:text-(--btn-on-hue)"
+            <ui-btn
+              variant="ghost"
+              color="red"
+              icon="close"
+              class="ml-0.5 w-4! h-4! min-w-4! min-h-4! rounded-full! p-0!"
               [title]="texts.of('Delete')"
-              [attr.aria-label]="texts.of('Delete')"
               (click)="agent.clearPendingSync()"
-            >
-              <i class="flex items-center justify-center" [icon]="'close'"></i>
-            </button>
+            />
           </div>
         }
 
@@ -42,29 +43,27 @@ import { AgentService } from './agent.service';
           @if (isImageAttachment(att.contentType)) {
             <div class="relative overflow-hidden rounded-md border border-line bg-surface">
               <img [src]="att.previewUrl" [alt]="att.fileName" class="h-14 w-14 object-cover" />
-              <button
-                type="button"
-                class="hue-red absolute top-0.5 right-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-surface/90 text-ink hover:bg-(--hue) hover:text-(--btn-on-hue)"
+              <ui-btn
+                variant="soft"
+                color="red"
+                icon="close"
+                class="absolute top-0.5 right-0.5 w-4! h-4! min-w-4! min-h-4! rounded-full! p-0!"
                 [title]="texts.of('Delete')"
-                [attr.aria-label]="texts.of('Delete')"
                 (click)="agent.removePendingAttachment(att.id)"
-              >
-                <i class="flex items-center justify-center" [icon]="'close'"></i>
-              </button>
+              />
             </div>
           } @else {
             <div class="flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink">
               <i class="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted" [icon]="'import'"></i>
               <span class="max-w-40 truncate" [title]="att.fileName">{{ att.fileName }}</span>
-              <button
-                type="button"
-                class="hue-red flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-(--hue) hover:text-(--btn-on-hue)"
+              <ui-btn
+                variant="ghost"
+                color="red"
+                icon="close"
+                class="w-4! h-4! min-w-4! min-h-4! rounded-full! p-0!"
                 [title]="texts.of('Delete')"
-                [attr.aria-label]="texts.of('Delete')"
                 (click)="agent.removePendingAttachment(att.id)"
-              >
-                <i class="flex items-center justify-center" [icon]="'close'"></i>
-              </button>
+              />
             </div>
           }
         }
@@ -80,7 +79,7 @@ import { AgentService } from './agent.service';
       (change)="onSyncFilePicked($event)"
     />
 
-    <div class="flex items-start gap-1.5">
+    <div class="flex items-start gap-1.5" [uiFileZone]="uploadAccept" (uiFileZoneTaken)="onFilesTaken($event)">
       <ui-btn
         size="medium"
         variant="soft"
@@ -100,7 +99,6 @@ import { AgentService } from './agent.service';
         [value]="draft()"
         (input)="draft.set(promptInput.value)"
         (keydown)="onKeydown($event)"
-        (paste)="onPaste($event)"
       ></textarea>
 
       @if (agent.isStreaming()) {
@@ -128,6 +126,7 @@ export class AgentComposerComponent {
 
   protected readonly draft = signal('');
   protected readonly fieldClasses = fieldClasses;
+  protected readonly uploadAccept = AGENT_UPLOAD_ACCEPT;
   protected readonly pendingFileSyncSource = signal<AgentSyncSourceDto | null>(null);
 
   private readonly promptInput = viewChild<ElementRef<HTMLTextAreaElement>>('promptInput');
@@ -289,25 +288,12 @@ export class AgentComposerComponent {
     return !contentType || contentType.startsWith('image/');
   }
 
-  protected onPaste(event: ClipboardEvent): void {
-    const items = event.clipboardData?.items;
-    if (!items) {
+  protected onFilesTaken(files: readonly File[]): void {
+    if (this.agent.isStreaming()) {
       return;
     }
-
-    const imageFiles: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
-          imageFiles.push(file);
-        }
-      }
-    }
-
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length > 0) {
-      event.preventDefault();
       void this.agent.uploadFiles(imageFiles);
     }
   }

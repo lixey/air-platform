@@ -22,6 +22,7 @@ import { FormItemComponent } from './form-item.component';
         [clearable]="!element().isRequired"
         [placeholder]="element().placeholder ?? ''"
         [formField]="field()"
+        (valueChange)="saveOnChange()"
       />
     </ui-form-item>
   `,

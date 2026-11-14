@@ -421,6 +421,111 @@ public sealed class RowDtoContractPatchAndExcelTests : IDisposable
   }
 
   [Fact]
+  public async Task PatchOnSelect_ProtectsDisabledWhenFields_InPrepareDraft_And_SaveAsync_WhilePatchingStaticDisabled()
+  {
+    await using var db = CreateDbContext();
+    var app = new TestPlatformAppService(db, new FixedUser(10, "*"));
+
+    var inv = new TestInvoice { Number = "INV-DW-PATCH", Status = 1 };
+    var tagStarter = new TestTag { Name = "Starter Pack", IsActive = true, DefaultPrice = 42.75m };
+    var tagEnterprise = new TestTag { Name = "Enterprise Pack", IsActive = true, DefaultPrice = 105.50m };
+    db.Invoices.Add(inv);
+    db.Tags.AddRange(tagStarter, tagEnterprise);
+    await db.SaveChangesAsync();
+
+    var invoiceFormPath = ServicePathResolver.Resolve(typeof(TestInvoiceFormService));
+    var form = new TestDisabledWhenPatchLineFormService(db, app);
+
+    // 1. Unlocked target (Priority = Normal): PrepareDraftAsync patches both static .Disabled() Amount and unlocked Title
+    var unlockedDraft = await form.PrepareDraftAsync(
+      recordId: null,
+      overrides: new Dictionary<string, object?>
+      {
+        ["tagId"] = tagStarter.Id,
+        ["title"] = "Old Title",
+        ["priority"] = (int)TestPriority.Normal,
+        ["tierCode"] = 1
+      },
+      parentId: inv.Id,
+      parentService: invoiceFormPath,
+      triggerField: "tagId");
+    Assert.Equal(42.75m, Convert.ToDecimal(unlockedDraft.Values["amount"], CultureInfo.InvariantCulture));
+    Assert.Equal("Starter Pack", unlockedDraft.Values["title"]?.ToString());
+
+    // 2. Dynamically locked target (Priority = Urgent): PrepareDraftAsync patches static .Disabled() Amount
+    //    while protecting .DisabledWhen(Priority == Urgent) Title ("Locked Title" remains intact)
+    var lockedTargetDraft = await form.PrepareDraftAsync(
+      recordId: null,
+      overrides: new Dictionary<string, object?>
+      {
+        ["tagId"] = tagEnterprise.Id,
+        ["title"] = "Locked Title",
+        ["priority"] = (int)TestPriority.Urgent,
+        ["tierCode"] = 1
+      },
+      parentId: inv.Id,
+      parentService: invoiceFormPath,
+      triggerField: "tagId");
+    Assert.Equal(105.50m, Convert.ToDecimal(lockedTargetDraft.Values["amount"], CultureInfo.InvariantCulture));
+    Assert.Equal("Locked Title", lockedTargetDraft.Values["title"]?.ToString());
+
+    // 3. Dynamically locked source (TierCode = 99): PrepareDraftAsync skips PatchOnSelect from locked Tag completely
+    var lockedSourceDraft = await form.PrepareDraftAsync(
+      recordId: null,
+      overrides: new Dictionary<string, object?>
+      {
+        ["tagId"] = tagEnterprise.Id,
+        ["title"] = "Untouched Title",
+        ["priority"] = (int)TestPriority.Normal,
+        ["tierCode"] = 99
+      },
+      parentId: inv.Id,
+      parentService: invoiceFormPath,
+      triggerField: "tagId");
+    Assert.False(lockedSourceDraft.Values.ContainsKey("amount"));
+    Assert.Equal("Untouched Title", lockedSourceDraft.Values["title"]?.ToString());
+
+    // 4. Server SaveAsync parity on existing Urgent line: changing Tag updates static .Disabled() Amount
+    //    while preserving .DisabledWhen(Priority == Urgent) Title
+    var existing = new TestInvoiceLine
+    {
+      InvoiceId = inv.Id,
+      TagId = tagStarter.Id,
+      Amount = 42.75m,
+      Title = "Locked Title",
+      Priority = TestPriority.Urgent,
+      TierCode = 1
+    };
+    db.InvoiceLines.Add(existing);
+    await db.SaveChangesAsync();
+
+    var updatePayload = JsonSerializer.SerializeToElement(new
+    {
+      tagId = tagEnterprise.Id,
+      amount = 999999m,
+      title = "TAMPERED",
+      priority = (int)TestPriority.Urgent,
+      tierCode = 1
+    });
+    var updateForm = new TestDisabledWhenPatchLineFormService(db, app);
+    await updateForm.SaveAsync(
+      updatePayload,
+      new FormRequest
+      {
+        Id = existing.Id,
+        Ver = existing.Ver,
+        ParentId = inv.Id,
+        ParentService = invoiceFormPath,
+        Value = updatePayload
+      },
+      CancellationToken.None);
+
+    var saved = await db.InvoiceLines.AsNoTracking().FirstAsync(l => l.Id == existing.Id);
+    Assert.Equal(105.50m, saved.Amount);
+    Assert.Equal("Locked Title", saved.Title);
+  }
+
+  [Fact]
   public async Task ExportAsync_Over500RowsWithComputeSecondaryQueries_ClosesReaderBetweenChunks()
   {
     var interceptor = new SingleActiveReaderInterceptor();

@@ -134,6 +134,15 @@ export class VirtualScrollDriver {
     this.scheduleFrame();
   }
 
+  /** Keeps the sticky `tfoot` height in sync when summary rows mount or unmount without a viewport resize. */
+  setFooterHeight(height: number): void {
+    const normalized = Number.isFinite(height) && height > 0 ? height : 0;
+    if (Math.abs(this.observer.footerHeightPx - normalized) > PIXEL_TOLERANCE) {
+      this.observer.footerHeightPx = normalized;
+      this.scheduleFrame();
+    }
+  }
+
   /** Other column widths make other row heights: the rendered rows are measured again now, the rest as they come in. */
   invalidateColumnLayout(): void {
     this.queueRenderedRowsForMeasurement();

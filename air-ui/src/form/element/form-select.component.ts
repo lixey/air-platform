@@ -25,9 +25,10 @@ import { FormItemComponent } from './form-item.component';
   selector: 'ui-form-select',
   imports: [FormItemComponent, SelectComponent, FormField],
   template: `
-    <ui-form-item [element]="element()">
+    <ui-form-item [element]="element()" [labelMode]="select() ? 'above' : 'group'">
       @if (select(); as select) {
         <ui-select
+          [inputId]="id()"
           [model]="select"
           [multiple]="isMultiple()"
           [createOverlay]="createOverlay()"
@@ -246,9 +247,7 @@ export class FormSelectComponent extends FormElementBase<unknown, FormSelectMode
       }
       this.settled.set(untracked(this.dependencies));
     }
-    if (this.element().savesOnChange && this.form.id() !== null && this.form.canSave()) {
-      void this.form.save();
-    }
+    this.saveOnChange();
   }
 }
 

@@ -1,12 +1,12 @@
-import { Component, computed, effect, ErrorHandler, inject, linkedSignal } from '@angular/core';
+import { Component, computed, effect, ErrorHandler, inject } from '@angular/core';
 import { ActivatedRoute, Router, RouterOutlet } from '@angular/router';
 import { AppService } from '../app/app.service';
 import { redirectFor, rootRedirect } from '../app/menu-tree';
 import { BtnComponent } from '../btn/btn.component';
-import type { MenuItemDto, ScreenDto } from '../core/generated/contracts';
+import type { MenuItemDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { PanelsComponent } from '../panels/panels.component';
-import { SCREEN_HOST, type ScreenHost } from '../screen/screen-address';
+import { SCREEN_HOST } from '../screen/screen-address';
 import { ScreenLifecycle } from '../screen/screen-lifecycle';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
 import { screenLoader } from '../screen/screen-loader';
@@ -25,14 +25,14 @@ import { WORK_AREA } from '../theme/css-classes';
     ScreenLifecycle,
     { provide: SCREEN_LIFETIME, useFactory: () => inject(ScreenLifecycle).lifetime },
     { provide: ScreenMutations, useFactory: () => inject(ScreenLifecycle).mutations },
-    { provide: SCREEN_HOST, useExisting: LayoutRouteScreenComponent },
+    { provide: SCREEN_HOST, useFactory: () => inject(LayoutRouteScreenComponent).screen },
   ],
   template: `
     @if (hasChildRoute()) {
       <router-outlet />
     } @else if (screen.error()) {
       <div role="alert" class="m-3 p-4 flex items-center gap-3 text-sm text-warning">
-        {{ texts.of('ScreenLoadFailed') }}
+        {{ screen.errorTitle() }}
         <ui-btn [label]="texts.of('Retry')" (click)="screen.reload()" />
       </div>
     } @else if (screen.layout(); as layout) {
@@ -46,19 +46,13 @@ import { WORK_AREA } from '../theme/css-classes';
     class: `${WORK_AREA} flex flex-col grow shrink overflow-hidden min-h-0 min-w-0 w-full h-full @container @container/outlet`,
   },
 })
-export class LayoutRouteScreenComponent implements ScreenHost {
+export class LayoutRouteScreenComponent {
   readonly lifecycle = inject(ScreenLifecycle);
   protected readonly texts = inject(TextsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly app = inject(AppService);
   private readonly errorHandler = inject(ErrorHandler);
-
-  /** The parameters a panel asked to load the screen with; another menu entry starts without them. */
-  private readonly patch = linkedSignal<MenuItemDto | null, Record<string, unknown>>({
-    source: () => this.activeItem(),
-    computation: () => ({}),
-  });
 
   /**
    * A module or a group address opens its first leaf, and the empty path the first leaf of the
@@ -95,23 +89,8 @@ export class LayoutRouteScreenComponent implements ScreenHost {
   });
 
   /** The screen the entry names, loaded by the same loader an overlay uses. */
-  protected readonly screen = screenLoader(() => {
-    const screen = this.hasChildRoute() ? null : this.screenOf(this.activeItem());
-    const patch = this.patch();
-    const params = Object.keys(patch).length > 0 ? patch : undefined;
-    return screen && this.lifecycle.isActive() ? { service: screen, params } : null;
+  readonly screen = screenLoader(() => {
+    const screen = this.hasChildRoute() ? null : this.activeItem()?.screen;
+    return screen && this.lifecycle.isActive() ? { service: screen } : null;
   });
-
-  reload(patch: Record<string, unknown>): void {
-    this.patch.update(current => ({ ...current, ...patch }));
-  }
-
-  show(screen: ScreenDto): void {
-    this.screen.show(screen);
-  }
-
-  /** The screen a menu entry names. */
-  private screenOf(item: MenuItemDto | null): string | null | undefined {
-    return item?.screen;
-  }
 }

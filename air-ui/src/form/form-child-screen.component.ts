@@ -2,7 +2,6 @@ import { Component, computed, DestroyRef, effect, inject, input, untracked } fro
 import { BtnComponent } from '../btn/btn.component';
 import type { FormChildScreenModel } from '../core/generated/contracts';
 import { Lifetime } from '../core/lifetime';
-import { problemOf } from '../core/problem';
 import { TextsService } from '../core/texts.service';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
@@ -43,7 +42,7 @@ import { injectForm } from './inject-form';
       <ui-panels [layout]="layout" [data]="screen.data()" class="flex-1 min-h-0" />
     } @else if (screen.error()) {
       <div role="alert" class="p-3 flex items-center gap-3 text-sm text-warning">
-        {{ errorTitle() }}
+        {{ screen.errorTitle() }}
         <ui-btn [label]="texts.of('Retry')" (click)="screen.reload()" />
       </div>
     }
@@ -73,8 +72,6 @@ export class FormChildScreenComponent {
 
   /** Loads under the parent's lifetime: the scope's reset for a new parent record does not drop the load it starts. */
   protected readonly screen = screenLoader(this.address, this.parent);
-
-  protected readonly errorTitle = computed(() => problemOf(this.screen.error())?.title ?? this.texts.of('ScreenLoadFailed'));
 
   constructor() {
     const overlayRef = inject(OverlayRef, { optional: true });

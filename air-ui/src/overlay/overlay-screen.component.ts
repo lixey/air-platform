@@ -1,10 +1,9 @@
-import { Component, computed, inject, input, linkedSignal } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
-import type { ScreenDto } from '../core/generated/contracts';
 import { Lifetime } from '../core/lifetime';
 import { TextsService } from '../core/texts.service';
 import { PanelsComponent } from '../panels/panels.component';
-import { SCREEN_ADDRESS, SCREEN_HOST, type ScreenHost } from '../screen/screen-address';
+import { SCREEN_ADDRESS, SCREEN_HOST } from '../screen/screen-address';
 import { SCREEN_LIFETIME } from '../screen/screen-lifetime';
 import { screenLoader } from '../screen/screen-loader';
 import { OverlayRef } from './overlay-ref';
@@ -19,7 +18,7 @@ import { OverlayRef } from './overlay-ref';
   imports: [BtnComponent, PanelsComponent],
   providers: [
     { provide: SCREEN_ADDRESS, useFactory: () => inject(OverlayScreenComponent).address },
-    { provide: SCREEN_HOST, useExisting: OverlayScreenComponent },
+    { provide: SCREEN_HOST, useFactory: () => inject(OverlayScreenComponent).screen },
     {
       // The screen's lifetime: the opener's, and only while this overlay is open
       provide: SCREEN_LIFETIME,
@@ -32,7 +31,7 @@ import { OverlayRef } from './overlay-ref';
   template: `
     @if (screen.error()) {
       <div role="alert" class="m-3 p-4 flex items-center gap-3 text-sm text-warning">
-        {{ texts.of('ScreenLoadFailed') }}
+        {{ screen.errorTitle() }}
         <ui-btn [label]="texts.of('Retry')" (click)="screen.reload()" />
       </div>
     } @else if (layout(); as l) {
@@ -43,15 +42,9 @@ import { OverlayRef } from './overlay-ref';
     class: 'flex flex-col grow shrink overflow-hidden min-h-0 min-w-0',
   },
 })
-export class OverlayScreenComponent implements ScreenHost {
+export class OverlayScreenComponent {
   protected readonly texts = inject(TextsService);
   private readonly ref = inject(OverlayRef);
-
-  /** The parameters a panel asked to load the screen with; another service or other params start without them. */
-  private readonly patch = linkedSignal<readonly unknown[], Record<string, unknown>>({
-    source: () => [this.service(), this.params()],
-    computation: () => ({}),
-  });
 
   /** Route segment of the screen service, as in `/api/{service}/get-data`. */
   readonly service = input.required<string>();
@@ -59,26 +52,12 @@ export class OverlayScreenComponent implements ScreenHost {
   /** What that screen's `get-data` is sent. */
   readonly params = input<unknown>();
 
-  readonly address = computed(() => {
-    const baseParams = typeof this.params() === 'object' && this.params() !== null ? (this.params() as Record<string, unknown>) : {};
-    const patch = this.patch();
-    const effectiveParams = Object.keys(patch).length > 0 ? { ...baseParams, ...patch } : this.params();
-
-    return { service: this.service(), params: effectiveParams };
-  });
-  protected readonly screen = screenLoader(this.address);
+  readonly screen = screenLoader(() => ({ service: this.service(), params: this.params() }));
+  readonly address = this.screen.address;
   protected readonly layout = this.screen.layout;
 
   constructor() {
     // The card's size is the host's to resolve, from the ref: it reads the screen's ask where the screen holds it
     this.ref.ask(this.screen.asked);
-  }
-
-  reload(patch: Record<string, unknown>): void {
-    this.patch.update(current => ({ ...current, ...patch }));
-  }
-
-  show(screen: ScreenDto): void {
-    this.screen.show(screen);
   }
 }

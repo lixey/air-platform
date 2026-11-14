@@ -1,23 +1,18 @@
 import { Component, computed, inject, input, linkedSignal, untracked } from '@angular/core';
 import { LocaleService } from '../../app/locale.service';
 import { BtnComponent } from '../../btn/btn.component';
-import type { GridColumnDto, OverlayDto } from '../../core/generated/contracts';
 import { TextsService, type UiTextKey } from '../../core/texts.service';
 import { todayIn } from '../../core/time-zone';
 import type { IsoDate } from '../../datepicker/calendar-month';
 import { weekStart } from '../../datepicker/date-text';
 import { TemporalBoxComponent } from '../../datepicker/temporal-box.component';
 import { OverlayRef } from '../../overlay/overlay-ref';
-import { singlePanelLayout } from '../../panels/single-panel-layout';
 import { FOCUS_RING } from '../../theme/css-classes';
 import type { GridDateRangeOverlayModel } from '../../ui-components';
 import { columnLabelOf } from '../column/grid-column-label';
 import { temporalTypeOf } from '../column/grid-column-temporal-type';
 import { GridService } from '../grid.service';
 import { DATE_PERIODS, type DatePeriod, type DateRange, periodRange, rangeFilter, rangeOfFilter } from './grid-date-periods';
-
-/** The key of the date range menu's layout, and the stem of its overlay's key. */
-const GRID_DATE_RANGE_OVERLAY = 'grid.dateRange';
 
 /** The text of each period, a quarter's with its number. */
 const PERIOD_TEXTS = {
@@ -53,15 +48,6 @@ const PERIOD_ROW = {
 
 /** A period's button: a quiet field that reads as a link, ringed in `field-hover` under the pointer. */
 const PERIOD_BUTTON = `h-7 px-2 rounded-md border border-field-edge bg-field text-sm text-link hover:border-field-hover hover:text-link-hover cursor-pointer ${FOCUS_RING}`;
-
-/** A menu hanging from a date header, whose one panel is the column's date range menu. */
-export function gridDateRangeOverlay(column: GridColumnDto): OverlayDto {
-  return {
-    key: `${GRID_DATE_RANGE_OVERLAY}.${column.path ?? ''}`,
-    presentation: 'menu',
-    layout: singlePanelLayout(GRID_DATE_RANGE_OVERLAY, { kind: 'GridDateRangeOverlay', column }),
-  };
-}
 
 /**
  * A date column's range, opened as a menu from its date header: From and To in the temporal control, and the periods

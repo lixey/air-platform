@@ -1,23 +1,10 @@
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, linkedSignal } from '@angular/core';
-import {
-  form,
-  FormField,
-  type LimitKey,
-  MAX,
-  MAX_NUMBER,
-  metadata,
-  MIN,
-  MIN_NUMBER,
-  readonly,
-  REQUIRED,
-  type SchemaPath,
-  validate,
-} from '@angular/forms/signals';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, viewChild } from '@angular/core';
 import { LocaleService } from '../../app/locale.service';
 import { AmountBoxComponent } from '../../controls/amount-box.component';
 import { FIELD_DESCRIPTION } from '../../controls/field-description';
 import { FIELD_LOOK } from '../../controls/field-look';
 import { NumberBoxComponent } from '../../controls/number-box.component';
+import { PhoneBoxComponent } from '../../controls/phone-box.component';
 import { TextBoxComponent } from '../../controls/text-box.component';
 import type { GridNumberEditDto } from '../../core/generated/contracts';
 import { TemporalBoxComponent } from '../../datepicker/temporal-box.component';
@@ -35,106 +22,160 @@ import type { GridCellContext } from './grid-cell-context';
 const CONTROL = 'input, [role="combobox"]';
 
 /**
- * The editor of a cell edited in place: one control of the form's own, bound by `[formField]` to a field over the
- * edit's value — a text box for text, e-mail and url, a number box for a number, an amount box for money and percent,
- * the temporal box for a date, a date and time or a time, and the select over the column's options — required when the
- * column is, drawn in the cell's look: filling the cell with no box of its own. A number box takes the step, the bounds
- * and the stepper of the column's `numberEdit`, the box the grid's form declares at its path; its presses and its arrow
- * keys change the value the editor holds and post nothing. It is named by the column's label,
- * takes the focus when it opens, typing the key that started the edit into its box, and gives it back to the table when
- * the edit ends. `Enter` commits and moves down, `Tab` and `Shift+Tab` commit and edit the row's next or previous
- * editable cell, `Escape` cancels: the editor takes these keys before its control and the table do. A refused save
- * draws its messages under the cell, the control invalid and described by them; the control takes no input while the
- * save runs.
+ * The editor of a cell edited in place: one control bound directly to the edit's value — a text box for text, e-mail
+ * and url, a phone box for a phone, a number box for a number, an amount box for money and percent, the temporal box
+ * for a date, a date and time or a time, and the select over the column's options — required when the column is, drawn
+ * in the cell's look: filling the cell with no box of its own. A number box takes the step, the bounds and the stepper
+ * of the column's `numberEdit`, the box the grid's form declares at its path; its presses and its arrow keys change the
+ * value the editor holds and post nothing. It is named by the column's label, takes the focus when it opens, typing the
+ * key that started the edit into its box, and gives it back to the table when the edit ends. `Enter` commits and moves
+ * down, `Tab` and `Shift+Tab` commit and edit the row's next or previous editable cell, `Escape` cancels: the editor
+ * takes these keys before its control and the table do. A refused save draws its messages under the cell, the control
+ * invalid and described by them; the control takes no input while the save runs.
  */
 @Component({
   selector: 'ui-grid-cell-editor',
-  imports: [AmountBoxComponent, FormField, NumberBoxComponent, SelectComponent, TemporalBoxComponent, TextBoxComponent],
+  imports: [AmountBoxComponent, NumberBoxComponent, PhoneBoxComponent, SelectComponent, TemporalBoxComponent, TextBoxComponent],
   providers: [
     { provide: FIELD_DESCRIPTION, useFactory: () => inject(GridCellEditorComponent).describedBy },
     { provide: FIELD_LOOK, useValue: 'cell' },
   ],
   template: `
+    <label class="sr-only" [for]="id">{{ label() }}</label>
     @switch (kind()) {
       @case ('select') {
         <ui-select
+          [id]="id"
           [model]="selectSource()"
           [picked]="picked()"
           [clearable]="!column().isRequired"
-          [formField]="keyField"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="editValue()"
           (valueChange)="keep($event)"
         />
       }
       @case ('number') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
         <ui-number-box
           [id]="id"
           [step]="numberEdit()?.step"
           [steppable]="numberEdit()?.hasStepper ?? false"
-          [formField]="numberField"
+          [min]="minNumber()"
+          [max]="maxNumber()"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="numberValue()"
           (valueChange)="keep($event)"
         />
       }
       @case ('money') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
         <ui-amount-box
           [id]="id"
           kind="money"
           [locale]="locale()"
           [currency]="currency()"
           [digits]="digits()"
-          [formField]="numberField"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="numberValue()"
           (valueChange)="keep($event)"
         />
       }
       @case ('percent') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
         <ui-amount-box
           [id]="id"
           kind="percent"
           [locale]="locale()"
           [digits]="digits()"
-          [formField]="numberField"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="numberValue()"
           (valueChange)="keep($event)"
         />
       }
       @case ('date') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
         <ui-temporal-box
           [id]="id"
           kind="date"
           [temporalType]="column().temporalType ?? null"
           [clearable]="!column().isRequired"
-          [formField]="textField"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
           (valueChange)="keep($event)"
         />
       }
       @case ('datetime') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
         <ui-temporal-box
           [id]="id"
           kind="datetime"
           [temporalType]="column().temporalType ?? null"
           [clearable]="!column().isRequired"
-          [formField]="textField"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
           (valueChange)="keep($event)"
         />
       }
       @case ('time') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
-        <ui-temporal-box [id]="id" kind="time" [clearable]="!column().isRequired" [formField]="textField" (valueChange)="keep($event)" />
+        <ui-temporal-box
+          [id]="id"
+          kind="time"
+          [clearable]="!column().isRequired"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
+          (valueChange)="keep($event)"
+        />
+      }
+      @case ('phone') {
+        <ui-phone-box
+          [id]="id"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
+          (valueChange)="keep($event)"
+        />
       }
       @case ('email') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
-        <ui-text-box [id]="id" kind="email" [formField]="textField" (valueChange)="keep($event)" />
+        <ui-text-box
+          [id]="id"
+          kind="email"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
+          (valueChange)="keep($event)"
+        />
       }
       @case ('url') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
-        <ui-text-box [id]="id" kind="url" [formField]="textField" (valueChange)="keep($event)" />
+        <ui-text-box
+          [id]="id"
+          kind="url"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
+          (valueChange)="keep($event)"
+        />
       }
       @case ('text') {
-        <label class="sr-only" [for]="id">{{ label() }}</label>
-        <ui-text-box [id]="id" [formField]="textField" (valueChange)="keep($event)" />
+        <ui-text-box
+          [id]="id"
+          [readonly]="isSaving()"
+          [required]="column().isRequired"
+          [invalid]="invalid()"
+          [value]="textValue()"
+          (valueChange)="keep($event)"
+        />
       }
     }
     @if (messages().length > 0) {
@@ -156,6 +197,8 @@ export class GridCellEditorComponent {
   private readonly overlay = inject(OverlayService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   protected readonly locale = inject(LocaleService).current;
+  private readonly numberBox = viewChild(NumberBoxComponent);
+  private readonly amountBox = viewChild(AmountBoxComponent);
   private destroyed = false;
 
   /** The cell being edited. */
@@ -167,11 +210,22 @@ export class GridCellEditorComponent {
   protected readonly label = computed(() => this.column().label ?? this.column().path ?? '');
   /** The number box of a number cell as the grid's form declares its element; none for another column. */
   protected readonly numberEdit = computed<GridNumberEditDto | null>(() => this.column().numberEdit ?? null);
+  protected readonly minNumber = computed(() => numberBound(this.numberEdit()?.min));
+  protected readonly maxNumber = computed(() => numberBound(this.numberEdit()?.max));
 
   /** The edit of this cell, none once it ended. */
   private readonly edit = computed<GridCellEdit | null>(() => {
     const edit = this.grid.edits.current();
     return edit && edit.key === keyOf(this.cell().row) && edit.path === this.column().path ? edit : null;
+  });
+  protected readonly editValue = computed(() => this.edit()?.value ?? null);
+  protected readonly textValue = computed(() => {
+    const value = this.edit()?.value;
+    return typeof value === 'string' ? value : null;
+  });
+  protected readonly numberValue = computed(() => {
+    const value = this.edit()?.value;
+    return typeof value === 'number' ? value : null;
   });
   protected readonly isSaving = computed(() => this.edit()?.isSaving ?? false);
 
@@ -183,6 +237,20 @@ export class GridCellEditorComponent {
     }),
   );
 
+  private readonly hasParseError = computed(
+    () => (this.numberBox()?.parseErrors().length ?? 0) > 0 || (this.amountBox()?.parseErrors().length ?? 0) > 0,
+  );
+  private readonly isOutOfBounds = computed(() => {
+    const value = this.numberValue();
+    if (value === null) {
+      return false;
+    }
+    const min = this.minNumber();
+    const max = this.maxNumber();
+    return (min !== undefined && value < min) || (max !== undefined && value > max);
+  });
+  protected readonly invalid = computed(() => this.messages().length > 0 || this.hasParseError() || this.isOutOfBounds());
+
   /** The ids of the messages under the cell, which describe the control; null while there is none. */
   readonly describedBy = computed(() =>
     this.messages().length
@@ -190,28 +258,6 @@ export class GridCellEditorComponent {
           .map((_, index) => `${this.id}-error-${index}`)
           .join(' ')
       : null,
-  );
-
-  /** The field of a text, e-mail, url or temporal cell. */
-  protected readonly textField = form(
-    linkedSignal(() => {
-      const value = this.edit()?.value;
-      return typeof value === 'string' ? value : null;
-    }),
-    root => this.fieldRules(root),
-  );
-  /** The field of a number, money or percent cell. */
-  protected readonly numberField = form(
-    linkedSignal(() => {
-      const value = this.edit()?.value;
-      return typeof value === 'number' ? value : null;
-    }),
-    root => this.numberRules(root),
-  );
-  /** The field of a select's key. */
-  protected readonly keyField = form(
-    linkedSignal<unknown>(() => this.edit()?.value ?? null),
-    root => this.fieldRules(root),
   );
 
   protected readonly currency = computed(() => {
@@ -226,7 +272,7 @@ export class GridCellEditorComponent {
   private readonly options = computed<readonly SelectOption[]>(() => (this.column().options ?? []).map(optionOfReference));
   protected readonly selectSource = computed<SelectSource>(() => ({ label: this.label(), options: this.options() }));
   protected readonly picked = computed<readonly SelectOption[]>(() => {
-    const key = this.keyField().value();
+    const key = this.editValue();
     const option = this.options().find(o => o.id === key);
     return option ? [option] : [];
   });
@@ -275,7 +321,7 @@ export class GridCellEditorComponent {
         this.grid.edits.isConfirming ||
         this.isSaving() ||
         this.edit() === null ||
-        this.hasParseErrors()
+        this.hasParseError()
       ) {
         return;
       }
@@ -289,11 +335,11 @@ export class GridCellEditorComponent {
 
   private onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
-      if (!this.hasParseErrors()) {
+      if (!this.hasParseError()) {
         void this.grid.edits.commit('down');
       }
     } else if (event.key === 'Tab') {
-      if (!this.hasParseErrors()) {
+      if (!this.hasParseError()) {
         void this.grid.edits.commit(event.shiftKey ? 'previous' : 'next');
       }
     } else if (event.key === 'Escape') {
@@ -303,17 +349,6 @@ export class GridCellEditorComponent {
     }
     event.preventDefault();
     event.stopPropagation();
-  }
-
-  private hasParseErrors(): boolean {
-    return (
-      this.numberField()
-        .errors()
-        .some(err => err.kind === 'parse') ||
-      this.textField()
-        .errors()
-        .some(err => err.kind === 'parse')
-    );
   }
 
   /** Focuses the control and types into its box the key that started the edit, the caret after it. */
@@ -327,28 +362,8 @@ export class GridCellEditorComponent {
     control.value = typed;
     control.dispatchEvent(new Event('input', { bubbles: true }));
     if (control.type !== 'number') {
-      control.setSelectionRange(typed.length, typed.length);
+      control.setSelectionRange(control.value.length, control.value.length);
     }
-  }
-
-  /**
-   * The rules of the field over the edit's value, narrowed to what its control takes: read only while the save runs,
-   * required when the column is, and invalid by the messages of a refused save.
-   */
-  private fieldRules(root: SchemaPath<unknown>): void {
-    readonly(root, { when: () => this.isSaving() });
-    metadata(root, REQUIRED, () => this.column().isRequired);
-    validate(root, () => this.messages().map(message => ({ kind: 'server', message })));
-  }
-
-  /** The number field's rules: the field's own, and the column's bounds as a form's number field takes its element's. */
-  private numberRules(root: SchemaPath<unknown>): void {
-    this.fieldRules(root);
-    metadata(root, MIN_NUMBER, () => numberBound(this.numberEdit()?.min));
-    metadata(root, MAX_NUMBER, () => numberBound(this.numberEdit()?.max));
-    // Limit selection keys need a cast over an unknown-typed field
-    metadata(root, MIN, () => MIN_NUMBER as LimitKey<unknown>);
-    metadata(root, MAX, () => MAX_NUMBER as LimitKey<unknown>);
   }
 }
 

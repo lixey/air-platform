@@ -4,7 +4,7 @@ import { TextsService } from '../../core/texts.service';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { GRID_HEADER_CLEAR, GRID_HEADER_HOST, GRID_HEADER_STRIP } from '../../theme/css-classes';
 import { GridCellBase } from '../cell/grid-cell-base';
-import { columnLabelOf } from '../column/grid-column-label';
+import { columnLabelOf, columnTitleOf } from '../column/grid-column-label';
 import type { GridFilter } from '../filter/grid-filter-set';
 import { rulesOf } from '../filter/grid-filter-set';
 import { injectClauseText } from './grid-header-clause';
@@ -35,7 +35,7 @@ const NEXT: Readonly<Record<FlagFilter, boolean | null>> = { any: true, other: t
       class="flex-1 min-w-0 h-full pl-2 pr-1 flex items-center gap-1 text-sm font-semibold text-left outline-none"
       [class]="labelClasses()"
       [class.pr-16]="showsControls()"
-      [title]="label()"
+      [title]="title()"
       [attr.aria-label]="name()"
       [disabled]="!canCycle()"
       (click)="cycle($event)"
@@ -71,6 +71,7 @@ export class GridHeaderCheckboxComponent extends GridCellBase<GridHeaderCheckbox
   private readonly clauseOf = injectClauseText();
 
   protected readonly label = computed(() => columnLabelOf(this.column()));
+  protected readonly title = computed(() => columnTitleOf(this.column()));
   protected readonly isSortable = computed(() => this.column().isSortable && !!this.grid);
   protected readonly canCycle = computed(() => this.column().isFilterable && !!this.column().path && !!this.grid);
   protected readonly sort = computed(() => this.grid?.sortOf(this.column().path) ?? null);

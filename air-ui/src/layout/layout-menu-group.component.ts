@@ -21,7 +21,7 @@ import { LayoutMenuEntryComponent } from './layout-menu-entry.component';
     <button
       type="button"
       class="flex w-full cursor-pointer items-center gap-2 bg-surface-2 py-1.5 pl-2 text-left hover:bg-active hover:text-on-active"
-      [attr.title]="group().name"
+      [attr.title]="group().title || group().name"
       [attr.aria-expanded]="open()"
       (click)="toggled.emit()"
     >

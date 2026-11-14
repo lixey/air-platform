@@ -70,7 +70,7 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
         <button
           type="button"
           class="flex cursor-pointer items-center gap-2 border-b border-surface bg-surface-3 py-2 pl-2 text-left font-semibold hover:bg-active hover:text-on-active"
-          [attr.title]="module.name"
+          [attr.title]="module.title || module.name"
           [attr.aria-expanded]="moduleOpen"
           (click)="openModule(module)"
         >

@@ -230,7 +230,7 @@ public static class AgentProposalExecutor
     if (string.Equals(payload.Operation, AgentProposalOperation.MoveStatus, StringComparison.OrdinalIgnoreCase))
     {
       var (feat, _, _) = AgentProposalFlowBuilder.ResolveMoveTargetFeature(payload.Service);
-      var refresh = feat != null ? CollectModuleGridServices(feat.Module) : [];
+      var refresh = feat != null ? CollectModuleRefreshServices(feat.Module) : [];
       return await AgentProposalFlowBuilder.ExecuteMoveStatusStepAsync(
         proposal, payload, preVerifiedEdits, scopes, refresh, L, mutationCt);
     }
@@ -238,7 +238,7 @@ public static class AgentProposalExecutor
     if (string.Equals(payload.Operation, AgentProposalOperation.RunAction, StringComparison.OrdinalIgnoreCase))
     {
       var (feat, _, _) = AgentProposalActionBuilder.ResolveActionTargetService(payload.Service);
-      var refresh = feat != null ? CollectModuleGridServices(feat.Module) : [];
+      var refresh = feat != null ? CollectModuleRefreshServices(feat.Module) : [];
       return await AgentProposalActionExecutor.ExecuteRunActionStepAsync(
         proposal, payload, preVerifiedEdits, scopes, refresh, L, mutationCt);
     }
@@ -323,7 +323,7 @@ public static class AgentProposalExecutor
 
     var recordLabel = AgentBatchGraphCollector.BuildCommittedRecordLabel(
       proposal, payload, formInst, formElements, savedRecord.Entity, savedRecord.Id, L);
-    var refreshServices = CollectModuleGridServices(formInst.Feature.Module);
+    var refreshServices = CollectModuleRefreshServices(formInst.Feature.Module);
     return (savedRecord.Id, recordLabel, formInst.Service, refreshServices, collectedWarnings.Count > 0 ? collectedWarnings : null);
   }
 
@@ -367,11 +367,12 @@ public static class AgentProposalExecutor
     return ver;
   }
 
-  private static List<string> CollectModuleGridServices(string moduleHandle) =>
+  private static List<string> CollectModuleRefreshServices(string moduleHandle) =>
     ModuleCatalog.Instance.AllFeatures
       .Where(f => string.Equals(f.Module, moduleHandle, StringComparison.OrdinalIgnoreCase) &&
                   f.ServiceType != null &&
-                  typeof(IGridService).IsAssignableFrom(f.ServiceType))
+                  (typeof(IGridService).IsAssignableFrom(f.ServiceType) ||
+                   typeof(IReportService).IsAssignableFrom(f.ServiceType)))
       .Select(f => ServicePathResolver.Resolve(f.ServiceType!))
       .Distinct(StringComparer.OrdinalIgnoreCase)
       .ToList();

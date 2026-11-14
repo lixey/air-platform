@@ -18,6 +18,9 @@ import {
 
 import { Api, API_PREFIX, type ApiService } from '../../core/api';
 import type { ChangePasswordRequest, LoginScreenDto, SessionDto, UserProfileDto } from '../../core/generated/contracts';
+import { problemOf } from '../../core/problem';
+import { TextsService } from '../../core/texts.service';
+import { AlertService } from '../alert/alert.service';
 import { shownByCaller } from '../alert/error-alert.interceptor';
 
 /** The platform's authentication service, whose own `401`s are answers, not expiries. */
@@ -58,6 +61,8 @@ export class AuthService {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly alert = inject(AlertService);
+  private readonly texts = inject(TextsService);
 
   private readonly _currentUser = signal<UserProfileDto | null>(null);
   readonly currentUser = this._currentUser.asReadonly();
@@ -109,7 +114,7 @@ export class AuthService {
    * `refresh()` leaves it, and a refresh the server did not refuse alike.
    */
   restore(): Observable<UserProfileDto | null> {
-    return this.api.post('auth/get-profile', undefined).pipe(
+    return this.api.post('auth/get-profile', undefined, shownByCaller()).pipe(
       tap(user => this._currentUser.set(user)),
       catchError((error: HttpErrorResponse) => {
         if (error.status === 401) {
@@ -117,6 +122,9 @@ export class AuthService {
             switchMap(ok => (ok ? of(this.currentUser()) : this.nobody())),
             catchError(() => this.nobody()),
           );
+        }
+        if (!isRefusal(error)) {
+          this.alertUnexpectedFailure(error);
         }
         return this.nobody();
       }),
@@ -136,12 +144,18 @@ export class AuthService {
    * posts a new one.
    */
   refresh(): Observable<boolean> {
-    return (this.refreshing ??= this.api.post<'auth/refresh', SessionDto>('auth/refresh', null).pipe(
+    return (this.refreshing ??= this.api.post<'auth/refresh', SessionDto>('auth/refresh', null, shownByCaller()).pipe(
       takeUntil(this.ended),
       tap(session => this._currentUser.set(session.user)),
       map(() => true),
       defaultIfEmpty(false),
-      catchError((error: unknown) => (isRefusal(error) ? of(false) : throwError(() => error))),
+      catchError((error: unknown) => {
+        if (isRefusal(error)) {
+          return of(false);
+        }
+        this.alertUnexpectedFailure(error);
+        return throwError(() => error);
+      }),
       finalize(() => {
         this.refreshing = null;
       }),
@@ -155,7 +169,7 @@ export class AuthService {
    */
   logout(): void {
     this.api
-      .post('auth/logout', undefined)
+      .post('auth/logout', undefined, shownByCaller())
       .pipe(catchError(() => of(null)))
       .subscribe(() => {
         this.end();
@@ -207,5 +221,11 @@ export class AuthService {
   private end(): void {
     this._currentUser.set(null);
     this.ended.next();
+  }
+
+  private alertUnexpectedFailure(error: unknown): void {
+    const status = error instanceof HttpErrorResponse && error.status ? ` ${error.status}` : '';
+    const problem = problemOf(error);
+    this.alert.error(`${this.texts.of('Error')}${status}`, problem?.detail || problem?.title || this.texts.of('RequestFailed'));
   }
 }

@@ -23,4 +23,5 @@ internal sealed class TestAppModule : ModuleDefinition<TestAppModule>
   public static readonly Feature AskWarmup = Feature<TestAskWarmupGridService>();
   public static readonly Feature AppFiles = Feature<TestAppFileGridService>();
   public static readonly Feature Wave8Orders = Feature<TestWave8OrderGridService>().AllowAgent();
+  public static readonly Feature ConditionalPatchedLines = Feature<TestDisabledWhenPatchLineFormService>();
 }

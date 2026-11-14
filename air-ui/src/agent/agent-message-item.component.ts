@@ -108,26 +108,26 @@ import { type AgentChatMessage, type AgentProposal, AgentService } from './agent
       </div>
     } @else {
       <div class="mr-3 flex min-w-0 flex-col items-start gap-2">
-        @if (m.blocks && m.blocks.length > 0) {
+        @if (m.blocks !== undefined) {
           @for (block of m.blocks; track block.id) {
             @switch (block.kind) {
               @case ('markdown') {
-                <ui-agent-markdown-block [content]="$any(block).content" />
+                <ui-agent-markdown-block [content]="block.content" />
               }
               @case ('chart') {
-                <ui-agent-chart-block [chart]="$any(block).chart" />
+                <ui-agent-chart-block [chart]="block.chart" />
               }
               @case ('table') {
-                <ui-agent-table-block [table]="$any(block).table" />
+                <ui-agent-table-block [table]="block.table" />
               }
               @case ('kpi') {
-                <ui-agent-kpi-block [kpis]="$any(block).kpis" />
+                <ui-agent-kpi-block [kpis]="block.kpis" />
               }
               @case ('html') {
-                <ui-agent-html-block [html]="$any(block).html" />
+                <ui-agent-html-block [html]="block.html" />
               }
-              @default {
-                @if ($any(block).component; as comp) {
+              @case ('custom') {
+                @if (block.component; as comp) {
                   <ng-container [ngComponentOutlet]="comp" [ngComponentOutletInputs]="{ block }" />
                 }
               }

@@ -75,7 +75,11 @@ import { FormService, isFormData } from './form.service';
         }
         @for (table of tables(); track table.key ?? $index) {
           <div class="col-span-full min-w-0" [hidden]="!isTabShown(table.tab)" [attr.data-tab]="table.tab || null" data-form-table>
-            <ui-report-table [table]="table" />
+            @defer {
+              <ui-report-table [table]="table" />
+            } @placeholder {
+              <div class="min-h-16 rounded-xl border border-line bg-surface"></div>
+            }
           </div>
         }
         @for (files of files(); track files.key) {

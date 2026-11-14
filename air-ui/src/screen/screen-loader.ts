@@ -1,19 +1,23 @@
 import { httpResource, type HttpResourceRef } from '@angular/common/http';
-import { computed, effect, inject, type Signal, signal, untracked } from '@angular/core';
+import { computed, effect, inject, linkedSignal, type Signal, signal, untracked } from '@angular/core';
 import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { AuthService, identityOf } from '../app/auth/auth.service';
 import { browserStorage, userStorageKey } from '../app/auth/user-storage';
 import { type AnswerOf, serviceUrl } from '../core/api';
 import type { PanelLayoutDto, PanelNodeDto, ScreenDto, ScreenServiceEndpoints, UserProfileDto } from '../core/generated/contracts';
 import type { IsCurrent, Lifetime } from '../core/lifetime';
-import type { ScreenAddress } from './screen-address';
+import { problemOf } from '../core/problem';
+import { TextsService } from '../core/texts.service';
+import type { ScreenAddress, ScreenHost } from './screen-address';
 import { SCREEN_LIFETIME } from './screen-lifetime';
 
 /** A load outside any lifetime: its answer is always current. */
 const always: IsCurrent = () => true;
 
 /** What a screen loader exposes: the layout to draw, the data to hand it, how the load is going, and a way to ask again. */
-export interface ScreenLoader {
+export interface ScreenLoader extends ScreenHost {
+  /** The effective address being loaded (base address merged with any `reload(patch)` parameters), or null when idle. */
+  readonly address: Signal<ScreenAddress | null>;
   /** The layout of the last answer that carried one; held across transitions to another screen until the new answer arrives. */
   readonly layout: Signal<PanelLayoutDto | null>;
   /** What the last answer that carried a layout asked of a dialog showing the screen; null before it and for none. */
@@ -22,8 +26,10 @@ export interface ScreenLoader {
   readonly data: Signal<unknown>;
   readonly isLoading: Signal<boolean>;
   readonly error: Signal<unknown>;
-  /** Asks the same address again: what a failed load's retry does. */
-  reload(): void;
+  /** Localized title for `error()`: `ProblemDetails.title` when the server sent one, otherwise `ScreenLoadFailed`. */
+  readonly errorTitle: Signal<string>;
+  /** Asks the same address again, or merges `patch` into the current address's parameters until the base address changes. */
+  reload(patch?: Record<string, unknown>): void;
   /**
    * Takes `screen` as the answer of the address held: no request, and what is drawn stays mounted. A panel the shown
    * layout repeats, equal in content under the same path of keys, keeps the model object the loader holds for it.
@@ -42,7 +48,24 @@ export function screenLoader(
   lifetime: Lifetime | null = inject(SCREEN_LIFETIME, { optional: true }),
 ): ScreenLoader {
   const auth = inject(AuthService, { optional: true });
-  const requested = computed(address);
+  const texts = inject(TextsService);
+  const baseAddress = computed(address, { equal: sameScreenAddress });
+  const patched = linkedSignal<ScreenAddress | null, Record<string, unknown> | null>({
+    source: baseAddress,
+    computation: () => null,
+  });
+  const requested = computed<ScreenAddress | null>(() => {
+    const base = baseAddress();
+    const patch = patched();
+    if (!base || !patch) {
+      return base;
+    }
+    if (base.params === undefined && Object.keys(patch).length === 0) {
+      return { service: base.service };
+    }
+    const baseParams = base.params && typeof base.params === 'object' ? (base.params as Record<string, unknown>) : {};
+    return { service: base.service, params: { ...baseParams, ...patch } };
+  });
   /** The address while its lifetime is current, with the epoch it is asked in: an invalidation asks it again. */
   const currentAddress = computed(
     () => {
@@ -88,12 +111,20 @@ export function screenLoader(
   const kept = keptScreenOf(currentAddress, captured, resource, auth);
 
   return {
+    address: requested,
     layout: computed(() => kept()?.layout ?? null),
     asked: computed(() => kept()?.asked ?? null),
     data: computed(() => kept()?.data),
     isLoading: resource.isLoading,
     error: resource.error,
-    reload: () => void resource.reload(),
+    errorTitle: computed(() => problemOf(resource.error())?.title ?? texts.of('ScreenLoadFailed')),
+    reload: (patch?: Record<string, unknown>) => {
+      if (patch === undefined) {
+        void resource.reload();
+      } else {
+        patched.update(current => ({ ...current, ...patch }));
+      }
+    },
     show: screen => {
       // The loader's own answer on its way is the later one, and a screen that moved on has no answer to take
       if (currentAddress() && captured()?.() && !resource.isLoading()) {
@@ -103,6 +134,16 @@ export function screenLoader(
       }
     },
   };
+}
+
+function sameScreenAddress(a: ScreenAddress | null, b: ScreenAddress | null): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b || a.service !== b.service) {
+    return false;
+  }
+  return JSON.stringify(a.params ?? null) === JSON.stringify(b.params ?? null);
 }
 
 function isStandaloneGridTarget(service: string, params: Readonly<Record<string, unknown>>): boolean {

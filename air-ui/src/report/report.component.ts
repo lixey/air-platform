@@ -14,9 +14,9 @@ import type {
 } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { TemporalBoxComponent } from '../datepicker/temporal-box.component';
-import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { GridService } from '../grid/grid.service';
 import { ScreenMutations } from '../screen/screen-mutations';
+import { formatReportKpi } from './report-kpi-format';
 import { asUiColor, ReportTableComponent } from './report-table.component';
 
 @Component({
@@ -114,11 +114,14 @@ import { asUiColor, ReportTableComponent } from './report-table.component';
 export class ReportComponent {
   private static readonly liveReports = new Set<ReportComponent>();
   static {
-    GridService.onReloadServices(() => ReportComponent.reloadAll());
+    GridService.onReloadServices(services => ReportComponent.reloadAll(services));
   }
 
-  static reloadAll(): void {
+  static reloadAll(affectedServices?: readonly string[]): void {
     for (const report of ReportComponent.liveReports) {
+      if (!report.matchesAffectedServices(affectedServices)) {
+        continue;
+      }
       const current = report.reportData();
       if (current) {
         report.applyFilters(current.activeFilters);
@@ -173,7 +176,14 @@ export class ReportComponent {
       return;
     }
     this.unsubscribeMutations = this.mutations.subscribe({
-      accepts: () => true,
+      accepts: event => {
+        const affected = [event.service, ...(event.affected?.map(a => a.service) ?? [])].filter(Boolean);
+        if (this.matchesAffectedServices(affected)) {
+          return true;
+        }
+        const ownModule = modulePrefixOf(this.model()?.service);
+        return ownModule === null || affected.some(svc => modulePrefixOf(svc) === ownModule);
+      },
       refresh: () => {
         const current = this.reportData();
         if (current) {
@@ -185,6 +195,31 @@ export class ReportComponent {
         this.subscribeMutations();
       },
     });
+  }
+
+  protected matchesAffectedServices(affectedServices?: readonly string[]): boolean {
+    if (!affectedServices || affectedServices.length === 0) {
+      return true;
+    }
+    const wanted = new Set(affectedServices.map(s => s.toLowerCase()));
+    const ownService = this.model()?.service?.toLowerCase();
+    if (ownService && wanted.has(ownService)) {
+      return true;
+    }
+    for (const table of this.reportData()?.tables ?? []) {
+      for (const row of [...table.rows, ...(table.bottomRows ?? [])]) {
+        const openSvc = row.open?.service?.toLowerCase();
+        if (openSvc && wanted.has(openSvc)) {
+          return true;
+        }
+        for (const refreshSvc of row.open?.refreshServices ?? []) {
+          if (wanted.has(refreshSvc.toLowerCase())) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   protected isFilterActive(activeFilters: Record<string, string>, groupKey: string, itemKey: string, isFirst: boolean): boolean {
@@ -294,14 +329,7 @@ export class ReportComponent {
   }
 
   protected formatKpi(kpi: ReportKpiDto): string {
-    const loc = this.currentLocale();
-    if (kpi.isPercent) {
-      return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
-    }
-    if (kpi.currency) {
-      return formatCellAmount(kpi.value, loc, moneyFormatOf({ decimals: 0, currency: kpi.currency }));
-    }
-    return formatCellNumber(kpi.value, loc, 0, true);
+    return formatReportKpi(kpi, this.currentLocale());
   }
 
   protected hueTextClass(color: string | null | undefined): string {
@@ -328,4 +356,12 @@ export class ReportComponent {
     }
     return '@3xl/panel:col-span-6';
   }
+}
+
+function modulePrefixOf(service: string | null | undefined): string | null {
+  if (!service) {
+    return null;
+  }
+  const slash = service.indexOf('/');
+  return slash > 0 ? service.slice(0, slash).toLowerCase() : null;
 }

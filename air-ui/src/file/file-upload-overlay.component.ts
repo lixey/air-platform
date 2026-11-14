@@ -1,10 +1,8 @@
 import { Component, computed, DestroyRef, type ElementRef, inject, input, viewChild } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import { BtnComponent } from '../btn/btn.component';
-import type { OverlayDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
 import { OverlayRef } from '../overlay/overlay-ref';
-import { singlePanelLayout } from '../panels/single-panel-layout';
 import type { FileUploadOverlayModel } from '../ui-components';
 import { formatBytes } from './file-size';
 import { FileTileComponent } from './file-tile.component';
@@ -12,9 +10,6 @@ import { acceptedNamesOf, pickerAcceptOf } from './file-upload-call';
 import { FileUploadQueue } from './file-upload-queue';
 import { fileViewOfUpload } from './file-view';
 import { FileZoneDirective } from './file-zone.directive';
-
-/** The key of the upload dialog's layout, and the stem of its overlay's key. */
-const FILE_UPLOAD_OVERLAY = 'file.upload';
 
 /** The drop zone: a dashed field, whose edge takes the hover ring while files are dragged over it. */
 const DROP_ZONE = 'flex flex-col items-center gap-2 p-4 rounded-md border-2 border-dashed bg-field text-center';
@@ -142,17 +137,4 @@ export class FileUploadOverlayComponent {
   protected close(): void {
     void this.ref?.dismiss();
   }
-}
-
-/**
- * The upload dialog over `target`, a file grid and the parent its files go under: a modal card that a click beside it
- * leaves open, so the statuses of the files stay in view until the user closes it.
- */
-export function uploadOverlayOf(target: Omit<FileUploadOverlayModel, 'kind'>): OverlayDto {
-  return {
-    key: `${FILE_UPLOAD_OVERLAY}.${target.service}`,
-    presentation: 'dialog',
-    closesOnOutside: false,
-    layout: singlePanelLayout(FILE_UPLOAD_OVERLAY, { ...target, kind: 'FileUploadOverlay' }),
-  };
 }

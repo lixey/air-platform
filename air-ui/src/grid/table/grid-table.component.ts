@@ -349,6 +349,7 @@ export class GridTableComponent {
 
     afterRenderEffect(() => {
       this.renderedRows();
+      this.view.bottomRows();
       this.scroll.attach();
       this.scroll.syncObservedRows();
       this.measurePinnedBottom();
@@ -431,6 +432,7 @@ export class GridTableComponent {
 
   private measurePinnedBottom(): void {
     const height = pinnedInset(this.pinnedBottom()?.nativeElement);
+    this.scroll.setFooterHeight(height);
     if (Math.abs(height - this.bottomInset()) > PIXEL_TOLERANCE) {
       this._bottomInset.set(height);
     }

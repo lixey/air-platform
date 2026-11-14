@@ -1,3 +1,4 @@
+import { pinnedInset } from './grid-table-measure';
 import type { VirtualRowLayoutEngine } from './virtual-row-layout-engine';
 import { PIXEL_TOLERANCE } from './virtual-scroll-intent';
 
@@ -32,6 +33,8 @@ export class VirtualScrollObserver {
 
   /** The head above the rows; until it is measured, one column header row, as tall as an estimated row. */
   headerHeightPx: number;
+  /** The sticky summary footer (`tfoot`) pinned at the bottom of the scroll viewport, reducing visible body height. */
+  footerHeightPx = 0;
   hasDirtyViewportMetrics = true;
 
   constructor(
@@ -46,7 +49,7 @@ export class VirtualScrollObserver {
   }
 
   bodyViewportHeight(): number {
-    return Math.max(1, this.viewportHeightPx - this.headerHeightPx);
+    return Math.max(1, this.viewportHeightPx - this.headerHeightPx - this.footerHeightPx);
   }
 
   clearPendingMeasurements(): void {
@@ -145,7 +148,7 @@ export class VirtualScrollObserver {
     const height = element.clientHeight;
     const width = element.clientWidth;
     const headerHeight = element.querySelector('thead')?.getBoundingClientRect().height ?? 0;
-    onViewportMeasured();
+    const footerHeight = pinnedInset(element.querySelector<HTMLElement>('tfoot') ?? undefined);
     const widthChanged = this.lastViewportWidth > 0 && Math.abs(width - this.lastViewportWidth) > PIXEL_TOLERANCE;
     this.lastViewportWidth = width;
 
@@ -153,6 +156,8 @@ export class VirtualScrollObserver {
       this.viewportHeightPx = height;
     }
     this.headerHeightPx = headerHeight;
+    this.footerHeightPx = footerHeight;
+    onViewportMeasured();
     return widthChanged;
   }
 }

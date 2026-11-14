@@ -17,11 +17,13 @@ import { FormItemComponent } from './form-item.component';
   template: `
     <ui-form-item [element]="element()">
       <ui-time-zone-select
+        [inputId]="id()"
         [zones]="zones()"
         [inherit]="model()?.inherit ?? ''"
         [label]="element().label ?? element().path"
         [clearable]="!element().isRequired"
         [formField]="field()"
+        (valueChange)="saveOnChange()"
       />
     </ui-form-item>
   `,

@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, model } from '@angular/core';
+import { Component, computed, inject, input, model, output } from '@angular/core';
 import { type FormValueControl, transformedValue } from '@angular/forms/signals';
 import { TextsService } from '../core/texts.service';
 import { UiIconDirective } from '../icon/ui-icon.directive';
@@ -74,7 +74,7 @@ const STEPPER_LOOK = {
         [attr.aria-label]="texts.of('NumberDecrease')"
         [disabled]="!canDecrease()"
         (mousedown)="$event.preventDefault()"
-        (click)="stepBy(-1)"
+        (click)="stepFromButton(-1)"
       >
         <i icon="minus" aria-hidden="true"></i>
       </button>
@@ -85,7 +85,7 @@ const STEPPER_LOOK = {
         [attr.aria-label]="texts.of('NumberIncrease')"
         [disabled]="!canIncrease()"
         (mousedown)="$event.preventDefault()"
-        (click)="stepBy(1)"
+        (click)="stepFromButton(1)"
       >
         <i icon="plus" aria-hidden="true"></i>
       </button>
@@ -111,6 +111,8 @@ export class NumberBoxComponent implements FormValueControl<number | null> {
   readonly step = input<number | null | undefined>(undefined);
   /** Whether the box draws its stepper: a minus and a plus inside it. */
   readonly steppable = input(false);
+  /** Emitted when a stepper button (`-` or `+`) changes the value. */
+  readonly stepped = output<number | null>();
 
   /** The host holds the stepper's buttons over the box; in a cell it is as high as the cell. */
   protected readonly hostClasses = this.look === 'cell' ? 'relative block h-full' : 'relative block';
@@ -140,13 +142,21 @@ export class NumberBoxComponent implements FormValueControl<number | null> {
     },
     format: (val: number | null) => (val == null ? '' : Object.is(val, -0) ? '-0' : String(val)),
   });
+  readonly parseErrors = this.rawValue.parseErrors;
 
   /** A press of the stepper: the value less or plus the step, held within the bounds; nothing on a fixed field. */
-  protected stepBy(direction: 1 | -1): void {
+  protected stepBy(direction: 1 | -1): boolean {
     if (!this.canStepTo(direction)) {
-      return;
+      return false;
     }
     this.value.set(steppedNumber(this.value(), direction, this.step(), this.bound(this.min()), this.bound(this.max())));
+    return true;
+  }
+
+  protected stepFromButton(direction: 1 | -1): void {
+    if (this.stepBy(direction)) {
+      this.stepped.emit(this.value());
+    }
   }
 
   /**

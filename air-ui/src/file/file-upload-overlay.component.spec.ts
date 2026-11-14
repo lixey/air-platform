@@ -10,7 +10,8 @@ import type { CloseParticipant } from '../core/close-decision';
 import { OverlayRef } from '../overlay/overlay-ref';
 import { singlePanelLayout } from '../panels/single-panel-layout';
 import type { FileUploadOverlayModel } from '../ui-components';
-import { FileUploadOverlayComponent, uploadOverlayOf } from './file-upload-overlay.component';
+import { uploadOverlayOf } from './file-upload-overlay';
+import { FileUploadOverlayComponent } from './file-upload-overlay.component';
 
 const MIB = 1024 * 1024;
 const service = 'sample-report-file-grid';

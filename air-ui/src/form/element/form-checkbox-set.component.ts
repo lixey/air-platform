@@ -10,8 +10,8 @@ import { FormItemComponent } from './form-item.component';
   selector: 'ui-form-checkbox-set',
   imports: [FormItemComponent, CheckboxSetComponent, FormField],
   template: `
-    <ui-form-item [element]="element()">
-      <ui-checkbox-set [options]="options()" [label]="element().label ?? null" [formField]="field()" />
+    <ui-form-item [element]="element()" labelMode="group">
+      <ui-checkbox-set [options]="options()" [label]="element().label ?? null" [formField]="field()" (valueChange)="saveOnChange()" />
     </ui-form-item>
   `,
 })

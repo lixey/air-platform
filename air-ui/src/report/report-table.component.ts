@@ -4,11 +4,12 @@ import { BtnComponent } from '../btn/btn.component';
 import { SearchBoxComponent } from '../controls/search-box.component';
 import type { ReportColumnDto, ReportFilterItemDto, ReportTableDto, RowDto, UiColor } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
-import { formatCellAmount, formatCellDate, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { formatCellAmount, formatCellDate, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { OverlayService } from '../overlay/overlay.service';
 import { ScreenMutations } from '../screen/screen-mutations';
 import { UI_COLORS } from '../theme/ui-color';
+import { formatReportNumber } from './report-kpi-format';
 import { canOpenTarget, openReportRow } from './report-row-open';
 
 @Component({
@@ -18,10 +19,15 @@ import { canOpenTarget, openReportRow } from './report-row-open';
     @if (table(); as t) {
       <div class="bg-surface border border-line rounded-xl overflow-hidden flex flex-col shrink-0">
         @if (t.title || t.subtitle || t.searchable || (t.filterChips && t.filterChips.length > 0)) {
-          <div class="px-4 py-2.5 border-b border-line bg-surface-2 flex flex-wrap items-center justify-between gap-3">
+          <div
+            class="border-b border-line bg-surface-2 flex flex-wrap items-center justify-between gap-2"
+            [class]="t.compact ? 'px-3 py-1.5' : 'px-4 py-2.5'"
+          >
             <div class="flex flex-col min-w-0">
               @if (t.title; as title) {
-                <span class="text-sm font-semibold text-ink truncate">{{ title }}</span>
+                <span [class]="t.compact ? 'text-xs font-semibold text-ink truncate' : 'text-sm font-semibold text-ink truncate'">
+                  {{ title }}
+                </span>
               }
               @if (t.subtitle; as sub) {
                 <span class="text-xs text-muted truncate">{{ sub }}</span>
@@ -47,19 +53,21 @@ import { canOpenTarget, openReportRow } from './report-row-open';
               @if (t.searchable) {
                 <ui-search-box class="w-56" [(text)]="searchText" [debounce]="0" />
               }
+              <ng-content select="[actions]" />
             </div>
           </div>
         }
 
         <div class="overflow-x-auto" [class.overflow-y-auto]="!!t.maxHeight" [style.max-height.px]="t.maxHeight ?? null">
-          <table class="w-full border-collapse text-sm">
+          <table [class]="t.compact ? 'w-full border-collapse text-xs' : 'w-full border-collapse text-sm'">
             <thead [class.sticky]="!!t.maxHeight" [class.top-0]="!!t.maxHeight" [class.z-20]="!!t.maxHeight">
               <tr class="bg-surface-2 border-b border-line text-ink font-medium select-none">
                 @for (col of t.columns; track col.key) {
                   @let sortable = isColSortable(t, col);
                   <th
                     [class]="headerCellClass(t, col, sortable)"
-                    [style.min-width.px]="col.width ?? (col.kind === 'text' ? 160 : 104)"
+                    [style.min-width.px]="col.width ?? (t.compact ? null : col.kind === 'text' ? 160 : 104)"
+                    [attr.title]="col.label || null"
                     [attr.role]="sortable ? 'button' : null"
                     [attr.tabindex]="sortable ? 0 : null"
                     [attr.aria-sort]="
@@ -333,6 +341,25 @@ export class ReportTableComponent {
     return `${pad} border-r border-t border-line whitespace-nowrap ${align} ${sticky} ${colorCls}`;
   }
 
+  private readonly moneyDecimalsByCol = computed(() => {
+    const t = this.table();
+    const map = new Map<string, number>();
+    if (!t) {
+      return map;
+    }
+    const allRows = [...t.rows, ...(t.bottomRows ?? [])];
+    for (const col of t.columns) {
+      if (col.kind === 'money') {
+        const hasFraction = allRows.some(r => {
+          const val = r.cells[col.key];
+          return typeof val === 'number' && Number.isFinite(val) && !Number.isInteger(val);
+        });
+        map.set(col.key, col.decimals ?? (hasFraction ? 2 : 0));
+      }
+    }
+    return map;
+  });
+
   protected formatCell(col: ReportColumnDto, row: RowDto): string {
     const raw = row.cells[col.key];
     if (raw === null || raw === undefined || raw === '') {
@@ -345,16 +372,16 @@ export class ReportTableComponent {
     if (col.kind === 'date' || col.kind === 'datetime') {
       return formatCellDate(raw, col.kind, loc, this.zone());
     }
-    const decimals = col.decimals ?? (col.kind === 'percent' ? 1 : 0);
     if (col.kind === 'money') {
+      const decimals = this.moneyDecimalsByCol().get(col.key) ?? col.decimals ?? 0;
       const currency = row.currencies?.[col.key] ?? col.currency;
-      return currency ? formatCellAmount(raw, loc, moneyFormatOf({ decimals, currency })) : formatCellNumber(raw, loc, decimals, true);
+      return currency ? formatCellAmount(raw, loc, moneyFormatOf({ decimals, currency })) : formatReportNumber(raw, loc, decimals);
     }
     if (col.kind === 'number') {
-      return formatCellNumber(raw, loc, decimals, true);
+      return formatReportNumber(raw, loc, col.decimals ?? null);
     }
     if (col.kind === 'percent') {
-      return formatCellAmount(raw, loc, percentFormatOf({ decimals }));
+      return formatCellAmount(raw, loc, percentFormatOf({ decimals: col.decimals ?? 1 }));
     }
     return String(raw);
   }

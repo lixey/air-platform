@@ -28,9 +28,7 @@ const CONTROLS: Partial<Record<UiFieldType, 'checkbox' | 'number' | 'temporal'>>
   selector: 'ui-grid-filter-value',
   imports: [NumberBoxComponent, SelectComponent, TemporalBoxComponent, TextBoxComponent],
   template: `
-    @if (control() !== 'checkbox') {
-      <label class="sr-only" [for]="id">{{ label() }}</label>
-    }
+    <label class="sr-only" [for]="id">{{ label() }}</label>
     @switch (control()) {
       @case ('checkbox') {
         <ui-select

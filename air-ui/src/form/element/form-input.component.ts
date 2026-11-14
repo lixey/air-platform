@@ -21,6 +21,8 @@ const BOX_KINDS = { password: true, email: true, url: true } satisfies Record<Fo
         [allowsNull]="allowsNull()"
         [placeholder]="element().placeholder ?? ''"
         [formField]="field()"
+        (focusout)="saveOnFocusOut($event)"
+        (keydown.enter)="saveOnChange()"
       />
     </ui-form-item>
   `,

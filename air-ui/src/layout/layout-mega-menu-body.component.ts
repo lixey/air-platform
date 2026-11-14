@@ -85,7 +85,7 @@ import { LayoutThemeButtonComponent } from './layout-theme-button.component';
           <button
             type="button"
             class="flex cursor-pointer items-center bg-surface-3 px-2 py-1.5 text-left font-semibold hover:bg-active hover:text-on-active"
-            [attr.title]="module.name"
+            [attr.title]="module.title || module.name"
             (click)="megaMenu.openModule(module)"
           >
             {{ module.name }}

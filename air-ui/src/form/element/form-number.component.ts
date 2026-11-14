@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ElementRef, inject } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 import { NumberBoxComponent } from '../../controls/number-box.component';
 import type { FormNumberModel } from '../../core/generated/contracts';
@@ -17,8 +17,19 @@ import { FormItemComponent } from './form-item.component';
         [step]="model()?.step"
         [steppable]="model()?.hasStepper ?? false"
         [formField]="field()"
+        (focusout)="saveOnChange()"
+        (keydown.enter)="saveOnChange()"
+        (stepped)="onStepped()"
       />
     </ui-form-item>
   `,
 })
-export class FormNumberComponent extends FormElementBase<number | null, FormNumberModel> {}
+export class FormNumberComponent extends FormElementBase<number | null, FormNumberModel> {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+
+  protected onStepped(): void {
+    if (!this.host.contains(this.host.ownerDocument.activeElement)) {
+      this.saveOnChange();
+    }
+  }
+}

@@ -46,13 +46,14 @@ export type GridCellMove = 'down' | 'next' | 'previous' | 'stay';
 
 /** What a column's editable cell is edited as, by its cell's kind: one of the editor's controls, or a checkbox that toggles. */
 export type GridCellEditKind =
-  'text' | 'email' | 'url' | 'number' | 'money' | 'percent' | 'date' | 'datetime' | 'time' | 'select' | 'checkbox';
+  'text' | 'email' | 'url' | 'phone' | 'number' | 'money' | 'percent' | 'date' | 'datetime' | 'time' | 'select' | 'checkbox';
 
 /** The cells an editor takes, by kind; any other cell is never edited. */
 const EDIT_KINDS: Readonly<Record<string, GridCellEditKind>> = {
   GridCellText: 'text',
   GridCellEmail: 'email',
   GridCellUrl: 'url',
+  GridCellPhone: 'phone',
   GridCellNumber: 'number',
   GridCellMoney: 'money',
   GridCellPercent: 'percent',
@@ -64,7 +65,7 @@ const EDIT_KINDS: Readonly<Record<string, GridCellEditKind>> = {
 };
 
 /** The kinds a printable key types into: a box whose text is the user's. */
-const TYPED_KINDS: ReadonlySet<GridCellEditKind> = new Set(['text', 'email', 'url', 'number', 'money', 'percent']);
+const TYPED_KINDS: ReadonlySet<GridCellEditKind> = new Set(['text', 'email', 'url', 'phone', 'number', 'money', 'percent']);
 
 /** How a column's cell is edited in place; null for a column the model does not mark editable or a cell no editor takes. */
 export function editKindOf(column: GridColumnDto | null | undefined, _row?: GridRow | null): GridCellEditKind | null {

@@ -2,7 +2,7 @@ import { Location } from '@angular/common';
 import { computed, effect, inject, Service, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
-import { catchError, filter, firstValueFrom, map, Observable, of, switchMap } from 'rxjs';
+import { catchError, filter, firstValueFrom, map, Observable, of, switchMap, throwError } from 'rxjs';
 import { Api } from '../core/api';
 import type { AppMetadataDto, MenuItemDto, SwitcherDto, UserProfileDto } from '../core/generated/contracts';
 import { TextsService } from '../core/texts.service';
@@ -62,14 +62,21 @@ export class AppService {
 
   /** The metadata identity (`metadataIdentityOf`) the signals hold or are asked for; null while nobody gets metadata. */
   private currentIdentity: string | null = null;
+  /** The route and identity of a failed metadata load so the initial effect flush does not duplicate it before navigation. */
+  private failedAttempt: { readonly key: string; readonly route: string } | null = null;
 
   constructor() {
     // A user who signs in after startup gets the menu without a page reload; a change of claims or rights refreshes it; a logout purges it.
     effect(() => {
+      const route = this.currentRoute();
       const key = metadataIdentityOf(this.auth.currentUser());
       if (key === this.currentIdentity) {
         return;
       }
+      if (key !== null && this.failedAttempt?.key === key && this.failedAttempt.route === route) {
+        return;
+      }
+      this.failedAttempt = null;
       this.currentIdentity = key;
       if (key === null) {
         this.hold(null);
@@ -94,6 +101,7 @@ export class AppService {
           if (key === null) {
             return of(undefined);
           }
+          this.failedAttempt = null;
           this.currentIdentity = key;
           return this.loadFor(key);
         }),
@@ -122,8 +130,16 @@ export class AppService {
     return this.api.post('metadata/get-data', undefined).pipe(
       map(data => {
         if (this.currentIdentity === key) {
+          this.failedAttempt = null;
           this.hold(data);
         }
+      }),
+      catchError((error: unknown) => {
+        if (this.currentIdentity === key) {
+          this.currentIdentity = null;
+          this.failedAttempt = { key, route: untracked(() => this.currentRoute()) };
+        }
+        return throwError(() => error);
       }),
     );
   }

@@ -9,7 +9,7 @@ import { GridCellBase } from '../cell/grid-cell-base';
 import { columnLabelOf, columnTitleOf } from '../column/grid-column-label';
 import { temporalTypeOf } from '../column/grid-column-temporal-type';
 import { rangeOfFilter, rangeText } from '../filter/grid-date-periods';
-import { gridDateRangeOverlay } from '../filter/grid-date-range-overlay.component';
+import { gridDateRangeOverlay } from '../filter/grid-filter-overlays';
 import { injectClauseText } from './grid-header-clause';
 import { GridHeaderMenuDirective } from './grid-header-menu.directive';
 import { GridHeaderSortComponent } from './grid-header-sort.component';

@@ -4,8 +4,14 @@ import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import type { Api } from '../core/api';
 import type { TextsService } from '../core/texts.service';
 import { optimizeImage } from '../file/file-optimize';
+import type { UploadAccept } from '../file/file-upload-call';
 import { imageFactsOf } from '../file/image-facts';
 import { AGENT_IMAGE_RULES, type AgentAttachment, extractAgentErrorMessage } from './agent-models';
+
+export const AGENT_UPLOAD_ACCEPT: UploadAccept = {
+  accept: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  extensions: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+};
 
 async function prepareAgentUploadFile(file: File): Promise<File> {
   const facts = await imageFactsOf(file);

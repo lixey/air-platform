@@ -1,10 +1,10 @@
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, input, viewChild } from '@angular/core';
+import { afterRenderEffect, Component, DestroyRef, ElementRef, inject, input, viewChild } from '@angular/core';
 import type { EChartsCoreOption } from 'echarts/core';
 import { LocaleService } from '../app/locale.service';
 import type { ReportChartDto } from '../core/generated/contracts';
-import { formatCellNumber } from '../grid/cell/grid-cell-format';
+import { formatCellAmount, formatCellNumber, moneyFormatOf } from '../grid/cell/grid-cell-format';
 import { ThemeService } from '../theme/theme.service';
-import { type ChartHandle, ChartService, resolveHueHex } from './chart.service';
+import { type ChartHandle, ChartService, resolveChartSemanticColors, resolveHueHex } from './chart.service';
 
 @Component({
   selector: 'ui-chart',
@@ -22,6 +22,7 @@ import { type ChartHandle, ChartService, resolveHueHex } from './chart.service';
   host: { class: 'block min-w-0' },
 })
 export class ChartComponent {
+  private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly chartService = inject(ChartService);
   private readonly theme = inject(ThemeService);
   private readonly locale = inject(LocaleService).current;
@@ -32,19 +33,20 @@ export class ChartComponent {
   private readonly canvasHost = viewChild.required<ElementRef<HTMLDivElement>>('canvasHost');
   private handle: ChartHandle | null = null;
 
-  protected readonly options = computed<EChartsCoreOption>(() => buildEChartsOptions(this.chart(), this.theme.isDark(), this.locale()));
+  private readonly syncChart = afterRenderEffect(() => {
+    const chart = this.chart();
+    const isDark = this.theme.isDark();
+    const locale = this.locale();
+    const style = typeof getComputedStyle === 'function' ? getComputedStyle(this.hostEl) : null;
+    const opts = buildEChartsOptions(chart, isDark, locale, style);
+    if (!this.handle) {
+      this.handle = this.chartService.initLazy(this.canvasHost().nativeElement, opts);
+    } else {
+      this.handle.setOptions(opts, true);
+    }
+  });
 
   constructor() {
-    afterNextRender(() => {
-      const el = this.canvasHost().nativeElement;
-      this.handle = this.chartService.initLazy(el, this.options());
-    });
-
-    effect(() => {
-      const opts = this.options();
-      this.handle?.setOptions(opts, true);
-    });
-
     this.destroyRef.onDestroy(() => {
       this.handle?.dispose();
       this.handle = null;
@@ -56,32 +58,67 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildEChartsOptions(chart: ReportChartDto, isDark: boolean, locale: string): EChartsCoreOption {
-  const textColor = isDark ? '#cbd5e1' : '#334155';
-  const mutedColor = isDark ? '#94a3b8' : '#64748b';
-  const splitLineColor = isDark ? '#1e293b' : '#f1f5f9';
-  const surfaceColor = isDark ? '#0f172a' : '#ffffff';
-  const borderColor = isDark ? '#334155' : '#e2e8f0';
-
-  const formatValue = (val: number): string => formatCellNumber(val, locale, 0, true);
-
-  const compactFormat = (val: number): string => {
-    const abs = Math.abs(val);
-    if (abs >= 1_000_000) {
-      return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(val / 1_000_000)}M`;
+function formatChartNumber(val: number, locale: string, currency?: string | null): string {
+  const decimals = Number.isInteger(val) ? 0 : 2;
+  if (currency) {
+    try {
+      return formatCellAmount(val, locale, moneyFormatOf({ decimals, currency }));
+    } catch {
+      return `${formatCellNumber(val, locale, decimals, true)} ${currency}`;
     }
-    if (abs >= 1_000) {
-      return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(val / 1_000)}k`;
+  }
+  return formatCellNumber(val, locale, Number.isInteger(val) ? 0 : null, true);
+}
+
+function formatCompactAxisValue(val: number, locale: string, currency?: string | null): string {
+  const abs = Math.abs(val);
+  if (currency) {
+    try {
+      const digits = abs >= 1_000_000 ? 1 : abs >= 1 || val === 0 ? 0 : 2;
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency,
+        notation: abs >= 1_000 ? 'compact' : 'standard',
+        maximumFractionDigits: digits,
+      }).format(val);
+    } catch {
+      // Fall through to compact numeric + code suffix if currency is non-ISO
     }
-    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(val);
-  };
+  }
+  let base: string;
+  if (abs >= 1_000_000) {
+    base = `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(val / 1_000_000)}M`;
+  } else if (abs >= 1_000) {
+    base = `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(val / 1_000)}k`;
+  } else {
+    base = new Intl.NumberFormat(locale, { maximumFractionDigits: Number.isInteger(val) ? 0 : 2 }).format(val);
+  }
+  return currency ? `${base} ${currency}` : base;
+}
+
+export function buildEChartsOptions(
+  chart: ReportChartDto,
+  isDark: boolean,
+  locale: string,
+  style?: CSSStyleDeclaration | null,
+): EChartsCoreOption {
+  const {
+    text: textColor,
+    muted: mutedColor,
+    splitLine: splitLineColor,
+    surface: surfaceColor,
+    border: borderColor,
+  } = resolveChartSemanticColors(isDark, style);
+  const currency = chart.currency;
+  const formatValue = (val: number): string => formatChartNumber(val, locale, currency);
+  const compactFormat = (val: number): string => formatCompactAxisValue(val, locale, currency);
 
   if (chart.kind === 'donut' || chart.kind === 'pie') {
     const slices = chart.slices ?? [];
     const data = slices.map((s, idx) => ({
       name: s.name,
       value: s.value,
-      itemStyle: { color: resolveHueHex(s.color, isDark, idx) },
+      itemStyle: { color: resolveHueHex(s.color, isDark, idx, style) },
     }));
 
     return {
@@ -133,7 +170,7 @@ function buildEChartsOptions(chart: ReportChartDto, isDark: boolean, locale: str
   const isHorizontal = chart.kind === 'horizontal-bar';
 
   const series = rawSeries.map((s, idx) => {
-    const color = resolveHueHex(s.color, isDark, idx);
+    const color = resolveHueHex(s.color, isDark, idx, style);
     const isLine = s.kind === 'line' || s.kind === 'area' || chart.kind === 'line' || chart.kind === 'area';
     const isArea = s.kind === 'area' || chart.kind === 'area';
     const stack = s.stack || (chart.kind === 'stacked-bar' ? 'total' : undefined);

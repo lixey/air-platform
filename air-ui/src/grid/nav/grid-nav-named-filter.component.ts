@@ -1,4 +1,5 @@
-import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
+import { LocaleService } from '../../app/locale.service';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavNamedFilterModel } from '../../core/generated/contracts';
 import { NAV_MENU } from '../../nav/nav-menu';
@@ -24,7 +25,7 @@ import { GridService } from '../grid.service';
 export class GridNavNamedFilterComponent {
   protected readonly grid = inject(GridService, { optional: true });
   private readonly menu = inject(NAV_MENU, { optional: true });
-  private readonly locale = inject(LOCALE_ID);
+  private readonly locale = inject(LocaleService).current;
 
   readonly model = input<GridNavNamedFilterModel | null>();
 
@@ -40,7 +41,7 @@ export class GridNavNamedFilterComponent {
     }
     const live = this.grid?.namedFilterCountOf(model.key) ?? null;
     if (live !== null) {
-      return formatCount(live, this.locale);
+      return formatCount(live, this.locale());
     }
     return model.badge ?? null;
   });

@@ -44,7 +44,9 @@ export interface AgentHtmlBlock {
 
 export interface AgentCustomBlock {
   readonly id: string;
-  readonly kind: string;
+  readonly kind: 'custom';
+  readonly customKind?: string;
+  readonly tagName?: string;
   readonly data: unknown;
   readonly component?: Type<unknown>;
 }

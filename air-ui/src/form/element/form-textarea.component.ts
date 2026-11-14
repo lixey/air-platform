@@ -18,6 +18,7 @@ import { FormItemComponent } from './form-item.component';
         [allowsNull]="allowsNull()"
         [placeholder]="element().placeholder ?? ''"
         [formField]="field()"
+        (focusout)="saveOnFocusOut($event)"
       />
     </ui-form-item>
   `,

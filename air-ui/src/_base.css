@@ -56,21 +56,3 @@ button,
   margin: 0;
   touch-action: auto;
 }
-
-.cdk-overlay-pane {
-  right: 0;
-}
-
-.cdk-global-overlay-wrapper.ui-alert-overlay-host {
-  z-index: var(--ui-application-overlay-z-index);
-  pointer-events: none;
-}
-
-.cdk-overlay-pane.ui-alert-overlay-pane {
-  z-index: var(--ui-application-overlay-z-index);
-  pointer-events: none;
-}
-
-.ui-alert-overlay-pane .ui-alert-content {
-  pointer-events: auto;
-}

@@ -77,7 +77,25 @@ export function amountUnitText(locale: string, format: AmountFormat): string {
 
 /** An amount as a box shows it while it has the focus: every digit it holds, ungrouped, with the culture's decimal sign (`1234,5`). */
 export function plainAmountText(value: number, locale: string): string {
-  return String(value).replace('.', signsOf(locale).decimal);
+  return expandScientificDecimal(String(value)).replace('.', signsOf(locale).decimal);
+}
+
+/** Expands JS scientific notation (`5e-7` -> `'0.0000005'`, `-1.25e-7` -> `'-0.000000125'`) into a plain decimal string. */
+function expandScientificDecimal(raw: string): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?e([+-]\d+)$/i.exec(raw);
+  if (!match) {
+    return raw;
+  }
+  const [, sign, intPart, fracPart = '', expRaw] = match;
+  const digits = intPart + fracPart;
+  const pointIndex = intPart.length + Number.parseInt(expRaw, 10);
+  if (pointIndex <= 0) {
+    return `${sign}0.${'0'.repeat(-pointIndex)}${digits}`;
+  }
+  if (pointIndex >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(pointIndex - digits.length)}`;
+  }
+  return `${sign}${digits.slice(0, pointIndex)}.${digits.slice(pointIndex)}`;
 }
 
 /**

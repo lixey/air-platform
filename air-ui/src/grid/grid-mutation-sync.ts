@@ -12,7 +12,7 @@ export interface LiveGridInstance {
 /** Process-wide registry of mounted `GridService` instances and reload listeners (e.g. live reports). */
 export class GridLiveRegistry {
   private readonly grids = new Set<LiveGridInstance>();
-  private readonly reloadListeners = new Set<() => void>();
+  private readonly reloadListeners = new Set<(services?: readonly string[]) => void>();
 
   add(grid: LiveGridInstance): void {
     this.grids.add(grid);
@@ -22,7 +22,7 @@ export class GridLiveRegistry {
     this.grids.delete(grid);
   }
 
-  onReloadServices(listener: () => void): () => void {
+  onReloadServices(listener: (services?: readonly string[]) => void): () => void {
     this.reloadListeners.add(listener);
     return () => this.reloadListeners.delete(listener);
   }
@@ -37,7 +37,7 @@ export class GridLiveRegistry {
     }
     if (options?.notifyListeners !== false) {
       for (const listener of this.reloadListeners) {
-        listener();
+        listener(services);
       }
     }
   }

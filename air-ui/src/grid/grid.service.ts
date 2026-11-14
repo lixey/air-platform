@@ -45,7 +45,7 @@ export class GridService {
   private static readonly registry = new GridLiveRegistry();
 
   /** Registers a listener invoked whenever `reloadServices` runs (e.g. live reports). */
-  static onReloadServices(listener: () => void): () => void {
+  static onReloadServices(listener: (services?: readonly string[]) => void): () => void {
     return GridService.registry.onReloadServices(listener);
   }
 

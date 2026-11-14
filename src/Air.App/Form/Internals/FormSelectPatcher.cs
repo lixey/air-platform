@@ -39,6 +39,7 @@ internal static class FormSelectPatcher
 
       if (el.SelectPatches is not { Count: > 0 } patches ||
           el.Model is not FormSelectModel { ReferenceService: { Length: > 0 } refSvc } ||
+          el.DisabledWhen is { } sourceDisabledWhen && FilterNodeEvaluator.Evaluate(sourceDisabledWhen, values, originalValues) ||
           !values.TryGetValue(el.Path, out var curVal) ||
           !FilterNodeEvaluator.TryConvertToDecimal(curVal, out var selectedDec) ||
           selectedDec <= 0)
@@ -64,6 +65,12 @@ internal static class FormSelectPatcher
       foreach (var patch in patches)
       {
         var targetEl = targetElements.FirstOrDefault(e => string.Equals(e.Path, patch.TargetField, StringComparison.OrdinalIgnoreCase));
+        if (targetEl is { IsDisabled: false, DisabledWhen: { } targetDisabledWhen } &&
+            FilterNodeEvaluator.Evaluate(targetDisabledWhen, values, originalValues))
+        {
+          continue;
+        }
+
         if (!hasTriggerField && targetEl is not { IsDisabled: true } && explicitlyProvided.Contains(patch.TargetField) ||
             pendingReferencePaths?.Contains(patch.TargetField) == true)
         {

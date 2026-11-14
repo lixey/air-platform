@@ -11,7 +11,14 @@ import { FormItemComponent } from './form-item.component';
   imports: [FormItemComponent, PhoneBoxComponent, FormField],
   template: `
     <ui-form-item [element]="element()">
-      <ui-phone-box [id]="id()" [masks]="model()?.masks ?? []" [placeholder]="element().placeholder ?? ''" [formField]="field()" />
+      <ui-phone-box
+        [id]="id()"
+        [masks]="model()?.masks ?? []"
+        [placeholder]="element().placeholder ?? ''"
+        [formField]="field()"
+        (focusout)="saveOnChange()"
+        (keydown.enter)="saveOnChange()"
+      />
     </ui-form-item>
   `,
 })

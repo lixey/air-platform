@@ -22,12 +22,14 @@ const NOT_OFFERED = -1;
   imports: [SelectComponent],
   template: `
     <ui-select
+      [inputId]="inputId() || id()"
       [model]="source()"
       [picked]="picked()"
       [placeholder]="inherit()"
       [clearable]="clearable()"
       [readonly]="readonly()"
       [disabled]="disabled()"
+      [required]="required()"
       [invalid]="invalid()"
       (pickedChange)="pick($event)"
     />
@@ -38,6 +40,8 @@ export class TimeZoneSelectComponent implements FormValueControl<string | null> 
   /** The zone's IANA id; `null` for none, which takes the zone `inherit` names. */
   readonly value = model<string | null>(null);
 
+  readonly id = input('');
+  readonly inputId = input('');
   /** The zones offered, in the server's order. */
   readonly zones = input<readonly string[]>([]);
   /** The label of the empty choice: what the empty value resolves to. */
@@ -47,6 +51,7 @@ export class TimeZoneSelectComponent implements FormValueControl<string | null> 
   readonly clearable = input(true, { transform: booleanAttribute });
   readonly readonly = input(false, { transform: booleanAttribute });
   readonly disabled = input(false, { transform: booleanAttribute });
+  readonly required = input(false, { transform: booleanAttribute });
   readonly invalid = input(false);
 
   /** The choices by position: the empty one first, then each zone. */

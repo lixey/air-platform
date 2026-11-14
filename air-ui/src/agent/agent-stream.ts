@@ -191,7 +191,7 @@ export async function runAgentSseStream(ctx: AgentStreamContext): Promise<number
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
-        buffer += decoder.decode();
+        buffer = (buffer + decoder.decode()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         for (const part of buffer.split('\n\n')) {
           if (part.trim()) {
             processPart(part);
@@ -200,7 +200,7 @@ export async function runAgentSseStream(ctx: AgentStreamContext): Promise<number
         break;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
       const parts = buffer.split('\n\n');
       buffer = parts.pop() ?? '';
       for (const part of parts) {

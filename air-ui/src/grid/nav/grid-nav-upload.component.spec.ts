@@ -10,7 +10,7 @@ import { bindGrid } from '../../../tests/grid-binding';
 import { navModel } from '../../../tests/nav-model';
 import { uploadLimits } from '../../../tests/upload-limits';
 import type { GridModel, GridNavUploadModel, OverlayDto } from '../../core/generated/contracts';
-import { uploadOverlayOf } from '../../file/file-upload-overlay.component';
+import { uploadOverlayOf } from '../../file/file-upload-overlay';
 import { OverlayMenu } from '../../overlay/overlay-menu';
 import { OverlayService } from '../../overlay/overlay.service';
 import { SCREEN_ADDRESS } from '../../screen/screen-address';

@@ -23,6 +23,22 @@ describe('agent-markdown security & rendering', () => {
     expect(clean).toBe('<a>Bad</a> <a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">Docs</a>');
   });
 
+  it('strips crafted target and rel attributes so duplicate HTML5 attributes cannot shadow _blank / noopener noreferrer, and strips NUL bytes', () => {
+    const crafted = '<a href="https://evil.example" target="_self" rel="opener">Click</a>';
+    const clean = sanitizeAgentHtml(crafted);
+    expect(clean).toBe('<a href="https://evil.example" target="_blank" rel="noopener noreferrer">Click</a>');
+    expect(clean).not.toContain('target="_self"');
+    expect(clean).not.toContain('rel="opener"');
+
+    const withNul = 'Hello\u0000CODE0\u0000 `real_code` \u0000SPAN0\u0000 [Docs](https://example.com)';
+    const rendered = renderMarkdownToSafeHtml(withNul);
+    expect(rendered).not.toContain('\u0000');
+    expect(rendered).toContain('HelloCODE0');
+    expect(rendered).toContain('real_code');
+    expect(rendered).toContain('href="https://example.com"');
+    expect(rendered).toContain('target="_blank" rel="noopener noreferrer"');
+  });
+
   it('preserves platform semantic classes for trusted Markdown syntax while stripping injected HTML classes', () => {
     const md = 'Here is **bold** and `code` plus <span class="spoofed-ui-banner">inline html</span>.';
     const rendered = renderMarkdownToSafeHtml(md);

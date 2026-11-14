@@ -2,7 +2,7 @@ import { Component, computed } from '@angular/core';
 import type { GridHeaderToggleModel } from '../../core/generated/contracts';
 import { UiIconDirective } from '../../icon/ui-icon.directive';
 import { GridCellBase } from '../cell/grid-cell-base';
-import { headerLabelOf } from '../column/grid-column-label';
+import { headerLabelOf, headerTitleOf } from '../column/grid-column-label';
 
 /**
  * A header row's cell that folds a group: a click shows the columns the cell names when any
@@ -14,7 +14,7 @@ import { headerLabelOf } from '../column/grid-column-label';
   selector: 'ui-grid-header-toggle',
   imports: [UiIconDirective],
   template: `
-    <span class="block truncate font-medium" [title]="label()">{{ label() }}</span>
+    <span class="block truncate font-medium" [title]="title()">{{ label() }}</span>
     <i [icon]="isExpanded() ? 'chevron-left' : 'chevron-right'" class="shrink-0" aria-hidden="true"></i>
   `,
   host: {
@@ -28,6 +28,7 @@ export class GridHeaderToggleComponent extends GridCellBase<GridHeaderToggleMode
   protected readonly header = computed(() => this.cell().header);
 
   protected readonly label = computed(() => headerLabelOf(this.cell()));
+  protected readonly title = computed(() => headerTitleOf(this.cell()));
 
   private readonly toggles = computed<readonly string[]>(() => this.model()?.toggles ?? []);
 

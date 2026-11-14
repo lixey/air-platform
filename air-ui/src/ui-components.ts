@@ -1,9 +1,7 @@
 import type { AgentBlockOverlayModel } from './agent/agent-block-overlay.model';
 import { defineComponents } from './core/dynamic-component/component-map';
 import type { FileUploadLimitsDto, GridColumnDto, GridModel, NavElementModel, PlatformKind } from './core/generated/contracts';
-import { DatePickerOverlayComponent } from './datepicker/date-picker-overlay.component';
 import type { ShownFile } from './file/file-upload-queue';
-import { FileViewerOverlayComponent } from './file/file-viewer-overlay.component';
 import { FormCheckboxSetComponent } from './form/element/form-checkbox-set.component';
 import { FormCheckboxTreeComponent } from './form/element/form-checkbox-tree.component';
 import { FormCheckboxComponent } from './form/element/form-checkbox.component';
@@ -43,9 +41,6 @@ import { GridCellSelectComponent } from './grid/cell/grid-cell-select.component'
 import { GridCellTextComponent } from './grid/cell/grid-cell-text.component';
 import { GridCellTimeComponent } from './grid/cell/grid-cell-time.component';
 import { GridCellUrlComponent } from './grid/cell/grid-cell-url.component';
-import { GridColumnFilterOverlayComponent } from './grid/filter/grid-column-filter-overlay.component';
-import { GridDateRangeOverlayComponent } from './grid/filter/grid-date-range-overlay.component';
-import { GridFiltersOverlayComponent } from './grid/filter/grid-filters-overlay.component';
 import type { GridRowKey } from './grid/grid-row';
 import { GridComponent } from './grid/grid.component';
 import { GridHeaderCheckboxComponent } from './grid/header/grid-header-checkbox.component';
@@ -239,7 +234,7 @@ export const UI_COMPONENTS = defineComponents({
   OverlayConfirm: OverlayConfirmComponent,
   OverlayDirty: OverlayDirtyComponent,
   SelectOverlay: SelectOverlayComponent,
-  DatePickerOverlay: DatePickerOverlayComponent,
+  DatePickerOverlay: () => import('./datepicker/date-picker-overlay.component').then(m => m.DatePickerOverlayComponent),
   Grid: GridComponent,
   GridNavAction: GridNavActionComponent,
   GridNavAdd: GridNavAddComponent,
@@ -251,7 +246,7 @@ export const UI_COMPONENTS = defineComponents({
   GridNavPicker: GridNavPickerComponent,
   GridPickerOverlay: GridPickerOverlayComponent,
   FileUploadOverlay: () => import('./file/file-upload-overlay.component').then(m => m.FileUploadOverlayComponent),
-  FileViewerOverlay: FileViewerOverlayComponent,
+  FileViewerOverlay: () => import('./file/file-viewer-overlay.component').then(m => m.FileViewerOverlayComponent),
   GridCellText: GridCellTextComponent,
   GridCellCheckbox: GridCellCheckboxComponent,
   GridCellNumber: GridCellNumberComponent,
@@ -276,9 +271,9 @@ export const UI_COMPONENTS = defineComponents({
   GridHeaderLabel: GridHeaderLabelComponent,
   GridHeaderToggle: GridHeaderToggleComponent,
   GridHeaderReference: GridHeaderReferenceComponent,
-  GridColumnFilterOverlay: GridColumnFilterOverlayComponent,
-  GridDateRangeOverlay: GridDateRangeOverlayComponent,
-  GridFiltersOverlay: GridFiltersOverlayComponent,
+  GridColumnFilterOverlay: () => import('./grid/filter/grid-column-filter-overlay.component').then(m => m.GridColumnFilterOverlayComponent),
+  GridDateRangeOverlay: () => import('./grid/filter/grid-date-range-overlay.component').then(m => m.GridDateRangeOverlayComponent),
+  GridFiltersOverlay: () => import('./grid/filter/grid-filters-overlay.component').then(m => m.GridFiltersOverlayComponent),
   Form: FormComponent,
   FormAsk: FormAskComponent,
   FormChildScreen: FormChildScreenComponent,

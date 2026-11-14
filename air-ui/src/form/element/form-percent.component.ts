@@ -19,6 +19,8 @@ import { FormItemComponent } from './form-item.component';
         [digits]="element().constraints.scale"
         [placeholder]="element().placeholder ?? ''"
         [formField]="field()"
+        (focusout)="saveOnChange()"
+        (keydown.enter)="saveOnChange()"
       />
     </ui-form-item>
   `,

@@ -42,7 +42,7 @@ const ALLOWED_TAGS = new Set([
   'ul',
 ]);
 
-const ALLOWED_ATTRS = new Set(['href', 'title', 'target', 'rel', 'colspan', 'rowspan', 'align', 'open']);
+const ALLOWED_ATTRS = new Set(['href', 'title', 'colspan', 'rowspan', 'align', 'open']);
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -117,7 +117,7 @@ function restoreTokens(text: string, safeTokens: readonly string[]): string {
  */
 export function sanitizeAgentHtml(rawHtml: string): string {
   const safeTokens: string[] = [];
-  return restoreTokens(tokenizeSafeHtml(rawHtml, safeTokens), safeTokens);
+  return restoreTokens(tokenizeSafeHtml(rawHtml.replace(/\u0000/g, ''), safeTokens), safeTokens);
 }
 
 function applyInlineEmphasis(text: string): string {
@@ -136,9 +136,11 @@ function renderInlineMarkdown(line: string): string {
     return `\u0000TOK${idx}\u0000`;
   };
 
-  let text = line.replace(/`([^`\n]+)`/g, (_m, code: string) =>
-    stash(`<code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-ink">${escapeHtml(code)}</code>`),
-  );
+  let text = line
+    .replace(/\u0000/g, '')
+    .replace(/`([^`\n]+)`/g, (_m, code: string) =>
+      stash(`<code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[12px] text-ink">${escapeHtml(code)}</code>`),
+    );
 
   text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (full, rawLabel: string, rawUrl: string) => {
     const trimmedUrl = rawUrl.trim();
@@ -160,12 +162,13 @@ function renderInlineMarkdown(line: string): string {
  * Converts Markdown (with optional inline safe HTML) into styled HTML fragments using platform semantic classes.
  */
 export function renderMarkdownToSafeHtml(markdown: string): string {
-  if (!markdown.trim()) {
+  const normalized = markdown.replace(/\u0000/g, '');
+  if (!normalized.trim()) {
     return '';
   }
 
   const codeBlocks: string[] = [];
-  const withCodePlaceholders = markdown.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
+  const withCodePlaceholders = normalized.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
     const idx = codeBlocks.length;
     const langBadge = lang
       ? `<div class="border-b border-line bg-surface-3 px-3 py-1 font-mono text-[11px] text-muted">${escapeHtml(lang)}</div>`

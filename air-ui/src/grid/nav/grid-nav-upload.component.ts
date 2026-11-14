@@ -1,7 +1,7 @@
 import { Component, DestroyRef, inject, Injector, input } from '@angular/core';
 import { BtnComponent } from '../../btn/btn.component';
 import type { GridNavUploadModel } from '../../core/generated/contracts';
-import { uploadOverlayOf } from '../../file/file-upload-overlay.component';
+import { uploadOverlayOf } from '../../file/file-upload-overlay';
 import type { ShownFile } from '../../file/file-upload-queue';
 import { OverlayService } from '../../overlay/overlay.service';
 import { cellValueAt, type GridRow, keyOf } from '../grid-row';

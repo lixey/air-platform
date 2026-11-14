@@ -4,7 +4,7 @@ import { TextsService } from '../../core/texts.service';
 import { OverlayService } from '../../overlay/overlay.service';
 import { GRID_HEADER_BUTTON } from '../../theme/css-classes';
 import { columnLabelOf } from '../column/grid-column-label';
-import { gridColumnFilterOverlay } from '../filter/grid-column-filter-overlay.component';
+import { gridColumnFilterOverlay } from '../filter/grid-filter-overlays';
 
 /**
  * The `⋮` button of a column header: a menu button that names itself by the column, says whether its menu is open

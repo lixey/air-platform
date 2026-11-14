@@ -63,20 +63,24 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
           }
         </div>
       }
-      <div
+      <button
         #combobox
+        type="button"
         role="combobox"
-        tabindex="0"
         aria-haspopup="dialog"
-        class="flex-1 min-w-0 self-stretch flex items-center px-2 truncate outline-none"
+        [attr.id]="inputId() || null"
+        [disabled]="disabled()"
+        class="flex-1 min-w-0 self-stretch flex items-center px-2 truncate text-left bg-transparent border-0 outline-none"
         [class.text-link]="picked().length > 0"
         [class.text-muted]="picked().length === 0"
-        [attr.aria-label]="model().label || null"
+        [attr.aria-label]="inputId() ? null : model().label || null"
         [attr.aria-expanded]="select.isOpen()"
         [attr.aria-controls]="select.popupId()"
         [attr.aria-describedby]="description?.() ?? null"
+        [attr.aria-readonly]="readonly() || null"
+        [attr.aria-required]="required() || null"
         [attr.aria-invalid]="invalid() || null"
-        [attr.aria-disabled]="refusesInput() || null"
+        [attr.aria-disabled]="readonly() && !disabled() ? 'true' : null"
         (keydown)="onKeyDown($event)"
       >
         @if (multiple() && picked().length > 0) {
@@ -84,7 +88,7 @@ const CELL_BOX = 'flex h-full w-full min-w-0 border-0 rounded-none bg-transparen
         } @else {
           <span class="truncate">{{ text() }}</span>
         }
-      </div>
+      </button>
       @if (clearable() && picked().length > 0) {
         <button
           type="button"
@@ -139,14 +143,17 @@ export class SelectComponent implements FormValueControl<unknown> {
   protected readonly description = inject(FIELD_DESCRIPTION, { optional: true });
   /** How the box is drawn: its own, or the whole of a cell whose editor it is. */
   protected readonly look = inject(FIELD_LOOK, { optional: true }) ?? 'box';
-  private readonly combobox = viewChild.required<ElementRef<HTMLElement>>('combobox');
+  private readonly combobox = viewChild.required<ElementRef<HTMLButtonElement>>('combobox');
 
   /** What to pick from and what it is called. */
   readonly model = input.required<SelectSource>();
+  /** Optional DOM id applied to the interactive combobox button so `<label [for]="id">` focuses and activates it. */
+  readonly inputId = input('');
   readonly multiple = input(false, { transform: booleanAttribute });
   readonly clearable = input(true, { transform: booleanAttribute });
   readonly readonly = input(false, { transform: booleanAttribute });
   readonly disabled = input(false, { transform: booleanAttribute });
+  readonly required = input(false, { transform: booleanAttribute });
   readonly invalid = input(false);
   readonly placeholder = input<string>('');
   readonly createOverlay = input<OverlayDto | null>(null);

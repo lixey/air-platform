@@ -77,14 +77,101 @@ export const DEFAULT_PALETTE_KEYS: readonly string[] = [
   'sky',
 ];
 
-export function resolveHueHex(color: string | null | undefined, isDark: boolean, fallbackIndex = 0): string {
+export interface ChartSemanticColors {
+  readonly text: string;
+  readonly muted: string;
+  readonly splitLine: string;
+  readonly surface: string;
+  readonly border: string;
+}
+
+export function oklchToRgb(raw: string): string | null {
+  const match = /^oklch\(\s*([^\s/]+)\s+([^\s/]+)\s+([^\s/)]+)(?:\s*\/\s*([^\s)]+))?\s*\)$/i.exec(raw.trim());
+  if (!match) {
+    return null;
+  }
+  const [, lStr, cStr, hStr, aStr] = match;
+  const l = lStr.endsWith('%') ? Number.parseFloat(lStr) / 100 : Number.parseFloat(lStr);
+  const c = cStr.endsWith('%') ? (Number.parseFloat(cStr) / 100) * 0.4 : Number.parseFloat(cStr);
+  const hLower = hStr.toLowerCase();
+  const h =
+    hLower === 'none'
+      ? 0
+      : hLower.endsWith('rad')
+        ? (Number.parseFloat(hLower) * 180) / Math.PI
+        : hLower.endsWith('turn')
+          ? Number.parseFloat(hLower) * 360
+          : hLower.endsWith('grad')
+            ? Number.parseFloat(hLower) * 0.9
+            : Number.parseFloat(hLower);
+  const alpha = !aStr || aStr === 'none' ? 1 : aStr.endsWith('%') ? Number.parseFloat(aStr) / 100 : Number.parseFloat(aStr);
+  if (!Number.isFinite(l) || !Number.isFinite(c) || !Number.isFinite(h) || !Number.isFinite(alpha)) {
+    return null;
+  }
+
+  const hRad = (h * Math.PI) / 180;
+  const a = c * Math.cos(hRad);
+  const b = c * Math.sin(hRad);
+
+  const l1 = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m1 = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s1 = l - 0.0894841775 * a - 1.291485548 * b;
+
+  const l3 = l1 * l1 * l1;
+  const m3 = m1 * m1 * m1;
+  const s3 = s1 * s1 * s1;
+
+  const toByte = (lin: number): number => {
+    const clamped = Math.min(1, Math.max(0, lin));
+    const srgb = clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+    return Math.round(srgb * 255);
+  };
+
+  const r = toByte(4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3);
+  const g = toByte(-1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3);
+  const bl = toByte(-0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3);
+  const clampedAlpha = Math.min(1, Math.max(0, alpha));
+  return clampedAlpha < 1 ? `rgba(${r}, ${g}, ${bl}, ${Number(clampedAlpha.toFixed(3))})` : `rgb(${r}, ${g}, ${bl})`;
+}
+
+export function resolveCssColor(style: CSSStyleDeclaration | null | undefined, varName: string, fallback: string): string {
+  let raw = style?.getPropertyValue(varName)?.trim() ?? '';
+  for (let depth = 0; depth < 3 && raw.startsWith('var('); depth++) {
+    const inner = /^var\(\s*(--[\w-]+)\s*\)$/.exec(raw)?.[1];
+    raw = inner ? (style?.getPropertyValue(inner)?.trim() ?? '') : '';
+  }
+  if (!raw || raw.startsWith('var(') || raw.startsWith('light-dark(') || raw.startsWith('color-mix(')) {
+    return fallback;
+  }
+  if (raw.toLowerCase().startsWith('oklch(')) {
+    return oklchToRgb(raw) ?? fallback;
+  }
+  return raw;
+}
+
+export function resolveChartSemanticColors(isDark: boolean, style?: CSSStyleDeclaration | null): ChartSemanticColors {
+  return {
+    text: resolveCssColor(style, '--panel-ink', isDark ? '#cbd5e1' : '#334155'),
+    muted: resolveCssColor(style, '--panel-muted', isDark ? '#94a3b8' : '#64748b'),
+    splitLine: resolveCssColor(style, '--panel-line', isDark ? '#1e293b' : '#f1f5f9'),
+    surface: resolveCssColor(style, '--panel-surface', isDark ? '#0f172a' : '#ffffff'),
+    border: resolveCssColor(style, '--panel-field-edge', isDark ? '#334155' : '#e2e8f0'),
+  };
+}
+
+export function resolveHueHex(
+  color: string | null | undefined,
+  isDark: boolean,
+  fallbackIndex = 0,
+  style?: CSSStyleDeclaration | null,
+): string {
   const palette = isDark ? DARK_HUES : LIGHT_HUES;
   const key = color?.toLowerCase();
-  if (key && palette[key]) {
-    return palette[key];
-  }
-  const fallbackKey = DEFAULT_PALETTE_KEYS[fallbackIndex % DEFAULT_PALETTE_KEYS.length];
-  return palette[fallbackKey] ?? '#3b82f6';
+  const knownKey = key && key in palette ? key : DEFAULT_PALETTE_KEYS[fallbackIndex % DEFAULT_PALETTE_KEYS.length];
+  const fallback = palette[knownKey] ?? '#3b82f6';
+  const cssHue = knownKey === 'primary' ? 'brand' : knownKey;
+  const step = isDark ? '400' : '500';
+  return resolveCssColor(style, `--color-${cssHue}-${step}`, fallback);
 }
 
 @Service()

@@ -1,10 +1,9 @@
 import { DOCUMENT } from '@angular/common';
-import { HttpClient, HttpContext } from '@angular/common/http';
 import { booleanAttribute, Component, computed, DestroyRef, inject, InjectionToken, Injector, input, signal } from '@angular/core';
 import { AlertService } from '../app/alert/alert.service';
-import { SKIP_GLOBAL_ERROR } from '../app/alert/error-alert.interceptor';
+import { shownByCaller } from '../app/alert/error-alert.interceptor';
 import { BtnComponent } from '../btn/btn.component';
-import { serviceUrl } from '../core/api';
+import { Api } from '../core/api';
 import type { ButtonSize, SwitcherDto, SwitchRequest } from '../core/generated/contracts';
 import { problemOf } from '../core/problem';
 import { UiIconDirective } from '../icon/ui-icon.directive';
@@ -65,7 +64,7 @@ const LABEL_SIZE: Record<ButtonSize, string> = {
 })
 export class LayoutSwitcherComponent {
   private readonly select = inject(SelectService);
-  private readonly http = inject(HttpClient);
+  private readonly api = inject(Api);
   private readonly alert = inject(AlertService);
   private readonly injector = inject(Injector);
   private readonly reloadPage = inject(PAGE_RELOAD);
@@ -136,18 +135,14 @@ export class LayoutSwitcherComponent {
     }
     const request: SwitchRequest = { id: option.id };
     this.isBusy.set(true);
-    this.http
-      .post(serviceUrl(switcher.service, switcher.method), request, {
-        context: new HttpContext().set(SKIP_GLOBAL_ERROR, true),
-      })
-      .subscribe({
-        next: () => this.reloadPage(),
-        error: (error: unknown) => {
-          this.isBusy.set(false);
-          this.select.setPicked([optionOfReference(switcher.current)]);
-          const problem = problemOf(error);
-          this.alert.error(problem?.title ?? switcher.label, problem?.detail);
-        },
-      });
+    this.api.call(switcher.service, switcher.method, request, shownByCaller()).subscribe({
+      next: () => this.reloadPage(),
+      error: (error: unknown) => {
+        this.isBusy.set(false);
+        this.select.setPicked([optionOfReference(switcher.current)]);
+        const problem = problemOf(error);
+        this.alert.error(problem?.title ?? switcher.label, problem?.detail);
+      },
+    });
   }
 }

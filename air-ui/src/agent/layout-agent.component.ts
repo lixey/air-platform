@@ -1,6 +1,7 @@
 import { Component, computed, DestroyRef, effect, ElementRef, inject, Injector, input, signal, viewChild } from '@angular/core';
 import { BtnComponent } from '../btn/btn.component';
 import { TextsService } from '../core/texts.service';
+import { FileZoneDirective } from '../file/file-zone.directive';
 import { UiIconDirective } from '../icon/ui-icon.directive';
 import { NavComponent } from '../nav/nav.component';
 import { OverlayRef } from '../overlay/overlay-ref';
@@ -11,11 +12,12 @@ import type { SelectOption } from '../select/select-option';
 import { SelectService } from '../select/select.service';
 import { AgentComposerComponent } from './agent-composer.component';
 import { AgentMessageItemComponent } from './agent-message-item.component';
+import { AGENT_UPLOAD_ACCEPT } from './agent-upload';
 import { type AgentChatMessage, AgentService } from './agent.service';
 
 @Component({
   selector: 'ui-layout-agent',
-  imports: [BtnComponent, NavComponent, UiIconDirective, AgentMessageItemComponent, AgentComposerComponent],
+  imports: [BtnComponent, FileZoneDirective, NavComponent, UiIconDirective, AgentMessageItemComponent, AgentComposerComponent],
   providers: [SelectService],
   template: `
     <ui-nav class="shrink-0 border-b border-line bg-surface-2">
@@ -58,12 +60,12 @@ import { type AgentChatMessage, AgentService } from './agent.service';
 
     <div
       #scrollContainer
+      #dropZone="uiFileZone"
       class="relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-field p-3"
-      (dragover)="onDragOver($event)"
-      (dragleave)="onDragLeave($event)"
-      (drop)="onDrop($event)"
+      [uiFileZone]="uploadAccept"
+      (uiFileZoneTaken)="onFilesDropped($event)"
     >
-      @if (isDragging()) {
+      @if (dropZone.isDragging() && !agent.isStreaming()) {
         <div
           class="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-mark bg-surface/90 text-sm font-medium text-ink"
         >
@@ -107,7 +109,7 @@ export class LayoutAgentComponent {
   private readonly injector = inject(Injector);
 
   readonly path = input<string>('');
-  protected readonly isDragging = signal(false);
+  protected readonly uploadAccept = AGENT_UPLOAD_ACCEPT;
   protected readonly copiedId = signal<string | null>(null);
   private copyTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -215,33 +217,6 @@ export class LayoutAgentComponent {
     this.panels?.close(this.path());
   }
 
-  protected onDragOver(event: DragEvent): void {
-    if (event.dataTransfer?.types.includes('Files')) {
-      event.preventDefault();
-      this.isDragging.set(true);
-    }
-  }
-
-  protected onDragLeave(event: DragEvent): void {
-    event.preventDefault();
-    if (
-      event.currentTarget instanceof HTMLElement &&
-      event.relatedTarget instanceof Node &&
-      event.currentTarget.contains(event.relatedTarget)
-    ) {
-      return;
-    }
-    this.isDragging.set(false);
-  }
-
-  protected onDrop(event: DragEvent): void {
-    event.preventDefault();
-    this.isDragging.set(false);
-    if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
-      void this.agent.uploadFiles(event.dataTransfer.files);
-    }
-  }
-
   protected copyMessage(msg: AgentChatMessage): void {
     if (!msg.text || typeof navigator === 'undefined' || !navigator.clipboard) {
       return;
@@ -261,5 +236,11 @@ export class LayoutAgentComponent {
 
   protected returnToInput(text: string): void {
     this.composer()?.setDraftAndFocus(text);
+  }
+
+  protected onFilesDropped(files: readonly File[]): void {
+    if (!this.agent.isStreaming()) {
+      void this.agent.uploadFiles(files);
+    }
   }
 }

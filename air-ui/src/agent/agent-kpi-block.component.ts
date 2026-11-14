@@ -1,7 +1,7 @@
 import { Component, inject, input } from '@angular/core';
 import { LocaleService } from '../app/locale.service';
 import type { ReportKpiDto } from '../core/generated/contracts';
-import { formatCellAmount, formatCellNumber, moneyFormatOf, percentFormatOf } from '../grid/cell/grid-cell-format';
+import { formatReportKpi } from '../report/report-kpi-format';
 import { asAgentUiColor } from './agent-ui-helpers';
 
 @Component({
@@ -28,14 +28,7 @@ export class AgentKpiBlockComponent {
   readonly kpis = input.required<readonly ReportKpiDto[]>();
 
   protected formatKpi(kpi: ReportKpiDto): string {
-    const loc = this.locale();
-    if (kpi.isPercent) {
-      return formatCellAmount(kpi.value, loc, percentFormatOf({ decimals: 1 }));
-    }
-    if (kpi.currency) {
-      return formatCellAmount(kpi.value, loc, moneyFormatOf({ decimals: 0, currency: kpi.currency }));
-    }
-    return formatCellNumber(kpi.value, loc, Number.isInteger(kpi.value) ? 0 : null, true);
+    return formatReportKpi(kpi, this.locale());
   }
 
   protected hueTextClass(color: string | null | undefined): string {
