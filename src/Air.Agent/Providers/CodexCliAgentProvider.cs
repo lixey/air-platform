@@ -268,6 +268,8 @@ public sealed class CodexCliAgentProvider(
     psi.ArgumentList.Add($"mcp_servers.platform.url=\"{mcpUrl}\"");
     psi.ArgumentList.Add("-c");
     psi.ArgumentList.Add("mcp_servers.platform.bearer_token_env_var=\"PLATFORM_MCP_TOKEN\"");
+    psi.ArgumentList.Add("-c");
+    psi.ArgumentList.Add("mcp_servers.platform.default_tools_approval_mode=\"approve\"");
   }
 
   private static string? ResolveMcpUrl(ProcessStartInfo psi, string? mcpConfigPath)

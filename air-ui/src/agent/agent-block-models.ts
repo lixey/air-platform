@@ -109,7 +109,7 @@ function normalizeChart(raw: Record<string, unknown>, id: string): ReportChartDt
   const rawCategories = (raw['categories'] ?? raw['labels'] ?? raw['xAxis']) as unknown[] | null;
   const categories = Array.isArray(rawCategories) ? rawCategories.map(c => String(c ?? '')) : undefined;
 
-  const rawSeries = raw['series'] as unknown[] | null;
+  const rawSeries = (raw['series'] ?? raw['datasets']) as unknown[] | null;
   let series: ReportSeriesDto[] | undefined;
   if (Array.isArray(rawSeries)) {
     series = rawSeries
@@ -134,7 +134,17 @@ function normalizeChart(raw: Record<string, unknown>, id: string): ReportChartDt
     }
   }
 
-  if (!slices?.length && !series?.length) {
+  let effectiveSlices = slices;
+  if ((kind === 'donut' || kind === 'pie') && !effectiveSlices?.length && categories?.length && series?.[0]?.data?.length) {
+    const firstData = series[0].data;
+    effectiveSlices = categories.map((name, idx) => ({
+      name,
+      value: Number(firstData[idx] ?? 0) || 0,
+      color: null,
+    }));
+  }
+
+  if (!effectiveSlices?.length && !series?.length) {
     return null;
   }
 
@@ -147,7 +157,7 @@ function normalizeChart(raw: Record<string, unknown>, id: string): ReportChartDt
     height: typeof raw['height'] === 'number' ? raw['height'] : 240,
     categories,
     series,
-    slices,
+    slices: effectiveSlices,
   };
 }
 

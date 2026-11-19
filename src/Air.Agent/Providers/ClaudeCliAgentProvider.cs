@@ -37,6 +37,14 @@ public sealed class ClaudeCliAgentProvider(
       Path.Combine(home, ".local", "bin", "claude"));
   }
 
+  private static readonly string[] DefaultPlatformMcpTools =
+  [
+    "platform_catalog_list",
+    "platform_catalog_describe",
+    "platform_records_query",
+    "platform_proposal_stage"
+  ];
+
   internal static string ConfigureTurnStartInfo(
     ProcessStartInfo psi,
     string prompt,
@@ -44,7 +52,8 @@ public sealed class ClaudeCliAgentProvider(
     string effort,
     string? existingConvId,
     string? mcpConfigPath,
-    string sessionAttachmentsDir)
+    string sessionAttachmentsDir,
+    IReadOnlyList<string>? mcpToolNames = null)
   {
     psi.ArgumentList.Add("--print");
     psi.ArgumentList.Add("--input-format");
@@ -52,7 +61,7 @@ public sealed class ClaudeCliAgentProvider(
     psi.ArgumentList.Add("--output-format");
     psi.ArgumentList.Add("stream-json");
     psi.ArgumentList.Add("--verbose");
-    psi.ArgumentList.Add("--safe-mode");
+    psi.ArgumentList.Add("--restricted");
     psi.ArgumentList.Add("--strict-mcp-config");
     if (!string.IsNullOrWhiteSpace(mcpConfigPath))
     {
@@ -64,10 +73,20 @@ public sealed class ClaudeCliAgentProvider(
     psi.ArgumentList.Add("--tools");
     psi.ArgumentList.Add("Read");
     psi.ArgumentList.Add("--allowedTools");
-    psi.ArgumentList.Add(
-      !string.IsNullOrWhiteSpace(mcpConfigPath)
-        ? "Read,mcp__platform__platform_catalog_list,mcp__platform__platform_catalog_describe,mcp__platform__platform_records_query,mcp__platform__platform_proposal_stage"
-        : "Read");
+    if (!string.IsNullOrWhiteSpace(mcpConfigPath))
+    {
+      var toolNames = mcpToolNames is { Count: > 0 } ? mcpToolNames : DefaultPlatformMcpTools;
+      var allowedMcpTools = toolNames
+        .Where(static n => !string.IsNullOrWhiteSpace(n))
+        .Distinct(StringComparer.Ordinal)
+        .Select(static n => $"mcp__platform__{n}");
+      psi.ArgumentList.Add(string.Join(',', ["Read", .. allowedMcpTools]));
+    }
+    else
+    {
+      psi.ArgumentList.Add("Read");
+    }
+
     if (!string.IsNullOrWhiteSpace(cliModel))
     {
       psi.ArgumentList.Add("--model");
@@ -112,8 +131,16 @@ public sealed class ClaudeCliAgentProvider(
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, _) =>
-        ConfigureTurnStartInfo(psi, prompt, cliModel, effort, existingConvId, mcpConfigPath, sessionAttachmentsDir),
+      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest) =>
+        ConfigureTurnStartInfo(
+          psi,
+          prompt,
+          cliModel,
+          effort,
+          existingConvId,
+          mcpConfigPath,
+          sessionAttachmentsDir,
+          CliEnvironmentHelper.GetRegisteredMcpToolNames(effectiveRequest.Services)),
       (root, fullAssistantText, pendingEvents) =>
       {
         if (root.TryGetProperty("session_id", out var sidProp) &&

@@ -12,35 +12,14 @@ internal static class AgentMemoryTagParser
   };
 
   public static bool ContainsTag(string? text) =>
-    !string.IsNullOrWhiteSpace(text) &&
-    text.IndexOf(StartTag, StringComparison.OrdinalIgnoreCase) >= 0;
+    AgentTagBlockExtractor.ContainsTagOutsideInlineCode(text, StartTag);
 
   public static List<(string Kind, string Title, string Content)> ParsePersonalCandidates(string text)
   {
     var candidates = new List<(string Kind, string Title, string Content)>();
-    var idx = 0;
 
-    while (idx < text.Length)
+    foreach (var json in AgentTagBlockExtractor.ExtractInnerBlocks(text, StartTag, EndTag))
     {
-      var start = text.IndexOf(StartTag, idx, StringComparison.OrdinalIgnoreCase);
-      if (start < 0)
-      {
-        break;
-      }
-
-      var end = text.IndexOf(EndTag, start + StartTag.Length, StringComparison.OrdinalIgnoreCase);
-      if (end < 0)
-      {
-        break;
-      }
-
-      var json = text[(start + StartTag.Length)..end].Trim();
-      idx = end + EndTag.Length;
-      if (string.IsNullOrWhiteSpace(json))
-      {
-        continue;
-      }
-
       try
       {
         using var doc = JsonDocument.Parse(json, JsonOpts);

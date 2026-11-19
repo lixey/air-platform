@@ -255,15 +255,14 @@ public sealed class AgyCliAgentProvider(
       selectedModel,
       modelDisplayName,
       (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest) =>
-      {
-        var eagerMcpTools = effectiveRequest.Services?
-          .GetServices<IMcpTool>()
-          .Select(static t => t.Name)
-          .Where(static n => !string.IsNullOrWhiteSpace(n))
-          .Distinct(StringComparer.Ordinal)
-          .ToList();
-        return ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir, mcpConfigPath, eagerMcpTools);
-      },
+        ConfigureTurnStartInfo(
+          psi,
+          prompt,
+          selectedModel,
+          existingConvId,
+          sessionAttachmentsDir,
+          mcpConfigPath,
+          CliEnvironmentHelper.GetRegisteredMcpToolNames(effectiveRequest.Services)),
       (root, fullAssistantText, pendingEvents) =>
         HandleStreamEvent(
           root,

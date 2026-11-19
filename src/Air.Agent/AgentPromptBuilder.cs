@@ -123,34 +123,16 @@ public static class AgentPromptBuilder
     };
 
     var elements = new List<JsonElement>();
-    var idx = 0;
-    while (idx < text.Length)
+    foreach (var json in AgentTagBlockExtractor.ExtractInnerBlocks(text, startTag, endTag))
     {
-      var start = text.IndexOf(startTag, idx, StringComparison.OrdinalIgnoreCase);
-      if (start < 0)
+      try
       {
-        break;
+        using var doc = JsonDocument.Parse(json, jsonOpts);
+        elements.Add(doc.RootElement.Clone());
       }
-
-      var end = text.IndexOf(endTag, start + startTag.Length, StringComparison.OrdinalIgnoreCase);
-      if (end < 0)
+      catch (JsonException)
       {
-        break;
-      }
-
-      var json = text[(start + startTag.Length)..end].Trim();
-      idx = end + endTag.Length;
-      if (!string.IsNullOrWhiteSpace(json))
-      {
-        try
-        {
-          using var doc = JsonDocument.Parse(json, jsonOpts);
-          elements.Add(doc.RootElement.Clone());
-        }
-        catch (JsonException)
-        {
-          warnings.Add(L["AgentProposalStageWarning", L["RequestInvalid"]]);
-        }
+        warnings.Add(L["AgentProposalStageWarning", L["RequestInvalid"]]);
       }
     }
 
@@ -327,7 +309,12 @@ public static class AgentPromptBuilder
       }
       </ui_proposal>
       """);
-    sb.AppendLine("7. RICH VISUAL BLOCKS (emit without code fences when appropriate): `<ui_kpi>[...]</ui_kpi>`, `<ui_chart>{...}</ui_chart>`, `<ui_table>{...}</ui_table>`, `<ui_html>...</ui_html>`. Allowed `color`: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
+    sb.AppendLine("7. RICH VISUAL BLOCKS (emit directly without markdown code fences when appropriate):");
+    sb.AppendLine("   - `<ui_kpi>[{\"label\": \"...\", \"value\": 125000, \"currency\": \"<ISO>\", \"color\": \"emerald\", \"subtitle\": \"...\"}]</ui_kpi>` (optional `currency`, `isPercent: true`, or `isCount: true`).");
+    sb.AppendLine("   - `<ui_chart>{\"key\": \"c1\", \"title\": \"...\", \"kind\": \"donut\", \"currency\": \"<ISO>\", \"slices\": [{\"name\": \"...\", \"value\": 1000, \"color\": \"blue\"}]}</ui_chart>`");
+    sb.AppendLine("   - `<ui_chart>{\"key\": \"c2\", \"title\": \"...\", \"kind\": \"bar\", \"currency\": \"<ISO>\", \"categories\": [\"Jan\", \"Feb\"], \"series\": [{\"name\": \"Sales\", \"color\": \"blue\", \"data\": [100, 200]}]}</ui_chart>` (`kind`: `bar`, `line`, `area`, `stacked-bar`, `horizontal-bar`, `donut`, `pie`).");
+    sb.AppendLine("   - `<ui_table>{\"title\": \"...\", \"columns\": [{\"key\": \"name\", \"label\": \"...\", \"kind\": \"text\"}], \"rows\": [{\"name\": \"...\"}]}</ui_table>` (`kind`: `text`, `number`, `money`, `percent`, `badge`, `date`, `datetime`; optional `bottomRows`) or `<ui_html>...</ui_html>`.");
+    sb.AppendLine("   - Allowed `color`: `slate`, `red`, `orange`, `amber`, `emerald`, `teal`, `cyan`, `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`.");
     sb.AppendLine("8. MEMORY & RULES (`<agent_memory>` vs `<ui_proposal>`): For personal user preferences or facts ONLY, emit `<agent_memory>{\"kind\": \"Preference\", \"title\": \"Short title\", \"content\": \"Clear preference or fact\"}</agent_memory>` (`kind`: `\"Preference\"` or `\"Fact\"`). Never emit `kind: \"Rule\"` in `<agent_memory>`; stage a `<ui_proposal>` for `AgentMemory` instead.");
   }
 

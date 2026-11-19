@@ -210,4 +210,12 @@ internal static class CliEnvironmentHelper
     await File.WriteAllTextAsync(mcpConfigPath, mcpConfigJson, utf8NoBom, ct);
     return mcpConfigPath;
   }
+
+  public static IReadOnlyList<string>? GetRegisteredMcpToolNames(IServiceProvider? services) =>
+    services?
+      .GetServices<IMcpTool>()
+      .Select(static t => t.Name)
+      .Where(static n => !string.IsNullOrWhiteSpace(n))
+      .Distinct(StringComparer.Ordinal)
+      .ToList();
 }
