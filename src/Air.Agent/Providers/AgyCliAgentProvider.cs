@@ -170,6 +170,52 @@ public sealed class AgyCliAgentProvider(
     return FormatStdinTurnLine(prompt);
   }
 
+  internal static (bool ShouldBreak, bool EmittedError) HandleStreamEvent(
+    JsonElement root,
+    StringBuilder fullAssistantText,
+    List<AgentStreamEventDto> pendingEvents,
+    Action<string> onConversationId,
+    string preparingStatusText)
+  {
+    var evtType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;
+    var emittedError = false;
+
+    if (evtType == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
+    {
+      onConversationId(cid);
+    }
+    else if (evtType == "error")
+    {
+      var errMsg = root.TryGetProperty("error", out var errProp) && errProp.ValueKind == JsonValueKind.String
+        ? errProp.GetString()
+        : (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String ? msgProp.GetString() : null);
+      if (!string.IsNullOrWhiteSpace(errMsg))
+      {
+        emittedError = true;
+        pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = errMsg });
+      }
+    }
+    else if (evtType == "step_update" && root.TryGetProperty("step_update", out var step))
+    {
+      var stepType = step.TryGetProperty("step_type", out var stProp) ? stProp.GetString() : null;
+      if (stepType == "agent_response" && step.TryGetProperty("text_delta", out var deltaProp))
+      {
+        var delta = deltaProp.GetString();
+        if (!string.IsNullOrEmpty(delta))
+        {
+          fullAssistantText.Append(delta);
+          pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = delta });
+        }
+      }
+      else if (stepType is "tool_call" or "mcp_tool_call")
+      {
+        pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = preparingStatusText });
+      }
+    }
+
+    return (evtType == "result", emittedError);
+  }
+
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
     [EnumeratorCancellation] CancellationToken ct)
@@ -192,45 +238,12 @@ public sealed class AgyCliAgentProvider(
       (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, _) =>
         ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir, mcpConfigPath),
       (root, fullAssistantText, pendingEvents) =>
-      {
-        var evtType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;
-        var emittedError = false;
-
-        if (evtType == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
-        {
-          store.SetConversationId(request.SessionId, request.Owner, cid, Handle);
-        }
-        else if (evtType == "error")
-        {
-          var errMsg = root.TryGetProperty("error", out var errProp) && errProp.ValueKind == JsonValueKind.String
-            ? errProp.GetString()
-            : (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String ? msgProp.GetString() : null);
-          if (!string.IsNullOrWhiteSpace(errMsg))
-          {
-            emittedError = true;
-            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = errMsg });
-          }
-        }
-        else if (evtType == "step_update" && root.TryGetProperty("step_update", out var step))
-        {
-          var stepType = step.TryGetProperty("step_type", out var stProp) ? stProp.GetString() : null;
-          if (stepType == "agent_response" && step.TryGetProperty("text_delta", out var deltaProp))
-          {
-            var delta = deltaProp.GetString();
-            if (!string.IsNullOrEmpty(delta))
-            {
-              fullAssistantText.Append(delta);
-              pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = delta });
-            }
-          }
-          else if (stepType is "tool_call" or "mcp_tool_call")
-          {
-            pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = L["AgentStatusPreparing"] });
-          }
-        }
-
-        return (evtType == "result", emittedError);
-      },
+        HandleStreamEvent(
+          root,
+          fullAssistantText,
+          pendingEvents,
+          cid => store.SetConversationId(request.SessionId, request.Owner, cid, Handle),
+          L["AgentStatusPreparing"]),
       ct,
       environment))
     {
