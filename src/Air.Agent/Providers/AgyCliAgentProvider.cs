@@ -129,16 +129,11 @@ public sealed class AgyCliAgentProvider(
     string? selectedModel,
     string? existingConvId,
     string sessionAttachmentsDir,
-    string? mcpConfigPath = null)
+    string? mcpConfigPath = null,
+    IReadOnlyList<string>? eagerMcpTools = null)
   {
-    if (!string.IsNullOrWhiteSpace(mcpConfigPath) &&
-        !string.IsNullOrWhiteSpace(psi.WorkingDirectory) &&
-        File.Exists(mcpConfigPath))
-    {
-      var agentsDir = Path.Combine(psi.WorkingDirectory, ".agents");
-      AgentStore.EnsurePrivateDirectory(agentsDir);
-      File.Copy(mcpConfigPath, Path.Combine(agentsDir, "mcp_config.json"), overwrite: true);
-    }
+    var hasPlatformMcp = AgyTurnConfigWriter.WriteMcpConfig(psi.WorkingDirectory, mcpConfigPath, eagerMcpTools);
+    var settingsArg = AgyTurnConfigWriter.WriteTurnSettings(psi.WorkingDirectory, sessionAttachmentsDir, hasPlatformMcp);
 
     psi.ArgumentList.Add("--input-format");
     psi.ArgumentList.Add("stream-json");
@@ -146,6 +141,8 @@ public sealed class AgyCliAgentProvider(
     psi.ArgumentList.Add("stream-json");
     psi.ArgumentList.Add("--sandbox");
     psi.ArgumentList.Add("--disable-slash-commands");
+    psi.ArgumentList.Add("--settings");
+    psi.ArgumentList.Add(settingsArg);
     psi.ArgumentList.Add("--print=");
     if (!string.IsNullOrWhiteSpace(selectedModel))
     {
@@ -177,18 +174,16 @@ public sealed class AgyCliAgentProvider(
     Action<string> onConversationId,
     string preparingStatusText)
   {
-    var evtType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : null;
+    var evtType = TryGetNonEmptyString(root, "event");
     var emittedError = false;
 
-    if (evtType == "init" && root.TryGetProperty("conversation_id", out var cidProp) && cidProp.GetString() is { Length: > 0 } cid)
+    if (evtType == "init" && TryGetNonEmptyString(root, "conversation_id") is { } cid)
     {
       onConversationId(cid);
     }
     else if (evtType == "error")
     {
-      var errMsg = root.TryGetProperty("error", out var errProp) && errProp.ValueKind == JsonValueKind.String
-        ? errProp.GetString()
-        : (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String ? msgProp.GetString() : null);
+      var errMsg = TryGetNonEmptyString(root, "error") ?? TryGetNonEmptyString(root, "message");
       if (!string.IsNullOrWhiteSpace(errMsg))
       {
         emittedError = true;
@@ -197,8 +192,8 @@ public sealed class AgyCliAgentProvider(
     }
     else if (evtType == "step_update" && root.TryGetProperty("step_update", out var step))
     {
-      var stepType = step.TryGetProperty("step_type", out var stProp) ? stProp.GetString() : null;
-      if (stepType == "agent_response" && step.TryGetProperty("text_delta", out var deltaProp))
+      var stepType = TryGetNonEmptyString(step, "step_type");
+      if (stepType == "agent_response" && step.TryGetProperty("text_delta", out var deltaProp) && deltaProp.ValueKind == JsonValueKind.String)
       {
         var delta = deltaProp.GetString();
         if (!string.IsNullOrEmpty(delta))
@@ -207,14 +202,38 @@ public sealed class AgyCliAgentProvider(
           pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = delta });
         }
       }
-      else if (stepType is "tool_call" or "mcp_tool_call")
+      else if (stepType is "tool" or "tool_call" or "mcp_tool_call")
       {
-        pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = preparingStatusText });
+        var state = TryGetNonEmptyString(step, "state");
+        if (state is null or "ACTIVE")
+        {
+          pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Status, Text = preparingStatusText });
+        }
+      }
+    }
+    else if (evtType == "result" && root.TryGetProperty("result", out var resultObj) && resultObj.ValueKind == JsonValueKind.Object)
+    {
+      if (TryGetNonEmptyString(resultObj, "error") is { } resErrText)
+      {
+        emittedError = true;
+        pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Error, Text = resErrText });
+      }
+      else if (fullAssistantText.Length == 0 && TryGetNonEmptyString(resultObj, "response") is { } fallbackText)
+      {
+        fullAssistantText.Append(fallbackText);
+        pendingEvents.Add(new AgentStreamEventDto { Type = AgentStreamEventType.Delta, Text = fallbackText });
       }
     }
 
     return (evtType == "result", emittedError);
   }
+
+  private static string? TryGetNonEmptyString(JsonElement element, string propertyName) =>
+    element.TryGetProperty(propertyName, out var prop) &&
+    prop.ValueKind == JsonValueKind.String &&
+    prop.GetString() is { Length: > 0 } value
+      ? value
+      : null;
 
   public async IAsyncEnumerable<AgentStreamEventDto> StreamTurnAsync(
     AgentTurnRequest request,
@@ -235,8 +254,16 @@ public sealed class AgyCliAgentProvider(
       request,
       selectedModel,
       modelDisplayName,
-      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, _) =>
-        ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir, mcpConfigPath),
+      (psi, prompt, existingConvId, mcpConfigPath, sessionAttachmentsDir, effectiveRequest) =>
+      {
+        var eagerMcpTools = effectiveRequest.Services?
+          .GetServices<IMcpTool>()
+          .Select(static t => t.Name)
+          .Where(static n => !string.IsNullOrWhiteSpace(n))
+          .Distinct(StringComparer.Ordinal)
+          .ToList();
+        return ConfigureTurnStartInfo(psi, prompt, selectedModel, existingConvId, sessionAttachmentsDir, mcpConfigPath, eagerMcpTools);
+      },
       (root, fullAssistantText, pendingEvents) =>
         HandleStreamEvent(
           root,
